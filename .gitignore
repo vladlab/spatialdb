@@ -1,0 +1,5 @@
+node_modules/
+.pg/
+dist/
+.direnv/
+.uitest/

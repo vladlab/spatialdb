@@ -1,0 +1,30 @@
+-- ============================================================================
+--  004 — records keep the order they were created in, even within one batch
+-- ============================================================================
+--
+--  `created_at default now()` looked right and is subtly wrong for ordering.
+--  now() is the TRANSACTION's start time, and a mutation batch is one
+--  transaction — so every record created by one batch gets the identical
+--  timestamp, to the microsecond. Every list endpoint orders by
+--  (created_at, id), which means the order WITHIN a batch was decided by the
+--  id: a random UUID.
+--
+--  Nothing noticed while batches were one record typed into a grid. It matters
+--  the moment a batch is an import: drop 40 files onto the app and they land as
+--  one batch, display in the order dropped (the client's optimistic order), and
+--  then come back shuffled after a refresh. "No sort" has to mean "the order
+--  they were made", before and after a reload, or the grid's default order is
+--  noise and every tie-break in a sorted view inherits it.
+--
+--  clock_timestamp() is the wall clock at the moment of each INSERT, so rows in
+--  one batch get strictly increasing timestamps in mutation order. The id
+--  tie-break stays: it is still what makes paging total if two rows ever do
+--  collide (and test/grid.ts forces that case by hand).
+--
+--  Only `records`. Other tables order by `position` or name, and their
+--  created_at is informational. Existing rows are untouched — their relative
+--  order within old batches is already lost, and rewriting timestamps to invent
+--  one would be falsifying the audit trail. `restore` is unaffected: it inserts
+--  the captured created_at explicitly, so an undone record returns to its place.
+
+alter table records alter column created_at set default clock_timestamp();
