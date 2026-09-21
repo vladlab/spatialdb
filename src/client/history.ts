@@ -130,6 +130,31 @@ export function inverseOf(state: State, m: Mutation, queuedId: string): Inverse 
       });
     }
 
+    /* ── creating SCHEMA. These had no inverse at all, which was worse than "not
+       undoable": adding a field is a field.create PLUS a field.update (its position),
+       and only the second had an inverse. So Ctrl+Z after adding a field undid just
+       the position — sending the new field to position 0, the FIRST column, where it
+       became the table's primary field and renamed every record. Undoing a create is
+       a delete, exactly as for records; the server captures it, so redo restores it. */
+    case 'field.create':
+      return just({ type: 'field.delete', id: m.id });
+    case 'table.create':
+      return just({ type: 'table.delete', id: m.id });
+    case 'view.create':
+      return just({ type: 'view.delete', id: m.id });
+    case 'table.update': {
+      const t = state.tables.get(m.id);
+      if (!t) return null;
+      return just({
+        type: 'table.update', id: m.id,
+        ...(m.name !== undefined ? { name: t.name } : {}),
+        ...(m.singularName !== undefined ? { singularName: t.singular_name ?? '' } : {}),
+        ...(m.color !== undefined ? { color: t.color ?? '' } : {}),
+        ...(m.icon !== undefined ? { icon: t.icon ?? '' } : {}),
+        ...(m.position !== undefined ? { position: t.position ?? 0 } : {}),
+      });
+    }
+
     case 'section.create':
       return just({ type: 'section.delete', id: m.id });
     case 'section.update': {

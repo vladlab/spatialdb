@@ -19,6 +19,7 @@ import { LOOKUP_TARGET_TYPES, lookupConfigError, lookupOptionsOf } from '../cont
 import { backlinkConfigError, backlinkSourceOf } from '../contract/backlinks';
 import { arrowStyleOf, type ArrowStyle } from '../contract/arrows';
 import { isMembership } from '../contract/scope';
+import { FILES_STANDARD_FIELDS, shapeOptionError } from '../contract/shapes';
 import { fieldsOf, recordsOf, tablesSorted, type FieldRow } from './state';
 import type { Store } from './store';
 import { confirmDialog } from './dialogs';
@@ -37,9 +38,11 @@ export interface FieldDraft {
   via: string; show: string;
   /** backlink: the link field (anywhere) this is the other end of. */
   source: string;
+  /** structured: which shape its values take (contract/shapes.ts). */
+  shape: string;
 }
 export const emptyDraft = (): FieldDraft =>
-  ({ name: '', key: '', type: 'text', target: '', choices: '', via: '', show: '', source: '' });
+  ({ name: '', key: '', type: 'text', target: '', choices: '', via: '', show: '', source: '', shape: '' });
 
 /**
  * name → key, the way a person would: "Frame Rate" → frame_rate. A convenience,
@@ -141,6 +144,7 @@ export function useSchemaActions(store: Store) {
     if (!/^[a-z][a-z0-9_]*$/.test(key)) return 'key must be lowercase snake_case, starting with a letter';
     if (fields(tableId).some((f) => f.key === key)) return `key '${key}' already exists on this table`;
     if (d.type === 'link' && !d.target) return 'a link field needs a target table';
+    if (d.type === 'structured') return shapeOptionError({ shape: d.shape || undefined });
     if (d.type === 'backlink') {
       return backlinkConfigError(tableId, { source_field_id: d.source }, (id) => store.state.fields.get(id));
     }
@@ -160,6 +164,7 @@ export function useSchemaActions(store: Store) {
     if (d.type === 'link') options.target_table_id = d.target;
     if (d.type === 'lookup') { options.via_field_id = d.via; options.target_field_id = d.show; }
     if (d.type === 'backlink') options.source_field_id = d.source;
+    if (d.type === 'structured') options.shape = d.shape;
     if (d.type === 'select' || d.type === 'multi_select') {
       const choices = parseChoices(d.choices);
       if (choices.length) options.choices = choices;
@@ -170,6 +175,27 @@ export function useSchemaActions(store: Store) {
       key: d.key || deriveKey(d.name), fieldType: d.type, options, required: false });
     store.mutate({ type: 'field.update', id, position: pos });
     return { id };
+  }
+
+  /**
+   * Add whichever of the conventional Files fields this table does not have yet
+   * (matched by KEY, so it is safe to run twice, and on a Files table that already
+   * exists). A convenience, not a rule — see FILES_STANDARD_FIELDS. One undo step.
+   * Returns the names it added.
+   */
+  function addStandardFilesFields(tableId: string): string[] {
+    const have = new Set(fields(tableId).map((f) => f.key));
+    let pos = Math.max(0, ...fields(tableId).map((f) => f.position));
+    const added: string[] = [];
+    for (const spec of FILES_STANDARD_FIELDS) {
+      if (have.has(spec.key)) continue;
+      const id = crypto.randomUUID();
+      const options = { ...(spec.options ?? {}), ...(spec.self ? { target_table_id: tableId } : {}) };
+      store.mutate({ type: 'field.create', id, tableId, name: spec.name, key: spec.key, fieldType: spec.type as FieldType, options, required: false });
+      store.mutate({ type: 'field.update', id, position: ++pos });
+      added.push(spec.name);
+    }
+    return added;
   }
 
   function renameField(id: string, rawName: string) {
@@ -278,7 +304,7 @@ export function useSchemaActions(store: Store) {
     createTable, renameTable, deleteTable,
     draftError, createField, renameField, setChoices, moveField, makePrimary, isPrimary,
     canBePrimary, deleteField,
-    setArrowStyle, setMembership, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
+    setArrowStyle, setMembership, addStandardFilesFields, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
   };
 }
 export type SchemaActions = ReturnType<typeof useSchemaActions>;

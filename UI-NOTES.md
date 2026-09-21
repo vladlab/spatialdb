@@ -29,7 +29,14 @@ show you that command and nothing else.
    behind a proxy, it must pass `Host` and `X-Forwarded-Proto`; symptoms if not:
    login "succeeds" and you are immediately signed out again (cookie refused), or
    every save is a 403 "cross-origin request refused" (Host rewritten).
-2. **Grouping** (newest). `group` in a table's toolbar. Headers are the same height as
+2. **Structured fields** (newest) — all in the record tray, none of it seen:
+   the AUDIO LAYOUT editor (a small table of tracks: tick box, number, format, name,
+   channels, language, ↑ ↓ split ×; then add-preset buttons, merge, copy, paste; then
+   "compare with" and its verdict box — green border when it matches, red with the
+   issues listed when not). Is it legible at your tray width? The MANIFEST view (a
+   scrolling member table for a DCP; a frame-range line for a sequence). And in Table
+   settings, "Add standard Files fields…".
+3. **Grouping.** `group` in a table's toolbar. Headers are the same height as
    rows and span the full width; check they read as headers, that "+" on a header is
    findable, and that scrolling a long grouped table stays smooth (the header rows
    are inside the windowing).

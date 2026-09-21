@@ -28,6 +28,15 @@
       </p>
       <p class="info">{{ nFields }} field{{ nFields === 1 ? '' : 's' }} — edit them from the grid's column headers (⚙ on a column, + to add one).</p>
 
+      <!-- A CONVENIENCE, not a rule: the fields a Files table conventionally has for
+           "delivered unit" records (contract/shapes.ts). Adds only what is missing, by
+           key, so it is safe on a Files table that already exists — and to run twice. -->
+      <div v-if="table.kind !== 'canvas'" class="std">
+        <button class="plain add-files-fields" @click="addFilesFields">Add standard Files fields…</button>
+        <span v-if="stdNote" class="hint">{{ stdNote }}</span>
+        <span v-else class="hint">kind, path, manifest, file count, total size, hash, audio layout, parent</span>
+      </div>
+
       <footer><button class="danger" @click="remove">Delete table…</button></footer>
     </div>
   </div>
@@ -50,6 +59,12 @@ const nFields = computed(() => fieldsOf(props.store.state, props.tableId).length
 const upd = (patch: { icon?: string; color?: string; singularName?: string }) =>
   props.store.mutate({ type: 'table.update', id: props.tableId, ...patch });
 
+const stdNote = ref('');
+function addFilesFields() {
+  const added = actions.addStandardFilesFields(props.tableId);
+  stdNote.value = added.length ? `added: ${added.join(', ')} (one Ctrl+Z)` : 'this table already has all of them';
+}
+
 async function remove() { if (await actions.deleteTable(props.tableId)) emit('close'); }
 function onKey(e: KeyboardEvent) { if (e.key === 'Escape') emit('close'); }
 onMounted(() => void nextTick(() => nameInput.value?.focus()));
@@ -68,6 +83,9 @@ input:not([type='color']) { background: var(--controls-bg); border: 1px solid va
 input[type='color'] { width: 30px; height: 26px; padding: 0; border: 1px solid var(--border-main); background: none; }
 .fld { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--text-muted); margin-bottom: 10px; }
 .hint { color: var(--text-faint); }
+.std { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 0; }
+.plain { background: none; border: 1px solid var(--border-main); color: var(--text-secondary); border-radius: 4px; padding: 3px 10px; cursor: pointer; font: inherit; }
+.plain:hover { color: var(--accent); border-color: var(--accent); }
 .info { color: var(--text-muted); font-size: 12px; margin: 0 0 8px; line-height: 1.4; }
 footer { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border-main); }
 .danger { background: none; border: 1px solid var(--border-main); color: var(--danger); border-radius: 4px; padding: 3px 10px; cursor: pointer; font: inherit; }

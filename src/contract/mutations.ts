@@ -76,6 +76,7 @@ export const FIELD_TYPES = [
   'backlink',
   'rich_text',
   'attachment',
+  'structured',
 ] as const;
 
 const TableCreate = z.strictObject({

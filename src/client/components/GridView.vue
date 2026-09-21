@@ -306,6 +306,7 @@
                     <!-- RICH TEXT / ATTACHMENT: a summary. Neither fits a 30px row, so
                          Enter (or a double-click) opens the record panel instead. -->
                     <span v-else-if="f.type === 'rich_text'" class="value note" title="Enter opens the record to read or edit this">{{ notePreview(r.data[f.key]) }}</span>
+                    <span v-else-if="f.type === 'structured'" class="value note" title="Enter opens the record to view or edit this">{{ summariseValue(shapeOf(f), r.data[f.key]) }}</span>
                     <span v-else-if="f.type === 'attachment'" class="value note" title="Enter opens the record">{{ attachSummary(r.data[f.key]) }}</span>
                     <!-- BACKLINK: the other end of a link made elsewhere. Read-only here —
                          the link belongs to the record that holds it. -->
@@ -319,7 +320,7 @@
                       <span v-if="lookupOf(r.id, f) === null" class="broken" title="This lookup is broken: the link field it follows, or the field it shows, was deleted. Undo that delete, or delete this field.">broken lookup</span>
                       <span v-else class="value looked-up" title="Looked up — edit it on the linked record">{{ lookupOf(r.id, f)!.join(', ') }}</span>
                     </template>
-                    <span v-else class="value" :class="{ num: f.type === 'number' }">{{ display(r.data[f.key]) }}</span>
+                    <span v-else class="value" :class="{ num: f.type === 'number' }">{{ formatNumberField(f, r.data[f.key]) ?? display(r.data[f.key]) }}</span>
                   </span>
                   <CellEditor v-if="isSel(r.id, f.id) && editing" class="over" :field="f" :value="r.data[f.key]" :seed="seed"
                               @set="(k, v) => setValue(r.id, k, v)" @unset="(k) => unsetValue(r.id, k)"
@@ -371,6 +372,7 @@ import { useDerived } from '../derived';
 import { ancestorsOf, groupRows, type GroupHeader } from '../../contract/views';
 import { ask, confirmDialog } from '../dialogs';
 import { richTextToPlain } from '../../contract/richtext';
+import { formatNumberField, shapeOf, summarise as summariseValue } from '../../contract/shapes';   // (`summarise` here is the VIEW's summary)
 import { beginRecordDrag } from '../recordDrag';
 
 const props = defineProps<{
@@ -674,7 +676,7 @@ async function create(context: { data?: Record<string, unknown>; links?: Array<{
    and drag-out walk through: headers are simply not in it, so arrow keys step over
    them, and collapsed groups' rows are not reachable until expanded. */
 const groupBy = computed(() => (config.value.groupBy ?? []).filter((id) => allFields.value.some((f) => f.id === id)));
-const NOT_GROUPABLE = new Set(['long_text', 'attachment']);
+const NOT_GROUPABLE = new Set(['long_text', 'attachment', 'structured']);
 const groupable = computed(() => allFields.value.filter((f) => !NOT_GROUPABLE.has(f.type)));
 const fieldName = (id: string) => store.state.fields.get(id)?.name ?? '?';
 /** Which groups are folded: this browser, this visit. Not part of the shared view. */
@@ -800,7 +802,7 @@ function startEdit(rec: string, f: FieldRow, withSeed?: string) {
   if (f.type === 'lookup' || f.type === 'backlink') return;
   select(rec, f.id);
   // No room for these in a row: their editor is the record panel.
-  if (f.type === 'rich_text' || f.type === 'attachment') { emit('open-record', rec); return; }
+  if (f.type === 'rich_text' || f.type === 'attachment' || f.type === 'structured') { emit('open-record', rec); return; }
   if (f.type === 'checkbox') return toggleBox(rec, f);
   seed.value = withSeed;
   editing.value = true;
@@ -896,7 +898,7 @@ function onGridKey(e: KeyboardEvent) {
       // Links are rows, not a value; "clear" there would mean deleting N links on
       // one keypress. Use the × on each chip.
       // …and one keypress must not wipe a whole document or a set of files.
-      if (['link', 'lookup', 'backlink', 'rich_text', 'attachment'].includes(f.type)) return;
+      if (['link', 'lookup', 'backlink', 'rich_text', 'attachment', 'structured'].includes(f.type)) return;
       e.preventDefault();
       if (store.state.records.get(s.rec)?.data[f.key] !== undefined) unsetValue(s.rec, f.key);
       return;

@@ -40,11 +40,18 @@ enable its use on a specific table."*
   **When the client needs a SERVER change, make it deliberately, in one commit, and
   merge it across — never as a side effect of client work.**
 
-## 2. The first decision to make (it shapes everything else)
+## 2. DECIDED: the window loads the app FROM THE SERVER (option A)
 
-**Does the Tauri window load the app FROM THE SERVER, or bundle its own copy?**
+The owner settled this on Sept 20: *"the server should be a full server of frontend,
+the app should load its frontend from the server, and the things in the app will be
+tools that do local work, and then read/write from our db via api."* The server side
+of that is built — see `DEPLOY.md` and `src/server/web.ts`: one process serves the
+built frontend and the API, `/api/health` reports a `version`, and the
+Content-Security-Policy already allows Tauri's IPC (`connect-src … ipc:
+http://ipc.localhost` — it carries a DO-NOT-REMOVE comment and a test). Option B is
+kept below only to record why it was not chosen.
 
-This was not settled in the previous session, and I recommend settling it first.
+**The question was: does the Tauri window load the app from the server, or bundle its own copy?**
 
 **A. Load from the server** (the window points at `https://spatialdb.lan/`; native
 capabilities are exposed to that origin through Tauri's remote-domain capability
@@ -74,8 +81,10 @@ scope).
     platform (`tauri://localhost` vs `http://tauri.localhost` on Windows).
   - Desktop apps update on their own schedule → you need the version handshake (§6).
 
-**My recommendation: A.** For a LAN tool administered by one person, it removes three
-hard problems (auth, images, versioning) in exchange for one careful piece of config.
+**Chosen: A.** For a LAN tool administered by one person, it removes three hard
+problems (auth, images, versioning) in exchange for one careful piece of config: the
+Tauri capability that allows native calls from EXACTLY ONE origin — the deployed
+HTTPS name (`DEPLOY.md` step 2). That name is the security boundary.
 
 ## 3. The tools concept — principles to hold
 
@@ -138,7 +147,7 @@ These were agreed with the owner. Treat them as constraints, not suggestions.
 
 ## 5. Open decisions (bring these to the owner; do not guess)
 
-1. **§2 — load from server vs bundle.** First.
+1. ~~§2 — load from server vs bundle~~ — decided: load from the server.
 2. **The same file, seen twice.** Dropping a file that is already a record: update it,
    or create a second? Needs a MATCHING RULE — by hash, by path, or both — and the
    Resolve reader needs the same rule to link edits to existing file records.

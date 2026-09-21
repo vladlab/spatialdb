@@ -21,6 +21,17 @@ Without Nix: install PostgreSQL 16 and Node 22 yourself, then
 `export DB_URL="$(./scripts/db.sh url)"` and use the same commands. The flake
 only supplies the toolchain — all behaviour lives in `scripts/db.sh`.
 
+## Documents
+
+| | |
+|---|---|
+| `API.md` | the wire contract — what any client talks to |
+| `PLAN.md` | decisions and their reasons, in the order they were made |
+| `UI-NOTES.md` | what has been built but never SEEN, and a checking order |
+| `DEPLOY.md` | from `npm run dev` to a real LAN service: system Postgres, Caddy, HTTPS, NixOS |
+| `TAURI-HANDOFF.md` | for the session that builds the desktop client and its tools |
+| `REPORTS-BRIEF.md` | for the session that designs reports |
+
 ## Signing in
 
 Since migration 011 the app needs you to sign in. **Create the first admin at a
@@ -51,6 +62,7 @@ sql/                   migrations, applied in filename order
   004_record_order.sql   creation order is total, even within one batch
   005_canvas_config.sql  per-canvas card settings
   006_assets.sql         index of uploaded files (the bytes live in .pg/assets)
+  012_structured.sql     the `structured` field type (manifests, audio layouts)
   011_auth.sql           passwords and sessions (users and roles existed since 001)
   010_boards.sql         a canvas IS a record: tables.kind, canvases = board state
   009_sections.sql       sections — the home page's navigation
@@ -67,6 +79,7 @@ src/
   contract/canvasConfig.ts ★ which fields a canvas's cards show
   contract/backlinks.ts  ★ backlink fields — the other end of a link
   contract/arrows.ts     ★ a link field's arrow colour and direction
+  contract/shapes.ts     ★ structured values: shapes, summaries, layout operations, the layout diff
   contract/scope.ts      ★ scope: the membership flag and "is this record in scope"
   contract/richtext.ts   ★ rich text + attachment values: refer to files, never contain them
   contract/values.ts     ★ what a VALUE may be, per field type — same deal again
@@ -105,6 +118,7 @@ src/
       CommandPalette.vue Ctrl+K — find any record anywhere; place it on a canvas
       RichTextEditor.vue / RichTextView.vue   a note, written and read (TipTap, loaded on demand)
       AttachmentField.vue files on a record
+      StructuredField.vue / ManifestView.vue / AudioLayoutEditor.vue   structured values in the tray
       RecordPanel.vue    one record, every field, editable — opened by grid AND canvas
       CellEditor.vue     the editor for ONE cell, mounted only while editing
       LinkPicker.vue     searchable picker for link cells
@@ -146,7 +160,7 @@ invented their own shape. See PLAN.md.
 | `db.sh psql` | SQL shell |
 | `db.sh url` | connection string |
 | `npm run dev` | api + client via `scripts/dev.sh`; Ctrl-C stops BOTH, and it refuses to start if port 8787 is taken |
-| `npm test` | all eleven suites (against an isolated `spatialdb_test`) |
+| `npm test` | all thirteen suites (against an isolated `spatialdb_test`) |
 | `npm run test:e2e` | apply layer only (no server needed) |
 | `npm run test:store` | client store + two-client convergence |
 | `npm run test:undo` | delete capture and undo |
@@ -156,6 +170,10 @@ invented their own shape. See PLAN.md.
 | `npm run test:assets` | the asset store: upload, dedupe, serving, limits |
 | `npm run test:sections` | sections, home page, addresses |
 | `npm run test:scope` | scope |
+| `npm run build` / `npm start` | build the frontend into `dist/`; run ONE production process serving it and the API (DEPLOY.md) |
+| `npm run migrate` | apply pending migrations to the database named by `DB_URL` (a real deployment; `db.sh migrate` is the dev cluster's) |
+| `npm run test:structured` | structured fields in the app: layout editor, compare, manifests, standard Files fields |
+| `npm run test:prod` | the server as deployed: built frontend, cache headers, CSP, loopback bind |
 | `npm run test:auth` | signing in, sessions, roles, users — against a server with sign-in ON |
 | `npm run test:ui` | mounts the app headlessly and clicks through it (happy-dom; no layout or paint) |
 | `npm run typecheck` | `tsc` (server) + `vue-tsc` (client) |

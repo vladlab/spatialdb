@@ -19,6 +19,12 @@
       <option v-for="t in tables" :key="t.id" :value="t.id">{{ t.name }}</option>
     </select>
     <!-- BACKLINK: the other end of a link field that points at this table. -->
+    <!-- STRUCTURED: which shape its values take. Chosen once — every stored value is
+         validated against it, so it cannot be changed afterwards. -->
+    <select v-if="d.type === 'structured'" v-model="d.shape" class="shape" title="What kind of structured value this field holds. It cannot be changed later.">
+      <option value="" disabled>shape…</option>
+      <option v-for="sh in SHAPES" :key="sh" :value="sh">{{ SHAPE_LABELS[sh] }}</option>
+    </select>
     <select v-if="d.type === 'backlink'" v-model="d.source" class="source">
       <option value="" disabled>{{ linksIn.length ? 'other end of which link…' : 'no link field points at this table yet' }}</option>
       <option v-for="l in linksIn" :key="l.field.id" :value="l.field.id">{{ l.label }}</option>
@@ -50,6 +56,7 @@ import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import type { Store } from '../store';
 import { tablesSorted } from '../state';
 import { CREATABLE_TYPES, deriveKey, emptyDraft, type SchemaActions } from '../schemaActions';
+import { SHAPES, SHAPE_LABELS } from '../../contract/shapes';
 
 const props = defineProps<{
   store: Store; actions: SchemaActions; tableId: string;

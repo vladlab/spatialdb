@@ -174,6 +174,7 @@ import { useDerived } from '../derived';
 import { confirmDialog } from '../dialogs';
 import { SCOPE } from '../scope';
 import { isEmptyRichText, richTextToPlain } from '../../contract/richtext';
+import { formatNumberField, shapeOf, summarise } from '../../contract/shapes';
 import { registerDropTarget } from '../recordDrag';
 import { arrowStyleOf, type ArrowStyle } from '../../contract/arrows';
 import { backlinkSourceOf } from '../../contract/backlinks';
@@ -231,11 +232,16 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
       : { id: f.id, name: f.name, derived: true, text: texts.join(', '), color, link: f.type === 'link' };
   }
   if (f.type === 'rich_text') return { id: f.id, name: f.name, text: richTextToPlain(rec.data[f.key]).split('\n', 1)[0] };
+  // A structured value is a one-line SUMMARY on a card ("4 tracks / 12 ch (5.1, 2.0…)"):
+  // a card's rows are fixed-height, and the full thing lives in the tray.
+  if (f.type === 'structured') return { id: f.id, name: f.name, text: summarise(shapeOf(f), rec.data[f.key]) };
   if (f.type === 'attachment') {
     const n = Array.isArray(rec.data[f.key]) ? (rec.data[f.key] as unknown[]).length : 0;
     return { id: f.id, name: f.name, text: n ? `${n} file${n === 1 ? '' : 's'}` : '' };
   }
   const v = rec.data[f.key];
+  const formatted = formatNumberField(f, v);
+  if (formatted !== null) return { id: f.id, name: f.name, text: formatted };
   const text = v === undefined || v === null || v === '' ? ''
     : typeof v === 'boolean' ? (v ? 'yes' : 'no')
     : Array.isArray(v) ? v.join(', ')

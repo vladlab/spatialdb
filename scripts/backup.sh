@@ -93,8 +93,13 @@ cmd_dump() {
   # Custom format (-Fc), not plain SQL: it is compressed, and pg_restore can do
   # selective and parallel restores from it. Plain .sql can only be replayed
   # whole, which is exactly the wrong property when you want one table back.
-  if ! pg_dump -h "$SOCKET_DIR" -U postgres -d "$DB_NAME" -Fc -f "$file" 2>>"$BACKUP_DIR/backup.log"; then
-    log "FAILED: pg_dump could not connect via socket dir $SOCKET_DIR"
+  # DB_URL set = a real deployment (the system's Postgres, an ordinary role — see
+  # DEPLOY.md). Unset = the private development cluster in .pg/, over its socket.
+  local -a conn
+  if [ -n "${DB_URL:-}" ]; then conn=(-d "$DB_URL"); else conn=(-h "$SOCKET_DIR" -U postgres -d "$DB_NAME"); fi
+  if ! pg_dump "${conn[@]}" -Fc -f "$file" 2>>"$BACKUP_DIR/backup.log"; then
+    # Never print DB_URL itself: it can carry a password.
+    if [ -n "${DB_URL:-}" ]; then log "FAILED: pg_dump could not connect using DB_URL"; else log "FAILED: pg_dump could not connect via socket dir $SOCKET_DIR"; fi
     log "        Run './scripts/backup.sh check' — this is usually a cron"
     log "        environment problem, not a database problem."
     rm -f "$file"

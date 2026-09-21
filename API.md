@@ -232,6 +232,21 @@ The rule is the sixth shared contract file, **`src/contract/lookups.ts`**.
   view configs.
 - `resolveLookup` in `reads.ts` predates client-side tables and is unused.
 
+### Health, version, and how the app is served
+
+`GET /api/health` → `{ ok: true, version: "1.0.0+a1b2c3d" }` — open (no login). The
+version is `package.json`'s plus the git commit when run from a checkout (or
+`SPATIALDB_COMMIT`). It is how a client — the desktop app especially — knows which
+build it is talking to.
+
+In production (`NODE_ENV=production`, `npm start`) the SAME process serves the built
+frontend: `/assets/*` immutable, everything else `index.html` with `no-cache`; every
+non-API response carries a Content-Security-Policy whose `connect-src` deliberately
+allows `ipc:` and `http://ipc.localhost` for the Tauri client. The server listens on
+`127.0.0.1` unless `HOST` says otherwise, because it trusts proxy headers
+(`X-Forwarded-Proto`, `X-Forwarded-For`, the optional SSO header). Production refuses
+to start with `AUTH_DISABLED=1` or without a `dist/`. See `DEPLOY.md`.
+
 ### Signing in, users, and what this does NOT make safe
 
 `sql/011_auth.sql`, `src/server/auth.ts`, `test/auth.ts`. **Everything under `/api`
@@ -274,6 +289,56 @@ is watching it. LAN or VPN (Tailscale/WireGuard). If it must be public, put an
 identity-aware proxy with 2FA in front and use the trusted-header seam. Over plain
 HTTP the password and session cross the network unencrypted — on NixOS, Caddy with
 its internal CA is a few lines.
+
+### `structured` values: shapes, manifests, audio layouts
+
+`sql/012`, rules in the tenth shared contract file, **`src/contract/shapes.ts`**.
+A `structured` field holds a JSON **object** whose SHAPE is named in the field's
+options: `field.create { fieldType: 'structured', options: { shape } }`.
+
+- `shape` must be one of **`manifest` · `audio_layout` · `json`**. An unknown name is a
+  400 at field creation (not "generic JSON": a typo must not switch validation off —
+  generic is spelled `json`). **A field's shape cannot be changed afterwards**; every
+  stored value was validated against it.
+- Every shape: strict objects (an unknown key is refused), at most **256 KB**.
+
+```ts
+type Hash = string;   // "<algo>:<hex>" — "sha256:…", "xxh64:…". The algorithm is IN the value.
+
+type Manifest =
+  | { kind: 'file';        size: number; hash?: Hash }
+  | { kind: 'bundle';      members: { path: string; size: number; hash?: Hash }[]; source?: string }   // IMF / DCP; ≤ 2000 members
+  | { kind: 'sequence';    pattern: string; first: number; last: number; count: number; gaps: [number, number][] }   // NEVER the file list
+  | { kind: 'channel_set'; members: { path: string; channel: string }[] };                              // multi-mono mix
+
+type AudioLayout = { tracks: { name: string; channels: string[]; language?: string }[] };
+```
+
+- **Member paths are relative to the record's own path** (a `file_path` field): no
+  leading `/`, no `..`, no drive letter. Absolute paths are refused.
+- An audio layout's TRACKS are the containers a vendor sees; 12 mono tracks and
+  "5.1 + 3× stereo" are the same channels and a different layout. Channel labels are
+  free text (vendors vary); `LAYOUT_PRESETS` supplies mono / 2.0 / 5.1 / 7.1. An empty
+  layout is stored as NO value, not `{ tracks: [] }`.
+- Sort, filter ("contains") and quick search use the value's one-line **summary**
+  (`summarise`): `"4 tracks / 12 ch (5.1, 2.0, 2.0, 2.0)"`, `"86,395 frames 1001–87400,
+  5 missing in 1 gap"`. Structured fields cannot be grouped by, or looked up.
+- The Files CONVENTION (`FILES_STANDARD_FIELDS`: kind, path, manifest, file_count,
+  total_size, hash, audio_layout, parent) is a convenience offered in Table settings,
+  not a rule — nothing reads those keys. A number field with `options.format = 'bytes'`
+  DISPLAYS as "120 GB"; the stored value is still a number.
+
+**`POST /api/qc/audio-layout-diff`** `{ a, b }` → `LayoutDiff`. `a` = expected (a
+spec), `b` = found (a file). Stateless; a thin wrapper over `diffLayouts` for callers
+that cannot import TypeScript. 400 names which side is not a layout.
+
+```ts
+type LayoutDiff = { same: boolean; channelCount: [number, number];
+  issues: { kind: 'count' | 'order' | 'grouping' | 'name' | 'language'; track?: number; detail: string }[] };
+```
+Reported most-serious first, each kind only when the ones above it are clean: `count`
+(then nothing else), `order`, `grouping` (same channels, same order, contained
+differently), and — only when the grouping matches — `name` / `language` per track.
 
 ### View grouping
 

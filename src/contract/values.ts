@@ -30,6 +30,7 @@
 
 import type { FIELD_TYPES } from './mutations.js';
 import { attachmentError, richTextError } from './richtext.js';
+import { shapeOf, structuredError } from './shapes.js';
 
 export type FieldType = (typeof FIELD_TYPES)[number];
 
@@ -128,6 +129,9 @@ export function validateValue(field: FieldShape, value: unknown): string | null 
 
     case 'attachment':
       return attachmentError(field.key, value);
+
+    case 'structured':
+      return structuredError(field.key, shapeOf(field), value);
 
     case 'backlink':
       return `'${field.key}' is a backlink — it shows links made elsewhere; add the link on the other record`;

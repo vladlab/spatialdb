@@ -31,6 +31,7 @@
 
 import { z } from 'zod';
 import { richTextToPlain } from './richtext.js';
+import { shapeOf, summarise } from './shapes.js';
 
 const uuid = z.guid();
 
@@ -121,6 +122,8 @@ export function opsFor(type: string): FilterOp[] {
     case 'backlink':
     case 'rich_text':    return ['contains', 'empty', 'notEmpty'];
     case 'attachment':   return ['empty', 'notEmpty'];
+    // Matched on its one-line SUMMARY ("4 tracks / 12 ch (5.1, 2.0…)"): "contains 5.1" works.
+    case 'structured':   return ['contains', 'empty', 'notEmpty'];
     default:             return ['contains', 'eq', 'neq', 'empty', 'notEmpty'];
   }
 }
@@ -151,7 +154,9 @@ function matches(
   }
 
   // A rich text value is a document; everything below compares its TEXT.
-  const v = field.type === 'rich_text' ? richTextToPlain(rec.data[field.key]) : rec.data[field.key];
+  const v = field.type === 'rich_text' ? richTextToPlain(rec.data[field.key])
+    : field.type === 'structured' ? summarise(shapeOf(field), rec.data[field.key])
+    : rec.data[field.key];
 
   // A checkbox never holds "empty" as a distinct visible state in the grid — an
   // unset checkbox renders unticked — so `eq false` matches unset too.
@@ -260,6 +265,7 @@ export function applyView<R extends ViewRecord>(
     const valueOf = (r: R, field: ViewField): unknown =>
       isDerived(field) ? links(r.id, field.id).join(', ')
         : field.type === 'rich_text' ? richTextToPlain(r.data[field.key])
+        : field.type === 'structured' ? summarise(shapeOf(field), r.data[field.key])
         : r.data[field.key];
 
     // Decorate with the original index so ties are broken explicitly rather than
@@ -301,7 +307,8 @@ export function quickSearch<R extends ViewRecord>(
   return records.filter((r) => fields.some((f) => {
     if (isDerived(f)) return links(r.id, f.id).some((l) => l.toLowerCase().includes(q));
     const raw = r.data[f.key];
-    const v = f.type === 'rich_text' ? richTextToPlain(raw) : f.type === 'attachment' ? '' : raw;
+    const v = f.type === 'rich_text' ? richTextToPlain(raw) : f.type === 'attachment' ? ''
+      : f.type === 'structured' ? summarise(shapeOf(f), raw) : raw;
     if (isEmpty(v) || typeof v === 'boolean') return false;
     return (Array.isArray(v) ? v.join(' ') : String(v)).toLowerCase().includes(q);
   }));

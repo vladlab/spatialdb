@@ -34,6 +34,7 @@ import { backlinkConfigError } from '../contract/backlinks.js';
 import { arrowStyleError } from '../contract/arrows.js';
 import { assetIdsIn } from '../contract/richtext.js';
 import { membershipError } from '../contract/scope.js';
+import { shapeOptionError } from '../contract/shapes.js';
 import { captureFor, type Capture } from './capture.js';
 
 export class MutationError extends Error {
@@ -303,6 +304,7 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
 
     case 'field.create':
       assertArrowStyleValid(m.options);
+      if (m.fieldType === 'structured') { const err = shapeOptionError(m.options); if (err) throw new MutationError(err); }
       await assertMembershipValid(db, m.tableId, m.fieldType, m.options, m.id);
       if (m.fieldType === 'lookup') await assertLookupConfigValid(db, m.tableId, m.options);
       if (m.fieldType === 'backlink') await assertBacklinkConfigValid(db, m.tableId, m.options);
@@ -321,6 +323,16 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
         if (cur.rowCount) await assertMembershipValid(db, cur.rows[0].table_id, cur.rows[0].type, m.options, m.id);
         if (cur.rows[0]?.type === 'lookup') await assertLookupConfigValid(db, cur.rows[0].table_id, m.options);
         if (cur.rows[0]?.type === 'backlink') await assertBacklinkConfigValid(db, cur.rows[0].table_id, m.options);
+        if (cur.rows[0]?.type === 'structured') {
+          const err = shapeOptionError(m.options);
+          if (err) throw new MutationError(err);
+          // The shape is what every stored value was validated AGAINST. Changing it
+          // would leave a column of values that no longer match their own field.
+          const was = await db.query(`select options->>'shape' as shape from fields where id = $1`, [m.id]);
+          if (was.rows[0]?.shape && was.rows[0].shape !== m.options.shape) {
+            throw new MutationError(`a structured field's shape cannot be changed (it is '${was.rows[0].shape}') — make a new field`);
+          }
+        }
       }
       await db.query(
         `update fields set

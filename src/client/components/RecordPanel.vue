@@ -73,6 +73,10 @@
           </template>
 
           <!-- ATTACHMENT: always live; every add/remove is written at once. -->
+          <!-- STRUCTURED: a manifest, an audio layout… always live, like attachments. -->
+          <StructuredField v-else-if="f.type === 'structured'" :store="store" :record-id="recordId" :field="f"
+                           :value="record.data[f.key]" @set="setValue" @unset="unsetValue" />
+
           <AttachmentField v-else-if="f.type === 'attachment'" :store="store" :field-key="f.key"
                            :value="record.data[f.key]" @set="setValue" @unset="unsetValue" />
 
@@ -90,7 +94,7 @@
             <span v-if="f.type === 'multi_select'" class="chips">
               <span v-for="c in asList(record.data[f.key])" :key="c" class="chip plain">{{ c }}</span>
             </span>
-            <span v-else class="text" :class="{ pre: f.type === 'long_text' }">{{ display(record.data[f.key]) }}</span>
+            <span v-else class="text" :class="{ pre: f.type === 'long_text' }">{{ formatNumberField(f, record.data[f.key]) ?? display(record.data[f.key]) }}</span>
             <span v-if="isEmpty(record.data[f.key])" class="placeholder">empty</span>
           </template>
         </div>
@@ -129,6 +133,8 @@ import { confirmDialog } from '../dialogs';
 import CellEditor, { type EditExit } from './CellEditor.vue';
 import LinkPicker from './LinkPicker.vue';
 import AttachmentField from './AttachmentField.vue';
+import StructuredField from './StructuredField.vue';
+import { formatNumberField } from '../../contract/shapes';
 
 // Loaded ON DEMAND. TipTap + ProseMirror are most of a megabyte of source, and
 // nothing needs them until a record with a rich_text field is opened — so they
@@ -193,7 +199,7 @@ function setValueEl(id: string, el: unknown) {
   if (el instanceof HTMLElement) valueEls.set(id, el); else valueEls.delete(id);
 }
 // `attachment` and `rich_text` are always live (no edit mode), like a checkbox.
-const EDITABLE = (f: FieldRow) => !READONLY(f) && !['checkbox', 'attachment', 'rich_text'].includes(f.type);
+const EDITABLE = (f: FieldRow) => !READONLY(f) && !['checkbox', 'attachment', 'rich_text', 'structured'].includes(f.type);
 
 function startEdit(f: FieldRow) {
   if (!EDITABLE(f) || editingId.value === f.id) return;

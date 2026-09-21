@@ -24,6 +24,9 @@ import {
 } from './auth.js';
 import { migrationGate } from './migrations.js';
 import { parseScope } from '../contract/scope.js';
+import { appVersion, serveFrontend } from './web.js';
+import { AudioLayout, diffLayouts } from '../contract/shapes.js';
+import type { z } from 'zod';
 import { AssetError, findAsset, openAsset, storeAsset } from './assets.js';
 import { Readable } from 'node:stream';
 import {
@@ -460,6 +463,23 @@ app.get('/api/stream', async (c) => {
   );
 });
 
+/**
+ * The first QC primitive: compare two audio layouts. The comparison itself is a
+ * pure function in the shared contract (`diffLayouts`), which the web app calls
+ * directly; this endpoint exists for callers that cannot import TypeScript — the
+ * Python QC tools. `a` is what is EXPECTED (a deliverable's spec), `b` what was
+ * FOUND (a file, as probed). Stateless: nothing is read from or written to the DB.
+ */
+app.post('/api/qc/audio-layout-diff', async (c) => {
+  const body = await c.req.json().catch(() => ({})) as { a?: unknown; b?: unknown };
+  const a = AudioLayout.safeParse(body.a), b = AudioLayout.safeParse(body.b);
+  if (!a.success || !b.success) {
+    const bad = !a.success ? ['a', a.error] as const : ['b', (b as { error: z.ZodError }).error] as const;
+    return c.json({ error: `'${bad[0]}' is not an audio layout — ${bad[1].issues[0]?.path.join('.')}: ${bad[1].issues[0]?.message}` }, 400);
+  }
+  return c.json(diffLayouts(a.data, b.data));
+});
+
 /* ────────────────────────────────────────────────────────────────────────────
  *  Signing in, and managing users.
  *
@@ -577,9 +597,34 @@ app.patch('/api/users/:id', async (c) => {
   return c.json(rows[0]);
 });
 
-app.get('/api/health', (c) => c.json({ ok: true }));
+// `version` is how a client (the desktop app especially) can tell which build it is
+// talking to. Open, like the rest of /api/health: it says nothing about the data.
+const VERSION = appVersion();
+app.get('/api/health', (c) => c.json({ ok: true, version: VERSION }));
+
+// LAST, after every /api route: the built frontend, if there is one (production).
+const servingFrontend = serveFrontend(app);
 
 const port = Number(process.env.PORT ?? 8787);
+/**
+ * LOOPBACK ONLY, by default. This server trusts three things a reverse proxy tells
+ * it — X-Forwarded-Proto (is the cookie Secure?), X-Forwarded-For (whose login
+ * attempts are these?) and, if configured, the SSO user header. That is only sound
+ * if the proxy is the ONLY way in: reachable directly, anyone can type those headers
+ * themselves. So it listens on 127.0.0.1 and the proxy (Caddy; Vite in development)
+ * is what the network talks to. HOST=0.0.0.0 exists for containers and the like —
+ * set it knowing what it means.
+ */
+const hostname = process.env.HOST ?? '127.0.0.1';
+const PRODUCTION = process.env.NODE_ENV === 'production';
+if (PRODUCTION && AUTH_DISABLED) {
+  console.error('\nRefusing to start: AUTH_DISABLED=1 with NODE_ENV=production. Sign-in cannot be switched off on a real deployment.\n');
+  process.exit(1);
+}
+if (PRODUCTION && !servingFrontend) {
+  console.error('\nRefusing to start: NODE_ENV=production but there is no dist/index.html. Run `npm run build` first.\n');
+  process.exit(1);
+}
 if (AUTH_DISABLED) {
   console.warn('\n  ⚠  AUTH_DISABLED=1 — nobody has to sign in; every request is the first admin.\n     For development and tests ONLY. Never on a machine others can reach.\n');
 }
@@ -593,8 +638,8 @@ setInterval(sweep, 3_600_000).unref();
 // port was bound — so a taken port printed the success message and THEN a
 // stack trace. A taken port almost always means a previous dev server is still
 // running (see scripts/dev.sh for how that used to happen on every Ctrl-C).
-const server = serve({ fetch: app.fetch, port }, () => {
-  console.log(`api listening on http://localhost:${port}`);
+const server = serve({ fetch: app.fetch, port, hostname }, () => {
+  console.log(`api listening on http://${hostname === '127.0.0.1' ? 'localhost' : hostname}:${port}  (v${VERSION}${servingFrontend ? ', serving the built frontend' : ''})`);
 });
 server.on('error', (e: NodeJS.ErrnoException) => {
   if (e.code !== 'EADDRINUSE') throw e;

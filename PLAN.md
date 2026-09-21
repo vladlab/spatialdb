@@ -925,6 +925,82 @@ decision this reverses, and why the narrower version is right, is recorded under
 - A selection does not outlive its link (a peer, or your own Remove, may delete it).
 - Red-checked: with the table rule disabled, four tests fail.
 
+### Structured fields: manifests and audio layouts (Sept 21)
+
+From a work order written in another chat (the owner designs his data there) and
+reviewed here before building. **A Files record is a DELIVERED UNIT, not one OS
+file**: an IMF/DCP folder, an image sequence, a multi-mono 5.1 mix and a single .mov
+are each ONE record. Kind-awareness lives only in the desktop drop tool and the
+renderer; schema and links stay uniform. The same field type carries audio track
+layouts on Deliverables (the spec), Edits (as built) and Files (as probed), so they
+can be compared — the first QC primitive.
+
+Built: `sql/012`, `contract/shapes.ts` (the tenth shared contract file),
+`StructuredField.vue` → `ManifestView.vue` (read-only: a manifest is written by a
+tool) / `AudioLayoutEditor.vue` / a JSON escape hatch that saves only what the
+contract accepts; `POST /api/qc/audio-layout-diff`; "Add standard Files fields" in
+Table settings; `test/structured.ts` and ~35 checks in `test/grid.ts`.
+
+My amendments to the work order, all accepted: an unknown shape is an ERROR (generic
+is spelled `json`); hashes carry their algorithm (`sha256:…` — the hash choice is
+still open in the Tauri handoff); member paths are relative to the record's
+`file_path`; caps (256 KB, 2,000 members) because tables load whole; cards show the
+SUMMARY row only (a full render would break computed card heights — the notes block
+could host one later); the diff is a pure contract function with the endpoint as a
+thin wrapper for Python; "compare with" is generic over ANY linked record with a
+layout (a file targets one deliverable and satisfies another); copy/paste in the
+editor (layouts are deliberately not a table — "a copyable value is enough" — so
+copying a spec onto an edit must be one gesture; kept in-app because browsers refuse
+clipboard access over plain HTTP); the standard-fields action adds only what is
+missing, by key. Deferred to the Tauri chat: the drop tool that detects kind and
+fills these; ffprobe → audio_layout; the sequence gap checker.
+
+**A real bug found on the way, and a correction to something I told the owner.**
+Ctrl+Z had NO inverse for creating a field, a table or a view (nor for table.update).
+I had said undo covered "creating and deleting records and tables"; only records was
+true. Worse than not-undoable: adding a field is `field.create` + `field.update`
+(position), and only the second had an inverse — so Ctrl+Z after adding a field sent
+it to position 0, the FIRST column, where it became the PRIMARY field and renamed
+every record in the table. Found because the standard-fields test asserted "one
+Ctrl+Z" and the fields stayed, re-ordered. Inverses added (`client/history.ts`);
+guarded directly (add a field, Ctrl+Z, the first column is still Name) and
+red-checked. Also: the layout editor now writes nothing when nothing changed (a name
+re-typed as it was) — a no-op mutation is a log row, a broadcast and an undo step
+that visibly does nothing.
+
+### From `npm run dev` to a real deployment (Sept 20)
+
+Prompted by the desktop-client chat asking "who serves the frontend?" — the owner:
+*"I have spent all this time not thinking about it at all. Right now everything is
+npm run dev."* Decided: **the server serves the whole frontend, like a real web app;
+the desktop window loads it from the server; the desktop's tools do local work and
+read/write through the API.** Internal only. Target: `vsrv` (NixOS), which already
+runs Caddy for a domain he owns (DNS at Namecheap).
+
+Built and tested (`test/prod.ts`, `npm run test:prod`):
+- `server/web.ts`: one process serves `dist/` and the API. Hashed assets immutable;
+  `index.html` never cached (it names the current build); a missing asset is a 404,
+  not the app's HTML handed to a `<script>` tag.
+- **Loopback by default** (`HOST`). The auth code trusts three proxy headers; that is
+  only sound if the proxy is the only way in. The other chat's advice was good and
+  missed this.
+- A **CSP** set by the app (not the Caddyfile: versioned and tested with it), with
+  Tauri's IPC schemes allowed and a DO-NOT-REMOVE comment.
+- `version` in `/api/health`. Production refuses to start with sign-in off, or with
+  no `dist/`.
+- `npm start` (plain `tsx`, no watch — `tsx` moved to runtime dependencies; a second
+  build config to keep in step buys nothing at this scale). `npm run migrate`
+  (`server/migrateCli.ts`): the same `sql/` files and `_migrations` table as `db.sh`,
+  but against `DB_URL` and one transaction per file — `db.sh` and `backup.sh` were
+  hard-wired to the private dev cluster. `backup.sh dump` now honours `DB_URL`.
+
+Written but NOT verifiable here — `DEPLOY.md`: NixOS Postgres / systemd / Caddy /
+backup timer, the Namecheap record step by step, and three certificate paths
+(A: vsrv's Caddy is already public → same mechanism, site restricted to LAN source
+addresses; B: DNS-01 — Namecheap's API needs 20 domains or $50 balance/spend and a
+whitelisted IPv4; C: Caddy's internal CA). Which path depends on how vsrv's Caddy
+gets certificates today — asked, not yet answered.
+
 ### The owner's data model, and "a new record inherits its context" (Sept 20)
 
 **His schema for deliverables** — arrived at by asking "what questions do I want

@@ -20,6 +20,11 @@ import { applyView, quickSearch, ViewConfig, type ViewField, ancestorsOf, groupR
 import { lookupConfigError, lookupText, lookupValues } from '../src/contract/lookups.js';
 import { backlinkConfigError, backlinkRecords } from '../src/contract/backlinks.js';
 import { fuzzyRank, fuzzyScore, parsePaletteQuery } from '../src/client/fuzzy.js';
+import {
+  AudioLayout, FILES_STANDARD_FIELDS, addPreset, diffLayouts, flattenChannels, formatBytes, formatNumberField, mergeTracks, moveTrack,
+  shapeOptionError, splitTrack, structuredError, summarise, type AudioLayout as Layout,
+} from '../src/contract/shapes.js';
+import { FIELD_TYPES } from '../src/contract/mutations.js';
 import { assetIdsIn, attachmentError, isEmptyRichText, richTextError, richTextToPlain } from '../src/contract/richtext.js';
 import { compareFields, labelFrom, primaryKeyOf } from '../src/contract/labels.js';
 import { emptyState, ingestPage, recordsOf, viewsOf } from '../src/client/state.js';
@@ -315,6 +320,70 @@ function pure() {
   check('a group field that no longer exists is skipped, not an error', shape(groupRows(gRecs, gFields, [randomUUID()])) === 'a b c d e');
   check('a view saved BEFORE grouping existed still parses, and means "not grouped"', ViewConfig.safeParse({ sort: [], filters: [], hidden: [] }).success
     && (ViewConfig.parse({}).groupBy ?? []).length === 0 && ViewConfig.safeParse({ groupBy: [randomUUID(), randomUUID(), randomUUID()] }).success === false);
+
+  console.log('\nG1j. Structured fields (contract/shapes.ts)');
+  check('a field must name a KNOWN shape — a typo is an error, not "generic JSON"',
+    shapeOptionError({ shape: 'manifest' }) === null && shapeOptionError({ shape: 'json' }) === null
+    && /unknown shape 'audio_layuot'/.test(shapeOptionError({ shape: 'audio_layuot' }) ?? '') && /needs a shape/.test(shapeOptionError({}) ?? ''));
+
+  const H = 'sha256:' + 'ab'.repeat(32);
+  const okManifests: unknown[] = [
+    { kind: 'file', size: 1024, hash: H },
+    { kind: 'bundle', members: [{ path: 'ASSETMAP.xml', size: 900 }, { path: 'video/reel1.mxf', size: 5e10, hash: 'xxh64:0123456789abcdef' }], source: 'ASSETMAP.xml' },
+    { kind: 'sequence', pattern: 'shot_010.%07d.exr', first: 1001, last: 87400, count: 86395, gaps: [[2000, 2004]] },
+    { kind: 'channel_set', members: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'].map((c) => ({ path: `mix_${c}.wav`, channel: c })) },
+  ];
+  check('the four manifest kinds are accepted', okManifests.every((m) => structuredError('m', 'manifest', m) === null), okManifests.map((m) => structuredError('m', 'manifest', m)).filter(Boolean).join(' | '));
+  check('an unknown KEY is refused — a typo in a tool must fail loudly, not be stored forever', /manifest/.test(structuredError('m', 'manifest', { kind: 'file', size: 1, sise: 2 }) ?? ''));
+  check('an unknown kind, and a non-object, are refused', !!structuredError('m', 'manifest', { kind: 'folder' }) && !!structuredError('m', 'manifest', 'x') && !!structuredError('m', 'manifest', [1]));
+  check('a hash must say which ALGORITHM — the choice is still open, and must stay changeable', /hash looks like/.test(structuredError('m', 'manifest', { kind: 'file', size: 1, hash: 'ab'.repeat(32) }) ?? ''));
+  check('member paths are RELATIVE to the record\'s path — no "/", no "..", no drive letters',
+    [['/abs/reel.mxf'], ['../up.mxf'], ['C:\\x.mxf']].every(([p]) => /relative/.test(structuredError('m', 'manifest', { kind: 'bundle', members: [{ path: p, size: 1 }] }) ?? '')));
+  check('a sequence that ends before it starts is refused', /before first/.test(structuredError('m', 'manifest', { kind: 'sequence', pattern: 'a.%04d.dpx', first: 10, last: 5, count: 0, gaps: [] }) ?? ''));
+  check('a manifest may not become an inventory: 2,001 members is too many', !!structuredError('m', 'manifest', { kind: 'bundle', members: Array.from({ length: 2001 }, (_, i) => ({ path: `f${i}`, size: 1 })) }));
+  check('…and any structured value over 256 KB is refused, with the reason', /larger than 256 KB/.test(structuredError('j', 'json', { blob: 'x'.repeat(300_000) }) ?? ''));
+  check('shape "json" takes any object', structuredError('j', 'json', { anything: [1, { goes: true }] }) === null && !!structuredError('j', 'json', 7));
+
+  check('summaries: one line a grid cell can show',
+    summarise('manifest', okManifests[0]) === '1 file, 1.00 KB'
+    && summarise('manifest', okManifests[1]) === '2 files, 46.6 GB (ASSETMAP.xml)'
+    && summarise('manifest', okManifests[2]) === '86,395 frames 1001–87400, 5 missing in 1 gap'
+    && summarise('manifest', okManifests[3]) === '6 mono files (L R C LFE Ls Rs)', okManifests.map((m) => summarise('manifest', m)).join(' | '));
+  check('bytes read like sizes', formatBytes(512) === '512 B' && formatBytes(128849018880) === '120 GB' && formatNumberField({ type: 'number', options: { format: 'bytes' } }, 1536) === '1.50 KB'
+    && formatNumberField({ type: 'number', options: {} }, 1536) === null);
+
+  console.log('\nG1k. Audio layouts: tracks are containers');
+  let spec: Layout = { tracks: [] };
+  spec = addPreset(spec, '5.1', 'Full mix'); spec = addPreset(spec, '2.0', 'Stereo'); spec = addPreset(spec, '2.0', 'M&E'); spec = addPreset(spec, '2.0', 'Dialog');
+  check('5.1 + 3× stereo is 4 tracks and 12 channels, and says so', AudioLayout.safeParse(spec).success && flattenChannels(spec).length === 12
+    && summarise('audio_layout', spec) === '4 tracks / 12 ch (5.1, 2.0, 2.0, 2.0)', summarise('audio_layout', spec));
+  let asMonos = spec;
+  for (let i = 0; i < asMonos.tracks.length;) { if (asMonos.tracks[i].channels.length > 1) asMonos = splitTrack(asMonos, i); else i++; }
+  check('split every track: the SAME 12 channels in the SAME order, as 12 mono tracks', asMonos.tracks.length === 12 && flattenChannels(asMonos).join() === flattenChannels(spec).join()
+    && asMonos.tracks[3].name === 'Full mix LFE', asMonos.tracks.map((t) => t.name).join(' | '));
+  const remerged = mergeTracks(asMonos, [0, 1, 2, 3, 4, 5], 'Full mix');
+  check('merge six monos back into one 5.1 track, in place', remerged.tracks.length === 7 && remerged.tracks[0].channels.join(' ') === 'L R C LFE Ls Rs' && summarise('audio_layout', remerged).includes('(5.1, mono'));
+  check('move swaps neighbours and refuses to fall off either end', moveTrack(spec, 0, 1).tracks[1].name === 'Full mix' && moveTrack(spec, 0, -1) === spec && moveTrack(spec, 3, 1) === spec);
+  check('an empty channel list, or an unknown key on a track, is refused', !!structuredError('a', 'audio_layout', { tracks: [{ name: 'x', channels: [] }] })
+    && !!structuredError('a', 'audio_layout', { tracks: [{ name: 'x', channels: ['L'], lang: 'en' }] }));
+
+  console.log('\nG1l. Comparing layouts — the first QC primitive');
+  check('identical layouts match', diffLayouts(spec, JSON.parse(JSON.stringify(spec))).same);
+  const grouping = diffLayouts(spec, asMonos);
+  check('12 monos against "5.1 + 3× stereo": same channels, same order — a GROUPING problem, and only that',
+    !grouping.same && grouping.issues.length === 1 && grouping.issues[0].kind === 'grouping' && /5\.1, 2\.0, 2\.0, 2\.0/.test(grouping.issues[0].detail), JSON.stringify(grouping.issues));
+  const swapped: Layout = { tracks: [{ ...spec.tracks[0], channels: ['L', 'C', 'R', 'LFE', 'Ls', 'Rs'] }, ...spec.tracks.slice(1)] };
+  const orderDiff = diffLayouts(spec, swapped);
+  check('L C R instead of L R C is an ORDER problem (and grouping is not also reported)', orderDiff.issues.length === 1 && orderDiff.issues[0].kind === 'order' && /same channels, different order/.test(orderDiff.issues[0].detail), JSON.stringify(orderDiff.issues));
+  const short = diffLayouts(spec, { tracks: spec.tracks.slice(0, 3) });
+  check('a missing stereo pair is a COUNT problem, and nothing else is said', short.issues.length === 1 && short.issues[0].kind === 'count' && short.channelCount.join() === '12,10', JSON.stringify(short));
+  const renamed: Layout = { tracks: spec.tracks.map((t, i) => (i === 2 ? { ...t, name: 'Music and effects', language: 'es' } : t)) };
+  const nameDiff = diffLayouts(spec, renamed);
+  check('matching structure, different labels: NAME and LANGUAGE are reported per track', nameDiff.issues.map((x) => `${x.kind}:${x.track}`).join() === 'name:2,language:2', JSON.stringify(nameDiff.issues));
+  check('channel labels compare case-insensitively ("lfe" is LFE)', diffLayouts(spec, { tracks: spec.tracks.map((t) => ({ ...t, channels: t.channels.map((c) => c.toLowerCase()) })) }).same);
+
+  check('the Files convention names real field types, and its link is to the table itself', FILES_STANDARD_FIELDS.every((f) => (FIELD_TYPES as readonly string[]).includes(f.type))
+    && FILES_STANDARD_FIELDS.filter((f) => f.self).map((f) => f.key).join() === 'parent' && FILES_STANDARD_FIELDS.find((f) => f.key === 'path')?.type === 'file_path');
 
   console.log('\nG1c. applyView — cost at the size whole-table loading commits us to');
   const big = Array.from({ length: 50_000 }, (_, i) =>
@@ -641,6 +710,35 @@ async function main() {
   check('none of those changed the record', JSON.stringify((await pool.query(`select data from records where id = $1`, [noteRec])).rows[0].data.notes) === JSON.stringify(stored.notes));
   const found = await search('slate');
   check('text inside a note is found by the palette\'s search', idsOf(found).includes(noteRec), JSON.stringify(found).slice(0, 160));
+
+  console.log('\nG9. Structured fields on the server');
+  const fMan = randomUUID(), fLay = randomUUID(), sRec = randomUUID();
+  const badShape = await mutate([{ type: 'field.create', id: randomUUID(), tableId, name: 'Oops', key: 'oops', fieldType: 'structured', options: { shape: 'manifets' } }]);
+  check('a structured field with a misspelt shape is refused at creation', badShape.status === 400 && /unknown shape/.test(JSON.stringify(badShape.body)), JSON.stringify(badShape.body).slice(0, 160));
+  check('…and so is one with no shape at all', (await mutate([{ type: 'field.create', id: randomUUID(), tableId, name: 'Oops', key: 'oops2', fieldType: 'structured', options: {} }])).status === 400);
+  const madeS = await mutate([
+    { type: 'field.create', id: fMan, tableId, name: 'Manifest', key: 'manifest', fieldType: 'structured', options: { shape: 'manifest' } },
+    { type: 'field.create', id: fLay, tableId, name: 'Audio layout', key: 'audio_layout', fieldType: 'structured', options: { shape: 'audio_layout' } },
+    { type: 'record.create', id: sRec, tableId, data: { name: 'ep101_5.1', manifest: { kind: 'channel_set', members: [{ path: 'ep101_L.wav', channel: 'L' }, { path: 'ep101_R.wav', channel: 'R' }] } } },
+  ]);
+  check('fields with known shapes, and a record carrying a valid manifest, are accepted', madeS.status === 200, JSON.stringify(madeS.body).slice(0, 200));
+  const storedS = (await pool.query(`select data from records where id = $1`, [sRec])).rows[0].data;
+  check('stored as an OBJECT in the record — no new tables, no new columns', storedS.manifest?.kind === 'channel_set' && storedS.manifest.members.length === 2);
+  const badVal = await mutate([{ type: 'record.update', id: sRec, set: { manifest: { kind: 'bundle', members: [{ path: '/etc/passwd', size: 1 }] } }, unset: [] }]);
+  check('the SERVER refuses what the contract refuses (an absolute member path) — a tool cannot bypass the editor\'s rules', badVal.status === 400 && /relative/.test(JSON.stringify(badVal.body)), JSON.stringify(badVal.body).slice(0, 200));
+  check('a manifest in an audio_layout field is refused: each field validates against ITS shape', (await mutate([{ type: 'record.update', id: sRec, set: { audio_layout: { kind: 'file', size: 1 } }, unset: [] }])).status === 400);
+  const reshape = await mutate([{ type: 'field.update', id: fMan, options: { shape: 'json' } }]);
+  check('a field\'s shape cannot be changed afterwards — its stored values were validated against it', reshape.status === 400 && /cannot be changed/.test(JSON.stringify(reshape.body)));
+  check('…but other options of the same field can be (the shape re-sent unchanged)', (await mutate([{ type: 'field.update', id: fMan, name: 'File manifest', options: { shape: 'manifest' } }])).status === 200);
+
+  const five1 = { tracks: [{ name: 'Full mix', channels: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'] }] };
+  const sixMono = { tracks: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'].map((c) => ({ name: `Full mix ${c}`, channels: [c] })) };
+  const viaApi: any = await (await fetch(`${API}/api/qc/audio-layout-diff`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ a: five1, b: sixMono }) })).json();
+  check('POST /api/qc/audio-layout-diff gives a script the same verdict the app computes', viaApi.same === false && viaApi.issues?.[0]?.kind === 'grouping' && JSON.stringify(viaApi) === JSON.stringify(diffLayouts(five1, sixMono)), JSON.stringify(viaApi));
+  const viaApiBad = await fetch(`${API}/api/qc/audio-layout-diff`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ a: five1, b: { tracks: 'six' } }) });
+  check('…and says which side is not a layout', viaApiBad.status === 400 && /'b' is not an audio layout/.test(await viaApiBad.text()));
+  check('a structured value is found by search through the record\'s other text, and the mutation log holds the value once',
+    (await pool.query(`select count(*)::int n from mutations where payload::text like '%ep101_L.wav%'`)).rows[0].n === 1);
 
   A.stop(); slow.stop(); fresh.stop(); after.stop();
   console.log(`\n${pass} passed, ${fail} failed\n`);
