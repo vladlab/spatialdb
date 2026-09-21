@@ -289,7 +289,7 @@ async function main() {
       // Comments OUT first: the note in App.vue explaining this very bug mentions
       // `.workspace`, and the first version of this check matched that and passed.
       .replace(/\/\*[\s\S]*?\*\//g, '');
-    const LAYOUT = ['app', 'topbar', 'body', 'main', 'stage', 'viewport', 'tray-splitter', 'workspace', 'dock', 'splitter',
+    const LAYOUT = ['app', 'topbar', 'body', 'main', 'stage', 'viewport', 'tray-splitter',
       'drag-ghost', 'canvas-view', 'canvas-container', 'canvas-controls', 'canvas-world', 'tree', 'tree-scroll', 'tree-foot', 'well', 'record-panel', 'gridview', 'scroller', 'home',
       // the steady editor: its fixed-height body and the wrapper that holds its place
       'rte', 'rte-bar', 'rte-body', 'rp-rich',

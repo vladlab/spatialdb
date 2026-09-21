@@ -731,6 +731,15 @@ async function main() {
   check('a field\'s shape cannot be changed afterwards — its stored values were validated against it', reshape.status === 400 && /cannot be changed/.test(JSON.stringify(reshape.body)));
   check('…but other options of the same field can be (the shape re-sent unchanged)', (await mutate([{ type: 'field.update', id: fMan, name: 'File manifest', options: { shape: 'manifest' } }])).status === 200);
 
+  const posT = randomUUID(), pA = randomUUID(), pB = randomUUID(), pC = randomUUID();
+  await mutate([{ type: 'table.create', id: posT, name: 'Positions' },
+    { type: 'field.create', id: pA, tableId: posT, name: 'Name', key: 'name', fieldType: 'text' },
+    { type: 'field.create', id: pB, tableId: posT, name: 'Alt work', key: 'alt_work', fieldType: 'text' },
+    { type: 'field.create', id: pC, tableId: posT, name: 'Aardvark', key: 'aardvark', fieldType: 'text' }]);
+  const posRows = (await pool.query(`select name, position from fields where table_id = $1 order by position, name`, [posT])).rows;
+  check('fields created through the API with NO position are APPENDED — the first stays first, so a script cannot hijack the primary field by naming a field "Aardvark"',
+    posRows.map((r) => r.name).join() === 'Name,Alt work,Aardvark' && posRows.map((r) => r.position).join() === '0,1,2', JSON.stringify(posRows));
+
   const five1 = { tracks: [{ name: 'Full mix', channels: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'] }] };
   const sixMono = { tracks: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'].map((c) => ({ name: `Full mix ${c}`, channels: [c] })) };
   const viaApi: any = await (await fetch(`${API}/api/qc/audio-layout-diff`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ a: five1, b: sixMono }) })).json();

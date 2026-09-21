@@ -20,6 +20,23 @@ const uuid = z.guid();
 
 export const CanvasConfig = z.strictObject({
   cardFields: z.record(uuid, z.array(uuid).max(40)).default({}),
+  /**
+   * DEFAULTS: records that everything created on this canvas gets linked to.
+   * "This board is about Episode 101" — so a file, an edit or a deliverable made here
+   * starts out linked to Ep 101, IF its table has a link to Works (see
+   * `defaultLinkField` for which field). Shown in a bar at the top of the canvas, where
+   * it can be switched off; set with "+ add" there, or by right-clicking a card.
+   *
+   * It REPLACED "a board inherits from its own record's membership links" (built two
+   * days earlier): that needed a link field added to the boards table, ticked as
+   * membership, and filled in on the board's record — schema work, invisible on the
+   * canvas, for something a person doing data entry should be able to set by pointing.
+   *
+   * No foreign keys, like everything in this config: a default whose record has been
+   * deleted is simply skipped (and shown as such in the bar, to be removed).
+   * OPTIONAL, not defaulted — every canvas config already saved predates it.
+   */
+  defaults: z.array(z.strictObject({ tableId: uuid, recordId: uuid })).max(20).optional(),
 });
 export type CanvasConfig = z.infer<typeof CanvasConfig>;
 
@@ -41,4 +58,27 @@ export function cardFieldsFor<F extends { id: string }>(
     return chosen.map((id) => byId.get(id)).filter((f): f is F => !!f);
   }
   return tableFields.filter((f) => f.id !== primaryFieldId).slice(0, DEFAULT_CARD_FIELDS);
+}
+
+interface LinkFieldLike { id: string; name: string; table_id: string; type: string; options?: Record<string, unknown> | null }
+
+/**
+ * Through WHICH field does a new record of `tableId` get linked to a default record
+ * of `targetTableId`? The person entering data must never have to answer that, so:
+ *
+ *   no link field to that table     → null: this table is simply not affected.
+ *   exactly one                     → that one.
+ *   several, one ticked membership  → that one (the same explicit flag scope uses).
+ *   several, none or many ticked    → AMBIGUOUS: skipped, and the canvas bar says
+ *                                     which table and which fields, so an admin can
+ *                                     tick "membership" on the right one.
+ */
+export function defaultLinkField<F extends LinkFieldLike>(
+  fields: Iterable<F>, tableId: string, targetTableId: string,
+): { field: F } | { ambiguous: F[] } | null {
+  const links = [...fields].filter((f) => f.table_id === tableId && f.type === 'link' && f.options?.target_table_id === targetTableId);
+  if (!links.length) return null;
+  if (links.length === 1) return { field: links[0] };
+  const flagged = links.filter((f) => f.options?.membership === true);
+  return flagged.length === 1 ? { field: flagged[0] } : { ambiguous: links };
 }

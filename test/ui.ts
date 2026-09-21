@@ -354,7 +354,7 @@ async function main() {
   const LINK = ths().indexOf('Show');
   const picker = () => w.find('.gridview .picker');
   const options = () => picker().findAll('.list li .name').map((x) => x.text());
-  const chips = (row: number) => cell(row, LINK).findAll('.cell > .chip').map((c) => c.text().replace('×', '').trim());
+  const chips = (row: number) => cell(row, LINK).findAll('.cell > .chip').map((c) => c.text().replace(/[×⤢]/g, '').trim());
   const pkey = (k: string, opts: Record<string, unknown> = {}) => picker().find('input').trigger('keydown', { key: k, ...opts });
 
   await cell(0, LINK).trigger('mousedown');
@@ -960,88 +960,31 @@ async function main() {
   await until(() => arrowsOfField().length === nBefore);
   await bg().trigger('pointerdown', { button: 0, clientX: 5, clientY: 5 });
 
-  console.log('\nU16. The grid docked beside the canvas');
-  const dockEl = () => w.find('.workspace .dock');
-  const dRows = () => dockEl().findAll('tr.row');
-  const dName = (r: ReturnType<typeof dRows>[number]) => r.findAll('td')[1].text();
-  const dRow = (name: string) => dRows().find((r) => dName(r) === name)!;
-  await w.find('.dock-toggle').trigger('click');
-  check('"▤ table" docks a full grid beside the canvas', await until(() => dockEl().find('.gridview').exists()) && w.find('.workspace').classes('dock-left'));
-  // With the dock open there are TWO pickers in the header (canvas and table);
-  // the first draft of this set the CANVAS picker to a table id.
-  check('on the Canvas tab, a table row in the tree offers ◧ — show it beside the canvas', w.find('.tree .table-row .dock-it').exists());
-  await nav.dockTable(filesId);
-  await until(() => dRows().length >= 3);
-  check('it is the SAME grid: views, sort, filter, search are all there',
-    dockEl().find('.view-menu').exists() && dockEl().findAll('.menu').length >= 4 && dockEl().find('.search').exists());
-  check('rows already on this canvas carry a marker; the others do not',
-    dRow('reel_10').find('td.num').classes('placed') && dRow('reel_2').find('td.num').classes('placed') && !dRow('reel_1').find('td.num').classes('placed'));
-  await dockEl().find('.not-placed input').setValue(true);
-  check('"not on canvas" leaves only what is still to be placed',
-    await until(() => dRows().length > 0 && dRows().every((r) => !r.find('td.num').classes('placed')) && !!dRow('reel_1') && !dRow('reel_10')),
-    dRows().map(dName).join());
-  await dockEl().find('.not-placed input').setValue(false);
-  await until(() => !!dRow('reel_10'));
-
-  // Two more files to drag, made by a "peer".
-  const dragA = randomUUID(), dragB = randomUUID();
-  await post([{ type: 'record.create', id: dragA, tableId: filesId, data: { name: 'drag_a' } },
-              { type: 'record.create', id: dragB, tableId: filesId, data: { name: 'drag_b' } }]);
-  await until(() => !!dRow('drag_a') && !!dRow('drag_b'));
-
-  await dRow('drag_a').find('td.num').trigger('pointerdown', { button: 0, clientX: 40, clientY: 300 });
-  winEv('pointerup', { clientX: 40, clientY: 300 });
-  check('clicking a row NUMBER selects the row', dRow('drag_a').classes('rowsel') && dockEl().findAll('tr.rowsel').length === 1);
-  await dRow('drag_b').find('td.num').trigger('pointerdown', { button: 0, ctrlKey: true, clientX: 40, clientY: 330 });
-  winEv('pointerup', { clientX: 40, clientY: 330 });
-  await dRow('reel_10').find('td.num').trigger('pointerdown', { button: 0, ctrlKey: true, clientX: 40, clientY: 200 });
-  winEv('pointerup', { clientX: 40, clientY: 200 });
-  check('Ctrl+click adds rows to the selection', dockEl().findAll('tr.rowsel').length === 3);
-
-  // THE DRAG. happy-dom has no layout — every rectangle is 0×0 at the origin — so
-  // "over the canvas" can only be true AT (0,0). Press on a selected row, move far
-  // enough to start a drag, release at the origin: the real code path, end to end.
-  const placedBefore = Number((await pool.query(`select count(*)::int n from placements where canvas_id = $1`, [boardId])).rows[0].n);
-  await dRow('drag_a').find('td.num').trigger('pointerdown', { button: 0, clientX: 40, clientY: 300 });
-  check('pressing a row that is part of a multi-selection does not collapse it (it may be a drag)', dockEl().findAll('tr.rowsel').length === 3);
-  winEv('pointermove', { clientX: 120, clientY: 320 });
-  check('moving past the threshold shows a ghost with the COUNT', await until(() => w.find('.drag-ghost').exists()) && /3/.test(w.find('.drag-ghost .drag-count').text()),
-    w.find('.drag-ghost').exists() ? w.find('.drag-ghost').text() : 'no ghost');
-  winEv('pointermove', { clientX: 0, clientY: 0 });
-  winEv('pointerup', { clientX: 0, clientY: 0 });
-  check('dropping on the canvas places the records that were NOT already there',
-    await until(() => !!cardBy('drag_a') && !!cardBy('drag_b')) && !w.find('.drag-ghost').exists());
-  const placedAfter = (await untilDb(`select count(*)::int n from placements where canvas_id = '${boardId}'`, (r) => Number(r[0].n) === placedBefore + 2))[0].n;
-  check('— two new placements, not three: reel_10 was already on the canvas', Number(placedAfter) === placedBefore + 2, `${placedBefore} -> ${placedAfter}`);
-  check('and ALL the dragged records end up selected on the canvas, new and old',
-    ['drag_a', 'drag_b', 'reel_10'].every((n) => cardBy(n).classes('selected')));
-  const posA = await place(dragA), posB = await place(dragB);
-  check('laid out as a column in the grid\'s order, not stacked on one spot', posA.x === posB.x && posB.y > posA.y, `${JSON.stringify(posA)} ${JSON.stringify(posB)}`);
-  check('the grid\'s markers update', await until(() => dRow('drag_a').find('td.num').classes('placed')));
-  hotkey('z');
-  const oneUndo = await until(() => !cardBy('drag_a') && !cardBy('drag_b'));
-  check('the whole drop is ONE Ctrl+Z', oneUndo && !!cardBy('reel_10'), `cards: ${cardsNow().map((c) => c.find('.card-label').text()).join()}`);
-
-  await dRow('reel_1').find('td.num').trigger('pointerdown', { button: 0, clientX: 40, clientY: 300 });
-  winEv('pointerup', { clientX: 40, clientY: 300 });
-  check('a plain click without moving is just a selection — nothing is placed', !cardBy('reel_1') && dRow('reel_1').classes('rowsel'));
-  await dockEl().find('.scroller').trigger('keydown', { key: 'a', ctrlKey: true });
-  check('Ctrl+A selects every row in the view', dockEl().findAll('tr.rowsel').length === dRows().length && dRows().length > 3);
-  await dockEl().find('.scroller').trigger('keydown', { key: 'Escape' });
-  check('Escape clears it', dockEl().findAll('tr.rowsel').length === 0);
-
-  await w.find('.dock-side').trigger('click');
-  check('the dock flips to the bottom', w.find('.workspace').classes('dock-bottom'));
-  win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'b', ctrlKey: true, bubbles: true }));
-  check('Ctrl+B hides it', await until(() => !dockEl().exists()));
-  check('the tray is gone', !w.find('.tray').exists());
-
-  ctrlK(); await until(() => pal().exists());
-  await palKey('Escape');
-  check('Escape closes it', !pal().exists());
-  await tab('table').trigger('click');
+  // (U16 used to be the grid DOCKED beside the canvas, and dragging its rows onto it.
+  //  The dock was removed at the owner's request — a one-off dock does not fit the
+  //  split-pane system planned for later. Row SELECTION is kept and tested below; the
+  //  drag service and the canvas's multi-record drop (`placeMany`) are kept for split
+  //  panes but have NO UI path and NO test until then — say so rather than imply cover.)
+  console.log('\nU16. Selecting rows');
   await nav.openTable(filesId);
-  await until(() => ths().includes('Show'));
+  await until(() => rowsNow().length >= 3);
+  const numCell = (i: number) => rowsNow()[i].find('td.num');
+  await numCell(0).trigger('pointerdown', { button: 0, clientX: 40, clientY: 300 });
+  winEv('pointerup', { clientX: 40, clientY: 300 });
+  check('clicking a row NUMBER selects the row', rowsNow()[0].classes('rowsel') && w.findAll('.gridview tr.rowsel').length === 1);
+  await numCell(2).trigger('pointerdown', { button: 0, ctrlKey: true, clientX: 40, clientY: 360 });
+  winEv('pointerup', { clientX: 40, clientY: 360 });
+  check('Ctrl+click adds a row to the selection', w.findAll('.gridview tr.rowsel').length === 2);
+  await numCell(0).trigger('pointerdown', { button: 0, clientX: 40, clientY: 300 });
+  await numCell(2).trigger('pointerdown', { button: 0, shiftKey: true, clientX: 40, clientY: 360 });
+  winEv('pointerup', { clientX: 40, clientY: 360 });
+  check('Shift+click selects the range', w.findAll('.gridview tr.rowsel').length === 3);
+  await w.find('.gridview .scroller').trigger('keydown', { key: 'a', ctrlKey: true });
+  check('Ctrl+A selects every row in the view', w.findAll('.gridview tr.rowsel').length === rowsNow().length);
+  await w.find('.gridview .scroller').trigger('keydown', { key: 'Escape' });
+  check('Escape clears it', w.findAll('.gridview tr.rowsel').length === 0);
+  check('there is no dock: no toggle on the canvas, no "not on canvas" filter, no ◧ in the tree',
+    !w.find('.dock-toggle').exists() && !w.find('.not-placed').exists() && !w.find('.tree .dock-it').exists() && !w.find('.workspace').exists());
 
   console.log('\nU17. Rich text notes');
   await nav.openTable(filesId);

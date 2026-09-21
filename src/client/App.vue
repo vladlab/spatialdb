@@ -17,7 +17,11 @@
                    and canvases, what you clicked already says which you are looking
                    at, and the tabs only repeated it. (History moved into Settings.)
       context bar  belongs to what is OPEN: the grid's views/sort/filter, the
-                   canvas's zoom/arrows/dock. Inside GridView / CanvasView, at the top.
+                   canvas's zoom and arrows. Inside GridView / CanvasView, at the top.
+                   (There was a grid DOCKED beside the canvas for a while. Removed at the
+                   owner's request: a one-off dock does not fit the split-pane system he
+                   wants later, and that design should be free to decide how two views
+                   share a screen.)
       viewport     the grid or the canvas
       record tray  RIGHT, and it takes its own space — it shrinks the viewport
                    rather than floating over it, so the grid's "+" column stays
@@ -65,8 +69,8 @@
                @go-section="goSection" @section-settings="sectionSettings = $event" @settings="settingsOpen = true">
         <template #contents>
           <NavContents :tables="tables" :canvases="canvasRows" :view="view" :table-id="tableId" :canvas-id="canvasId"
-                       :dock-table-id="dockShown ? tableId : ''" :scoped-table-ids="scopedTableIds"
-                       @open-table="openTable" @open-canvas="openBoard" @dock-table="dockTable"
+                       :scoped-table-ids="scopedTableIds"
+                       @open-table="openTable" @open-canvas="openBoard"
                        @table-settings="tableSettings = $event" @new-table="newTable" @new-canvas="newCanvas" />
         </template>
       </NavTree>
@@ -76,24 +80,8 @@
         <template v-else>
           <div class="stage">
             <div class="viewport">
-              <div v-if="view === 'canvas' && canvasId" class="workspace" :class="[`dock-${dock.side}`, { docked: dockShown }]">
-                <div v-if="dockShown" class="dock" :style="dock.side === 'left' ? { width: dock.size + 'px' } : { height: dock.size + 'px' }">
-                  <GridView v-if="tableId" :key="'dock' + tableId" :store="store" :table-id="tableId"
-                            :placed-ids="canvasRef?.placedIds" @open-record="openRecordId = $event" @open-board="openBoard" />
-                  <p v-else class="hint">Pick a table in the tree (◧ on its row).</p>
-                </div>
-                <div v-if="dockShown" class="splitter" title="Drag to resize" @pointerdown="startDockResize" />
-                <CanvasView ref="canvasRef" :key="canvasId" :store="store" :canvas-id="canvasId"
-                            @open-record="openRecordId = $event" @open-board="openBoard">
-                  <!-- The canvas's context bar is inside CanvasView; these two belong to
-                       the app (the dock is laid out here), so they are passed in. -->
-                  <template #bar-extra>
-                    <span class="sep" />
-                    <button class="dock-toggle" :class="{ on: dock.open }" title="Show a table beside the canvas (Ctrl+B)" @click="toggleDock">▤ table</button>
-                    <button v-if="dock.open" class="dock-side" :title="`The table is on the ${dock.side}. Click to move it (Ctrl+Shift+B)`" @click="flipDock">{{ dock.side === 'left' ? '⬓' : '◧' }}</button>
-                  </template>
-                </CanvasView>
-              </div>
+              <CanvasView v-if="view === 'canvas' && canvasId" ref="canvasRef" :key="canvasId" :store="store" :canvas-id="canvasId"
+                          @open-record="openRecordId = $event" @open-board="openBoard" />
               <p v-else-if="view === 'canvas'" class="hint">No canvas open — pick one in the tree, or press + beside “Canvases” to make one.</p>
 
               <!-- Keyed by table so switching tables is a fresh component: scroll
@@ -138,7 +126,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue';
 import { SCOPE, useScope } from './scope';
 import { formatScope, parseScope } from '../contract/scope';
 import { dragGhost } from './recordDrag';
@@ -307,8 +295,6 @@ const currentName = computed(() => (view.value === 'table' ? store.state.tables.
   : canvases.value.find((c) => c.id === canvasId.value)?.name) ?? '');
 
 function openTable(id: string) { tableId.value = id; view.value = 'table'; }
-/** ◧ in the tree, on the Canvas tab: that table, beside the canvas. */
-function dockTable(id: string) { tableId.value = id; dock.open = true; }
 
 /** From a grid row, a card or the record panel: go to that board. */
 function openBoard(id: string) {
@@ -316,55 +302,6 @@ function openBoard(id: string) {
   canvasId.value = id;
   view.value = 'canvas';
 }
-/* ── the docked grid ─────────────────────────────────────────────────────────
-
-   Beside (left) or below (bottom) the canvas; which one suits depends on the
-   table — a wide table wants the full width of the bottom, a long one the height
-   of the side — so it flips with one key rather than being a setting somewhere.
-   Open/closed, side and size are remembered PER BROWSER: they are about this
-   screen, not about the data. */
-interface Dock { open: boolean; side: 'left' | 'bottom'; size: number }
-const DOCK_KEY = 'spatialdb.dock';
-function readDock(): Dock {
-  try {
-    const d = JSON.parse(localStorage.getItem(DOCK_KEY) ?? '{}') as Partial<Dock>;
-    return { open: d.open === true, side: d.side === 'bottom' ? 'bottom' : 'left', size: Number(d.size) > 120 ? Number(d.size) : 460 };
-  } catch { return { open: false, side: 'left', size: 460 }; }
-}
-const dock = reactive<Dock>(readDock());
-const dockShown = computed(() => dock.open && view.value === 'canvas');
-watch(dock, (d) => { try { localStorage.setItem(DOCK_KEY, JSON.stringify(d)); } catch { /* unavailable */ } }, { deep: true });
-
-function toggleDock() { dock.open = !dock.open; }
-function flipDock() {
-  dock.side = dock.side === 'left' ? 'bottom' : 'left';
-  // A width that suits a side dock is far too tall for a bottom one, and vice versa.
-  dock.size = dock.side === 'left' ? 460 : 300;
-}
-function startDockResize(e: PointerEvent) {
-  e.preventDefault();
-  const start = dock.size, x0 = e.clientX, y0 = e.clientY;
-  const move = (ev: PointerEvent) => {
-    // Left dock grows rightwards; bottom dock grows UPwards.
-    const d = dock.side === 'left' ? ev.clientX - x0 : y0 - ev.clientY;
-    const max = (dock.side === 'left' ? window.innerWidth : window.innerHeight) - 160;
-    dock.size = Math.round(Math.min(Math.max(start + d, 160), Math.max(200, max)));
-  };
-  const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
-  window.addEventListener('pointermove', move);
-  window.addEventListener('pointerup', up);
-}
-function onDockKey(e: KeyboardEvent) {
-  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== 'b' || view.value !== 'canvas') return;
-  const t = e.target as HTMLElement | null;
-  // In a text field Ctrl+B is (or will be) bold.
-  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-  e.preventDefault();
-  if (e.shiftKey) { dock.open = true; flipDock(); } else toggleDock();
-}
-onMounted(() => window.addEventListener('keydown', onDockKey));
-onUnmounted(() => window.removeEventListener('keydown', onDockKey));
-
 /* ── the command palette (Ctrl+K) ─────────────────────────────────────────── */
 const paletteOpen = ref(false);
 const canvasRef = ref<InstanceType<typeof CanvasView> | null>(null);
@@ -562,20 +499,6 @@ body {
 .body { flex: 1; min-height: 0; display: flex; }
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
-/* The canvas tab's layout: the docked grid, its splitter, the canvas. These rules
-   were deleted by accident when the header's styles were rewritten (they sat in
-   the same block) — and with no `.workspace` sizing the canvas collapsed to zero
-   height: no dots, no clicks, the browser's own context menu. The headless tests
-   could not see it; test/sections.ts now asserts these rules EXIST. */
-.workspace { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: row; }
-.workspace.dock-bottom { flex-direction: column-reverse; }
-.workspace > :last-child { flex: 1; min-width: 0; min-height: 0; }
-.dock { flex: none; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--bg-app); }
-.splitter { flex: none; background: var(--border-main); }
-.dock-left .splitter { width: 5px; cursor: col-resize; }
-.dock-bottom .splitter { height: 5px; cursor: row-resize; }
-.splitter:hover { background: var(--accent); }
-
 .drag-ghost {
   position: fixed; z-index: 300; pointer-events: none; transform: translate(12px, 10px);
   background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 6px;
@@ -627,6 +550,13 @@ body {
   cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1;
 }
 .chip-x:hover { color: var(--danger); }
+/* Follow a link: a pill's "open" button. Its space is ALWAYS reserved and it is only
+   revealed on hover (visibility, not display): a pill that grew under the pointer
+   would push its neighbours along — the owner's standing preference is that nothing
+   jumps. */
+.chip-open { visibility: hidden; background: none; border: none; color: var(--accent); cursor: pointer; padding: 0 1px; font-size: 11px; line-height: 1; }
+.chip:hover .chip-open { visibility: visible; }
+.chip-open:hover { color: var(--text-primary); }
 .chip-add {
   background: none; border: 1px dashed var(--border-main); color: var(--text-muted);
   border-radius: 10px; font-size: 11px; padding: 1px 4px; cursor: pointer;

@@ -53,6 +53,19 @@ async function main() {
     await go(tFiles);
     check('a number field formatted as bytes reads as a size (the stored value is still a number)', cellOf('ep101.mov', 'Total size').text() === '120 GB', cellOf('ep101.mov', 'Total size').text());
 
+    console.log('\nT1b. Following a link');
+    const pill = () => cellOf('ep101.mov', 'Targets').find('.chip');
+    check('a linked record\'s pill carries an "open" button (revealed on hover; its space is always reserved, so nothing shifts)',
+      await until(() => pill().exists()) && pill().find('.chip-open').exists() && pill().text().includes('Network master'));
+    await pill().find('.chip-open').trigger('click');
+    check('clicking it opens THAT record in the tray — the deliverable, not the file', await until(() => w.find('.record-panel .rp-title').text() === 'Network master'));
+    check('…without putting the cell into edit mode', !w.find('.gridview td.editing').exists());
+    await w.find('.record-panel .rp-close').trigger('click');
+    await openRecord('ep101.mov');
+    await pField('Targets').find('.chip .chip-open').trigger('click');
+    check('the same button on a pill INSIDE the tray walks the tray to the linked record', await until(() => w.find('.record-panel .rp-title').text() === 'Network master'));
+    await w.find('.record-panel .rp-close').trigger('click');
+
     console.log('\nT2. Creating a structured field');
     await w.find('.gridview .th-add').trigger('click');
     const form = () => w.find('.gridview .popover');
@@ -98,17 +111,11 @@ async function main() {
     check('adding presets writes the layout — one mutation per action', (await dbLayout(file1)).tracks[0].channels.join(' ') === 'L R C LFE Ls Rs' && await mutations() === before + 2, `${await mutations() - before}`);
     check('the summary above the editor follows', await until(() => pField('Audio layout').find('.sf-summary').text() === '2 tracks / 8 ch (5.1, 2.0)'));
 
-    const cmp = () => al().find('select.al-compare');
-    const cmpOptions = () => cmp().findAll('option').map((o: any) => o.text());
-    check('"compare with" offers the LINKED deliverable, because it has a layout of its own', await until(() => cmpOptions().some((t: string) => /Deliverables · Network master/.test(t)), 8000), cmpOptions().join(' | '));
-    await cmp().setValue(spec + fDelLayout);
-    check('same structure, unnamed tracks: not a match — and the ONLY complaints are names', await until(() => al().find('.al-diff').exists())
-      && !al().find('.al-diff').classes('same') && al().findAll('.al-issue').every((i: any) => i.classes('name')) && al().findAll('.al-issue').length === 2, al().find('.al-diff').text());
+    check('there is NO compare in the cell — validation will get its own place (the owner\'s call); the diff lives on in the contract and the endpoint',
+      !al().find('.al-compare').exists() && !/compare/i.test(al().text()));
 
     await al().findAll('.al-track')[0].find('.split').trigger('click');
     check('SPLIT the 5.1: six mono tracks, same channels', await until(() => tracks().length === 7 && tracks().slice(0, 6).every((t: string) => t.startsWith('mono:'))), tracks().join(' | '));
-    check('…and compare now says GROUPING — the thing vendors reject — and nothing else', await until(() => al().findAll('.al-issue').length === 1 && al().find('.al-issue').classes('grouping')), al().find('.al-diff').text());
-
     for (let i = 0; i < 6; i++) await al().findAll('.al-track')[i].find('.al-pick input').setValue(true);
     check('selecting tracks enables merge', al().find('.merge').attributes('disabled') === undefined && /merge 6/.test(al().find('.merge').text()));
     await al().find('.merge').trigger('click');
@@ -121,8 +128,8 @@ async function main() {
     await sleep(700);                                 // let every earlier write land, so the count below is settled
     const afterRename = await mutations();
     await nameIn(1).trigger('change');               // the same name again: must write NOTHING
-    check('MERGE them back and name the tracks: ✓ Matches (names compare ignoring case and stray spaces)',
-      await until(() => al().find('.al-diff').classes('same') && /Matches/.test(al().find('.al-verdict').text())), al().find('.al-diff').text());
+    check('MERGE them back and name the tracks: a 5.1 and a stereo again', await until(() => tracks().join(' | ') === '5.1:Full mix | 2.0:stereo')
+      && pField('Audio layout').find('.sf-summary').text() === '2 tracks / 8 ch (5.1, 2.0)', tracks().join(' | '));
     await sleep(300);
     check('re-entering the same name writes nothing — no log row, no empty undo step', await mutations() === afterRename, `${await mutations() - afterRename} extra`);
     win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
@@ -144,7 +151,6 @@ async function main() {
     await al().find('.paste').trigger('click');
     const pasted = await untilDb(`select data->'audio_layout' v from records where id = '${file2}'`, (r) => r[0].v?.tracks?.length === 2);
     check('paste writes the whole layout — the spec\'s, exactly', JSON.stringify(pasted[0].v) === JSON.stringify(specLayout), JSON.stringify(pasted[0].v));
-    check('an unlinked record has nobody to compare with, and says so', /no linked record/.test(al().find('select.al-compare option').text()));
     for (const _ of [0, 1]) await al().findAll('.al-track')[0].find('.x').trigger('click');
     check('removing the last track clears the FIELD (no empty {tracks: []} left behind)', (await untilDb(`select data from records where id = '${file2}'`, (r) => !('audio_layout' in r[0].data)))[0].data.audio_layout === undefined);
 

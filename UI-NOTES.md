@@ -29,7 +29,12 @@ show you that command and nothing else.
    behind a proxy, it must pass `Host` and `X-Forwarded-Proto`; symptoms if not:
    login "succeeds" and you are immediately signed out again (cookie refused), or
    every save is a 403 "cross-origin request refused" (Host rewritten).
-2. **Structured fields** (newest) — all in the record tray, none of it seen:
+2. **The canvas's defaults bar** (newest) — a slim row under the canvas's controls:
+   a switch, "New records here →", chips, "+ add". Does it read as information
+   first and a control second? Is the right-click entry ("Link new records here to
+   this") discoverable? The "+ add" popover holds a table menu and the link picker —
+   check it is not clipped by the canvas.
+3. **Structured fields** — all in the record tray, none of it seen:
    the AUDIO LAYOUT editor (a small table of tracks: tick box, number, format, name,
    channels, language, ↑ ↓ split ×; then add-preset buttons, merge, copy, paste; then
    "compare with" and its verdict box — green border when it matches, red with the
@@ -175,6 +180,9 @@ real browser — if one is off, it goes in the table above.
 
 | Note | What it was |
 |---|---|
+| The docked grid "doesn't jive" with a future split-pane system. | Removed entirely. **Check the canvas still fills its area** — its wrapper element went with the dock, and a collapsed canvas is exactly what the headless tests cannot see. |
+| No way to follow a linked pill to its record. | ⤢ on every link / backlink pill, grid and tray; opens the record on the right. |
+| Compare did not belong in the audio layout cell. | Removed; the diff function and endpoint remain for a future validation area. |
 | Links could not be made or removed on the canvas; arrows did not say what they were. | Drag from the handle on a link row to a card of the right table to link; click an arrow to select it and see its field's name; right-click it → Remove this link… → confirm. |
 | Rich text and images did not show on canvas cards ("[image]"). | A note is now a formatted block under the card's rows, images included, in a fixed-height window that scrolls inside itself. To see it: right-click a card → "Fields on … cards…" and tick the rich text field. |
 | The view system was half-baked: you could make views but not see a list of them. | The view tabs looked like any other toolbar button. One control now — `VIEW Grid ▾` — names the current view and, opened, lists them all with rename / duplicate / delete and what each one does. In the table's toolbar, not the tree (the owner's call). |

@@ -328,7 +328,9 @@ type AudioLayout = { tracks: { name: string; channels: string[]; language?: stri
   not a rule — nothing reads those keys. A number field with `options.format = 'bytes'`
   DISPLAYS as "120 GB"; the stored value is still a number.
 
-**`POST /api/qc/audio-layout-diff`** `{ a, b }` → `LayoutDiff`. `a` = expected (a
+**`POST /api/qc/audio-layout-diff`** `{ a, b }` → `LayoutDiff`. (The web app has NO
+compare UI at present — it was removed from the layout editor pending a proper
+validation feature; this endpoint and `diffLayouts` are what that will be built on.) `a` = expected (a
 spec), `b` = found (a file). Stateless; a thin wrapper over `diffLayouts` for callers
 that cannot import TypeScript. 400 names which side is not a layout.
 
@@ -339,6 +341,25 @@ type LayoutDiff = { same: boolean; channelCount: [number, number];
 Reported most-serious first, each kind only when the ones above it are clean: `count`
 (then nothing else), `order`, `grouping` (same channels, same order, contained
 differently), and — only when the grouping matches — `name` / `language` per track.
+
+### Canvas defaults
+
+`canvas.update { config: { cardFields, defaults? } }` — `defaults` is
+`[{ tableId, recordId }]` (≤ 20): records that everything CREATED on this canvas gets
+linked to. **`canvas.update` replaces the config whole — always send the merged
+config**, or `cardFields` and `defaults` wipe each other. No foreign keys: a default
+whose record is gone is skipped.
+
+Like scope and grouping, this is a CLIENT convention: the new record's `record.create`
+is sent with `link.add`s in the same batch. The field used is decided by
+`defaultLinkField` (`src/contract/canvasConfig.ts`): the table's only link to the
+default's table; or, if several, the one flagged `membership`; if still ambiguous the
+table is skipped (and the canvas says so). A script wanting the same behaviour sends
+the same links. It REPLACED "a board inherits from its record's membership links".
+
+`field.create` without a following `field.update { position }` now APPENDS the field
+(position = last + 1). It used to be 0, which let a new field tie with — and, sorting
+alphabetically, displace — the table's primary field.
 
 ### View grouping
 
@@ -354,9 +375,8 @@ in exactly one group per level. Nothing about grouping is enforced by the server
 Not a server rule — a record is still `record.create` plus `link.add`s, sent in one
 batch. The client's `createRecord` (`src/client/scope.ts`) adds, in the same batch:
 the scoped project (membership), the value or links of the GROUP the record was
-added under, and — for a record created on a canvas — a link to everything the
-BOARD's record is a member of, through the new record's own membership field to the
-same table. A script that wants the same behaviour sends the same links.
+added under, and — for a record created on a canvas — links to that canvas's DEFAULTS
+(see "Canvas defaults"). A script that wants the same behaviour sends the same links.
 
 ### Scope
 

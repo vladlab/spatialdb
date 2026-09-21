@@ -309,8 +309,14 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
       if (m.fieldType === 'lookup') await assertLookupConfigValid(db, m.tableId, m.options);
       if (m.fieldType === 'backlink') await assertBacklinkConfigValid(db, m.tableId, m.options);
       await db.query(
-        `insert into fields (id, table_id, name, key, type, options, required)
-         values ($1,$2,$3,$4,$5,$6,$7)`,
+        // APPENDED: position = one past the table's last field. It used to default to 0
+        // for every new field, so a field created through the API without a follow-up
+        // position update tied with the first column — and ties break alphabetically,
+        // so "Alt work" sorted ahead of "Name" and became the table's PRIMARY field,
+        // renaming every record. The app always sent a position; a script or the
+        // desktop tools would not have.
+        `insert into fields (id, table_id, name, key, type, options, required, position)
+         values ($1,$2,$3,$4,$5,$6,$7, (select coalesce(max(position), -1) + 1 from fields where table_id = $2))`,
         [m.id, m.tableId, m.name, m.key, m.fieldType, JSON.stringify(m.options), m.required],
       );
       return;

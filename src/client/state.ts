@@ -256,7 +256,9 @@ export function applyMutation(state: State, m: Mutation): void {
       state.fields.set(m.id, {
         id: m.id, table_id: m.tableId, name: m.name, key: m.key,
         type: m.fieldType, options: m.options as Record<string, unknown>,
-        position: 0, required: m.required,
+        // Appended, exactly as the server does (apply.ts says why it is not 0).
+        position: Math.max(-1, ...[...state.fields.values()].filter((f) => f.table_id === m.tableId).map((f) => f.position)) + 1,
+        required: m.required,
       });
       return;
     }

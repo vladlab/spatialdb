@@ -26,6 +26,7 @@ import { createStore } from '../src/client/store.js';
 import { cardHeight, effectiveHeight, rowPortY, CARD_RICH_H, CARD_ROW_H } from '../src/client/canvas/cardLayout.js';
 import { arrowStyleError, arrowStyleOf } from '../src/contract/arrows.js';
 import { bezierMid } from '../src/client/canvas/geometry.js';
+import { CanvasConfig, defaultLinkField } from '../src/contract/canvasConfig.js';
 import { cardFieldsFor, DEFAULT_CARD_FIELDS } from '../src/contract/canvasConfig.js';
 import { placementKey } from '../src/client/state.js';
 
@@ -435,6 +436,19 @@ async function partB() {
   check('the midpoint of a straight left-to-right arrow is halfway along it, on it', Math.abs(mid.x - 200) < 0.01 && Math.abs(mid.y) < 0.01, JSON.stringify(mid));
   const mid2 = bezierMid({ x: 0, y: 0 }, 'right', { x: 400, y: 300 }, 'left');
   check('for a diagonal one it is still between the two ends — not out at a control point', mid2.x > 100 && mid2.x < 300 && mid2.y > 100 && mid2.y < 200, JSON.stringify(mid2));
+
+  console.log('\nB8b2d. Canvas defaults: which field carries the link');
+  const LF = (id: string, table_id: string, target: string, extra: Record<string, unknown> = {}) => ({ id, name: id, table_id, type: 'link', options: { target_table_id: target, ...extra } });
+  const dFields = [LF('file_work', 'files', 'works'), LF('edit_in', 'edits', 'works'), LF('edit_out', 'edits', 'works'),
+    LF('del_work', 'dels', 'works', { membership: true }), LF('del_alt', 'dels', 'works'), { id: 'n', name: 'n', table_id: 'specs', type: 'text', options: {} }];
+  const via = (t: string) => defaultLinkField(dFields, t, 'works');
+  check('a table with ONE link to the default\'s table uses it — no flag, no setup', (via('files') as any)?.field?.id === 'file_work');
+  check('a table with NO link to it is simply not affected', via('specs') === null);
+  check('several links, one ticked "membership": that one', (via('dels') as any)?.field?.id === 'del_work');
+  check('several links and nothing to choose between them: AMBIGUOUS — skipped and reported, never guessed', (via('edits') as any)?.ambiguous?.map((f: any) => f.id).join() === 'edit_in,edit_out');
+  check('a canvas config saved before defaults existed still parses; defaults are capped and strict',
+    CanvasConfig.safeParse({ cardFields: {} }).success && CanvasConfig.safeParse({ cardFields: {}, defaults: [{ tableId: randomUUID(), recordId: randomUUID() }] }).success
+    && !CanvasConfig.safeParse({ cardFields: {}, defaults: [{ tableId: randomUUID(), recordId: randomUUID(), field: 'x' }] }).success);
 
   console.log('\nB8b3. Arrow style on a link field');
   check('read tolerantly: a good colour and reversed are kept, junk is ignored',

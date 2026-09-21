@@ -13,7 +13,7 @@
       <span>Tables</span>
       <button class="add new-table-btn" title="New table" @click="$emit('new-table')">+</button>
     </div>
-    <div v-for="t in tables" :key="t.id" class="row leaf table-row" :class="{ on: view === 'table' && t.id === tableId, docked: view === 'canvas' && t.id === dockTableId }"
+    <div v-for="t in tables" :key="t.id" class="row leaf table-row" :class="{ on: view === 'table' && t.id === tableId }"
          :data-table="t.id" @click="$emit('open-table', t.id)">
       <span class="swatch" :style="{ background: t.color || 'var(--border-main)' }" />
       <span class="name">{{ t.icon ? t.icon + ' ' : '' }}{{ t.name }}</span>
@@ -21,7 +21,6 @@
            accent colour because it is the one that changes what you SEE. -->
       <span v-if="scopedTableIds?.has(t.id)" class="tag scoped" title="Its rows belong to a project: inside one, this table shows only that project's">scoped</span>
       <span v-if="t.kind === 'canvas'" class="tag" title="A table of boards: each record is a canvas">boards</span>
-      <button v-if="view === 'canvas'" class="act dock-it" title="Show this table beside the canvas" @click.stop="$emit('dock-table', t.id)">◧</button>
       <button class="act" title="Table settings" @click.stop="$emit('table-settings', t.id)">⚙</button>
     </div>
     <p v-if="!tables.length" class="empty">none yet</p>
@@ -46,11 +45,11 @@ import type { TableRow } from '../state';
 defineProps<{
   tables: TableRow[];
   canvases: Array<{ id: string; name: string; cards?: number }>;
-  view: string; tableId: string; canvasId: string; dockTableId: string;
+  view: string; tableId: string; canvasId: string;
   scopedTableIds?: Set<string>;
 }>();
 defineEmits<{
-  'open-table': [id: string]; 'open-canvas': [id: string]; 'dock-table': [id: string];
+  'open-table': [id: string]; 'open-canvas': [id: string];
   'table-settings': [id: string]; 'new-table': []; 'new-canvas': [];
 }>();
 </script>
@@ -66,7 +65,6 @@ defineEmits<{
 .row { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 14px; cursor: pointer; color: var(--text-secondary); white-space: nowrap; }
 .row:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
 .row.on { color: var(--accent); background: var(--bg-surface-hover); }
-.row.docked { color: var(--text-primary); }
 .swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
 .swatch.board { border: 1px solid var(--text-faint); background: none; }
 .name { overflow: hidden; text-overflow: ellipsis; flex: 1; }

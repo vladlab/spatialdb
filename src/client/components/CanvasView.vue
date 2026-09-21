@@ -48,7 +48,36 @@
       <button :disabled="!selected.size" @click="unplaceSelected">
         unplace{{ selected.size > 1 ? ` ${selected.size}` : '' }}
       </button>
-      <slot name="bar-extra" />
+    </div>
+
+    <!-- WHAT A NEW RECORD HERE STARTS OUT LINKED TO. Always visible, because the whole
+         point is that nobody should have to wonder: the canvas's own DEFAULTS (set here,
+         by pointing), plus the project scope from the breadcrumb, which applies on top.
+         The switch turns the canvas's defaults off for YOU, in this browser — the list
+         itself is saved with the canvas, for everyone. -->
+    <div class="defaults-bar" :class="{ off: !defaultsOn }" @pointerdown.stop>
+      <label class="defaults-switch" :title="defaultsOn ? 'New records on this canvas are linked to these. Click to switch that off (for you, here).' : 'Switched off — new records are not linked to these.'">
+        <input type="checkbox" :checked="defaultsOn" :disabled="!defaults.length" @change="defaultsOn = ($event.target as HTMLInputElement).checked" />
+        <span class="defaults-label">New records here →</span>
+      </label>
+      <span v-if="scopeChip" class="dchip scope" :title="`From the scope in the breadcrumb — applies to tables that belong to ${scopeChip.table}`">{{ scopeChip.label }} <i>scope</i></span>
+      <span v-for="d in defaults" :key="d.recordId" class="dchip" :class="{ missing: d.missing }"
+            :title="d.missing ? 'This record no longer exists — remove it' : `${d.table}: new records whose table links to ${d.table} get this one`">
+        <span class="dchip-table">{{ d.table }}</span>{{ d.label }}
+        <button class="dchip-x" title="Stop linking new records to this" @click="removeDefault(d.recordId)">×</button>
+      </span>
+      <span v-if="!defaults.length && !scopeChip" class="defaults-none">nothing — new records start unlinked</span>
+      <button class="defaults-add" title="Choose a record that everything created on this canvas should be linked to" @click="addingDefault = !addingDefault">+ add</button>
+      <span v-for="a in defaultAmbiguities" :key="a" class="defaults-warn" title="A new record of that table will NOT be linked: it has more than one link to the same table, and none (or several) is ticked “membership”. An admin can tick one, in that link field's ⚙ settings.">⚠ {{ a }}</span>
+
+      <div v-if="addingDefault" class="defaults-pop" @keydown.stop>
+        <select class="defaults-table" :value="addTable" @change="addTable = ($event.target as HTMLSelectElement).value">
+          <option value="" disabled>link new records to a record of…</option>
+          <option v-for="t in linkableTables" :key="t.id" :value="t.id">{{ t.name }}</option>
+        </select>
+        <LinkPicker v-if="addTable" :key="addTable" inline :store="store" :target-table-id="addTable" :linked="defaults.filter((d) => d.tableId === addTable).map((d) => d.recordId)"
+                    @add="addDefault(addTable, $event)" @remove="removeDefault($event)" @done="addingDefault = false" />
+      </div>
     </div>
   <div
     ref="containerRef"
@@ -134,6 +163,9 @@
         <button @click="menuDo((m) => $emit('open-record', m.recordId!))">Open record</button>
         <button @click="menuDo((m) => toggleFold(m.recordId!))">{{ isCollapsed(menu.recordId!) ? 'Unfold' : 'Fold' }}</button>
         <button @click="menu = { ...menu, kind: 'fields' }">Fields on {{ tableNameOf(menu.recordId!) }} cards…</button>
+        <!-- The easy way to set a canvas default: drop the Ep 101 card here, and point at it. -->
+        <button v-if="isDefault(menu.recordId!)" class="unset-default" @click="menuDo((m) => removeDefault(m.recordId!))">Stop linking new records here to this</button>
+        <button v-else-if="canBeDefault(menu.recordId!)" class="set-default" @click="menuDo((m) => addDefault(store.state.records.get(m.recordId!)!.table_id, m.recordId!))">Link new records here to this</button>
         <hr />
         <button @click="menuDo((m) => unplace(m.recordId!))">Remove from canvas</button>
         <button class="danger" @click="menuDo((m) => deleteRecord(m.recordId!))">Delete record…</button>
@@ -171,6 +203,8 @@ import type { Store } from '../store';
 import { fieldsOf, tablesSorted, type FieldRow, type RecordRow } from '../state';
 import { labelFrom } from '../../contract/labels';
 import { useDerived } from '../derived';
+import { defaultLinkField } from '../../contract/canvasConfig';
+import LinkPicker from './LinkPicker.vue';
 import { confirmDialog } from '../dialogs';
 import { SCOPE } from '../scope';
 import { isEmptyRichText, richTextToPlain } from '../../contract/richtext';
@@ -341,6 +375,76 @@ const arrowStyles = computed(() => {
   const m = new Map<string, ArrowStyle>();
   for (const f of store.state.fields.values()) if (f.type === 'link') m.set(f.id, arrowStyleOf(f));
   return m;
+});
+
+/* ── defaults: what a record created here starts out linked to ─────────────
+   contract/canvasConfig.ts (`defaults`, `defaultLinkField`) and client/scope.ts
+   (`createRecord`). This block is the BAR: showing them, adding, removing, the switch. */
+
+const rawDefaults = computed(() => parsedConfig().defaults ?? []);
+// A default's record has to be LOADED to have a name here (and to be linked to at all).
+watch(rawDefaults, (list) => { for (const t of new Set(list.map((d) => d.tableId))) void store.loadTable(t); }, { immediate: true });
+
+const defaults = computed(() => rawDefaults.value.map((d) => {
+  const loaded = store.tableLoads.get(d.tableId)?.state === 'loaded';
+  return {
+    ...d, table: store.state.tables.get(d.tableId)?.name ?? '?',
+    label: store.state.records.has(d.recordId) ? derived.labelOfId(d.recordId) : loaded ? '(deleted)' : '…',
+    missing: loaded && !store.state.records.has(d.recordId),
+  };
+}));
+const isDefault = (recordId: string) => rawDefaults.value.some((d) => d.recordId === recordId);
+
+/** Tables something LINKS TO — the only ones a default can usefully point at. */
+const linkableTables = computed(() => {
+  const targets = new Set<string>();
+  for (const f of store.state.fields.values()) if (f.type === 'link' && typeof f.options?.target_table_id === 'string') targets.add(f.options.target_table_id);
+  return tablesSorted(store.state).filter((t) => targets.has(t.id));
+});
+const canBeDefault = (recordId: string) => linkableTables.value.some((t) => t.id === store.state.records.get(recordId)?.table_id);
+
+function saveDefaults(next: Array<{ tableId: string; recordId: string }>) {
+  const { defaults: _old, ...rest } = parsedConfig();
+  void _old;
+  store.mutate({ type: 'canvas.update', id: props.canvasId, config: next.length ? { ...rest, defaults: next } : rest });
+}
+function addDefault(tableId: string, recordId: string) {
+  if (isDefault(recordId) || rawDefaults.value.length >= 20) return;
+  saveDefaults([...rawDefaults.value, { tableId, recordId }]);
+  defaultsOn.value = true;                 // you just asked for it
+}
+const removeDefault = (recordId: string) => saveDefaults(rawDefaults.value.filter((d) => d.recordId !== recordId));
+
+const addingDefault = ref(false);
+const addTable = ref('');
+
+/* On/off is a way of WORKING, not a fact about the board: per browser, per canvas. */
+const offKey = () => `spatialdb.canvas.defaults.off.${props.canvasId}`;
+const readOn = () => { try { return localStorage.getItem(offKey()) !== '1'; } catch { return true; } };
+const defaultsOn = ref(readOn());
+watch(() => props.canvasId, () => { defaultsOn.value = readOn(); addingDefault.value = false; });
+watch(defaultsOn, (on) => { try { if (on) localStorage.removeItem(offKey()); else localStorage.setItem(offKey(), '1'); } catch { /* unavailable */ } });
+
+/** What createAt hands to createRecord. */
+const activeDefaults = computed(() => (defaultsOn.value ? rawDefaults.value : []));
+
+/** The project scope applies on top; show it, so the bar is the WHOLE answer. */
+const scopeChip = computed(() => {
+  const s = scopeApi?.scope.value;
+  if (!scopeApi || !s || s.kind !== 'record') return null;
+  return { label: scopeApi.label.value, table: store.state.tables.get(scopeApi.scopeTableId.value)?.name ?? '' };
+});
+
+/** "Files → Works": tables where a default would be SKIPPED because the field is ambiguous. */
+const defaultAmbiguities = computed(() => {
+  const out: string[] = [];
+  for (const targetId of new Set(rawDefaults.value.map((d) => d.tableId))) {
+    for (const t of tablesSorted(store.state)) {
+      const via = defaultLinkField(store.state.fields.values(), t.id, targetId);
+      if (via && 'ambiguous' in via) out.push(`${t.name} has ${via.ambiguous.length} links to ${store.state.tables.get(targetId)?.name ?? '?'}`);
+    }
+  }
+  return out;
 });
 
 /* ── arrows you can select, and links you can make and remove here ─────────
@@ -595,6 +699,7 @@ function onCanvasPointerMove(e: PointerEvent) {
 
 function onCanvasPointerDown(e: PointerEvent) {
   menu.value = null;
+  addingDefault.value = false;
   selectedLink.value = null;
   legendOpen.value = false;
   if (e.button === 1 || spaceHeld.value) { viewport.startPan(e); return; }
@@ -715,8 +820,8 @@ function createAt(tableId: string, wx: number, wy: number) {
   const z = placements.value.reduce((n, p) => Math.max(n, p.z), 0) + 1;
   // Through the scope (client/scope.ts): inside a project the new record is made a
   // member of it, in this same run — record, link and placement are one Ctrl+Z.
-  // …and of whatever THIS BOARD belongs to (an Episode 101 board makes Episode 101 files).
-  if (scopeApi) scopeApi.createRecord(tableId, {}, id, { boardId: props.canvasId });
+  // …and linked to this canvas's DEFAULTS (the bar at the top), unless switched off.
+  if (scopeApi) scopeApi.createRecord(tableId, {}, id, { defaults: activeDefaults.value });
   else store.mutate({ type: 'record.create', id, tableId, data: {} });
   store.mutate({
     type: 'placement.add', id: crypto.randomUUID(), canvasId: props.canvasId, recordId: id,
@@ -734,7 +839,7 @@ function createAt(tableId: string, wx: number, wy: number) {
    here pans to it instead. */
 
 /**
- * A record brought onto the canvas from OUTSIDE it (palette, docked grid) arrives
+ * A record brought onto the canvas from OUTSIDE it (the palette, a drop) arrives
  * without its links: links reach the client with a table or a scene, and this
  * record came from neither. Its arrows to cards already here would be missing
  * until a reload. `store.loadSceneLinks` fetches exactly the links among the cards
@@ -772,7 +877,7 @@ function placeOrJump(rec: RecordRow): 'placed' | 'jumped' {
   return 'placed';
 }
 /**
- * Several records dropped at one point — rows dragged out of the docked grid.
+ * Several records dropped at one point — rows dragged out of a grid, once two views can share the screen.
  * Laid out as a column (wrapping into further columns), top-left at the drop
  * point, in the order they were in the grid: a sorted, filtered selection arrives
  * on the canvas still sorted. Records already here are skipped, not duplicated
@@ -826,16 +931,22 @@ const fieldChoices = computed(() => {
     .filter((f) => f.key !== primaryKey)          // the title; always shown, never listed
     .map((f) => ({ id: f.id, name: f.name, on: on.has(f.id) }));
 });
-const parsedConfig = () => {
+// A FUNCTION DECLARATION, deliberately: it is hoisted. As a `const` arrow it sat below
+// the defaults bar's setup code, which reads the config immediately (an `immediate`
+// watcher) — "Cannot access 'parsedConfig' before initialization", and every canvas
+// failed to open. Caught by test/scope.ts.
+function parsedConfig() {
   const p = CanvasConfig.safeParse(canvasConfig.value ?? {});
   return p.success ? p.data : { cardFields: {} };
-};
+}
 const hasCustomFields = computed(() => menuTableId.value in parsedConfig().cardFields);
 
 function saveCardFields(tableId: string, ids: string[] | null) {
   const cardFields = { ...parsedConfig().cardFields };
   if (ids) cardFields[tableId] = ids; else delete cardFields[tableId];
-  store.mutate({ type: 'canvas.update', id: props.canvasId, config: { cardFields } });
+  // MERGED into the config, never `{ cardFields }` alone: canvas.update replaces the
+  // whole config, and that would silently wipe the canvas's defaults.
+  store.mutate({ type: 'canvas.update', id: props.canvasId, config: { ...parsedConfig(), cardFields } });
 }
 function toggleCardField(fieldId: string) {
   const tableId = menuTableId.value;
@@ -862,7 +973,7 @@ function unplaceSelected() {
 let unregisterDrop: (() => void) | undefined;
 
 onMounted(async () => {
-  // Records dragged from the docked grid (or anywhere else that uses
+  // Records dropped here by anything that uses
   // client/recordDrag.ts) land here.
   if (containerRef.value) unregisterDrop = registerDropTarget(containerRef.value, placeMany);
   await store.loadScene(props.canvasId);
@@ -929,16 +1040,6 @@ onUnmounted(() => {
   z-index: 40;
   font-size: 12px;
 }
-/* Buttons passed in through the `bar-extra` slot are rendered by the PARENT, so
-   this component's scoped rules do not reach them — they showed as raw white
-   browser buttons. `:slotted()` is the scoped-CSS way to style slot content. */
-.canvas-controls :slotted(button) {
-  background: none; border: none; color: var(--text-secondary);
-  cursor: pointer; padding: 2px 6px; border-radius: 3px; font: inherit;
-}
-.canvas-controls :slotted(button:hover) { background: var(--bg-surface-hover); }
-.canvas-controls :slotted(button.on) { color: var(--accent); }
-.canvas-controls :slotted(.sep) { width: 1px; height: 14px; background: var(--border-main); margin: 0 2px; }
 .canvas-controls button {
   background: none; border: none; color: var(--text-secondary);
   cursor: pointer; padding: 2px 6px; border-radius: 3px; font: inherit;
@@ -964,6 +1065,31 @@ onUnmounted(() => {
 .legend-label { flex: 1; }
 .legend-n { color: var(--text-muted); font-size: 11px; }
 .legend-note { margin: 4px 4px 2px; color: var(--text-faint); font-size: 11px; white-space: normal; max-width: 260px; }
+
+.defaults-bar {
+  position: relative; flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 4px 12px; border-bottom: 1px solid var(--border-main); font-size: 12px; z-index: 39;
+}
+.defaults-switch { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-secondary); white-space: nowrap; }
+.defaults-switch input { margin: 0; }
+.defaults-bar.off .dchip:not(.scope) { opacity: 0.4; text-decoration: line-through; }
+.dchip { display: inline-flex; align-items: center; gap: 5px; background: var(--controls-bg); border: 1px solid var(--accent); border-radius: 10px; padding: 0 4px 0 8px; white-space: nowrap; }
+.dchip.scope { border-color: var(--border-main); padding-right: 8px; }
+.dchip.scope i { color: var(--text-faint); font-size: 10px; font-style: normal; text-transform: uppercase; letter-spacing: 0.05em; }
+.dchip.missing { border-color: var(--warning); color: var(--warning); }
+.dchip-table { color: var(--text-faint); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+.dchip-x { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1; }
+.dchip-x:hover { color: var(--danger); }
+.defaults-none { color: var(--text-faint); font-style: italic; }
+.defaults-add { background: none; border: 1px dashed var(--border-main); color: var(--text-muted); border-radius: 10px; padding: 0 8px; cursor: pointer; font: inherit; font-size: 11px; }
+.defaults-add:hover { color: var(--accent); border-color: var(--accent); }
+.defaults-warn { color: var(--warning); font-size: 11px; white-space: nowrap; cursor: help; }
+.defaults-pop {
+  position: absolute; top: calc(100% + 2px); left: 12px; z-index: 60; width: 340px; padding: 8px;
+  background: var(--controls-bg); border: 1px solid var(--border-main); border-radius: 6px; box-shadow: var(--card-shadow-drag);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.defaults-table { background: var(--bg-app); border: 1px solid var(--border-main); color: inherit; border-radius: 4px; padding: 4px 6px; font: inherit; }
 
 .ctx-head { padding: 4px 10px 0; font-weight: 600; font-size: 12px; }
 .ctx-sub { padding: 0 10px 4px; color: var(--text-muted); font-size: 11px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

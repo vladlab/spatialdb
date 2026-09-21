@@ -31,7 +31,7 @@
   the cell (fixed row height) and the scroller (the grid's viewport).
 -->
 <template>
-  <div class="picker" :style="pos" @keydown.stop="onKey" @mousedown.stop>
+  <div class="picker" :class="{ inline }" :style="inline ? undefined : pos" @keydown.stop="onKey" @mousedown.stop>
     <div class="current">
       <span v-for="id in linked" :key="id" class="chip">
         {{ label(id) }}<button class="chip-x" tabindex="-1" :title="`Unlink ${label(id)}`"
@@ -77,6 +77,8 @@ const props = defineProps<{
   linked: string[];
   /** The cell, for positioning. */
   anchor?: HTMLElement | null;
+  /** Sit in the normal flow of whatever contains it (a popover), not floating over a cell. */
+  inline?: boolean;
   /** Set when the edit was started by typing: becomes the first search character. */
   seed?: string;
 }>();
@@ -193,6 +195,7 @@ onMounted(() => {
   background: var(--controls-bg); border: 2px solid var(--success); border-radius: 4px;
   box-shadow: var(--card-shadow-drag); font-size: 12px;
 }
+.picker.inline { position: static; max-width: none; box-shadow: none; border-width: 1px; border-color: var(--border-main); }
 .current { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; padding: 4px 6px; }
 .q {
   flex: 1; min-width: 120px; background: none; border: none; outline: none;

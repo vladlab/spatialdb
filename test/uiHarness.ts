@@ -89,7 +89,6 @@ export function navigator(w: any, until: (p: () => boolean, ms?: number) => Prom
     scope: async (value: string) => { await until(() => row(`[data-scope="${value}"]`).exists()); await row(`[data-scope="${value}"]`).trigger('click'); },
     openTable: async (id: string) => { await until(() => row(`[data-table="${id}"]`).exists()); await row(`[data-table="${id}"]`).trigger('click'); },
     openCanvas: async (id: string) => { await until(() => row(`[data-canvas="${id}"]`).exists()); await row(`[data-canvas="${id}"]`).trigger('click'); },
-    dockTable: async (id: string) => { await until(() => row(`[data-table="${id}"] .dock-it`).exists()); await row(`[data-table="${id}"] .dock-it`).trigger('click'); },
     tableSettings: async (id: string) => { await row(`[data-table="${id}"] .act:last-child`).trigger('click'); },
     currentTable: () => (row('.table-row.on').exists() ? row('.table-row.on').attributes('data-table') : ''),
     currentCanvas: () => (row('.canvas-row.on').exists() ? row('.canvas-row.on').attributes('data-canvas') : ''),

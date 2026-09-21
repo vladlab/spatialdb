@@ -14,10 +14,11 @@
   LAN, where browsers refuse clipboard access) and also offered to the system
   clipboard when that is allowed.
 
-  COMPARE follows this record's LINKS — in either direction, through any link field
-  — to records that have an audio layout of their own, and diffs against the one
-  you pick. Nothing is hard-wired to "the deliverable": a file may target one
-  deliverable and satisfy another, and you may want either.
+  COMPARING two layouts is deliberately NOT here. It was, briefly — a "compare with" a
+  linked record, in this cell — and the owner took it out: validation will get its own
+  place (on the canvas, or in reports), and a verdict box inside one field's editor was
+  the wrong home for it. The comparison itself stays: `diffLayouts` in the contract, and
+  POST /api/qc/audio-layout-diff for scripts.
 -->
 <template>
   <div class="al">
@@ -50,34 +51,21 @@
       <button class="al-btn paste" :disabled="!clipboardLayout" :title="clipboardLayout ? `Replace with the copied layout: ${summarise('audio_layout', clipboardLayout)}` : 'Nothing copied yet'" @click="paste">paste</button>
     </div>
 
-    <div class="al-bar">
-      <span class="al-label">compare with</span>
-      <select class="al-compare" :value="compareKey" @change="compareKey = ($event.target as HTMLSelectElement).value">
-        <option value="">{{ candidates.length ? 'a linked record…' : 'no linked record has an audio layout' }}</option>
-        <option v-for="c in candidates" :key="c.key" :value="c.key">{{ c.label }}</option>
-      </select>
-    </div>
-    <div v-if="diff" class="al-diff" :class="{ same: diff.same }">
-      <p class="al-verdict">{{ diff.same ? '✓ Matches' : '✗ Does not match' }} <span class="muted">— expected {{ diff.channelCount[0] }} ch, this has {{ diff.channelCount[1] }}</span></p>
-      <p v-for="(issue, i) in diff.issues" :key="i" class="al-issue" :class="issue.kind"><b>{{ issue.kind }}</b> {{ issue.detail }}</p>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, reactive } from 'vue';
 import type { Store } from '../store';
-import { fieldsOf, type FieldRow } from '../state';
-import { useDerived } from '../derived';
+import type { FieldRow } from '../state';
 import {
-  AudioLayout, LAYOUT_PRESETS, addPreset, diffLayouts, mergeTracks, moveTrack, removeTrack, shapeOf, splitTrack,
+  AudioLayout, LAYOUT_PRESETS, addPreset, mergeTracks, moveTrack, removeTrack, splitTrack,
   summarise, trackFormat, type AudioLayout as Layout,
 } from '../../contract/shapes';
 import { layoutClipboard } from '../layoutClipboard';
 
 const props = defineProps<{ store: Store; recordId: string; field: FieldRow; value: unknown }>();
 const emit = defineEmits<{ set: [value: Layout]; unset: [] }>();
-const derived = useDerived(props.store);
 
 const layout = computed<Layout>(() => { const r = AudioLayout.safeParse(props.value); return r.success ? r.data : { tracks: [] }; });
 
@@ -109,52 +97,6 @@ function copy() {
 }
 function paste() { if (layoutClipboard.value) apply(JSON.parse(JSON.stringify(layoutClipboard.value))); }
 
-/* ── compare ── */
-const compareKey = ref('');
-watch(() => props.recordId, () => { compareKey.value = ''; });
-
-/** Records linked to this one, either way, through any link field. */
-const linkedIds = computed(() => {
-  const me = props.store.state.records.get(props.recordId);
-  const ids = new Set<string>();
-  if (!me) return ids;
-  for (const f of fieldsOf(props.store.state, me.table_id)) if (f.type === 'link') for (const id of derived.linksFrom(props.recordId, f.id)) ids.add(id);
-  for (const ref of derived.referencedBy(props.recordId)) for (const id of ref.from) ids.add(id);
-  ids.delete(props.recordId);
-  return ids;
-});
-// A linked record's VALUES are only here if its table has been loaded; ask for them.
-// Outgoing links point at the field's target table; incoming ones come from the
-// table the link field belongs to.
-watch(linkedIds, () => {
-  const tables = new Set<string>();
-  for (const l of props.store.state.links.values()) {
-    if (l.from_record !== props.recordId && l.to_record !== props.recordId) continue;
-    const f = props.store.state.fields.get(l.field_id);
-    if (!f) continue;
-    tables.add(f.table_id);
-    if (typeof f.options?.target_table_id === 'string') tables.add(f.options.target_table_id);
-  }
-  for (const t of tables) void props.store.loadTable(t);
-}, { immediate: true });
-
-const candidates = computed(() => {
-  const out: Array<{ key: string; label: string; layout: Layout }> = [];
-  for (const id of linkedIds.value) {
-    const rec = props.store.state.records.get(id);
-    if (!rec) continue;
-    for (const f of fieldsOf(props.store.state, rec.table_id)) {
-      if (f.type !== 'structured' || shapeOf(f) !== 'audio_layout') continue;
-      const r = AudioLayout.safeParse(rec.data[f.key]);
-      if (!r.success || !r.data.tracks.length) continue;
-      const table = props.store.state.tables.get(rec.table_id)?.name ?? '';
-      out.push({ key: id + f.id, label: `${table} · ${derived.labelOfId(id)} — ${summarise('audio_layout', r.data)}`, layout: r.data });
-    }
-  }
-  return out.sort((a, b) => a.label.localeCompare(b.label));
-});
-/** The OTHER record is what is expected; this one is what was found. */
-const diff = computed(() => { const c = candidates.value.find((x) => x.key === compareKey.value); return c ? diffLayouts(c.layout, layout.value) : null; });
 </script>
 
 <style scoped>
@@ -181,13 +123,4 @@ const diff = computed(() => { const c = candidates.value.find((x) => x.key === c
 .al-btn:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
 .al-btn:disabled { opacity: 0.35; cursor: default; }
 .spacer { flex: 1; }
-.al-compare { flex: 1; min-width: 0; background: var(--controls-bg); border: 1px solid var(--border-main); color: inherit; border-radius: 4px; padding: 2px 6px; font: inherit; font-size: 11px; }
-.al-diff { border: 1px solid var(--danger); border-radius: 4px; padding: 6px 8px; }
-.al-diff.same { border-color: var(--success); }
-.al-verdict { margin: 0 0 2px; font-weight: 600; }
-.al-diff.same .al-verdict { color: var(--success); }
-.al-issue { margin: 2px 0 0; }
-.al-issue b { text-transform: uppercase; font-size: 10px; letter-spacing: 0.05em; margin-right: 6px; color: var(--danger); }
-.al-issue.name b, .al-issue.language b { color: var(--warning); }
-.muted { color: var(--text-muted); font-weight: 400; }
 </style>

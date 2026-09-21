@@ -968,6 +968,46 @@ red-checked. Also: the layout editor now writes nothing when nothing changed (a 
 re-typed as it was) — a no-op mutation is a log row, a broadcast and an undo step
 that visibly does nothing.
 
+### Small annoyances (Sept 22)
+
+- **Compare left the audio-layout cell** (the owner: "I consider it not built yet —
+  we will do something on the canvas or in reports; it shouldn't be here").
+  `diffLayouts` and `POST /api/qc/audio-layout-diff` stay; only the UI went.
+  Validation/compare is now an OPEN DESIGN, to be had with reports or the canvas.
+- **Follow a link**: every link and backlink pill (grid and tray) has a ⤢ that opens
+  the linked record in the tray. Its space is always reserved and it is revealed on
+  hover — nothing shifts.
+- **The docked grid is GONE** (the owner: "later on I want a split pane system, but a
+  special dock grid doesn't jive"). Removed: the toggle, the side flip, the splitter,
+  Ctrl+B, the ◧ in the tree, the "on this canvas" dot and "not on canvas" filter.
+  KEPT for split panes, with no UI path and NO test until then: `client/recordDrag.ts`
+  and the canvas's multi-record drop (`placeMany`). Row selection in the grid is kept
+  and tested. When split panes are designed, start from those.
+- **Canvas defaults — built, replacing board inheritance.** The owner found "a board
+  inherits from its record's membership links" (Sept 20) inelegant and obtuse: it
+  needed a link field on the boards table, ticked membership, filled in on the board's
+  record — schema work, invisible on the canvas. His idea: "on a canvas I could
+  straight up choose: if a table has this [link], set it to x", usable "for an already
+  built project by someone who's not designing this thing." Built:
+  - `defaults: [{ tableId, recordId }]` in the canvas's existing settings (NOT a field
+    on the boards table — boards are stored exactly as before).
+  - A BAR at the top of every canvas: `New records here → [Works Ep 101 ×] [Projects
+    Duke ×] + add`, plus the breadcrumb's scope as a chip, so the bar is the whole
+    answer. A switch turns the canvas's defaults off — per browser; the list is shared.
+  - Set by right-clicking a card ("Link new records here to this") or "+ add" (a table
+    that something links to, then a searchable picker). No schema knowledge needed.
+  - Which field: the table's only link to that table; else the one ticked membership;
+    else AMBIGUOUS → skipped, and the bar says "Files has 2 links to Works" (an admin
+    ticks one). Never guessed. `defaultLinkField`, shared and pure.
+  - The old mechanism is REMOVED (`boardMemberships`): one mechanism, and it is visible.
+  - Found on the way: (1) the bar's setup read the canvas config through a `const`
+    helper declared below it — a TDZ error that would have stopped every canvas
+    opening; hoisted. (2) `saveCardFields` wrote `config: { cardFields }`, which would
+    have WIPED the defaults on any card-field change; both writers now merge. (3)
+    `field.create` defaulted position to 0, so an API-created field could tie with and
+    alphabetically displace the PRIMARY field; the server (and the client's mirror) now
+    append. The third one matters for the desktop tools and any script.
+
 ### From `npm run dev` to a real deployment (Sept 20)
 
 Prompted by the desktop-client chat asking "who serves the frontend?" — the owner:

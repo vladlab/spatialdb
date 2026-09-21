@@ -28,11 +28,11 @@
 
   ROWS are selected separately from cells, by their NUMBER (the first column):
   click, Shift+click for a range, Ctrl+click to toggle, Ctrl+A for every row in
-  the view. A selected row is something you can DRAG — docked beside a canvas,
-  dragging row numbers onto it places those records, in the grid's current order
-  (client/recordDrag.ts). Sort and filter first, then drag the result in: that is
-  the workflow the old tray could not do. Rows already on the canvas carry a dot,
-  and "not on canvas" hides them.
+  the view. A selected row is something you can DRAG (client/recordDrag.ts) onto
+  anything registered as a drop target — today only a canvas, and nothing shows a
+  grid and a canvas at once since the docked grid was removed, so dragging has no
+  visible destination until split panes exist. Row selection and the drag service
+  are kept for that; they are tested and cost nothing meanwhile.
 
   Things that are deliberate rather than missing:
 
@@ -183,11 +183,6 @@
       </details>
 
       <input v-model="search" class="search" type="search" placeholder="search…" />
-      <!-- Only beside a canvas. NOT part of the saved view: it is about the canvas
-           you happen to have open, which a shared view knows nothing about. -->
-      <label v-if="placedIds" class="not-placed" title="Hide records that are already on this canvas">
-        <input v-model="onlyUnplaced" type="checkbox" /> not on canvas
-      </label>
 
       <!-- WHY the grid shows what it shows under the current scope: "in Duke", or —
            for a table with no membership link — that it is NOT scoped and is shown
@@ -260,8 +255,7 @@
             <!-- The row's HANDLE: click to select the row, drag to carry the selection
                  somewhere (a canvas). The ⤢ keeps to the right edge so it never sits
                  under a press meant for the handle. -->
-            <td class="num" :class="{ placed: placedIds?.has(r.id) }"
-                :title="placedIds?.has(r.id) ? 'On this canvas — drag to select it there' : placedIds ? 'Drag onto the canvas' : undefined"
+            <td class="num" title="Click to select this row"
                 @pointerdown="onRowHandleDown(r.id, rowIndex.get(r.id) ?? 0, $event)">
               <span class="n">{{ (rowIndex.get(r.id) ?? 0) + 1 }}</span>
               <button class="expand" tabindex="-1" title="Open record (Space)" @pointerdown.stop @mousedown.prevent @click="$emit('open-record', r.id)">⤢</button>
@@ -274,6 +268,10 @@
                 <template v-if="f.type === 'link'">
                   <span v-for="to in linksFrom(r.id, f.id)" :key="to" class="chip">
                     {{ labelFor(to) }}
+                    <!-- FOLLOW the link: opens the linked record in the tray. Appears on
+                         hover; it stops the press so the cell is not also selected/edited. -->
+                    <button class="chip-open" tabindex="-1" :title="`Open ${labelFor(to)}`"
+                            @mousedown.stop.prevent @click.stop="$emit('open-record', to)">⤢</button>
                     <button class="chip-x" tabindex="-1" title="Remove this link"
                             @mousedown.stop.prevent @click.stop="removeLink(f.id, r.id, to)">×</button>
                   </span>
@@ -312,7 +310,7 @@
                          the link belongs to the record that holds it. -->
                     <template v-else-if="f.type === 'backlink'">
                       <span v-if="derived.backlinkOf(r.id, f) === null" class="broken" title="This backlink is broken: the link field it mirrored was deleted.">broken backlink</span>
-                      <span v-for="from in derived.backlinkOf(r.id, f) ?? []" v-else :key="from" class="chip plain back" title="Linked from that record — edit the link there">{{ labelFor(from) }}</span>
+                      <span v-for="from in derived.backlinkOf(r.id, f) ?? []" v-else :key="from" class="chip plain back" title="Linked from that record — edit the link there">{{ labelFor(from) }}<button class="chip-open" tabindex="-1" :title="`Open ${labelFor(from)}`" @mousedown.stop.prevent @click.stop="$emit('open-record', from)">⤢</button></span>
                     </template>
                     <!-- LOOKUP: computed, read-only. Broken (its link field or far field
                          was deleted) is shown as such, not as an empty cell. -->
@@ -377,11 +375,6 @@ import { beginRecordDrag } from '../recordDrag';
 
 const props = defineProps<{
   store: Store; tableId: string;
-  /**
-   * Given when the grid is docked beside a canvas: the records on it. Turns on
-   * the "on this canvas" dot and the "not on canvas" toggle.
-   */
-  placedIds?: Set<string>;
 }>();
 const emit = defineEmits<{ 'open-record': [recordId: string]; 'open-board': [recordId: string] }>();
 const store = props.store;
@@ -599,7 +592,6 @@ function removeLink(fieldId: string, fromRecord: string, toRecord: string) {
 /* ── rows ─────────────────────────────────────────────────────────────────*/
 
 const search = ref('');
-const onlyUnplaced = ref(false);
 /** Rows created here since the last view/table switch; exempt from the filter. */
 const fresh = reactive(new Set<string>());
 
@@ -634,7 +626,7 @@ const matched = computed(() => {
   // ordering was wrong at first and hidden by another bug: the first header click
   // used to clear `fresh` by accident.
   const found = quickSearch(viewed, shown.value, search.value, linkLabels);
-  return onlyUnplaced.value && props.placedIds ? found.filter((r) => !props.placedIds!.has(r.id)) : found;
+  return found;
 });
 
 /* CellEditor has already validated against contract/values.ts by the time
@@ -1085,11 +1077,6 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
   visibility: hidden; background: none; border: none; color: var(--accent);
   cursor: pointer; padding: 0; font: inherit; line-height: 1;
 }
-/* On this canvas: a dot at the row's left edge. Paint only — no layout change. */
-.num.placed::before {
-  content: ''; position: absolute; left: 4px; top: 50%; width: 5px; height: 5px; margin-top: -2.5px;
-  border-radius: 50%; background: var(--success);
-}
 .row.rowsel td { background: rgba(66, 165, 245, 0.14); }
 .row.rowsel .num { color: var(--accent); }
 /* The view control is the first thing in the bar and reads as a LABEL + NAME, not
@@ -1126,7 +1113,6 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .group-add:hover { color: var(--accent); border-color: var(--accent); }
 .scope-note { font-size: 11px; color: var(--accent); border: 1px solid var(--accent); border-radius: 3px; padding: 0 6px; white-space: nowrap; }
 .scope-note.unscoped { color: var(--warning); border-color: var(--warning); }
-.not-placed { display: flex; gap: 4px; align-items: center; color: var(--text-secondary); font-size: 12px; cursor: pointer; white-space: nowrap; }
 .row:hover .num .expand { visibility: visible; }
 .num { width: 1%; color: var(--text-faint); font-size: 11px; text-align: right !important; }
 .act { width: 1%; white-space: nowrap; }

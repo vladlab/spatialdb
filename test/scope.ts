@@ -13,7 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import { ALL, formatScope, inScope, membershipError, membershipFieldOf, parseScope } from '../src/contract/scope.js';
 import { boardsTableMutations } from './harness.js';
-import { mountApp } from './uiHarness.js';
+import { mountApp, sleep } from './uiHarness.js';
 
 let pass = 0, fail = 0;
 function check(label: string, ok: boolean, detail = '') {
@@ -165,49 +165,114 @@ async function main() {
     const newBoard = await untilDb(`select (select count(*)::int from links l where l.from_record = r.id and l.to_record = '${duke}') n from records r where r.data->>'name' = 'Duke conform'`, (r) => r[0]?.n === 1);
     check('a canvas made while in Duke belongs to Duke — no canvas-specific mechanism involved', newBoard[0]?.n === 1);
 
-    console.log('\nC3b2. A record made ON a board joins whatever the board belongs to');
-    // Works: the level below a project. Files and Boards each get a MEMBERSHIP link to
-    // Works (a table may have one membership link per TARGET table — Projects and Works
-    // are different targets). No nested scope, no canvas setting: a canvas is a record,
-    // and you say what a board is about by filling in its fields.
-    const tWorks = randomUUID(), fWorkName = randomUUID(), fFileWork = randomUUID(), fBoardWork = randomUUID(), ep101 = randomUUID();
+    console.log('\nC3b2. Canvas defaults: what a record made HERE starts out linked to');
+    // Replaced "a board inherits from its record's membership links" — which needed a
+    // link field on the boards table, ticked as membership, filled in on the board. Now
+    // it is set ON the canvas, by pointing, and shown in a bar at the top.
+    const tWorks = randomUUID(), fWorkName = randomUUID(), fFileWork = randomUUID(), ep101 = randomUUID(), ep102 = randomUUID();
     const worksSetup = await post([
       { type: 'table.create', id: tWorks, name: 'Works' },
       { type: 'field.create', id: fWorkName, tableId: tWorks, name: 'Name', key: 'name', fieldType: 'text' },
-      { type: 'field.create', id: fFileWork, tableId: tFiles, name: 'Work', key: 'work', fieldType: 'link', options: { target_table_id: tWorks, membership: true } },
-      { type: 'field.create', id: fBoardWork, tableId: tBoards, name: 'Work', key: 'work', fieldType: 'link', options: { target_table_id: tWorks, membership: true } },
+      { type: 'field.create', id: fFileWork, tableId: tFiles, name: 'Work', key: 'work', fieldType: 'link', options: { target_table_id: tWorks } },   // NOT ticked membership: one link needs no flag
       { type: 'record.create', id: ep101, tableId: tWorks, data: { name: 'Ep 101' } },
-      link(fBoardWork, boardDuke, ep101),
+      { type: 'record.create', id: ep102, tableId: tWorks, data: { name: 'Ep 102' } },
+      { type: 'placement.add', id: randomUUID(), canvasId: boardDuke, recordId: ep101, x: 60, y: 60, w: null, h: null, z: 1 },
       { type: 'section.update', id: sec, tableIds: [tProj, tFiles, tSpecs, tBoards, tWorks] },
     ]);
-    check('fixture: a second membership link on Files (to Works) is allowed — it is a different TARGET', worksSetup.status === 200, (await worksSetup.text()).slice(0, 200));
+    check('fixture accepted', worksSetup.status === 200, (await worksSetup.text()).slice(0, 200));
 
-    await nav.scope('');                                   // scope: ALL — so what follows cannot be scope's doing
+    await nav.scope('');                                   // scope: ALL — so nothing below can be the scope's doing
     await nav.openCanvas(boardDuke);
-    await until(() => w.find('.canvas-container').exists());
-    const filesBeforeBoard = new Set((await pool.query(`select id from records where table_id = $1`, [tFiles])).rows.map((r) => r.id as string));
-    await w.find('.canvas-container').trigger('dblclick', { clientX: 400, clientY: 300 });
-    // (double-click on empty canvas offers the tables to create in)
-    await until(() => w.find('.canvas-container .ctx').exists());
-    await w.findAll('.canvas-container .ctx button').find((b: any) => b.text().trim().startsWith('Files')).trigger('click');
-    const onBoard = (await untilDb(`select r.id,
-        (select count(*)::int from links l where l.from_record = r.id and l.field_id = '${fFileWork}' and l.to_record = '${ep101}') work,
-        (select count(*)::int from links l where l.from_record = r.id and l.field_id = '${fMember}' and l.to_record = '${duke}') project
-      from records r where r.table_id = '${tFiles}'`, (r) => r.some((x: any) => !filesBeforeBoard.has(x.id) && x.work === 1))).filter((x: any) => !filesBeforeBoard.has(x.id));
-    check('a file created on the "Duke flow" board is linked to the board\'s WORK (Ep 101)…', onBoard.length === 1 && onBoard[0].work === 1, JSON.stringify(onBoard));
-    check('…and to the board\'s PROJECT (Duke) — with the scope on "All", so this came from the board', onBoard[0]?.project === 1, JSON.stringify(onBoard));
-    win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
-    check('record, both inherited links and its card are ONE Ctrl+Z', (await untilDb(`select 1 from records where id = '${onBoard[0]?.id}'`, (r) => r.length === 0)).length === 0);
+    const bar = () => w.find('.defaults-bar');
+    // "<table> <record>", read from the chip's two parts (the DOM text has no space between them)
+    const chips = () => bar().findAll('.dchip:not(.scope)').map((c: any) => `${c.find('.dchip-table').text()} ${c.text().replace(c.find('.dchip-table').text(), '').replace('×', '').trim()}`);
+    const cardOf = (name: string) => w.findAll('.canvas-world .card').find((c: any) => c.find('.card-label').text() === name);
+    const configOf = async () => (await pool.query(`select config from canvases where id = $1`, [boardDuke])).rows[0]?.config ?? {};
+    const linksOf = async (recId: string) => (await pool.query(`select f.key, l.to_record from links l join fields f on f.id = l.field_id where l.from_record = $1 order by f.key`, [recId])).rows.map((r: any) => `${r.key}:${r.to_record}`);
+    const createOnCanvas = async (tableName: string, x: number) => {
+      const before = new Set((await pool.query(`select id from records`)).rows.map((r) => r.id as string));
+      await w.find('.canvas-container').trigger('dblclick', { clientX: x, clientY: 420, altKey: true });     // Alt: always ask which table
+      await until(() => w.find('.canvas-container .ctx').exists());
+      await w.findAll('.canvas-container .ctx button').find((b: any) => b.text().trim().startsWith(tableName)).trigger('click');
+      const rows = await untilDb(`select id from records`, (r) => r.some((x2: any) => !before.has(x2.id)));
+      await sleep(500);                                                                                     // let its links land too
+      return rows.find((x2: any) => !before.has(x2.id)).id as string;
+    };
 
-    // A table with NO membership link to Works inherits nothing from that link — silently.
-    // (the canvas remembers the last table you created in; Alt+double-click asks again)
-    await w.find('.canvas-container').trigger('dblclick', { clientX: 420, clientY: 320, altKey: true });
-    await until(() => w.find('.canvas-container .ctx').exists());
-    await w.findAll('.canvas-container .ctx button').find((b: any) => b.text().trim().startsWith('Specs')).trigger('click');
-    const specMade = await untilDb(`select r.id, (select count(*)::int from links l where l.from_record = r.id) nl from records r where r.table_id = '${tSpecs}' and r.data = '{}'::jsonb`, (r) => r.length === 1);
-    check('a table that does not belong to works or projects is created on the board with NO links, and no error',
-      specMade[0]?.nl === 0 && !w.find('.errors').exists(), JSON.stringify(specMade));
+    check('the canvas says what new records will be linked to — here, nothing yet', await until(() => bar().exists() && !!cardOf('Ep 101'), 8000)
+      && /nothing/.test(bar().text()) && bar().find('.defaults-switch input').attributes('disabled') !== undefined, bar().text());
+    await cardOf('Ep 101').trigger('contextmenu', { clientX: 80, clientY: 80 });
+    check('right-click a card: "Link new records here to this"', w.find('.canvas-container .ctx .set-default').exists());
+    await w.find('.canvas-container .ctx .set-default').trigger('click');
+    const cfg1 = await untilDb(`select config from canvases where id = '${boardDuke}'`, (r) => r[0]?.config?.defaults?.length === 1);
+    check('it is saved WITH THE CANVAS (its settings, not a new field on the boards table) — for everyone',
+      cfg1[0].config.defaults[0].recordId === ep101 && cfg1[0].config.defaults[0].tableId === tWorks && (await pool.query(`select count(*)::int n from fields where table_id = $1`, [tBoards])).rows[0].n === 2);
+    check('and the bar shows it', await until(() => chips().join() === 'Works Ep 101'), chips().join());
+
+    const f1 = await createOnCanvas('Files', 400);
+    check('a file made here is linked to Ep 101 — through Files\' only link to Works; no "membership" tick was needed', (await linksOf(f1)).join() === `work:${ep101}`, (await linksOf(f1)).join());
+    check('…and NOT to the board\'s project: the old "inherit from the board\'s record" behaviour is gone, so there is ONE mechanism', !(await linksOf(f1)).some((l: string) => l.startsWith('project:')));
+    win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
+    check('record, link and card are ONE Ctrl+Z', (await untilDb(`select 1 from records where id = '${f1}'`, (r) => r.length === 0)).length === 0);
+
+    const s1 = await createOnCanvas('Specs', 440);
+    check('a table with no link to Works is created untouched, without complaint', (await linksOf(s1)).length === 0 && !w.find('.errors').exists());
+
+    await bar().find('.defaults-switch input').setValue(false);
+    const f2 = await createOnCanvas('Files', 480);
+    check('SWITCHED OFF: a new file is not linked, and the chip shows as inactive', (await linksOf(f2)).length === 0 && bar().classes('off'));
+    check('…the switch is yours (this browser): the saved list is untouched', (await configOf()).defaults.length === 1);
+    await bar().find('.defaults-switch input').setValue(true);
+
+    // "+ add": pick a record without knowing anything about the schema.
+    await bar().find('.defaults-add').trigger('click');
+    check('"+ add" offers only tables that something LINKS TO', await until(() => bar().find('.defaults-table').exists())
+      && bar().findAll('.defaults-table option').map((o: any) => o.text()).filter((t: string) => !t.startsWith('link new')).sort().join() === 'Files,Projects,Works', bar().find('.defaults-table').text());
+    await bar().find('.defaults-table').setValue(tProj);
+    await until(() => bar().findAll('.picker .list li .name').some((x: any) => x.text() === 'Duke'), 8000);
+    await bar().findAll('.picker .list li').find((li: any) => li.find('.name').text() === 'Duke').trigger('mousedown');
+    await untilDb(`select config from canvases where id = '${boardDuke}'`, (r) => r[0].config.defaults?.length === 2);
+    check('…and adds the chosen record', await until(() => chips().join() === 'Works Ep 101,Projects Duke'), chips().join());
+    await bar().find('.defaults-add').trigger('click');
+    const f3 = await createOnCanvas('Files', 520);
+    check('Files has TWO links to Projects — the one ticked "membership" is used; the other is left alone', (await linksOf(f3)).join() === `project:${duke},work:${ep101}`, (await linksOf(f3)).join());
+
+    // Ambiguity is reported, never guessed.
+    const fAltWork = randomUUID();
+    await post([{ type: 'field.create', id: fAltWork, tableId: tFiles, name: 'Alt work', key: 'alt_work', fieldType: 'link', options: { target_table_id: tWorks } }]);
+    check('a second, unflagged link to Works makes it AMBIGUOUS — the bar says so, in words an admin can act on', await until(() => /Files has 2 links to Works/.test(bar().find('.defaults-warn').text())), bar().text());
+    const f4 = await createOnCanvas('Files', 560);
+    check('…and the file is linked to the project but NOT to a guessed Work field', (await linksOf(f4)).join() === `project:${duke}`, (await linksOf(f4)).join());
+    await post([{ type: 'field.update', id: fFileWork, options: { target_table_id: tWorks, membership: true } }]);
+    check('tick "membership" on one of them and the warning goes', await until(() => !bar().find('.defaults-warn').exists()));
+    const f5 = await createOnCanvas('Files', 600);
+    check('…and that field is used', (await linksOf(f5)).join() === `project:${duke},work:${ep101}`, (await linksOf(f5)).join());
+
+    // The trap this build had to avoid: canvas.update REPLACES the config.
+    // (a Files card: Works has only its name field, so its cards have no fields to choose)
+    const aFileCard = w.findAll('.canvas-world .card').find((c: any) => /^File/.test(c.find('.card-table').text()));
+    await aFileCard.trigger('contextmenu', { clientX: 80, clientY: 80 });
+    await w.findAll('.canvas-container .ctx button').find((b: any) => /^Fields on/.test(b.text())).trigger('click');
+    await until(() => w.find('.canvas-container .ctx input[type="checkbox"]').exists());
+    await w.find('.canvas-container .ctx input[type="checkbox"]').trigger('change');
+    const cfg2 = await untilDb(`select config from canvases where id = '${boardDuke}'`, (r) => Object.keys(r[0].config.cardFields ?? {}).length > 0);
+    check('choosing a card\'s fields does NOT wipe the defaults (both live in the same settings, and a write replaces them whole)', cfg2[0].config.defaults?.length === 2, JSON.stringify(cfg2[0].config));
+    await w.find('.canvas-container').trigger('pointerdown', { button: 0, clientX: 5, clientY: 5 });
+
+    await post([{ type: 'record.delete', id: ep101 }]);
+    check('a default whose record was deleted shows as such, to be removed', await until(() => bar().find('.dchip.missing').exists() && /\(deleted\)/.test(bar().find('.dchip.missing').text()), 8000), bar().text());
+    const f6 = await createOnCanvas('Files', 640);
+    check('…and creating still works: the dead default is skipped, the live one applies', (await linksOf(f6)).join() === `project:${duke}` && !w.find('.errors').exists(), (await linksOf(f6)).join());
+    await bar().find('.dchip.missing .dchip-x').trigger('click');
+    check('× removes a default', await until(() => chips().join() === 'Projects Duke') && (await untilDb(`select config from canvases where id = '${boardDuke}'`, (r) => r[0].config.defaults.length === 1)).length === 1);
+
+    // Leave the fixture as the later sections expect it: this block's records go.
+    await post([f2, f3, f4, f5, f6, s1].map((id) => ({ type: 'record.delete', id })));
+
     await nav.scope(duke);
+    await nav.openCanvas(boardDuke);
+    check('with a project scope on, the bar shows THAT too — it is the whole answer to "what will this be linked to"',
+      await until(() => bar().find('.dchip.scope').exists() && /Duke/.test(bar().find('.dchip.scope').text())), bar().text());
 
     console.log('\nC3c. Pickers and the palette lean towards the scope, with a way out');
     await nav.openTable(tSpecs);

@@ -9,7 +9,7 @@
           All
         ▾ Duke                               a SCOPE of it        (contract/scope.ts)
             TABLES                  +
-              Files                 ⚙ ◧      …the section's tables, seen from inside Duke
+              Files                 ⚙        …the section's tables, seen from inside Duke
               Edits
             CANVASES                +
               Ep 1                           …Duke's boards (boards are records, scoped like any)
@@ -25,8 +25,7 @@
   a project — its ROWS do. "Files, under Duke" is the Files table seen from inside
   Duke. Only one project is ever expanded, so the repetition is never on screen.
 
-  A table row opens the Table tab; a canvas row opens the Canvas tab. On the
-  Canvas tab a table row also offers ◧: show it BESIDE the canvas (the dock).
+  A table row opens that table; a canvas row opens that canvas.
 
   The breadcrumb in the top bar stays: it is the compact answer to "where am I"
   and still works with this tray closed.

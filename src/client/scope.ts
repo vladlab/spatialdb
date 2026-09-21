@@ -8,7 +8,7 @@
  *                        table is not scoped (no membership field) — callers show
  *                        it whole and SAY so, rather than pretend
  *   createRecord(...)    make a record that INHERITS ITS CONTEXT — the scoped project,
- *                        the group it was added under, the board it was made on —
+ *                        the group it was added under, the canvas's defaults —
  *                        in the SAME synchronous run: one Ctrl+Z, and a peer never
  *                        sees the record without its links
  *   searchParams()       what to tell /api/search so it ranks by this scope
@@ -22,6 +22,7 @@ import { computed, ref, watch, type InjectionKey, type Ref } from 'vue';
 import type { Store } from './store';
 import { recordsOf, type FieldRow, type RecordRow, type SectionRow } from './state';
 import { ALL, formatScope, inScope, isMembership, membershipFieldOf, parseScope, type Scope } from '../contract/scope';
+import { defaultLinkField } from '../contract/canvasConfig';
 
 export function useScope(store: Store, section: Ref<SectionRow | null>, labelOf: (id: string) => string) {
   const scope = ref<Scope>(ALL);
@@ -115,19 +116,18 @@ export function useScope(store: Store, section: Ref<SectionRow | null>, labelOf:
    *   GROUP   added under a group header in a grouped grid, it gets that group's
    *           value — the select choice, the checkbox state, the linked records —
    *           for EVERY level it sits under. (`context.data` / `context.links`.)
-   *   BOARD   created on a canvas, it joins whatever that board belongs to. A canvas
-   *           is a record (sql/010); if the Episode 101 board has a membership link
-   *           to the work "Ep 101", a file made on it is linked to Ep 101 — wherever
-   *           the file's table has its OWN membership link to the same table. The
-   *           same explicit flag scope uses, so the field is never guessed, and no
-   *           new setting: you say what a board is about by filling in its fields.
+   *   CANVAS  created on a canvas, it is linked to that canvas's DEFAULTS — records
+   *           chosen on the canvas itself ("this board is about Ep 101"), shown in a
+   *           bar at its top and switchable off there. Which field carries the link is
+   *           decided by `defaultLinkField` (contract/canvasConfig.ts), never by the
+   *           person typing. (`context.defaults`.)
    *
    * This is deliberately NOT a nested scope. Nothing is filtered by it; it only
    * decides what a new record starts out linked to.
    */
   function createRecord(
     tableId: string, data: Record<string, unknown> = {}, id = crypto.randomUUID(),
-    context: { data?: Record<string, unknown>; links?: Array<{ fieldId: string; toRecord: string }>; boardId?: string } = {},
+    context: { data?: Record<string, unknown>; links?: Array<{ fieldId: string; toRecord: string }>; defaults?: Array<{ tableId: string; recordId: string }> } = {},
   ): string {
     store.mutate({ type: 'record.create', id, tableId, data: { ...context.data, ...data } });
 
@@ -139,32 +139,17 @@ export function useScope(store: Store, section: Ref<SectionRow | null>, labelOf:
     if (viaScope && s.kind === 'record') want(viaScope.id, s.id);
 
     for (const l of context.links ?? []) want(l.fieldId, l.toRecord);
-    for (const l of context.boardId ? boardMemberships(context.boardId, tableId) : []) want(l.fieldId, l.toRecord);
+    for (const d of context.defaults ?? []) {
+      const via = defaultLinkField(store.state.fields.values(), tableId, d.tableId);
+      // Ambiguous or absent: skipped. A record that no longer exists: skipped too — the
+      // server would refuse the whole batch over one dangling link.
+      if (via && 'field' in via && store.state.records.has(d.recordId) && d.recordId !== id) want(via.field.id, d.recordId);
+    }
 
     for (const l of links.values()) {
       store.mutate({ type: 'link.add', id: crypto.randomUUID(), fieldId: l.fieldId, fromRecord: id, toRecord: l.toRecord });
     }
     return id;
-  }
-
-  /**
-   * What a record of `tableId` inherits from being created on `boardId`: for each
-   * membership link the BOARD's record has (to table T), a link through `tableId`'s
-   * own membership field to T — if it has one. A table with no such field inherits
-   * nothing from that link, silently: not every table belongs to works.
-   */
-  function boardMemberships(boardId: string, tableId: string): Array<{ fieldId: string; toRecord: string }> {
-    const board = store.state.records.get(boardId);
-    if (!board) return [];
-    const out: Array<{ fieldId: string; toRecord: string }> = [];
-    for (const bf of store.state.fields.values()) {
-      if (bf.table_id !== board.table_id || !isMembership(bf)) continue;
-      const target = String(bf.options?.target_table_id ?? '');
-      const mine = membershipFieldOf(store.state.fields.values(), tableId, target);
-      if (!mine) continue;
-      for (const to of memberIndex.value.get(boardId + bf.id) ?? NONE) out.push({ fieldId: mine.id, toRecord: to });
-    }
-    return out;
   }
 
   function searchParams(): string {
@@ -175,7 +160,7 @@ export function useScope(store: Store, section: Ref<SectionRow | null>, labelOf:
 
   const label = computed(() => (scope.value.kind === 'record' ? labelOf(scope.value.id) : scope.value.kind === 'unassigned' ? 'Unassigned' : 'All'));
 
-  return { scope, showArchived, available, scopeTableId, choices, archived, label, filterFor, describe, createRecord, boardMemberships, searchParams, membershipField };
+  return { scope, showArchived, available, scopeTableId, choices, archived, label, filterFor, describe, createRecord, searchParams, membershipField };
 }
 
 export type ScopeApi = ReturnType<typeof useScope>;
