@@ -171,6 +171,7 @@ invented their own shape. See PLAN.md.
 | `npm run test:sections` | sections, home page, addresses |
 | `npm run test:scope` | scope |
 | `npm run build` / `npm start` | build the frontend into `dist/`; run ONE production process serving it and the API (DEPLOY.md) |
+| `./scripts/deploy.sh` | update a running deployment: back up, pull, install, build, stop, migrate, start, check (DEPLOY.md §8) |
 | `npm run migrate` | apply pending migrations to the database named by `DB_URL` (a real deployment; `db.sh migrate` is the dev cluster's) |
 | `npm run test:structured` | structured fields in the app: layout editor, compare, manifests, standard Files fields |
 | `npm run test:prod` | the server as deployed: built frontend, cache headers, CSP, loopback bind |

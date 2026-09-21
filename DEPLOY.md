@@ -318,17 +318,46 @@ The firewall already allows 443 if Caddy is serving other sites.
 ## 8. Updating
 
 ```bash
-sudo -u spatialdb -s
-cd /var/lib/spatialdb/app
-./scripts/backup.sh dump            # with DB_URL and SPATIALDB_ASSETS_DIR set — before any migration
-git pull && npm ci && npm run build
-npm run migrate
-exit
-sudo systemctl restart spatialdb
+cd /var/lib/spatialdb/app        # the checkout the service runs from
+./scripts/deploy.sh --dry-run    # what is incoming? any migrations?
+./scripts/deploy.sh
 ```
 
-Browsers pick up the new build on their next load: `index.html` is never cached, and
-it names the new hashed files. Connected clients see the stream drop and reconnect.
+Run it as a user who may `sudo` (it runs the checkout's steps as the checkout's owner,
+and `systemctl` as root), with `git`, `node`, `npm` and `pg_dump` on the PATH — on
+NixOS, `nix shell nixpkgs#nodejs_22 nixpkgs#git nixpkgs#postgresql` if they are not
+installed system-wide. It reads `DB_URL`, `PORT` and the assets directory FROM THE
+SYSTEMD UNIT, so they are written down in one place.
+
+What it does, in this order, stopping at the first failure and saying what state
+things are in:
+
+1. **look** — fetch; list incoming commits and any new migrations; exit if none
+2. **back up** — before anything changes; a migration can restructure data
+3. **pull** — fast-forward only; local edits on the server are an error
+4. **npm ci** — exactly the locked dependencies
+5. **build** — while the OLD server still serves; a failed build disturbs nobody
+6. **stop** the service — downtime starts…
+7. **migrate** — …because old code must not answer against a new schema
+8. **start** — …and ends: a few seconds
+9. **check** — `/api/health` answers, and reports the new version
+
+`DEPLOY_NO_SYSTEMD=1 ./scripts/deploy.sh` does everything except stop/start, for when
+you run `npm start` by hand. `--force` rebuilds and restarts with nothing new.
+
+> Tested here: the dry run, a full run in no-systemd mode against a real clone and
+> database (backup → pull → npm ci → build → migrate), "nothing to do", a dirty
+> checkout, and a failed backup. **NOT tested: the systemd half** — `sudo -u`,
+> `systemctl stop/start`, reading the unit's `Environment=`, the health check. Read
+> the first real run's output carefully.
+
+To go back: `git checkout <previous commit> && npm ci && npm run build`, restart — and
+if a migration had already changed data, restore the dump from step 2
+(`./scripts/backup.sh restore <file>` is written for the dev cluster; for the system
+database use `pg_restore` as in §5).
+
+Browsers pick up a new build on their next load: `index.html` is never cached, and it
+names the new hashed files. Connected clients see the stream drop and reconnect.
 
 ## 9. Backups, as a timer
 
