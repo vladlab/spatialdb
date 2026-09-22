@@ -85,6 +85,17 @@ export const ViewConfig = z.strictObject({
    * `config.groupBy ?? []`.
    */
   groupBy: z.array(uuid).max(2).optional(),
+  /**
+   * Present = this view is a KANBAN BOARD, not a grid. One column per value of
+   * `fieldId`, plus "(none)"; a drag MOVES a card between them. Only SINGLE-VALUED
+   * fields may make columns — a select, or a link ticked "single" — so every card is
+   * in exactly one column and a drag has one obvious meaning. (A first cut allowed
+   * multi-valued fields with cards in several columns and a move/add setting; the
+   * owner pulled it the same day: "let's not break things before we build them.")
+   * Filters, sort and hidden fields still apply: which cards, in what order, showing
+   * what.
+   */
+  kanban: z.strictObject({ fieldId: uuid }).optional(),
 });
 export type ViewConfig = z.infer<typeof ViewConfig>;
 
@@ -423,3 +434,59 @@ export function ancestorsOf<R>(items: GridItem<R>[], path: string): GroupHeader[
   for (let i = 1; i <= parts.length; i++) want.add(parts.slice(0, i).join('\u0002'));
   return items.filter((it): it is GroupHeader => it.kind === 'group' && want.has(it.path)).sort((a, b) => a.level - b.level);
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+ *  Kanban columns
+ * ──────────────────────────────────────────────────────────────────────────*/
+
+/** Which fields may make a board's columns: single-valued ones. */
+export const canMakeColumns = (f: ViewField): boolean => f.type === 'select' || (f.type === 'link' && f.options?.single === true);
+
+export interface KanbanColumn<R> {
+  key: string;
+  label: string;
+  /** How to put a record IN this column (what a drop or a "+" writes). `derived` never occurs here. */
+  value: GroupValue;
+  records: R[];
+}
+
+/**
+ * The columns of a board over `field` (a select, or a "single" link), in a fixed
+ * order that does not depend on which records happen to exist: a select's CHOICES,
+ * in their order; a link's target records, in the `targets` order given (the caller
+ * decides — usually the target table's records, sorted by label). Empty columns
+ * exist, because a column is a place to drop things. "(none)" is always last. Every
+ * record lands in exactly one column — a record that somehow still has several
+ * links (linked before the field was ticked single) is shown under the first.
+ */
+export function kanbanColumns<R extends ViewRecord>(
+  records: R[], field: ViewField, linkIds: LinkIds,
+  targets: Array<{ id: string; label: string }> = [],
+): KanbanColumn<R>[] {
+  const cols = new Map<string, KanbanColumn<R>>();
+  const col = (key: string, label: string, value: GroupValue) => { if (!cols.has(key)) cols.set(key, { key, label, value, records: [] }); return cols.get(key)!; };
+  if (field.type === 'select') {
+    for (const c of (field.options?.choices as string[] | undefined) ?? []) col('v:' + c, c, { kind: 'value', value: c });
+  } else if (field.type === 'link') {
+    for (const t of targets) col('l:' + t.id, t.label, { kind: 'links', ids: [t.id] });
+  }
+  const none = col('\u0000', '(none)', { kind: 'empty' });
+
+  for (const r of records) {
+    const v = r.data[field.key];
+    let key: string | undefined;
+    if (field.type === 'link') { const id = linkIds(r.id, field.id)[0]; if (id && cols.has('l:' + id)) key = 'l:' + id; }
+    // A value that is no longer a choice (renamed, removed) still gets a column, so
+    // nothing disappears; it just cannot be re-created by dragging.
+    else if (!isEmpty(v)) key = 'v:' + String(v);
+    const home = key ? (cols.get(key) ?? col(key, key.slice(2), { kind: 'value', value: key.slice(2) })) : none;
+    home.records.push(r);
+  }
+  const out = [...cols.values()];
+  // "(none)" last; everything else keeps insertion order.
+  return [...out.filter((c) => c !== none), none];
+}
+
+/** Whether a field can hold only ONE value — then a board drag is always a move, and a picker replaces. */
+export const isSingleValued = (f: ViewField): boolean =>
+  f.type === 'select' || f.type === 'checkbox' || (f.type === 'link' && f.options?.single === true);

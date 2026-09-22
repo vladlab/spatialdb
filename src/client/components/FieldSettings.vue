@@ -44,6 +44,14 @@
       </label>
     </span>
 
+    <!-- LINK fields: at most one link per record? Records that already have several
+         keep them; only ADDING is refused from then on. -->
+    <label v-if="field.type === 'link'" class="single"
+           :title="`Tick if a record may link to only ONE ${targetName} record. Choosing another then replaces it. Records that already link to several are left alone.`">
+      <input type="checkbox" :checked="field.options?.single === true"
+             @change="actions.setSingle(field.id, ($event.target as HTMLInputElement).checked)" />
+      single
+    </label>
     <!-- LINK fields: is this the link through which records BELONG to something? -->
     <label v-if="field.type === 'link'" class="membership"
            :title="`Tick if a record of this table BELONGS to the ${targetName} record it links to — e.g. a file belongs to a project. A section scoped by ${targetName} then narrows this table to one of them, and new records made there are linked automatically. One such field per table.`">
@@ -111,7 +119,7 @@ input:not([type='checkbox']):not([type='color']) {
 .field-settings.row .lookup { width: auto; }
 input[type='checkbox'] { width: auto; flex: none; margin: 0; }
 .field-settings.stack .membership, .field-settings.stack .arrow-style { align-self: flex-start; }
-.membership { display: flex; gap: 4px; align-items: center; cursor: pointer; color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.membership, .single { display: flex; gap: 4px; align-items: center; cursor: pointer; color: var(--text-muted); font-size: 11px; white-space: nowrap; }
 .arrow-style { display: flex; gap: 6px; align-items: center; color: var(--text-muted); font-size: 11px; }
 .arrow-style label { display: flex; gap: 4px; align-items: center; cursor: pointer; }
 .arrow-style input[type='color'] { width: 22px; height: 18px; padding: 0; border: 1px solid var(--border-main); background: none; cursor: pointer; }

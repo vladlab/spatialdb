@@ -7,9 +7,19 @@
 #    ./scripts/deploy.sh --force      rebuild / migrate / restart even if nothing is new
 #    ./scripts/deploy.sh --dry-run    say what would happen; change nothing
 #
-#  Run it FROM the checkout the service runs from, as a user who may `sudo` (or as
-#  the app's own user, if that user may restart the service). What it does, and why
-#  in this order — see DEPLOY.md §8:
+#  Run it AS ROOT, by its full path — typically from your own account:
+#
+#      sudo /var/lib/spatialdb/app/scripts/deploy.sh
+#
+#  Root, because the two halves need different people: everything in the checkout is
+#  done as the checkout's OWNER (the service's user — root drops to it, no password),
+#  and stopping/starting the unit needs root. The service's user usually cannot sudo
+#  and has no password, and your own account usually cannot even enter the directory;
+#  root is the one identity that can do both. (A user who may `sudo` also works.)
+#  If node/git/pg_dump are not installed system-wide on NixOS:
+#      sudo nix shell nixpkgs#nodejs_22 nixpkgs#git nixpkgs#postgresql -c /path/to/scripts/deploy.sh
+#
+#  What it does, and why in this order — see DEPLOY.md §8:
 #
 #    1. look        fetch; show what is incoming; stop here if nothing is
 #    2. back up     BEFORE anything changes. A migration can restructure data; the
@@ -72,13 +82,21 @@ BACKUPS="${SPATIALDB_BACKUP_DIR:-$(unit_env SPATIALDB_BACKUP_DIR)}"
 
 # Everything that touches the checkout runs as the app's user, with OUR PATH (on NixOS
 # the tools may come from a `nix shell`, which sudo would otherwise drop).
+APP_HOME="$(getent passwd "$APP_USER" | cut -d: -f6)"
 as_app() {
-  local -a envs=("PATH=$PATH" "DB_URL=$DB_URL")
+  # HOME matters: npm writes its cache there, and root's HOME is not writable by the app's user.
+  local -a envs=("PATH=$PATH" "DB_URL=$DB_URL" "HOME=${APP_HOME:-$ROOT}")
   [ -n "$ASSETS" ]  && envs+=("SPATIALDB_ASSETS_DIR=$ASSETS")
   [ -n "$BACKUPS" ] && envs+=("SPATIALDB_BACKUP_DIR=$BACKUPS")
-  if [ "$ME" = "$APP_USER" ]; then env "${envs[@]}" "$@"; else sudo -u "$APP_USER" -H env "${envs[@]}" "$@"; fi
+  if [ "$ME" = "$APP_USER" ]; then env "${envs[@]}" "$@"
+  elif [ "$(id -u)" = 0 ]; then runuser -u "$APP_USER" -- env "${envs[@]}" "$@"     # root: no password, no sudo needed
+  else sudo -u "$APP_USER" -H env "${envs[@]}" "$@"; fi
 }
-svc() { if [ "$(id -u)" = 0 ]; then systemctl "$@"; else sudo systemctl "$@"; fi; }
+svc() {
+  if [ "$(id -u)" = 0 ]; then systemctl "$@"; return; fi
+  sudo -n true 2>/dev/null || [ -t 0 ] || die "restarting $SERVICE needs root, and '$ME' cannot sudo without a password here."
+  sudo systemctl "$@"
+}
 
 # ── 0. preflight ─────────────────────────────────────────────────────────────
 say "Checking"
@@ -88,6 +106,10 @@ done
 if [ "$NO_SYSTEMD" != 1 ]; then
   systemctl cat "$SERVICE" >/dev/null 2>&1 || die "no systemd unit called '$SERVICE'. Set SERVICE=…, or DEPLOY_NO_SYSTEMD=1 if you run the app by hand."
 fi
+if [ "$NO_SYSTEMD" != 1 ] && [ "$(id -u)" != 0 ] && ! sudo -n true 2>/dev/null && [ "$ME" = "$APP_USER" ]; then
+  die "you are '$ME', the service's own user, which cannot restart the service. Run this as root instead, from your own account:
+          sudo $ROOT/scripts/deploy.sh"
+fi
 note "checkout  $ROOT  (runs as $APP_USER)"
 note "database  ${DB_URL%%\?*}…   port $PORT"
 [ -n "$(as_app git status --porcelain --untracked-files=no)" ] && die "the checkout has local changes (git status). A server's checkout should match the repo exactly — commit them elsewhere, or 'git stash'."
@@ -95,12 +117,12 @@ note "database  ${DB_URL%%\?*}…   port $PORT"
 # ── 1. look ──────────────────────────────────────────────────────────────────
 say "Looking for updates"
 as_app git fetch --quiet
-BEFORE="$(git rev-parse --short HEAD)"
-UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)" || die "this branch has no upstream to pull from"
-INCOMING="$(git rev-list --count "HEAD..$UPSTREAM")"
+BEFORE="$(as_app git rev-parse --short HEAD)"
+UPSTREAM="$(as_app git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)" || die "this branch has no upstream to pull from"
+INCOMING="$(as_app git rev-list --count "HEAD..$UPSTREAM")"
 note "running $BEFORE; $INCOMING new commit(s) on $UPSTREAM"
-[ "$INCOMING" -gt 0 ] && git --no-pager log --oneline "HEAD..$UPSTREAM" | sed 's/^/      /' | head -20
-NEW_SQL="$(git diff --name-only "HEAD..$UPSTREAM" -- sql/ | grep -E '^sql/[0-8].*\.sql$' || true)"
+[ "$INCOMING" -gt 0 ] && as_app git --no-pager log --oneline "HEAD..$UPSTREAM" | sed 's/^/      /' | head -20
+NEW_SQL="$(as_app git diff --name-only "HEAD..$UPSTREAM" -- sql/ | grep -E '^sql/[0-8].*\.sql$' || true)"
 [ -n "$NEW_SQL" ] && { note "includes MIGRATIONS:"; printf '%s\n' "$NEW_SQL" | sed 's/^/      /'; }
 if [ "$INCOMING" -eq 0 ] && [ "$FORCE" != 1 ]; then note "nothing to do (use --force to rebuild and restart anyway)"; exit 0; fi
 if [ "$DRY" = 1 ]; then say "Dry run — would: back up, pull, npm ci, build, stop, migrate, start, check. Nothing was changed."; exit 0; fi
@@ -114,7 +136,7 @@ as_app ./scripts/backup.sh dump | sed 's/^/    /' \
 # ── 3-5. pull, install, build — the old server is still running ───────────────
 say "Pulling"
 as_app git pull --ff-only --quiet || die "could not fast-forward. Nothing has been changed; the service is still running the old version."
-AFTER="$(git rev-parse --short HEAD)"
+AFTER="$(as_app git rev-parse --short HEAD)"
 note "$BEFORE → $AFTER"
 
 say "Installing dependencies (npm ci)"

@@ -318,16 +318,23 @@ The firewall already allows 443 if Caddy is serving other sites.
 ## 8. Updating
 
 ```bash
-cd /var/lib/spatialdb/app        # the checkout the service runs from
-./scripts/deploy.sh --dry-run    # what is incoming? any migrations?
-./scripts/deploy.sh
+sudo /var/lib/spatialdb/app/scripts/deploy.sh --dry-run    # what is incoming? any migrations?
+sudo /var/lib/spatialdb/app/scripts/deploy.sh
 ```
 
-Run it as a user who may `sudo` (it runs the checkout's steps as the checkout's owner,
-and `systemctl` as root), with `git`, `node`, `npm` and `pg_dump` on the PATH — on
-NixOS, `nix shell nixpkgs#nodejs_22 nixpkgs#git nixpkgs#postgresql` if they are not
-installed system-wide. It reads `DB_URL`, `PORT` and the assets directory FROM THE
-SYSTEMD UNIT, so they are written down in one place.
+**Run it as root, from your own account, by its full path.** The two halves need
+different people: everything inside the checkout runs as the checkout's owner (the
+`spatialdb` user — root drops to it with no password), and stopping/starting the unit
+needs root. The `spatialdb` user itself cannot sudo and has no password, and your own
+account usually cannot enter its directory; root is the one identity that can do both.
+If `git`, `node`, `npm` and `pg_dump` are not installed system-wide on NixOS:
+
+```bash
+sudo nix shell nixpkgs#nodejs_22 nixpkgs#git nixpkgs#postgresql -c /var/lib/spatialdb/app/scripts/deploy.sh
+```
+
+It reads `DB_URL`, `PORT` and the assets directory FROM THE SYSTEMD UNIT, so they are
+written down in one place.
 
 What it does, in this order, stopping at the first failure and saying what state
 things are in:
@@ -345,9 +352,10 @@ things are in:
 `DEPLOY_NO_SYSTEMD=1 ./scripts/deploy.sh` does everything except stop/start, for when
 you run `npm start` by hand. `--force` rebuilds and restarts with nothing new.
 
-> Tested here: the dry run, a full run in no-systemd mode against a real clone and
-> database (backup → pull → npm ci → build → migrate), "nothing to do", a dirty
-> checkout, and a failed backup. **NOT tested: the systemd half** — `sudo -u`,
+> Tested here: the dry run; a full run in no-systemd mode, AS ROOT over a checkout
+> owned by another user (backup → pull → npm ci → build → migrate; every file it
+> wrote is owned by that user, not root); "nothing to do"; a dirty checkout; a failed
+> backup. **NOT tested: the systemd half** — `sudo -u`,
 > `systemctl stop/start`, reading the unit's `Environment=`, the health check. Read
 > the first real run's output carefully.
 

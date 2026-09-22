@@ -217,6 +217,15 @@ export function useSchemaActions(store: Store) {
    * turns it off on any other link from this table to the same target, in the
    * same step, because the server would refuse two.
    */
+  /** "At most one link per record." The server refuses a second; pickers replace. */
+  function setSingle(id: string, on: boolean) {
+    const f = store.state.fields.get(id);
+    if (!f || f.type !== 'link') return;
+    const { single: _old, ...rest } = f.options ?? {};
+    void _old;
+    store.mutate({ type: 'field.update', id, options: on ? { ...rest, single: true } : rest });
+  }
+
   function setMembership(id: string, on: boolean) {
     const f = store.state.fields.get(id);
     if (!f || f.type !== 'link') return;
@@ -304,7 +313,7 @@ export function useSchemaActions(store: Store) {
     createTable, renameTable, deleteTable,
     draftError, createField, renameField, setChoices, moveField, makePrimary, isPrimary,
     canBePrimary, deleteField,
-    setArrowStyle, setMembership, addStandardFilesFields, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
+    setArrowStyle, setMembership, setSingle, addStandardFilesFields, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
   };
 }
 export type SchemaActions = ReturnType<typeof useSchemaActions>;

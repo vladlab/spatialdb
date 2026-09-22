@@ -968,6 +968,30 @@ red-checked. Also: the layout editor now writes nothing when nothing changed (a 
 re-typed as it was) — a no-op mutation is a log row, a broadcast and an undo step
 that visibly does nothing.
 
+### Kanban (Sept 22)
+
+The owner: columns by a chosen attribute, LINK fields as valid columns; he floated a
+"soft" board (a card in several columns) and/or single-link fields. A first cut did
+both — honest multi-column cards with a move/add drag setting — and he pulled it the
+same day: **"let's not break things before we build them. let's keep it traditional."**
+What stands:
+- **A board is a VIEW** (`config.kanban: { fieldId }`), so filters/sort/hidden fields
+  and the views dropdown carry over; "+ new board" beside "+ new view". No migration:
+  the config key is the kind.
+- **Columns only from a single-valued field**: a select, or a link ticked "single".
+  Every card in exactly one column; a drag MOVES it (one batch, one Ctrl+Z); drop on
+  "(none)" clears. A board whose field loses its tick falls back to the grid.
+- **Link fields can be "single"** (`options.single`, beside "membership" in field
+  settings): server-refused second link; every client path replaces through ONE
+  helper (`client/links.ts`). This is the half of the "soft" idea that survived, and
+  it is what makes links usable as columns at all.
+- Drag uses the pointer-based drag service (each column a drop target). "+" per column
+  creates a record already in it. Cards show the view's shown fields under the
+  primary; double-click or ⤢ opens the record.
+- Found on the way: "+ new view — starts from this one" copied the board's `kanban`
+  key, so a grid made from a board was a board. Fixed; tested.
+- NOT seen: any of it — `UI-NOTES`.
+
 ### Small annoyances (Sept 22)
 
 - **Compare left the audio-layout cell** (the owner: "I consider it not built yet —

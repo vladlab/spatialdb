@@ -205,6 +205,7 @@ import { labelFrom } from '../../contract/labels';
 import { useDerived } from '../derived';
 import { defaultLinkField } from '../../contract/canvasConfig';
 import LinkPicker from './LinkPicker.vue';
+import { addLink } from '../links';
 import { confirmDialog } from '../dialogs';
 import { SCOPE } from '../scope';
 import { isEmptyRichText, richTextToPlain } from '../../contract/richtext';
@@ -543,7 +544,7 @@ function startLinkDrag({ recordId, fieldId, e }: { recordId: string; fieldId: st
     end();
     // Dropped on a card that can take it: the link exists. Anywhere else — the wrong
     // table, itself, a record already linked, empty canvas — NOTHING happens.
-    if (d?.over) store.mutate({ type: 'link.add', id: crypto.randomUUID(), fieldId: d.fieldId, fromRecord: d.fromRecord, toRecord: d.over });
+    if (d?.over) addLink(store, d.fieldId, d.fromRecord, d.over);
   };
   const cancel = (ev: KeyboardEvent) => { if (ev.key === 'Escape') end(); };
   function end() {

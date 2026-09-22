@@ -361,6 +361,21 @@ the same links. It REPLACED "a board inherits from its record's membership links
 (position = last + 1). It used to be 0, which let a new field tie with — and, sorting
 alphabetically, displace — the table's primary field.
 
+### Kanban boards, and "single" link fields
+
+`ViewConfig.kanban?: { fieldId }` — present means the view is a BOARD: one column
+per value of `fieldId`, plus "(none)" last; a drag MOVES a card. `fieldId` must be
+SINGLE-VALUED — a select, or a link with `options.single` — so every card is in
+exactly one column (`canMakeColumns`). Columns are computed client-side by
+`kanbanColumns` (`src/contract/views.ts`); nothing new on the server. The view's
+filters, sort and hidden fields still apply. A board whose field stops qualifying
+(its "single" tick removed) falls back to the grid.
+
+`field.options.single = true` on a **link** field: at most ONE link per record. The
+server refuses a second `link.add` (400); a replacement is `link.remove` + `link.add`
+in one batch, which every client path does (`src/client/links.ts`). Records that
+already link to several are left alone — only adding is refused.
+
 ### View grouping
 
 `ViewConfig.groupBy?: fieldId[]` — at most two, outermost first; optional, and

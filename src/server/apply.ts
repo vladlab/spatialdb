@@ -409,6 +409,16 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
     /* ── links ── */
     case 'link.add':
       await assertLinkEndpointsValid(db, m.fieldId, m.fromRecord, m.toRecord);
+      // A link field ticked "single" holds at most ONE link per record. Refused, not
+      // silently replaced: a replacement is `link.remove` + `link.add` in one batch,
+      // which the client sends — and which is one Ctrl+Z.
+      {
+        const single = await db.query(
+          `select 1 from fields f where f.id = $1 and (f.options->>'single')::boolean
+              and exists (select 1 from links l where l.field_id = $1 and l.from_record = $2 and l.to_record <> $3)`,
+          [m.fieldId, m.fromRecord, m.toRecord]);
+        if (single.rowCount) throw new MutationError('this link field is "single": the record already links to another record — remove that link first (or replace it in one batch)');
+      }
       await db.query(
         `insert into links (id, field_id, from_record, to_record)
          values ($1,$2,$3,$4)

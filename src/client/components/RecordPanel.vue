@@ -136,6 +136,7 @@ import LinkPicker from './LinkPicker.vue';
 import AttachmentField from './AttachmentField.vue';
 import StructuredField from './StructuredField.vue';
 import { formatNumberField } from '../../contract/shapes';
+import { addLink as addLinkVia } from '../links';
 
 // Loaded ON DEMAND. TipTap + ProseMirror are most of a megabyte of source, and
 // nothing needs them until a record with a rich_text field is opened — so they
@@ -239,9 +240,7 @@ function unsetRich(recordId: string, key: string) {
 /** The editor's remembered height + its toolbar: reserved while TipTap loads, so nothing below jumps. */
 const richReserve = (() => { try { return Math.max(140, Number(localStorage.getItem('spatialdb.rte.height')) || 340) + 34; } catch { return 374; } })();
 
-function addLink(fieldId: string, toRecord: string) {
-  store.mutate({ type: 'link.add', id: crypto.randomUUID(), fieldId, fromRecord: props.recordId, toRecord });
-}
+const addLink = (fieldId: string, toRecord: string) => addLinkVia(store, fieldId, props.recordId, toRecord);
 function removeLink(fieldId: string, toRecord: string) {
   store.mutate({ type: 'link.remove', fieldId, fromRecord: props.recordId, toRecord });
 }

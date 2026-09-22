@@ -29,7 +29,11 @@ show you that command and nothing else.
    behind a proxy, it must pass `Host` and `X-Forwarded-Proto`; symptoms if not:
    login "succeeds" and you are immediately signed out again (cookie refused), or
    every save is a 403 "cross-origin request refused" (Host rewritten).
-2. **The canvas's defaults bar** (newest) — a slim row under the canvas's controls:
+2. **The kanban board** (newest) — views ▾ → "+ new board". Columns are 240px, cards
+   show the shown fields; does the drag ghost read over a column, does the column
+   highlight, is "(none)" obviously a drop zone? Also the "single" tick beside
+   "membership" in a link field's ⚙.
+3. **The canvas's defaults bar** — a slim row under the canvas's controls:
    a switch, "New records here →", chips, "+ add". Does it read as information
    first and a control second? Is the right-click entry ("Link new records here to
    this") discoverable? The "+ add" popover holds a table menu and the link picker —

@@ -118,6 +118,7 @@ src/
       CommandPalette.vue Ctrl+K — find any record anywhere; place it on a canvas
       RichTextEditor.vue / RichTextView.vue   a note, written and read (TipTap, loaded on demand)
       AttachmentField.vue files on a record
+      KanbanView.vue      a view whose body is columns of cards
       StructuredField.vue / ManifestView.vue / AudioLayoutEditor.vue   structured values in the tray
       RecordPanel.vue    one record, every field, editable — opened by grid AND canvas
       CellEditor.vue     the editor for ONE cell, mounted only while editing
@@ -160,7 +161,7 @@ invented their own shape. See PLAN.md.
 | `db.sh psql` | SQL shell |
 | `db.sh url` | connection string |
 | `npm run dev` | api + client via `scripts/dev.sh`; Ctrl-C stops BOTH, and it refuses to start if port 8787 is taken |
-| `npm test` | all thirteen suites (against an isolated `spatialdb_test`) |
+| `npm test` | all fourteen suites (against an isolated `spatialdb_test`) |
 | `npm run test:e2e` | apply layer only (no server needed) |
 | `npm run test:store` | client store + two-client convergence |
 | `npm run test:undo` | delete capture and undo |
@@ -174,6 +175,7 @@ invented their own shape. See PLAN.md.
 | `./scripts/deploy.sh` | update a running deployment: back up, pull, install, build, stop, migrate, start, check (DEPLOY.md §8) |
 | `npm run migrate` | apply pending migrations to the database named by `DB_URL` (a real deployment; `db.sh migrate` is the dev cluster's) |
 | `npm run test:structured` | structured fields in the app: layout editor, compare, manifests, standard Files fields |
+| `npm run test:kanban` | the board: columns by select and link, move/add, single links |
 | `npm run test:prod` | the server as deployed: built frontend, cache headers, CSP, loopback bind |
 | `npm run test:auth` | signing in, sessions, roles, users — against a server with sign-in ON |
 | `npm run test:ui` | mounts the app headlessly and clicks through it (happy-dom; no layout or paint) |

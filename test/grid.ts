@@ -16,7 +16,7 @@
 import pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import { bootServer, type ServerHandle } from './harness.js';
-import { applyView, quickSearch, ViewConfig, type ViewField, ancestorsOf, groupRows, type GroupHeader } from '../src/contract/views.js';
+import { applyView, quickSearch, ViewConfig, type ViewField, ancestorsOf, canMakeColumns, groupRows, kanbanColumns, type GroupHeader } from '../src/contract/views.js';
 import { lookupConfigError, lookupText, lookupValues } from '../src/contract/lookups.js';
 import { backlinkConfigError, backlinkRecords } from '../src/contract/backlinks.js';
 import { fuzzyRank, fuzzyScore, parsePaletteQuery } from '../src/client/fuzzy.js';
@@ -385,6 +385,22 @@ function pure() {
   check('the Files convention names real field types, and its link is to the table itself', FILES_STANDARD_FIELDS.every((f) => (FIELD_TYPES as readonly string[]).includes(f.type))
     && FILES_STANDARD_FIELDS.filter((f) => f.self).map((f) => f.key).join() === 'parent' && FILES_STANDARD_FIELDS.find((f) => f.key === 'path')?.type === 'file_path');
 
+  console.log('\nG1m. Kanban columns (contract/views.ts: kanbanColumns)');
+  const kSel: ViewField = { id: randomUUID(), key: 'status', type: 'select', options: { choices: ['todo', 'doing', 'done'] } };
+  const kLink: ViewField = { id: randomUUID(), key: 'work', type: 'link', options: { target_table_id: randomUUID(), single: true } };
+  const kRecs = [{ id: 'a', data: { status: 'todo' } }, { id: 'b', data: { status: 'done' } }, { id: 'c', data: {} }, { id: 'd', data: { status: 'gone' } }];
+  const cols = kanbanColumns(kRecs, kSel, () => []);
+  const shapeK = (cs: ReturnType<typeof kanbanColumns>) => cs.map((c) => `${c.label}[${c.records.map((r) => (r as { id: string }).id).join('')}]`).join(' ');
+  check('a select: one column per CHOICE in choice order (empty ones too — a column is a place to drop things), "(none)" last, and a value that is no longer a choice keeps a column so nothing disappears',
+    shapeK(cols) === 'todo[a] doing[] done[b] gone[d] (none)[c]', shapeK(cols));
+  const kL = { a: ['w1'], b: ['w1', 'w2'], c: [] as string[], d: ['w2'] };
+  const lcols = kanbanColumns(kRecs, kLink, (id) => kL[id as keyof typeof kL] ?? [], [{ id: 'w1', label: 'Ep 101' }, { id: 'w2', label: 'Ep 102' }, { id: 'w3', label: 'Ep 103' }]);
+  check('a single link: a column per TARGET record in the given order; every card in exactly ONE column (a leftover second link is ignored — first wins)', shapeK(lcols) === 'Ep 101[ab] Ep 102[d] Ep 103[] (none)[c]', shapeK(lcols));
+  check('a column knows how to put a record IN it', lcols[0].value.kind === 'links' && (lcols[0].value as any).ids[0] === 'w1' && cols[0].value.kind === 'value' && (cols[0].value as any).value === 'todo' && cols[4].value.kind === 'empty');
+  check('only single-valued fields may make columns: a select, a link ticked "single" — not a plain link, not a multi-select',
+    canMakeColumns(kSel) && canMakeColumns(kLink) && !canMakeColumns({ ...kLink, options: { target_table_id: 'x' } }) && !canMakeColumns({ id: 'm', key: 'm', type: 'multi_select' }));
+  check('a view config with `kanban` parses; a stray key does not', ViewConfig.safeParse({ kanban: { fieldId: randomUUID() } }).success && !ViewConfig.safeParse({ kanban: { fieldId: randomUUID(), mode: 'add' } }).success);
+
   console.log('\nG1c. applyView — cost at the size whole-table loading commits us to');
   const big = Array.from({ length: 50_000 }, (_, i) =>
     rec(String(i), { name: `shot_${(i * 7919) % 50_000}_v${i % 12}`, frames: (i * 31) % 5000, status: ['todo', 'doing', 'done'][i % 3] }));
@@ -739,6 +755,18 @@ async function main() {
   const posRows = (await pool.query(`select name, position from fields where table_id = $1 order by position, name`, [posT])).rows;
   check('fields created through the API with NO position are APPENDED — the first stays first, so a script cannot hijack the primary field by naming a field "Aardvark"',
     posRows.map((r) => r.name).join() === 'Name,Alt work,Aardvark' && posRows.map((r) => r.position).join() === '0,1,2', JSON.stringify(posRows));
+
+  console.log('\nG10. "single" link fields on the server');
+  const sT = randomUUID(), sTarget = randomUUID(), sF = randomUUID(), sglA = randomUUID(), sX = randomUUID(), sY = randomUUID();
+  await mutate([{ type: 'table.create', id: sT, name: 'Singles' }, { type: 'table.create', id: sTarget, name: 'Targets' },
+    { type: 'field.create', id: sF, tableId: sT, name: 'One', key: 'one', fieldType: 'link', options: { target_table_id: sTarget, single: true } },
+    { type: 'record.create', id: sglA, tableId: sT, data: {} }, { type: 'record.create', id: sX, tableId: sTarget, data: {} }, { type: 'record.create', id: sY, tableId: sTarget, data: {} },
+    { type: 'link.add', id: randomUUID(), fieldId: sF, fromRecord: sglA, toRecord: sX }]);
+  const second = await mutate([{ type: 'link.add', id: randomUUID(), fieldId: sF, fromRecord: sglA, toRecord: sY }]);
+  check('a SECOND link through a "single" field is refused, and the reason names the field as single', second.status === 400 && /single/.test(JSON.stringify(second.body)), JSON.stringify(second.body).slice(0, 160));
+  check('re-adding the SAME link is fine (idempotent, as ever)', (await mutate([{ type: 'link.add', id: randomUUID(), fieldId: sF, fromRecord: sglA, toRecord: sX }])).status === 200);
+  check('a REPLACEMENT — remove + add in one batch — is accepted', (await mutate([{ type: 'link.remove', fieldId: sF, fromRecord: sglA, toRecord: sX }, { type: 'link.add', id: randomUUID(), fieldId: sF, fromRecord: sglA, toRecord: sY }])).status === 200
+    && (await pool.query(`select to_record from links where field_id = $1 and from_record = $2`, [sF, sglA])).rows.map((r) => r.to_record).join() === sY);
 
   const five1 = { tracks: [{ name: 'Full mix', channels: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'] }] };
   const sixMono = { tracks: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'].map((c) => ({ name: `Full mix ${c}`, channels: [c] })) };

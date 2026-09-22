@@ -80,7 +80,9 @@
             <span class="view-tick">✓</span><span class="view-title">Grid</span>
             <span class="view-sum">the default — saved when you first sort, filter or hide</span>
           </div>
-          <button class="add-line new-view" @click="newView">+ new view <span class="muted">— starts from this one</span></button>
+          <button class="add-line new-view" @click="newView()">+ new view <span class="muted">— starts from this one</span></button>
+          <button v-if="kanbanable.length" class="add-line new-board" @click="newView('kanban')">+ new board <span class="muted">— cards in columns</span></button>
+          <p v-else class="hint-line">A board needs a single select, or a link ticked “single”, to make its columns.</p>
           <p class="hint-line">A view is a saved way of looking at this table: its sort, filters and hidden fields. Views are shared, and every change is saved as you make it.</p>
         </div>
       </details>
@@ -141,7 +143,20 @@
       <!-- GROUP: rows gathered under a header per value, each header with a count and
            its own "+". A record added under a header INHERITS that group — adding a
            file under "Ep 101" links it to Ep 101 (client/scope.ts, createRecord). -->
-      <details class="menu group-menu">
+      <!-- A BOARD: which field makes the columns, and what a drag does. -->
+      <details v-if="kanban" class="menu kanban-menu">
+        <summary class="active">columns · {{ fieldName(kanban.fieldId) }}</summary>
+        <div class="pop">
+          <div class="line"><span class="muted">columns by</span>
+            <select class="kanban-field" :value="kanban.fieldId" @change="save({ kanban: { fieldId: ($event.target as HTMLSelectElement).value } })">
+              <option v-for="f in kanbanable" :key="f.id" :value="f.id">{{ f.name }}</option>
+            </select>
+          </div>
+          <p class="hint-line">Columns come from a single select, or a link ticked “single” (in the field's ⚙). Dragging a card moves it. Filters, sort and hidden fields apply to the cards.</p>
+        </div>
+      </details>
+
+      <details v-if="!kanban" class="menu group-menu">
         <summary :class="{ active: groupBy.length }">
           group<template v-if="groupBy.length"> · {{ groupBy.map((id) => fieldName(id)).join(' › ') }}</template>
         </summary>
@@ -202,7 +217,10 @@
       </span>
     </div>
 
-    <div ref="scroller" class="scroller" tabindex="0" @scroll.passive="onScroll" @keydown="onGridKey">
+    <KanbanView v-if="kanban && kanbanField" :store="store" :records="matched" :field="kanbanField"
+                :card-fields="shown.filter((f) => f.id !== primaryField?.id)" :primary="primaryField"
+                @open-record="$emit('open-record', $event)" @create="createInColumn" />
+    <div v-else ref="scroller" class="scroller" tabindex="0" @scroll.passive="onScroll" @keydown="onGridKey">
       <table class="grid">
         <thead>
           <tr>
@@ -367,10 +385,12 @@ import FieldForm from './FieldForm.vue';
 import FieldSettings from './FieldSettings.vue';
 import { useSchemaActions } from '../schemaActions';
 import { useDerived } from '../derived';
-import { ancestorsOf, groupRows, type GroupHeader } from '../../contract/views';
+import { ancestorsOf, canMakeColumns, groupRows, type GroupHeader, type GroupValue } from '../../contract/views';
 import { ask, confirmDialog } from '../dialogs';
 import { richTextToPlain } from '../../contract/richtext';
-import { formatNumberField, shapeOf, summarise as summariseValue } from '../../contract/shapes';   // (`summarise` here is the VIEW's summary)
+import { formatNumberField, shapeOf, summarise as summariseValue } from '../../contract/shapes';
+import { addLink as addLinkVia } from '../links';
+import KanbanView from './KanbanView.vue';   // (`summarise` here is the VIEW's summary)
 import { beginRecordDrag } from '../recordDrag';
 
 const props = defineProps<{
@@ -434,6 +454,7 @@ function summarise(raw: unknown): string {
   const c = p.data, bits: string[] = [];
   if (c.filters.length) bits.push(`${c.filters.length} filter${c.filters.length === 1 ? '' : 's'}`);
   if (c.sort.length) bits.push('sorted');
+  if (c.kanban) bits.push('board');
   if (c.groupBy?.length) bits.push('grouped');
   if (c.hidden.length) bits.push(`${c.hidden.length} hidden`);
   return bits.join(' · ') || 'everything, unsorted';
@@ -456,14 +477,27 @@ function save(patch: Partial<ViewConfig>) {
   }
 }
 
-async function newView() {
-  const name = await ask({ title: 'New view', label: 'Name', initial: `View ${views.value.length + 1}` });
+async function newView(kind: 'grid' | 'kanban' = 'grid') {
+  const name = await ask({ title: kind === 'kanban' ? 'New board' : 'New view', label: 'Name', initial: kind === 'kanban' ? 'Board' : `View ${views.value.length + 1}` });
   if (!name) return;
   const id = crypto.randomUUID();
+  if (kind === 'kanban') {
+    const f = kanbanable.value[0];
+    if (!f) return;
+    store.mutate({ type: 'view.create', id, tableId: props.tableId, name, config: { ...config.value, groupBy: [], kanban: { fieldId: f.id } } });
+    store.mutate({ type: 'view.update', id, position: views.value.length });
+    activeId.value = id;
+    if (viewMenu.value) viewMenu.value.open = false;
+    return;
+  }
   // Starts from the current config: "this, but also filtered by X" is the
   // usual reason to want a second view. (Both mutations AFTER the await, so
   // they are one undo step — see client/dialogs.ts.)
-  store.mutate({ type: 'view.create', id, tableId: props.tableId, name, config: { ...config.value } });
+  // Starts from the current view's filters, sort and hidden fields — but a GRID, even
+  // when made from a board (the `kanban` key is what makes a view a board).
+  const { kanban: _board, ...base } = config.value;
+  void _board;
+  store.mutate({ type: 'view.create', id, tableId: props.tableId, name, config: base });
   store.mutate({ type: 'view.update', id, position: views.value.length });
   activeId.value = id;
   if (viewMenu.value) viewMenu.value.open = false;
@@ -581,10 +615,7 @@ watch(() => derived.tablesNeededBy(allFields.value).join(), (joined) => {
 }, { immediate: true });
 
 const targetOf = (f: FieldRow) => f.options?.target_table_id as string | undefined;
-function addLink(f: FieldRow, fromRecord: string, toRecord: string) {
-  if (!toRecord) return;
-  store.mutate({ type: 'link.add', id: crypto.randomUUID(), fieldId: f.id, fromRecord, toRecord });
-}
+const addLink = (f: FieldRow, fromRecord: string, toRecord: string) => addLinkVia(store, f.id, fromRecord, toRecord);
 function removeLink(fieldId: string, fromRecord: string, toRecord: string) {
   store.mutate({ type: 'link.remove', fieldId, fromRecord, toRecord });
 }
@@ -659,6 +690,23 @@ async function create(context: { data?: Record<string, unknown>; links?: Array<{
   reveal(i);
   await nextTick();
   startEdit(id, firstField);
+}
+
+/* ── a board ───────────────────────────────────────────────────────────────
+   contract/views.ts `kanban`. The grid's toolbar stays (filter, sort, fields); the
+   body is KanbanView. */
+const kanbanable = computed(() => allFields.value.filter(canMakeColumns));
+// A board whose field can no longer make columns (its "single" tick removed) falls back to the grid.
+const kanban = computed(() => (config.value.kanban && kanbanable.value.some((f) => f.id === config.value.kanban!.fieldId) ? config.value.kanban : undefined));
+const kanbanField = computed(() => (kanban.value ? store.state.fields.get(kanban.value.fieldId) : undefined));
+const primaryField = computed(() => shown.value.find((f) => f.position === Math.min(...allFields.value.map((x) => x.position))) ?? shown.value[0]);
+/** "+" in a column: a record that starts out IN that column. */
+function createInColumn(v: GroupValue) {
+  const f = kanbanField.value;
+  if (!f) return;
+  if (v.kind === 'value') void create({ data: { [f.key]: v.value } });
+  else if (v.kind === 'links') void create({ links: v.ids.map((to) => ({ fieldId: f.id, toRecord: to })) });
+  else void create();
 }
 
 /* ── grouping ──────────────────────────────────────────────────────────────
