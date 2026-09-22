@@ -30,6 +30,7 @@ only supplies the toolchain — all behaviour lives in `scripts/db.sh`.
 | `UI-NOTES.md` | what has been built but never SEEN, and a checking order |
 | `DEPLOY.md` | from `npm run dev` to a real LAN service: system Postgres, Caddy, HTTPS, NixOS |
 | `TAURI-HANDOFF.md` | for the session that builds the desktop client and its tools |
+| `COMPARE-BRIEF.md` | the comparison engine, designed and not built: rules on the link field, seeding, the deliverables chain |
 | `REPORTS-BRIEF.md` | for the session that designs reports |
 
 ## Signing in

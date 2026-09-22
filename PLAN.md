@@ -968,6 +968,15 @@ red-checked. Also: the layout editor now writes nothing when nothing changed (a 
 re-typed as it was) — a no-op mutation is a log row, a broadcast and an undo step
 that visibly does nothing.
 
+### The comparison engine — designed, not built (Sept 22)
+
+See `COMPARE-BRIEF.md`. In one line: a "comparing link" is an ordinary link field
+with `options.compare = { pairs }` (roles are link fields); the result is derived,
+never stored; seeding is the pair list run backwards, once; specs form a CHAIN of
+records (catalogue → project deliverable → file), not lookups, because in reality the
+project's deliverable IS the spec and the studio's is where it started. Comparison
+is separate from QC, which will consume it.
+
 ### Kanban (Sept 22)
 
 The owner: columns by a chosen attribute, LINK fields as valid columns; he floated a
