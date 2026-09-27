@@ -25,6 +25,7 @@ import {
   shapeOptionError, splitTrack, structuredError, summarise, type AudioLayout as Layout,
 } from '../src/contract/shapes.js';
 import { FIELD_TYPES } from '../src/contract/mutations.js';
+import { compareConfigError, compareRecords, rulesFor, seedValues, suggestPairs, type ComparePair } from '../src/contract/compare.js';
 import { assetIdsIn, attachmentError, isEmptyRichText, richTextError, richTextToPlain } from '../src/contract/richtext.js';
 import { compareFields, labelFrom, primaryKeyOf } from '../src/contract/labels.js';
 import { emptyState, ingestPage, recordsOf, viewsOf } from '../src/client/state.js';
@@ -401,6 +402,60 @@ function pure() {
     canMakeColumns(kSel) && canMakeColumns(kLink) && !canMakeColumns({ ...kLink, options: { target_table_id: 'x' } }) && !canMakeColumns({ id: 'm', key: 'm', type: 'multi_select' }));
   check('a view config with `kanban` parses; a stray key does not', ViewConfig.safeParse({ kanban: { fieldId: randomUUID() } }).success && !ViewConfig.safeParse({ kanban: { fieldId: randomUUID(), mode: 'add' } }).success);
 
+  {
+  console.log('\nG1n. The comparison engine (contract/compare.ts)');
+  const tF = 'files', tD = 'dels';
+  const U: Record<string, string> = Object.fromEntries(['c1', 'c2', 's1', 's2', 's3', 'd1', 'd2', 't1', 't2', 'w1', 'w2', 'a1', 'a2', 'L'].map((k) => [k, randomUUID()]));
+  const F = (id: string, key: string, type: string, table_id: string, options: Record<string, unknown> = {}) => ({ id, key, name: key, type, table_id, options });
+  const codecF = F(U.c1, 'codec', 'text', tF), codecD = F(U.c2, 'codec', 'text', tD);
+  const sizeF = F(U.s1, 'size', 'number', tF), maxD = F(U.s2, 'max_size', 'number', tD), sizeD = F(U.s3, 'size', 'number', tD);
+  const dueF = F(U.d1, 'delivered', 'date', tF), dueD = F(U.d2, 'due', 'date', tD);
+  const stF = F(U.t1, 'status', 'select', tF, { choices: ['a', 'b'] }), stD = F(U.t2, 'status', 'text', tD);
+  const wF = F(U.w1, 'work', 'link', tF, { target_table_id: 'works', single: true }), wD = F(U.w2, 'work', 'link', tD, { target_table_id: 'works' });
+  const alF = F(U.a1, 'audio_layout', 'structured', tF, { shape: 'audio_layout' }), alD = F(U.a2, 'audio_layout', 'structured', tD, { shape: 'audio_layout' });
+  const link = { id: U.L, key: 'target', name: 'Targets', type: 'link', table_id: tF, options: { target_table_id: tD } };
+  const all = [codecF, codecD, sizeF, maxD, sizeD, dueF, dueD, stF, stD, wF, wD, alF, alD, link];
+  const byId = new Map(all.map((f) => [f.id, f]));
+
+  check('rules are typed by the two field types: text equals; number within/at least/at most; date before/after; link same; layout', rulesFor(codecF, codecD).join() === 'equals'
+    && rulesFor(sizeF, maxD).join() === 'equals,within,atLeast,atMost' && rulesFor(dueF, dueD).join() === 'equals,onOrBefore,onOrAfter' && rulesFor(wF, wD).join() === 'sameRecord,sameSet'
+    && rulesFor(alF, alD).join() === 'layout' && rulesFor(codecF, sizeD).length === 0 && rulesFor(stF, stD).join() === 'equals');
+  check('suggest-by-name pairs same-name fields with a legal rule and skips the rest', suggestPairs([codecF, sizeF, dueF, stF, wF, alF], [codecD, sizeD, maxD, dueD, stD, wD, alD]).map((p) => `${p.from}>${p.to}:${p.rule}`).join() === [`${U.c1}>${U.c2}:equals`, `${U.s1}>${U.s3}:equals`, `${U.t1}>${U.t2}:equals`, `${U.w1}>${U.w2}:sameRecord`, `${U.a1}>${U.a2}:layout`].join(), suggestPairs([codecF, sizeF, dueF, stF, wF, alF], [codecD, sizeD, maxD, dueD, stD, wD, alD]).map((p) => `${p.from}>${p.to}:${p.rule}`).join());   // 'delivered' ≠ 'due': not suggested
+  const pairs: ComparePair[] = [
+    { from: U.c1, to: U.c2, rule: 'equals', params: { caseInsensitive: true } }, { from: U.s1, to: U.s2, rule: 'atMost' }, { from: U.d1, to: U.d2, rule: 'onOrBefore' },
+    { from: U.w1, to: U.w2, rule: 'sameRecord' }, { from: U.a1, to: U.a2, rule: 'layout' }, { from: U.t1, to: U.t2, rule: 'equals' },
+  ];
+  check('server-side validation: a pair naming the wrong table, an illegal rule, or "within" without a tolerance is refused; the good list passes',
+    compareConfigError({ table_id: tF, options: { target_table_id: tD, compare: { pairs } } }, all) === null
+    && /not a field of this table/.test(compareConfigError({ table_id: tF, options: { target_table_id: tD, compare: { pairs: [{ from: U.c2, to: U.c2, rule: 'equals' }] } } }, all) ?? '')
+    && /not valid for/.test(compareConfigError({ table_id: tF, options: { target_table_id: tD, compare: { pairs: [{ from: U.c1, to: U.s2, rule: 'equals' }] } } }, all) ?? '')
+    && /tolerance/.test(compareConfigError({ table_id: tF, options: { target_table_id: tD, compare: { pairs: [{ from: U.s1, to: U.s2, rule: 'within' }] } } }, all) ?? '')
+    && !!compareConfigError({ table_id: tF, options: { target_table_id: tD, compare: { pairs: [{ from: U.c1, to: U.c2, rule: 'bigger' }] } } }, all));
+
+  const five1 = { tracks: [{ name: 'Full mix', channels: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'] }] };
+  const spec = { id: 'D', data: { codec: 'ProRes 4444', max_size: 100, due: '2026-10-01', audio_layout: five1, status: 'a' } };
+  const file = { id: 'F', data: { codec: 'prores 4444', size: 80, delivered: '2026-09-30', audio_layout: five1, status: 'a' } };
+  const lk = { F: { [U.w1]: ['ep1'] }, D: { [U.w2]: ['ep1'] } } as Record<string, Record<string, string[]>>;
+  const lf = (r: string, f: string) => lk[r]?.[f] ?? [];
+  const good = compareRecords(pairs, byId, file, spec, lf, (id) => id);
+  check('a file that meets its spec: every pair matches (case-insensitive codec, size under max, on time, same work, same layout)', good.same && good.results.every((r) => r.status === 'match'), JSON.stringify(good.results.map((r) => [r.pair.from, r.status])));
+  const bad = compareRecords(pairs, byId, { id: 'F', data: { codec: 'DNxHR', size: 120, delivered: '2026-10-05', status: 'b' } }, spec, lf, (id) => id);
+  const st = Object.fromEntries(bad.results.map((r) => [r.pair.from, r.status]));
+  check('a file that does not: differ where values disagree, MISSING where the file is empty but the spec is not, and the detail says why',
+    !bad.same && st[U.c1] === 'differ' && st[U.s1] === 'differ' && st[U.d1] === 'differ' && st[U.a1] === 'missing' && st[U.t1] === 'differ' && st[U.w1] === 'match'
+    && /above the maximum 100/.test(bad.results.find((r) => r.pair.from === U.s1)!.detail) && /is after/.test(bad.results.find((r) => r.pair.from === U.d1)!.detail), JSON.stringify(st));
+  const unspec = compareRecords(pairs, byId, file, { id: 'D', data: {} }, lf, (id) => id);
+  check('an EMPTY spec value is "unspecified" — skipped, not failed — so a spec that says nothing about codec still counts as met', unspec.same && unspec.results.filter((r) => r.status === 'unspecified').length === 5 && unspec.results.find((r) => r.pair.from === U.w1)?.status === 'match');
+  check('a pair whose field was deleted silently no longer applies', compareRecords([{ from: randomUUID(), to: U.c2, rule: 'equals' }], byId, file, spec, lf).results.length === 0);
+
+  const seed = seedValues(pairs, byId, { id: 'F2', data: { codec: 'keep me' } }, spec, lf);   // F2: no links yet
+  check('SEED: the pair list run backwards, once, into EMPTY fields only; a link pair becomes records to link; a select only if the value is one of its choices',
+    seed.set.size === 100 && seed.set.delivered === '2026-10-01' && seed.set.status === 'a' && !('codec' in seed.set) && seed.skipped.join() === 'codec' && seed.links.map((l) => l.fieldId + ':' + l.toRecords.join()).join() === `${U.w1}:ep1`
+    && JSON.stringify(seed.set.audio_layout) === JSON.stringify(five1), JSON.stringify(seed));
+  check('…with overwrite, the kept value goes too', 'codec' in seedValues(pairs, byId, { id: 'F2', data: { codec: 'keep me' } }, spec, lf, true).set);
+  check('…a select value that is not one of the field\'s choices is skipped, and says so', /not one of its choices/.test(seedValues([{ from: U.t1, to: U.t2, rule: 'equals' }], byId, { id: 'F', data: {} }, { id: 'D', data: { status: 'zzz' } }, lf).skipped.join()));
+
+  }
   console.log('\nG1c. applyView — cost at the size whole-table loading commits us to');
   const big = Array.from({ length: 50_000 }, (_, i) =>
     rec(String(i), { name: `shot_${(i * 7919) % 50_000}_v${i % 12}`, frames: (i * 31) % 5000, status: ['todo', 'doing', 'done'][i % 3] }));
@@ -776,6 +831,22 @@ async function main() {
   check('…and says which side is not a layout', viaApiBad.status === 400 && /'b' is not an audio layout/.test(await viaApiBad.text()));
   check('a structured value is found by search through the record\'s other text, and the mutation log holds the value once',
     (await pool.query(`select count(*)::int n from mutations where payload::text like '%ep101_L.wav%'`)).rows[0].n === 1);
+
+  console.log('\nG11. Comparing links on the server');
+  const cT = randomUUID(), cD = randomUUID(), cCodecF = randomUUID(), cCodecD = randomUUID(), cLink = randomUUID(), cF = randomUUID(), cS = randomUUID();
+  await mutate([{ type: 'table.create', id: cT, name: 'CFiles' }, { type: 'table.create', id: cD, name: 'CSpecs' },
+    { type: 'field.create', id: cCodecF, tableId: cT, name: 'Codec', key: 'codec', fieldType: 'text' },
+    { type: 'field.create', id: cCodecD, tableId: cD, name: 'Codec', key: 'codec', fieldType: 'text' },
+    { type: 'record.create', id: cF, tableId: cT, data: { codec: 'ProRes' } }, { type: 'record.create', id: cS, tableId: cD, data: { codec: 'DNxHR' } }]);
+  const badPair = await mutate([{ type: 'field.create', id: cLink, tableId: cT, name: 'Spec', key: 'spec', fieldType: 'link', options: { target_table_id: cD, compare: { pairs: [{ from: cCodecF, to: cCodecF, rule: 'equals' }] } } }]);
+  check('a comparing link whose pair names a field on the wrong side is refused at creation', badPair.status === 400 && /not a field of the target table/.test(JSON.stringify(badPair.body)), JSON.stringify(badPair.body).slice(0, 200));
+  check('a legal one is accepted', (await mutate([{ type: 'field.create', id: cLink, tableId: cT, name: 'Spec', key: 'spec', fieldType: 'link', options: { target_table_id: cD, compare: { pairs: [{ from: cCodecF, to: cCodecD, rule: 'equals' }] } } },
+    { type: 'link.add', id: randomUUID(), fieldId: cLink, fromRecord: cF, toRecord: cS }])).status === 200);
+  check('…and an illegal rule on update is refused', (await mutate([{ type: 'field.update', id: cLink, options: { target_table_id: cD, compare: { pairs: [{ from: cCodecF, to: cCodecD, rule: 'atMost' }] } } }])).status === 400);
+  const cmp = await fetch(`${API}/api/compare`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ linkFieldId: cLink, ownerId: cF, targetId: cS }) });
+  const verdict: any = await cmp.json();
+  check('POST /api/compare gives a script the verdict: the same engine, the same detail', cmp.status === 200 && verdict.same === false && verdict.results[0].status === 'differ' && verdict.results[0].detail === 'ProRes ≠ DNxHR', JSON.stringify(verdict));
+  check('…and refuses a record from the wrong table', (await fetch(`${API}/api/compare`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ linkFieldId: cLink, ownerId: cS, targetId: cS }) })).status === 400);
 
   A.stop(); slow.stop(); fresh.stop(); after.stop();
   console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -311,13 +311,15 @@ const cards = computed(() =>
     const rec = store.state.records.get(p.record_id);
     if (!rec) return [];   // placement without its record: mid-sync, skip a frame
     const table = store.state.tables.get(rec.table_id);
+    // ⚠ per row from comparing links (COMPARE-BRIEF.md) — derived, live.
+    const diffs = derived.differencesOf(p.record_id);
     return [{
       recordId: p.record_id,
       tableId: rec.table_id,
       tableName: table?.name ?? 'unknown',
       tableColor: colorOf(rec.table_id),
       title: labelFrom(rec.data, labelKeys.value.get(rec.table_id), ''),
-      rows: rowFields(rec.table_id).map((f) => rowFor(rec, f)),
+      rows: rowFields(rec.table_id).map((f) => { const r = rowFor(rec, f); const d = diffs.get(f.id); return d ? { ...r, warn: d.map((x) => `${x.link.name} → ${derived.labelOfId(x.target)}: ${x.result.detail}`).join('\n') } : r; }),
       rich: richBlocks(rec),
       collapsed: p.collapsed,
       x: p.x, y: p.y, w: p.w, h: p.h, z: p.z,

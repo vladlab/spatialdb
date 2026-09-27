@@ -26,6 +26,7 @@ import { migrationGate } from './migrations.js';
 import { parseScope } from '../contract/scope.js';
 import { appVersion, serveFrontend } from './web.js';
 import { AudioLayout, diffLayouts } from '../contract/shapes.js';
+import { compareOf, compareRecords } from '../contract/compare.js';
 import type { z } from 'zod';
 import { AssetError, findAsset, openAsset, storeAsset } from './assets.js';
 import { Readable } from 'node:stream';
@@ -478,6 +479,27 @@ app.post('/api/qc/audio-layout-diff', async (c) => {
     return c.json({ error: `'${bad[0]}' is not an audio layout — ${bad[1].issues[0]?.path.join('.')}: ${bad[1].issues[0]?.message}` }, 400);
   }
   return c.json(diffLayouts(a.data, b.data));
+});
+
+/**
+ * The comparison engine's verdict for one pair of records, for scripts (the web app
+ * calls `compareRecords` directly). Stateless; reads the two records and the link
+ * field's pairs; writes nothing. The caller must be able to read both tables.
+ */
+app.post('/api/compare', async (c) => {
+  const body = await c.req.json().catch(() => ({})) as { linkFieldId?: string; ownerId?: string; targetId?: string };
+  if (![body.linkFieldId, body.ownerId, body.targetId].every((x) => typeof x === 'string')) return c.json({ error: 'linkFieldId, ownerId and targetId are required' }, 400);
+  const link = (await pool.query(`select * from fields where id = $1 and type = 'link'`, [body.linkFieldId])).rows[0];
+  const pairs = link ? compareOf(link)?.pairs : undefined;
+  if (!link || !pairs) return c.json({ error: 'not a comparing link field' }, 400);
+  const target = String(link.options?.target_table_id ?? '');
+  const fields = (await pool.query(`select * from fields where table_id = $1 or table_id = $2`, [link.table_id, target])).rows;
+  const [owner, tgt] = (await Promise.all([body.ownerId, body.targetId].map((id) => pool.query(`select id, table_id, data from records where id = $1`, [id])))).map((r) => r.rows[0]);
+  if (!owner || owner.table_id !== link.table_id) return c.json({ error: 'ownerId is not a record of the link\'s table' }, 400);
+  if (!tgt || tgt.table_id !== target) return c.json({ error: 'targetId is not a record of the link\'s target table' }, 400);
+  const links = (await pool.query(`select field_id, from_record, to_record from links where from_record = $1 or from_record = $2`, [owner.id, tgt.id])).rows;
+  const linksFrom = (rid: string, fid: string) => links.filter((l) => l.from_record === rid && l.field_id === fid).map((l) => l.to_record as string);
+  return c.json(compareRecords(pairs, new Map(fields.map((f) => [f.id, f])), owner, tgt, linksFrom));
 });
 
 /* ────────────────────────────────────────────────────────────────────────────

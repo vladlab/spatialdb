@@ -30,7 +30,7 @@ only supplies the toolchain — all behaviour lives in `scripts/db.sh`.
 | `UI-NOTES.md` | what has been built but never SEEN, and a checking order |
 | `DEPLOY.md` | from `npm run dev` to a real LAN service: system Postgres, Caddy, HTTPS, NixOS |
 | `TAURI-HANDOFF.md` | for the session that builds the desktop client and its tools |
-| `COMPARE-BRIEF.md` | the comparison engine, designed and not built: rules on the link field, seeding, the deliverables chain |
+| `COMPARE-BRIEF.md` | the comparison engine's design: rules on the link field, seeding, the deliverables chain (built Sept 26) |
 | `REPORTS-BRIEF.md` | for the session that designs reports |
 
 ## Signing in
@@ -80,6 +80,7 @@ src/
   contract/canvasConfig.ts ★ which fields a canvas's cards show
   contract/backlinks.ts  ★ backlink fields — the other end of a link
   contract/arrows.ts     ★ a link field's arrow colour and direction
+  contract/compare.ts    ★ the comparison engine: rules, compareRecords, seedValues
   contract/shapes.ts     ★ structured values: shapes, summaries, layout operations, the layout diff
   contract/scope.ts      ★ scope: the membership flag and "is this record in scope"
   contract/richtext.ts   ★ rich text + attachment values: refer to files, never contain them
@@ -119,6 +120,7 @@ src/
       CommandPalette.vue Ctrl+K — find any record anywhere; place it on a canvas
       RichTextEditor.vue / RichTextView.vue   a note, written and read (TipTap, loaded on demand)
       AttachmentField.vue files on a record
+      ComparePairs.vue / SideBySide.vue   comparing links: the pairs editor; two records side by side
       KanbanView.vue      a view whose body is columns of cards
       StructuredField.vue / ManifestView.vue / AudioLayoutEditor.vue   structured values in the tray
       RecordPanel.vue    one record, every field, editable — opened by grid AND canvas
@@ -162,7 +164,7 @@ invented their own shape. See PLAN.md.
 | `db.sh psql` | SQL shell |
 | `db.sh url` | connection string |
 | `npm run dev` | api + client via `scripts/dev.sh`; Ctrl-C stops BOTH, and it refuses to start if port 8787 is taken |
-| `npm test` | all fourteen suites (against an isolated `spatialdb_test`) |
+| `npm test` | all fifteen suites (against an isolated `spatialdb_test`) |
 | `npm run test:e2e` | apply layer only (no server needed) |
 | `npm run test:store` | client store + two-client convergence |
 | `npm run test:undo` | delete capture and undo |
@@ -176,6 +178,7 @@ invented their own shape. See PLAN.md.
 | `./scripts/deploy.sh` | update a running deployment: back up, pull, install, build, stop, migrate, start, check (DEPLOY.md §8) |
 | `npm run migrate` | apply pending migrations to the database named by `DB_URL` (a real deployment; `db.sh migrate` is the dev cluster's) |
 | `npm run test:structured` | structured fields in the app: layout editor, compare, manifests, standard Files fields |
+| `npm run test:compare` | comparing links: the tick, the pairs editor, badges, side by side, seed from |
 | `npm run test:kanban` | the board: columns by select and link, move/add, single links |
 | `npm run test:prod` | the server as deployed: built frontend, cache headers, CSP, loopback bind |
 | `npm run test:auth` | signing in, sessions, roles, users — against a server with sign-in ON |

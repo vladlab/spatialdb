@@ -52,6 +52,15 @@
              @change="actions.setSingle(field.id, ($event.target as HTMLInputElement).checked)" />
       single
     </label>
+    <!-- LINK fields: a COMPARING link (COMPARE-BRIEF.md): the target is what is expected,
+         this table's record what was found; pairs of fields say what is checked. Ticking
+         pre-fills same-name pairs. -->
+    <label v-if="field.type === 'link'" class="compare-tick"
+           :title="`Tick to compare a ${tableName} record's fields against the ${targetName} record it links to. Differences show as ⚠ beside the field.`">
+      <input type="checkbox" :checked="field.options?.compare !== undefined" @change="toggleCompare(($event.target as HTMLInputElement).checked)" />
+      compare
+    </label>
+    <ComparePairs v-if="field.type === 'link' && field.options?.compare !== undefined" :store="store" :field="field" />
     <!-- LINK fields: is this the link through which records BELONG to something? -->
     <label v-if="field.type === 'link'" class="membership"
            :title="`Tick if a record of this table BELONGS to the ${targetName} record it links to — e.g. a file belongs to a project. A section scoped by ${targetName} then narrows this table to one of them, and new records made there are linked automatically. One such field per table.`">
@@ -78,7 +87,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { Store } from '../store';
-import type { FieldRow } from '../state';
+import { fieldsOf, type FieldRow } from '../state';
+import { suggestPairs } from '../../contract/compare';
+import ComparePairs from './ComparePairs.vue';
 import { choicesOf, type SchemaActions } from '../schemaActions';
 import { arrowStyleOf } from '../../contract/arrows';
 
@@ -94,6 +105,16 @@ async function onDelete() { if (await props.actions.deleteField(props.field.id))
 const arrow = computed(() => arrowStyleOf(props.field));
 const backlink = computed(() => props.actions.describeBacklink(props.field));
 const lookup = computed(() => props.actions.describeLookup(props.field));
+const tableName = computed(() => props.store.state.tables.get(props.field.table_id)?.name ?? '');
+function toggleCompare(on: boolean) {
+  const { compare: _old, ...rest } = props.field.options ?? {};
+  void _old;
+  if (!on) { props.store.mutate({ type: 'field.update', id: props.field.id, options: rest }); return; }
+  const own = fieldsOf(props.store.state, props.field.table_id);
+  const pairs = suggestPairs(own.filter((f) => f.id !== props.field.id), fieldsOf(props.store.state, String(props.field.options?.target_table_id ?? '')), [own[0]?.id ?? '']);
+  props.store.mutate({ type: 'field.update', id: props.field.id, options: { ...rest, compare: { pairs } } });
+}
+
 const targetName = computed(() => {
   const id = props.field.options?.target_table_id as string | undefined;
   return (id && props.store.state.tables.get(id)?.name) || '(missing table)';
@@ -119,7 +140,7 @@ input:not([type='checkbox']):not([type='color']) {
 .field-settings.row .lookup { width: auto; }
 input[type='checkbox'] { width: auto; flex: none; margin: 0; }
 .field-settings.stack .membership, .field-settings.stack .arrow-style { align-self: flex-start; }
-.membership, .single { display: flex; gap: 4px; align-items: center; cursor: pointer; color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.membership, .single, .compare-tick { display: flex; gap: 4px; align-items: center; cursor: pointer; color: var(--text-muted); font-size: 11px; white-space: nowrap; }
 .arrow-style { display: flex; gap: 6px; align-items: center; color: var(--text-muted); font-size: 11px; }
 .arrow-style label { display: flex; gap: 4px; align-items: center; cursor: pointer; }
 .arrow-style input[type='color'] { width: 22px; height: 18px; padding: 0; border: 1px solid var(--border-main); background: none; cursor: pointer; }

@@ -28,10 +28,24 @@
       <button class="rp-close" title="Close (Esc)" @click="$emit('close')">×</button>
     </header>
 
+    <!-- COMPARISONS (COMPARE-BRIEF.md): for each comparing link this record has, and
+         each record it links to through it — a verdict, "side by side", and "seed
+         from". Derived, live; nothing here is stored. -->
+    <div v-if="comparisons.length" class="rp-compare">
+      <div v-for="c in comparisons" :key="c.link.id + c.target" class="rp-cmp" :class="{ same: c.result?.same }">
+        <span class="rp-cmp-verdict">{{ c.result ? (c.result.same ? '✓' : '✗') : '…' }}</span>
+        <span class="rp-cmp-text"><b>{{ c.link.name }}</b> → {{ c.targetLabel }}<template v-if="c.result && !c.result.same">: {{ c.diffs }} difference{{ c.diffs === 1 ? '' : 's' }}</template></span>
+        <button class="rp-cmp-btn sbs-btn" @click="sideBySide = sideBySide?.target === c.target && sideBySide.linkId === c.link.id ? null : { linkId: c.link.id, target: c.target }">side by side</button>
+        <button class="rp-cmp-btn seed-btn" :title="`Copy ${c.targetLabel}'s paired values into this record's EMPTY fields (one Ctrl+Z)`" @click="seedFrom(c.link.id, c.target)">seed from</button>
+      </div>
+      <SideBySide v-if="sideBySide" :store="store" :link-id="sideBySide.linkId" :owner-id="recordId" :target-id="sideBySide.target" @close="sideBySide = null" />
+    </div>
+
     <div class="rp-body">
       <div v-for="f in fields" :key="f.id" class="rp-field" :class="{ editing: editingId === f.id, block: f.type === 'rich_text' }">
         <label class="rp-name">
           <span v-if="f.id === primaryId" class="star" title="Primary field — this record's name">★</span>{{ f.name }}
+          <span v-if="differences.has(f.id)" class="cmp-badge" :title="badgeTitle(f.id)">⚠</span>
         </label>
 
         <!-- RICH TEXT is not a click-to-edit value like the rest: it is an editor that
@@ -137,6 +151,8 @@ import AttachmentField from './AttachmentField.vue';
 import StructuredField from './StructuredField.vue';
 import { formatNumberField } from '../../contract/shapes';
 import { addLink as addLinkVia } from '../links';
+import { compareOf, seedValues } from '../../contract/compare';
+import SideBySide from './SideBySide.vue';
 
 // Loaded ON DEMAND. TipTap + ProseMirror are most of a megabyte of source, and
 // nothing needs them until a record with a rich_text field is opened — so they
@@ -154,6 +170,42 @@ const record = computed(() => store.state.records.get(props.recordId));
 const table = computed(() => store.state.tables.get(record.value?.table_id ?? ''));
 const tableColor = computed(() => table.value?.color || 'var(--card-head-bg)');
 const fields = computed(() => (record.value ? fieldsOf(store.state, record.value.table_id) : []));
+
+/* ── comparison ── */
+const comparisons = computed(() => derived.comparisonsOf(props.recordId).flatMap((c) => c.targets.map((target) => {
+  const result = derived.compare(c.link.id, props.recordId, target);
+  return { link: c.link, target, targetLabel: derived.labelOfId(target), result, diffs: result?.results.filter((r) => r.status === 'differ' || r.status === 'missing').length ?? 0 };
+})));
+// The target's table must be loaded for its values (and label) to be here.
+watch(() => derived.comparisonsOf(props.recordId).map((c) => String(c.link.options?.target_table_id ?? '')), (ids) => { for (const t of new Set(ids)) if (t) void store.loadTable(t); }, { immediate: true });
+const differences = computed(() => derived.differencesOf(props.recordId));
+const badgeTitle = (fieldId: string) => (differences.value.get(fieldId) ?? []).map((d) => `${d.link.name} → ${derived.labelOfId(d.target)}: ${d.result.detail}`).join('\n');
+const sideBySide = ref<{ linkId: string; target: string } | null>(null);
+watch(() => props.recordId, () => { sideBySide.value = null; });
+
+/** Copy the paired values from a target into this record's EMPTY fields — one batch, one Ctrl+Z. */
+async function seedFrom(linkId: string, targetId: string) {
+  const link = store.state.fields.get(linkId), owner = record.value, target = store.state.records.get(targetId);
+  const pairs = link ? compareOf(link)?.pairs : undefined;
+  if (!link || !pairs || !owner || !target) return;
+  const plan = seedValues(pairs, store.state.fields, owner, target, derived.linksFrom);
+  const n = Object.keys(plan.set).length + plan.links.length;
+  if (!n) {
+    if (plan.skipped.length && await confirmDialog({ title: 'Seed from', body: `Every paired field already has a value (${plan.skipped.join(', ')}). Overwrite them with ${derived.labelOfId(targetId)}'s?`, okText: 'Overwrite', danger: true })) {
+      const all = seedValues(pairs, store.state.fields, owner, target, derived.linksFrom, true);
+      applySeed(all.set, all.links, owner.id);
+    }
+    return;
+  }
+  applySeed(plan.set, plan.links, owner.id);
+}
+function applySeed(set: Record<string, unknown>, links: Array<{ fieldId: string; toRecords: string[] }>, ownerId: string) {
+  if (Object.keys(set).length) store.mutate({ type: 'record.update', id: ownerId, set, unset: [] });
+  for (const l of links) {
+    for (const old of derived.linksFrom(ownerId, l.fieldId)) if (!l.toRecords.includes(old)) store.mutate({ type: 'link.remove', fieldId: l.fieldId, fromRecord: ownerId, toRecord: old });
+    for (const to of l.toRecords) store.mutate({ type: 'link.add', id: crypto.randomUUID(), fieldId: l.fieldId, fromRecord: ownerId, toRecord: to });
+  }
+}
 
 const labelKeys = computed(() => primaryKeys(store.state));
 const primaryId = computed(() => {
@@ -286,6 +338,14 @@ watch(() => props.recordId, () => {
 .rp-close:hover { color: var(--text-primary); }
 
 .rp-body { flex: 1; overflow-y: auto; padding: 8px 12px; }
+.rp-compare { padding: 6px 12px 0; border-bottom: 1px solid var(--border-main); }
+.rp-cmp { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 3px 0; }
+.rp-cmp-verdict { font-weight: 700; color: var(--danger); width: 14px; }
+.rp-cmp.same .rp-cmp-verdict { color: var(--success); }
+.rp-cmp-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-cmp-btn { background: none; border: 1px solid var(--border-main); color: var(--text-secondary); border-radius: 4px; padding: 0 7px; cursor: pointer; font: inherit; font-size: 11px; white-space: nowrap; }
+.rp-cmp-btn:hover { color: var(--accent); border-color: var(--accent); }
+.cmp-badge { color: var(--warning); margin-left: 5px; cursor: help; font-size: 12px; }
 .rp-field { padding: 6px 0; }
 .rp-field.block { padding: 10px 0; }
 /* min-height is set inline (richReserve): the editor's place, held while it loads. */

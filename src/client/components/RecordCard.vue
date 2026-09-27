@@ -55,6 +55,7 @@
               @pointerdown.stop.prevent="$emit('link-start', { recordId, fieldId: r.id, e: $event })" />
         <span class="card-key"><span v-if="r.color" class="port-dot" :style="{ background: r.color }" />{{ r.name }}</span>
         <span class="card-val" :class="{ empty: !r.text, derived: r.derived, broken: r.broken }">{{ r.text || '—' }}</span>
+        <span v-if="r.warn" class="card-warn" :title="r.warn">⚠</span>
       </div>
       <!-- NOTES: formatted, with their images, in a window of FIXED height that scrolls
            inside itself (cardLayout.ts says why it cannot be as tall as its content).
@@ -96,6 +97,8 @@ export interface CardRow {
   broken?: boolean;
   /** A LINK field's row: an output port, with a handle to drag a new link from. */
   link?: boolean;
+  /** A comparing link says this value differs from what is expected: a ⚠, with the why. */
+  warn?: string;
   /** A link or backlink row whose field has an arrow colour: the row is a PORT,
    *  and the dot ties it to the arrows that leave from (or land on) it. */
   color?: string;
@@ -256,6 +259,7 @@ function onPointerDown(e: PointerEvent) {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .port-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+.card-warn { color: var(--warning); font-size: 11px; margin-left: 3px; flex: none; }
 .card-val {
   color: var(--text-primary); overflow: hidden; min-width: 0;
   text-overflow: ellipsis; white-space: nowrap;

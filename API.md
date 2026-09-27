@@ -361,6 +361,30 @@ the same links. It REPLACED "a board inherits from its record's membership links
 (position = last + 1). It used to be 0, which let a new field tie with — and, sorting
 alphabetically, displace — the table's primary field.
 
+### Comparing links (the comparison engine)
+
+`field.options.compare = { pairs: [{ from, to, rule, params? }] }` on a **link**
+field, validated by the server (`src/contract/compare.ts`, `compareConfigError`):
+`from` a field of the link's table (what was FOUND), `to` a field of the target
+table (what is EXPECTED), `rule` legal for the two types (`rulesFor`):
+
+| types | rules |
+|---|---|
+| text/select ↔ text/select | `equals` (`params.caseInsensitive`) |
+| checkbox ↔ checkbox | `equals` |
+| date ↔ date | `equals`, `onOrBefore`, `onOrAfter` |
+| number ↔ number | `equals`, `within` (`params.tolerance`, required), `atLeast`, `atMost` |
+| link ↔ link (same target) | `sameRecord`, `sameSet` |
+| audio_layout ↔ audio_layout | `layout` |
+
+Results are DERIVED, never stored (`compareRecords`): per pair `match` / `differ` /
+`missing` (owner empty, target not) / `unspecified` (target empty — skipped, not
+failed). `same` is true when nothing is `differ` or `missing`.
+**`POST /api/compare`** `{ linkFieldId, ownerId, targetId }` → the same result;
+400 if the link is not comparing or a record is from the wrong table.
+Seeding (`seedValues`) is the pair list run backwards: the client writes
+`record.update` + `link.add`s in one batch. See `COMPARE-BRIEF.md`.
+
 ### Kanban boards, and "single" link fields
 
 `ViewConfig.kanban?: { fieldId }` — present means the view is a BOARD: one column

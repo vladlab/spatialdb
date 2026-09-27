@@ -15,6 +15,7 @@
 
 import { computed } from 'vue';
 import type { Store } from './store';
+import { compareOf, compareRecords, type ComparePair, type CompareResult, type PairResult } from '../contract/compare';
 import { primaryKeys, type FieldRow } from './state';
 import { labelFrom } from '../contract/labels';
 import { lookupOptionsOf, lookupText, lookupValues } from '../contract/lookups';
@@ -112,5 +113,47 @@ export function useDerived(store: Store) {
     });
   }
 
-  return { labelKeys, linksFrom, linkedTo, labelOfId, lookupOf, backlinkOf, textOf, tablesNeededBy, referencedBy };
+  /* ── comparison (contract/compare.ts) — derived, never stored ────────────── */
+
+  /** The comparing links of a record's table, with the records it links to through each. */
+  function comparisonsOf(recordId: string): Array<{ link: FieldRow; pairs: ComparePair[]; targets: string[] }> {
+    const rec = store.state.records.get(recordId);
+    if (!rec) return [];
+    const out: Array<{ link: FieldRow; pairs: ComparePair[]; targets: string[] }> = [];
+    for (const f of store.state.fields.values()) {
+      if (f.table_id !== rec.table_id || f.type !== 'link') continue;
+      const cfg = compareOf(f);
+      if (cfg && cfg.pairs.length) out.push({ link: f, pairs: cfg.pairs, targets: linksFrom(recordId, f.id) });
+    }
+    return out;
+  }
+  /** Compare a record with one linked target through one comparing link. Null if either is not loaded. */
+  function compare(linkId: string, ownerId: string, targetId: string): CompareResult | null {
+    const link = getField(linkId), owner = store.state.records.get(ownerId), target = store.state.records.get(targetId);
+    const pairs = link ? compareOf(link)?.pairs : undefined;
+    if (!link || !pairs || !owner || !target) return null;
+    return compareRecords(pairs, store.state.fields, owner, target, linksFrom, labelOfId);
+  }
+  /**
+   * For BADGES: every pair result that is not a match, keyed by the OWNER field, across
+   * all of a record's comparing links and all their targets. A field with an entry
+   * here gets a ⚠; the entries are the tooltip.
+   */
+  function differencesOf(recordId: string): Map<string, Array<{ link: FieldRow; target: string; result: PairResult }>> {
+    const out = new Map<string, Array<{ link: FieldRow; target: string; result: PairResult }>>();
+    for (const c of comparisonsOf(recordId)) {
+      for (const t of c.targets) {
+        const r = compare(c.link.id, recordId, t);
+        if (!r) continue;
+        for (const pr of r.results) {
+          if (pr.status !== 'differ' && pr.status !== 'missing') continue;
+          const a = out.get(pr.pair.from); const e = { link: c.link, target: t, result: pr };
+          if (a) a.push(e); else out.set(pr.pair.from, [e]);
+        }
+      }
+    }
+    return out;
+  }
+
+  return { labelKeys, linksFrom, linkedTo, labelOfId, lookupOf, backlinkOf, textOf, tablesNeededBy, referencedBy, comparisonsOf, compare, differencesOf };
 }

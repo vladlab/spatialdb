@@ -32,6 +32,7 @@ import { validateValue } from '../contract/values.js';
 import { lookupConfigError, type LookupFieldInfo } from '../contract/lookups.js';
 import { backlinkConfigError } from '../contract/backlinks.js';
 import { arrowStyleError } from '../contract/arrows.js';
+import { compareConfigError } from '../contract/compare.js';
 import { assetIdsIn } from '../contract/richtext.js';
 import { membershipError } from '../contract/scope.js';
 import { shapeOptionError } from '../contract/shapes.js';
@@ -145,6 +146,15 @@ async function ensureBoardState(db: PoolClient, id: string) {
 }
 
 /** `options.arrow`, if present, must be a style the canvas can draw — contract/arrows.ts. */
+/** `options.compare` on a link: every pair names a field on the right side with a legal rule. */
+async function assertCompareValid(db: PoolClient, tableId: string, options: Record<string, unknown> | undefined) {
+  if (!options || options.compare === undefined) return;
+  const target = String(options.target_table_id ?? '');
+  const fields = (await db.query(`select id, key, name, type, table_id, options from fields where table_id = $1 or table_id = $2`, [tableId, target])).rows;
+  const err = compareConfigError({ table_id: tableId, options }, fields);
+  if (err) throw new MutationError(err);
+}
+
 function assertArrowStyleValid(options: Record<string, unknown> | undefined) {
   const err = arrowStyleError(options);
   if (err) throw new MutationError(err);
@@ -304,6 +314,7 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
 
     case 'field.create':
       assertArrowStyleValid(m.options);
+      if (m.fieldType === 'link') await assertCompareValid(db, m.tableId, m.options);
       if (m.fieldType === 'structured') { const err = shapeOptionError(m.options); if (err) throw new MutationError(err); }
       await assertMembershipValid(db, m.tableId, m.fieldType, m.options, m.id);
       if (m.fieldType === 'lookup') await assertLookupConfigValid(db, m.tableId, m.options);
@@ -329,6 +340,7 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
         if (cur.rowCount) await assertMembershipValid(db, cur.rows[0].table_id, cur.rows[0].type, m.options, m.id);
         if (cur.rows[0]?.type === 'lookup') await assertLookupConfigValid(db, cur.rows[0].table_id, m.options);
         if (cur.rows[0]?.type === 'backlink') await assertBacklinkConfigValid(db, cur.rows[0].table_id, m.options);
+        if (cur.rows[0]?.type === 'link') await assertCompareValid(db, cur.rows[0].table_id, m.options);
         if (cur.rows[0]?.type === 'structured') {
           const err = shapeOptionError(m.options);
           if (err) throw new MutationError(err);

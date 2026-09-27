@@ -968,14 +968,19 @@ red-checked. Also: the layout editor now writes nothing when nothing changed (a 
 re-typed as it was) — a no-op mutation is a log row, a broadcast and an undo step
 that visibly does nothing.
 
-### The comparison engine — designed, not built (Sept 22)
+### The comparison engine — BUILT (Sept 26)
 
-See `COMPARE-BRIEF.md`. In one line: a "comparing link" is an ordinary link field
-with `options.compare = { pairs }` (roles are link fields); the result is derived,
-never stored; seeding is the pair list run backwards, once; specs form a CHAIN of
-records (catalogue → project deliverable → file), not lookups, because in reality the
-project's deliverable IS the spec and the studio's is where it started. Comparison
-is separate from QC, which will consume it.
+As designed in `COMPARE-BRIEF.md`, all seven steps in one session, on the reviewed
+wire format: `contract/compare.ts` (rules, `compareRecords`, `seedValues`,
+`suggestPairs`), server validation of `options.compare`, `POST /api/compare`, the
+pairs editor (`ComparePairs.vue`, in a link field's ⚙ beside "membership" and
+"single"), `derived.ts` `comparisonsOf`/`compare`/`differencesOf`, ⚠ badges in the
+tray and on canvas cards, `SideBySide.vue`, and "seed from" (empty fields only; asks
+before overwriting). `test/compare.ts` (20) and ~12 checks in `test/grid.ts`.
+One adjustment to the brief: suggest-by-name skips the owner's PRIMARY field — a
+file's name is never the spec's name, and it made a false alarm on every record.
+NOT seen rendered: the pairs editor and the side-by-side table are the two densest
+things in the app now — `UI-NOTES`.
 
 ### Kanban (Sept 22)
 

@@ -29,7 +29,12 @@ show you that command and nothing else.
    behind a proxy, it must pass `Host` and `X-Forwarded-Proto`; symptoms if not:
    login "succeeds" and you are immediately signed out again (cookie refused), or
    every save is a 403 "cross-origin request refused" (Host rewritten).
-2. **The kanban board** (newest) — views ▾ → "+ new board". Columns are 240px, cards
+2. **Comparison** (newest). In a link field's ⚙: the "compare" tick and the PAIRS
+   editor (three selects and a param per row — is it legible in the popover, or does
+   it need its own dialog?). In the tray: the strip under the header (✓/✗, side by
+   side, seed from), ⚠ beside fields, and the SIDE-BY-SIDE table (five columns at
+   tray width — this one I expect to need reworking). On a card: ⚠ at the end of a row.
+3. **The kanban board** — views ▾ → "+ new board". Columns are 240px, cards
    show the shown fields; does the drag ghost read over a column, does the column
    highlight, is "(none)" obviously a drop zone? Also the "single" tick beside
    "membership" in a link field's ⚙.
