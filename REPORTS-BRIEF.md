@@ -1,68 +1,209 @@
 # Brief: reports — how data gets OUT of spatialdb
 
-For a separate design-and-build session. Nothing here is built. The owner's words:
-*"Reports are actually a huge feature and I want them. Even more broadly, reports are
-how I want to get data out of this system."* He explicitly does not want this crept
-into other work — design it first.
+A design, agreed with the owner on Sept 27 2026, for the session that builds it.
+Nothing here is built. Read `API.md` first; the idioms this leans on (roles are link
+fields; derived values are computed, not stored; the file is the evidence; a canvas
+IS a record) are all established there and in `PLAN.md`.
 
-**Source of truth:** <https://github.com/vladlab/spatialdb>. Read `API.md`, then
-PLAN.md → "The owner's data model, and 'a new record inherits its context'".
+**Source of truth:** <https://github.com/vladlab/spatialdb>, `main`.
 
-## The example to design against
+The owner's framing, which decides several choices below: spatialdb is vibe-coded and
+has no team to maintain it in perpetuity. The database's job is to track complex
+data while a project runs, answer questions about it, and — when the project wraps —
+produce reports that can be **archived and read by others without the app**.
+Reports are how data leaves the system.
 
-His schema (deliberately light on data entry):
+## 1. What a report is: a walk, not a query
 
-- **Works** (an episode) link to the **Deliverables** wanted of them — a shared
-  catalogue ("ProRes 4444 texted", "DCP 2K Flat"). Episode 101 also wants a DCP;
-  episode 106 a sister-network version. Bid vs. added later are TWO LINK FIELDS on
-  Work ("roles are link fields").
-- **Files** link to a Work, and — only when the file is a deliverable — to a
-  Deliverable. *The file is the evidence* that the deliverable was satisfied.
+The schema's idiom is "roles are link fields." The matching report primitive is not a
+join builder; it is **a tree walk along links**. A report definition is a nested list
+of *levels*. Each level says: from every record at the parent level, follow these
+link fields into that table, keep the records matching these filters, show these
+fields, sort them so, and compute these rollups over my children.
 
-The report he wants, inside a project scope:
+The owner's first report in that language:
 
 ```
-Ep 101
-  ProRes 4444 texted      ep101_prores_v2.mov   (delivered 2026-09-14)
-                          ep101_prores_v1.mov   (superseded)
-  DCP 2K Flat             — nothing yet —
+Works                                          root; scope filters it to the project
+├─ via "Deliverables (bid)"   → Deliverables   role: bid
+│    └─ via backlink Files.deliverable → Files,  PINNED: Files.work = the Work above
+└─ via "Deliverables (added)" → Deliverables   role: added
+     └─ (same)
+```
+
+Rendered:
+
+```
+Ep 101                                     4 of 5 delivered
+  ProRes 4444 texted   [bid]     ep101_prores_v2.mov   2026-09-14
+                                 ep101_prores_v1.mov   superseded
+  DCP 2K Flat          [added]   — nothing yet —
 Ep 102
-  ProRes 4444 texted      — nothing yet —
+  ProRes 4444 texted   [bid]     — nothing yet —
 ```
 
-And the questions behind it: *Did we satisfy every deliverable of this work? Which
-files were delivered? How many were delivered versus scoped in the bid?*
+Three things come free from the walk:
 
-## Why the grid cannot do it
+- **Empty groups exist.** The walk descends from the *parent's* link, so a
+  deliverable with no files is a node with zero children — shown. The expectation
+  lives on the Work, not on Files; this is exactly what `groupRows` cannot do.
+- **The three-way join is one small rule.** A level may be *pinned* to an ancestor
+  ("must also link, through Files.work, to the Work two levels up"). That is the
+  generic form from the old brief, stated once and reusable anywhere.
+- **Bid vs added is two sibling descents** through two link fields, each tagged with
+  a role. Nothing about "bid" is known to the code.
 
-Grouping exists (`groupRows` in `src/contract/views.ts`, ≤ 2 levels). Grouping Files
-by Work then Deliverable shows only groups that HAVE rows — a deliverable with no
-files never appears, and the missing ones are the whole point. The expected list
-lives in the WORK's link to Deliverables, not in Files. So the report is a
-**three-way join**: for each work, for each deliverable it links to, the files linked
-to BOTH. Generic form: given a link field A → B, and a table C with links to A and
-to B, show for each `a`, each `b` it links to, the `c` that link to both.
+The manifest report is the degenerate case: one level, Files, filters
+`deliverable notEmpty` and `status = accepted`, fields path / hash / size, sorted by
+Work. Same machinery, depth one.
 
-## What "reports" probably has to cover
+## 2. Three layers, kept apart
 
-- The join above (and whether it is a special grouping option — "empty groups come
-  from the parent's link field" — or its own report view).
-- **Counts and rollups**: "4 of 5 delivered" on the Work; bid vs. added totals. There
-  is no count/rollup field type yet; group headers show counts, which is the only
-  aggregate today.
-- **Saved report definitions**, shared like views; respecting scope.
-- **Getting it out**: print / PDF / CSV. Who reads these — the owner, a producer, a
-  client? That decides how much layout matters.
-- Whether a report is READ-ONLY (likely) — which frees it from the grid's fixed row
-  height and windowing, the constraints that make the grid rigid.
+The reason this will not calcify into one use is the same reason `compareRecords`
+serves badges, side-by-side and an endpoint: one definition, one result, many
+consumers.
 
-## Constraints to respect
+1. **Definition** — the walk (§3). Names fields by id, as views do.
+2. **Result** — `runReport(def, store, scope) → ReportNode`, a pure function in
+   `src/contract/reports.ts` (the twelfth shared contract file), computed on the
+   client over the loaded tables like lookups and compare. Plain nested data:
+   `{ record, roles, cells, rollups, children }`. It knows nothing about rendering.
+3. **Renderings** — consumers of the tree: a read-only on-screen outline (freed from
+   the grid's fixed row height and windowing); print CSS for PDF; a flattener to CSV
+   (each leaf row with its ancestor columns repeated — what a producer wants in a
+   spreadsheet); raw JSON for scripts.
 
-- Everything loads whole tables client-side today, and scope is a FILTER over loaded
-  tables (deliberately — `contract/scope.ts` rule 3). A report may be the first thing
-  that wants a server-side query; if so, design that read deliberately and document
-  it in `API.md`.
-- Shared contract files are the pattern: if grid and report must agree on what a
-  group or a filter means, the rule lives in `src/contract/`.
-- Wire-format changes stop for the owner's review before anything is built on them.
-- His standing preference: conceptualise needs before building, to avoid scope creep.
+A new rendering, or a new rollup op, touches one layer.
+
+## 3. The definition shape
+
+```ts
+ReportDef = { v: 1, root: Level }
+
+Level = {
+  id: string                       // so pins and rollups can name a level
+  table: uuid                      // root only; a descent's table is implied by `via`
+  fields: uuid[]                   // EXPLICIT columns — see below
+  filters: FilterEntry[]           // reused from contract/views.ts, verbatim
+  sort:    SortEntry[]             // same
+  rollups: Rollup[]
+  children: Descent[]
+}
+
+Descent = Level & {
+  via: { fieldId: uuid, role?: string }[]   // ONE OR MORE link fields into the SAME
+                                            // table; forward links (on the parent) or
+                                            // backlinks (on the child) — the field's
+                                            // owner table says which
+  pins?: { fieldId: uuid, levelId: string }[]   // the record must ALSO link, through
+                                                // fieldId, to the ancestor record at
+                                                // levelId
+}
+
+Rollup = {
+  id: string, label: string
+  op: 'count' | 'countWhere' | 'sum' | 'min' | 'max' | 'list'
+  over: string                     // a child level's id
+  fieldId?: uuid                   // sum / min / max / list
+  where?: FilterEntry[]
+       | { rollup: string, op: 'gt' | 'gte' | 'lt' | 'lte' | 'eq', value: number }
+}
+```
+
+Decisions inside the shape, each agreed:
+
+- **`fields` is explicit, not `hidden`.** A view hides fields so that a new field
+  appears by default; a report is a document and must never gain a column by itself.
+- **Several `via` links per descent**, role-labelled, rather than one link and a
+  sibling per role. A record reached through two links at one level appears ONCE,
+  with both roles listed. Pins apply to every `via`.
+- **Pins name a level `id`**, not "N levels up", so inserting a level does not
+  silently re-target a pin.
+- **A rollup may test a child's rollup.** "4 of 5 delivered" is
+  `countWhere` over Deliverables where `{ rollup: 'files', op: 'gt', value: 0 }`,
+  beside a plain `count`. Rollups are evaluated bottom-up.
+- **Closed sets, as always.** Filter ops are `FILTER_OPS`; rollup ops are the six
+  above. A need the sets cannot express adds an op to a set (a contract change,
+  reviewed), not a formula language — the same call as compare.
+- **Unknown field ids are ignored at read time**, as views do, so `field.delete`
+  never bricks a report and undoing the delete brings the column back.
+- **Scope filters the root level only.** Descendants are reached by links, and a
+  file linked to an in-scope work is in the report whether or not it carries the
+  project link itself. (It should; the report is not the place to enforce that.)
+
+Rules to pin in tests: once-with-both-roles; pins on every via; an empty level is
+still a node; bottom-up rollups; a cycle in the definition (a descent back into an
+ancestor table is fine — a level whose *records* recur is not walked twice) is a
+validation error at write, not a hang at read.
+
+## 4. Where a report lives: it is a record
+
+As boards are records (`tables.kind = 'boards'`), reports are records: a table kind
+`reports`, each record one report, its definition a `structured` value of a new
+shape `report`, validated by the same zod on both sides. No migration; `data` is
+jsonb. What this buys, for nothing: a report has link fields (to a Project), sits in
+a section, respects scope, can be placed on a canvas, carries a rich-text description
+— and its archived snapshots are attachments on the same record (§5).
+
+A grid or kanban view is NOT a report. Views stay in the table toolbar.
+
+## 5. Live definition, frozen snapshot
+
+Two needs, two things:
+
+- **The definition is live** and shared, and parameterised by scope: one
+  "Deliverables status" report serves every project. Open it inside a scope and it
+  runs for that project, now.
+- **A snapshot is a run at a moment.** The client runs the report, renders the
+  self-contained HTML (inline CSS, no script, print-ready), the CSV and the JSON, and
+  uploads them through the asset store that exists, as `attachment` values on the
+  report record. **No new wire format**: this is `apply` writing an attachment value
+  like any other. HTML with inline CSS is readable in twenty years without spatialdb,
+  which is the honest answer to "no team in perpetuity." A snapshot records the scope,
+  the definition it was run from, and the log `seq` it saw.
+
+QC (COMPARE-BRIEF §1) is the same shape — an event that produces a document — and
+should reuse the snapshot path when it arrives.
+
+## 6. CSV export of any table — the bonus
+
+The flattener is one function over a `ReportNode`. A grid view is a one-level
+report, so "Export CSV" in the table toolbar is `applyView` → wrap as a root node →
+flatten → download. Client-side, no endpoint. Grouped views flatten the same way
+(group values become leading columns). Kanban exports as its grid.
+
+## 7. What this is not, yet
+
+- Not a formula or expression language.
+- Not server-side. Whole tables load client-side (`contract/views.ts`, top). If a
+  headless run is ever wanted — scheduled snapshots, Python — the same pure function
+  runs on the server and an endpoint is designed then, in `API.md`.
+- Not charts. Not a page-layout designer: the first rendering is a clean printable
+  outline; a logo and per-work page breaks are a later pass if a client ever reads one.
+- Not a virtual "4 of 5" field on the Work card. Rollups are shown in reports only
+  for now; the function is written so a lookup-like field could call it later.
+- Not a DeliveryPacket. The owner is adding that table soon; the "delivered on" and
+  "superseded" cells in the example will come from it or from a Files status, and the
+  report just shows the field either way.
+
+## 8. Build order
+
+1. `contract/reports.ts`: `ReportDef` zod, `runReport`, the flattener, tests (pure;
+   red-checked, including the worked example below). **Stop for the owner's review
+   of the shape** — the standing rule.
+2. The `reports` table kind and the `report` structured shape, with server
+   validation on write (field/table existence, `via` all into one table, pins to
+   real ancestors, rollups over real children, no unwalkable cycle).
+3. The on-screen outline renderer, read-only, from a hand-written definition — so
+   there is something to see before the editor exists.
+4. The level editor in the record tray: a tree of levels; per descent a link picker
+   (forward and backlink fields of the parent's table, grouped by target table),
+   role text, pins offered from the ancestors that the child's table links to;
+   fields, filters and sort reuse the grid's controls; rollups a small form.
+5. Exports: JSON, CSV (and the grid toolbar's Export CSV), print stylesheet.
+6. Snapshot: render, upload, attach — one batch, one Ctrl+Z.
+
+Worked example to build against: Projects › Works (Deliverables (bid),
+Deliverables (added), Project link) › Deliverables › Files (project, work,
+deliverable links; path, size, status, delivered date). The report in §1, plus the
+accepted-files manifest, plus a bid-vs-added count per work.
