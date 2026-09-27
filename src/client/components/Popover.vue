@@ -20,13 +20,25 @@ const props = defineProps<{ anchor?: HTMLElement | null; align?: 'left' | 'right
 const emit = defineEmits<{ close: [] }>();
 const panel = ref<HTMLElement>();
 
+/**
+ * ALWAYS FULLY ON SCREEN. Placed under the anchor's left edge, then pulled back so it
+ * does not run off the right of the window (it did, for the rightmost columns);
+ * likewise for the bottom. Measured after mount and on every resize, because the
+ * panel's own size is what decides the pull-back.
+ */
+const size = ref({ w: 0, h: 0 });
 const pos = computed(() => {
   const r = props.anchor?.getBoundingClientRect();
   if (!r) return {};
-  return props.align === 'right'
-    ? { top: `${r.bottom + 2}px`, right: `${Math.max(4, window.innerWidth - r.right)}px` }
-    : { top: `${r.bottom + 2}px`, left: `${r.left}px` };
+  const M = 6, W = window.innerWidth, H = window.innerHeight;
+  let left = props.align === 'right' ? r.right - size.value.w : r.left;
+  left = Math.max(M, Math.min(left, W - size.value.w - M));
+  let top = r.bottom + 2;
+  if (size.value.h && top + size.value.h > H - M) top = Math.max(M, H - size.value.h - M);
+  return { top: `${top}px`, left: `${left}px` };
 });
+function measure() { if (panel.value) size.value = { w: panel.value.offsetWidth, h: panel.value.offsetHeight }; }
+let ro: ResizeObserver | undefined;
 
 function onKey(e: KeyboardEvent) { if (e.key === 'Escape') emit('close'); }
 function onDocDown(e: Event) {
@@ -35,8 +47,13 @@ function onDocDown(e: Event) {
 }
 // Deferred a tick: the mousedown that OPENED us is still bubbling to document.
 let armed: ReturnType<typeof setTimeout>;
-onMounted(() => { armed = setTimeout(() => document.addEventListener('mousedown', onDocDown), 0); });
-onUnmounted(() => { clearTimeout(armed); document.removeEventListener('mousedown', onDocDown); });
+onMounted(() => {
+  armed = setTimeout(() => document.addEventListener('mousedown', onDocDown), 0);
+  measure();
+  if (typeof ResizeObserver !== 'undefined' && panel.value) { ro = new ResizeObserver(measure); ro.observe(panel.value); }
+  window.addEventListener('resize', measure);
+});
+onUnmounted(() => { clearTimeout(armed); document.removeEventListener('mousedown', onDocDown); ro?.disconnect(); window.removeEventListener('resize', measure); });
 </script>
 
 <style scoped>

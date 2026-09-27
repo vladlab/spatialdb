@@ -410,7 +410,7 @@ async function main() {
   const view = { rowCount: viewRows.length, rows: viewRows };
   check('the sort was saved as a shared view, created on first use',
     view.rowCount === 1 && view.rows[0].config.sort?.[0]?.dir === 'asc', JSON.stringify(view.rows));
-  check('and the toolbar names it', w.find('.gridview .view-menu .view-name').text() === 'Grid', w.find('.gridview .view-menu summary').text());
+  check('and the toolbar names it: the Grid — the built-in view keeps its sort, like Airtable\'s default view', w.find('.gridview .view-menu .view-name').text() === 'Grid' && viewRows[0].name === 'Grid', w.find('.gridview .view-menu summary').text());
 
   console.log('\nU6. Quick search narrows without touching the saved view');
   await w.find('.gridview .search').setValue('reel_1');
@@ -1239,7 +1239,7 @@ async function main() {
   check('the empty group is last', !expected.some((e) => !e.s) || headers()[headers().length - 1].label === '(empty)');
   check('every record is still there exactly once; the count in the toolbar has not changed', rowsNow().length === recordCount && new RegExp(`^\\s*${recordCount} records`).test(w.find('.gridview .count').text()), w.find('.gridview .count').text());
   check('row numbers count RECORDS, not header rows', w.findAll('.gridview tr.row .n').map((n) => n.text()).join() === Array.from({ length: recordCount }, (_, i) => String(i + 1)).join());
-  check('the grouping is part of the VIEW (saved, shared)', (await untilDb(`select config from views where table_id = '${filesId}' and name = 'Grid'`, (r) => (r[0]?.config.groupBy ?? []).length === 1))[0].config.groupBy[0] === statusField);
+  check('the grouping is part of the VIEW (saved, shared)', (await untilDb(`select config from views where table_id = '${filesId}' and jsonb_array_length(coalesce(config->'groupBy', '[]')) = 1`, (r) => r.length === 1))[0]?.config.groupBy[0] === statusField);
   check('the toolbar says what it is grouped by', /group · Status/.test(gm().find('summary').text()), gm().find('summary').text());
 
   // Add a record INSIDE a group.
@@ -1310,40 +1310,59 @@ async function main() {
   (gm().element as HTMLDetailsElement).open = false;
 
   console.log('\nU8b2. Views: one control that names the view and lists them all');
+  // Start from a clean slate: earlier sections left saved views on this table. First let
+  // the app's own debounced queue drain — deleting a view under a pending update of it
+  // (from another client) is a race this test is not about.
+  await sleep(700);
+  for (const v of (await pool.query(`select id from views where table_id = $1`, [filesId])).rows) await post([{ type: 'view.delete', id: v.id }]);
   await nav.openTable(filesId);
   await until(() => w.find('.gridview .view-menu').exists());
   const vm = () => w.find('.gridview .view-menu');
   const listedViews = () => vm().findAll('.view-row').map((r) => ({ name: r.find('.view-title').text(), on: r.classes('on'), sum: r.find('.view-sum').text() }));
-  check('the toolbar NAMES the view you are in, before you open anything', vm().find('.view-name').text() === 'Grid', vm().find('summary').text());
+  const named = (name: string) => vm().findAll('.view-row').find((r) => r.find('.view-title').text() === name)!;
+  // …and wait until the CLIENT has seen the deletions, or the next sort would update a row that is gone.
+  (vm().element as HTMLDetailsElement).open = true;
+  await until(() => vm().find('.view-name').text() === 'Grid' && vm().findAll('.view-row').length === 1 && /everything, unsorted/.test(named('Grid').find('.view-sum').text()));
+  (vm().element as HTMLDetailsElement).open = false;
+  check('with no saved views, the toolbar names the built-in GRID', vm().find('.view-name').text() === 'Grid', vm().find('summary').text());
   (vm().element as HTMLDetailsElement).open = true;
   await sleep(20);
-  check('opened, it LISTS the views, ticks the current one, and says what each does',
-    listedViews().length === 1 && listedViews()[0].on && /sorted|filter|hidden|everything/.test(listedViews()[0].sum), JSON.stringify(listedViews()));
+  check('opened, it lists the permanent Grid, ticked, with no rename/delete controls (it is the table itself)',
+    listedViews().length === 1 && listedViews()[0].name === 'Grid' && listedViews()[0].on && !named('Grid').find('.view-act').exists(), JSON.stringify(listedViews()));
+  // A sort made on the built-in Grid STARTS a view; the Grid stays plain.
+  (vm().element as HTMLDetailsElement).open = false;
+  await w.findAll('.gridview thead th').find((t) => t.find('.th-name').exists() && t.find('.th-name').text() === 'Name')!.trigger('click');   // click a header: sort
+  const started = await untilDb(`select name, config from views where table_id = '${filesId}'`, (r) => r.length === 1);
+  check('sorting on the Grid SAVES to the Grid (its row appears, with the TABLE\'s id, so every client knows it), and you stay in it',
+    started[0].name === 'Grid' && started[0].config.sort.length === 1 && (await pool.query(`select id from views where table_id = $1`, [filesId])).rows[0].id === filesId
+    && await until(() => vm().find('.view-name').text() === 'Grid'), JSON.stringify(started));
+  (vm().element as HTMLDetailsElement).open = true;
+  await sleep(20);
   nav.dialogs.text = 'QC failures';
   await vm().find('.new-view').trigger('click');
   check('"+ new view" makes one (through the app\'s dialog), switches to it, and the toolbar says so',
     await until(() => vm().find('.view-name').text() === 'QC failures') && (await untilDb(`select name from views where table_id = '${filesId}' order by position`, (r) => r.length === 2)).length === 2);
   check('…and closes the list', !(vm().element as HTMLDetailsElement).open);
   check('a new view STARTS FROM the one you were in', JSON.stringify((await pool.query(`select config from views where name = 'QC failures'`)).rows[0].config.sort)
-    === JSON.stringify((await pool.query(`select config from views where name = 'Grid'`)).rows[0].config.sort));
+    === JSON.stringify((await pool.query(`select config from views where id = $1`, [filesId])).rows[0].config.sort));   // THIS table's Grid: other tables have one too
   (vm().element as HTMLDetailsElement).open = true;
   await sleep(20);
-  check('both are listed now — the list the old tabs never gave', listedViews().map((r) => r.name).join() === 'Grid,QC failures' && listedViews()[1].on, JSON.stringify(listedViews()));
+  check('all are listed, the Grid first, without rename/delete controls', listedViews().map((r) => r.name).join() === 'Grid,QC failures' && named('QC failures').classes('on') && !named('Grid').find('.view-act').exists(), JSON.stringify(listedViews()));
   nav.dialogs.text = 'QC failures (copy)';
-  await vm().findAll('.view-row')[1].findAll('.view-act')[1].trigger('click');
-  check('duplicate', await until(() => vm().find('.view-name').text() === 'QC failures (copy)') && (await untilDb(`select 1 from views where table_id = '${filesId}'`, (r) => r.length === 3)).length === 3);
+  await named('QC failures').findAll('.view-act')[1].trigger('click');
+  check('duplicate', await until(() => vm().find('.view-name').text() === 'QC failures (copy)') && (await untilDb(`select 1 from views where table_id = '${filesId}'`, (r) => r.length === 3)).length === 3);   // Grid, QC failures, the copy
   (vm().element as HTMLDetailsElement).open = true;
   await sleep(20);
   nav.dialogs.text = 'Offline only';
-  await vm().findAll('.view-row')[2].findAll('.view-act')[0].trigger('click');
+  await named('QC failures (copy)').findAll('.view-act')[0].trigger('click');
   check('rename', await until(() => vm().find('.view-name').text() === 'Offline only'));
-  await vm().findAll('.view-row')[2].find('.view-act.danger').trigger('click');
+  await named('Offline only').find('.view-act.danger').trigger('click');
   check('delete asks first, then falls back to another view', (await untilDb(`select 1 from views where table_id = '${filesId}'`, (r) => r.length === 2)).length === 2
     && await until(() => ['Grid', 'QC failures'].includes(vm().find('.view-name').text())) && nav.dialogs.seen.some((t) => t.startsWith('Delete the view')));
-  await vm().findAll('.view-row')[0].trigger('click');
+  await named('Grid').trigger('click');
   check('clicking a row switches to it and closes the list', await until(() => vm().find('.view-name').text() === 'Grid') && !(vm().element as HTMLDetailsElement).open);
   await post([{ type: 'view.delete', id: (await pool.query(`select id from views where name = 'QC failures'`)).rows[0].id }]);
-  await until(() => listedViews().length <= 1);
+  await until(() => listedViews().length <= 2);
 
   console.log('\nU8c. Table settings — where the Schema tab\'s table controls went');
   await nav.openTable(filesId);

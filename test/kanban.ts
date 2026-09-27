@@ -115,13 +115,15 @@ async function main() {
     console.log('\nK3. The picker replaces on a single field');
     // The picker replaces too — in the grid view.
     (viewMenu().element as HTMLDetailsElement).open = true;
-    // (a fresh table has no saved 'Grid' row; the board is the only real view. Make a grid view to switch to.)
-    dialogs.text = 'Plain';
-    await viewMenu().find('.new-view').trigger('click');
-    await untilDb(`select id from views where table_id = '${tFiles}' and (config->'kanban') is null`, (r) => r.length === 1);
+    check('the built-in Grid is ALWAYS listed, first, and is not the active one while a board is', viewMenu().find('.view-row.builtin').exists() && !viewMenu().find('.view-row.builtin').classes('on'));
+    await viewMenu().find('.view-row.builtin').trigger('click');
     await until(() => w.findAll('.gridview tr.row').length === 3 && !board().exists(), 8000);
     const rowOf = (name: string) => w.findAll('.gridview tr.row').find((r: any) => r.findAll('td')[1].text().trim() === name)!;
-    check('"+ new view" from a board makes a GRID (it used to copy the board\'s columns setting along with everything else)', !!rowOf('a.mov') && !board().exists());
+    check('picking it returns to the plain table — a board no longer hides the grid (the schema editor) forever', !!rowOf('a.mov') && !board().exists());
+    check('the two "+ new…" entries are drawn the same way', viewMenu().find('.new-view').classes().join() === 'new-view' && viewMenu().find('.new-board').classes().includes('new-view'));
+    await w.findAll('.gridview thead th').find((t: any) => t.find('.th-name').exists() && t.find('.th-name').text() === 'Name')!.trigger('click');
+    check('sorting the Grid saves to the Grid (id = the table\'s) and does not make yet another view', (await untilDb(`select id, name from views where table_id = '${tFiles}' and id = '${tFiles}'`, (r) => r.length === 1))[0].name === 'Grid'
+      && await until(() => viewMenu().find('.view-name').text() === 'Grid'));
     const workCell = (name: string) => rowOf(name).findAll('td')[3];
     await workCell('a.mov').trigger('mousedown'); await workCell('a.mov').trigger('dblclick');
     await until(() => w.find('.picker').exists());

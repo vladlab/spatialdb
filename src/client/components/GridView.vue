@@ -65,7 +65,17 @@
           <span class="view-label">view</span> <b class="view-name">{{ viewName }}</b>
         </summary>
         <div class="pop view-pop">
-          <div v-for="v in views" :key="v.id" class="view-row" :class="{ on: v.id === active?.id }" @click="pickView(v.id)">
+          <!-- THE GRID: permanent and first. It is the table itself — and the schema
+               editor — so it can never be renamed, deleted, or turned into a board. Its
+               sort, filter and hidden fields ARE saved to it, like any view (Airtable's
+               default view). Its row's id is the TABLE's id: that is how every client
+               knows which one it is, without a flag anywhere. -->
+          <div class="view-row builtin" :class="{ on: isBuiltin(active) }" @click="pickView(props.tableId)">
+            <span class="view-tick">{{ isBuiltin(active) ? '✓' : '' }}</span>
+            <span class="view-title">Grid</span>
+            <span class="view-sum">{{ builtin ? summarise(builtin.config) : 'everything, unsorted' }} · always here</span>
+          </div>
+          <div v-for="v in otherViews" :key="v.id" class="view-row" :class="{ on: v.id === active?.id }" @click="pickView(v.id)">
             <span class="view-tick">{{ v.id === active?.id ? '✓' : '' }}</span>
             <span class="view-title">{{ v.name }}</span>
             <span class="view-sum">{{ summarise(v.config) }}</span>
@@ -73,15 +83,8 @@
             <button class="view-act" title="Duplicate — a new view starting from this one" @click.stop="duplicateView(v.id, v.name)">⧉</button>
             <button class="view-act danger" title="Delete this view (records are not affected)" @click.stop="deleteView(v.id, v.name)">×</button>
           </div>
-          <!-- A table with no saved view still HAS one, as far as anyone looking at it
-               is concerned: the real row is created lazily, on the first sort, filter
-               or hide. Shown as such, or a fresh table's list would be empty. -->
-          <div v-if="!views.length" class="view-row on">
-            <span class="view-tick">✓</span><span class="view-title">Grid</span>
-            <span class="view-sum">the default — saved when you first sort, filter or hide</span>
-          </div>
-          <button class="add-line new-view" @click="newView()">+ new view <span class="muted">— starts from this one</span></button>
-          <button v-if="kanbanable.length" class="add-line new-board" @click="newView('kanban')">+ new board <span class="muted">— cards in columns</span></button>
+          <button class="new-view" @click="newView()">+ new view <span class="muted">— starts from this one</span></button>
+          <button v-if="kanbanable.length" class="new-view new-board" @click="newView('kanban')">+ new board <span class="muted">— cards in columns</span></button>
           <p v-else class="hint-line">A board needs a single select, or a link ticked “single”, to make its columns.</p>
           <p class="hint-line">A view is a saved way of looking at this table: its sort, filters and hidden fields. Views are shared, and every change is saved as you make it.</p>
         </div>
@@ -337,6 +340,8 @@
                       <span v-else class="value looked-up" title="Looked up — edit it on the linked record">{{ lookupOf(r.id, f)!.join(', ') }}</span>
                     </template>
                     <span v-else class="value" :class="{ num: f.type === 'number' }">{{ formatNumberField(f, r.data[f.key]) ?? display(r.data[f.key]) }}</span>
+                    <!-- The comparison's verdict on this cell — the same ✓ / ⚠ as the tray and cards. -->
+                    <span v-if="verdictOf(r.id, f.id)" class="cell-verdict" :class="{ ok: verdictOf(r.id, f.id)!.ok }" :title="verdictOf(r.id, f.id)!.title">{{ verdictOf(r.id, f.id)!.ok ? '✓' : '⚠' }}</span>
                   </span>
                   <CellEditor v-if="isSel(r.id, f.id) && editing" class="over" :field="f" :value="r.data[f.key]" :seed="seed"
                               @set="(k, v) => setValue(r.id, k, v)" @unset="(k) => unsetValue(r.id, k)"
@@ -431,8 +436,14 @@ const load = computed(() => store.tableLoads.get(props.tableId));
 
 const activeId = ref('');
 /** The active view, or none — a peer may delete the one you are looking at. */
-const active = computed(() =>
-  views.value.find((v) => v.id === activeId.value) ?? views.value[0]);
+/** The built-in Grid's saved row, once it has one (created on the first sort/filter/hide). */
+const builtin = computed(() => views.value.find((v) => v.id === props.tableId));
+const isBuiltin = (v: { id: string } | undefined) => !v || v.id === props.tableId;
+const otherViews = computed(() => views.value.filter((v) => v.id !== props.tableId));
+// The active view; `undefined` = the built-in Grid before it has a saved row. It used
+// to fall back to the first SAVED view, so making a board on a table with no saved
+// grid left you no way back to the plain table.
+const active = computed(() => views.value.find((v) => v.id === activeId.value) ?? builtin.value);
 
 /**
  * Parsed, not cast. A config written before this contract existed (or by SQL)
@@ -444,7 +455,7 @@ const config = computed<ViewConfig>(() => {
   return parsed.success ? parsed.data : EMPTY_VIEW;
 });
 
-const viewName = computed(() => active.value?.name ?? 'Grid');
+const viewName = computed(() => (isBuiltin(active.value) ? 'Grid' : active.value!.name));
 const viewMenu = ref<HTMLDetailsElement>();
 function pickView(id: string) { activeId.value = id; if (viewMenu.value) viewMenu.value.open = false; }
 /** "2 filters · sorted · 3 hidden" — enough to tell two views apart in the list. */
@@ -465,15 +476,15 @@ const hiddenCount = computed(() => allFields.value.length - shown.value.length);
 const sortable = computed(() => allFields.value);
 const filterable = computed(() => allFields.value.filter((f) => opsFor(f.type).length));
 
-/** Write the config. Creates the view if this table has none yet. */
+/** Write the config. The built-in Grid's row is created the first time it is needed. */
 function save(patch: Partial<ViewConfig>) {
   const next = { ...config.value, ...patch };
   if (active.value) {
     store.mutate({ type: 'view.update', id: active.value.id, config: next });
   } else {
-    const id = crypto.randomUUID();
-    store.mutate({ type: 'view.create', id, tableId: props.tableId, name: 'Grid', config: next });
-    activeId.value = id;
+    store.mutate({ type: 'view.create', id: props.tableId, tableId: props.tableId, name: 'Grid', config: next });
+    store.mutate({ type: 'view.update', id: props.tableId, position: -1 });     // first, always
+    activeId.value = props.tableId;
   }
 }
 
@@ -691,6 +702,12 @@ async function create(context: { data?: Record<string, unknown>; links?: Array<{
   await nextTick();
   startEdit(id, firstField);
 }
+
+/* ── comparison verdicts per cell (derived; cached per render pass) ── */
+// Computed over the VISIBLE rows only, so it re-runs when a value or link changes and
+// costs nothing for rows that are scrolled away.
+const rowVerdicts = computed(() => new Map(windowed.value.flatMap((it) => (it.kind === 'row' ? [[it.record.id, derived.fieldVerdicts(it.record.id)] as const] : []))));
+const verdictOf = (recordId: string, fieldId: string) => rowVerdicts.value.get(recordId)?.get(fieldId);
 
 /* ── a board ───────────────────────────────────────────────────────────────
    contract/views.ts `kanban`. The grid's toolbar stays (filter, sort, fields); the
@@ -1146,8 +1163,12 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .view-act.danger:hover { color: var(--danger); }
 .new-view { display: block; width: 100%; text-align: left; background: none; border: none; border-top: 1px solid var(--border-main); margin-top: 4px; padding: 7px 6px 5px; color: var(--accent); cursor: pointer; font: inherit; }
 .new-view .muted { color: var(--text-faint); }
+.new-board { border-top: none; margin-top: 0; padding-top: 2px; }
+.view-row.builtin .view-title { font-weight: 600; }
 .hint-line { margin: 6px 6px 2px; color: var(--text-faint); font-size: 11px; line-height: 1.4; white-space: normal; max-width: 360px; }
 .add-group { display: block; width: 100%; text-align: left; background: none; border: none; color: var(--accent); cursor: pointer; font: inherit; padding: 5px 6px; }
+.cell-verdict { color: var(--warning); font-size: 11px; margin-left: 4px; cursor: help; flex: none; }
+.cell-verdict.ok { color: var(--success); opacity: 0.8; }
 .group-row td { padding: 0; background: var(--controls-bg); border-bottom: 1px solid var(--border-main); height: 29px; }
 .group-row.level-1 td { background: var(--bg-app); }
 .group-head { display: flex; align-items: center; gap: 8px; height: 29px; box-sizing: border-box; white-space: nowrap; position: sticky; left: 0; max-width: 100vw; }

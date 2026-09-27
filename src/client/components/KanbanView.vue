@@ -26,6 +26,7 @@
           <div class="kcard-title">{{ labelOf(r) }}<button class="kcard-open" title="Open record" @pointerdown.stop @click.stop="$emit('open-record', r.id)">⤢</button></div>
           <div v-for="f in cardFields" :key="f.id" class="kcard-row">
             <span class="kcard-name">{{ f.name }}</span><span class="kcard-val">{{ valueText(r, f) }}</span>
+            <span v-if="verdictOf(r.id, f.id)" class="kcard-verdict" :class="{ ok: verdictOf(r.id, f.id)!.ok }" :title="verdictOf(r.id, f.id)!.title">{{ verdictOf(r.id, f.id)!.ok ? '✓' : '⚠' }}</span>
           </div>
         </article>
         <p v-if="!c.records.length" class="kcol-empty">drop here</p>
@@ -69,6 +70,7 @@ const targets = computed(() => {
 });
 const columns = computed(() => kanbanColumns(props.records, props.field, (rid, fid) => derived.linksFrom(rid, fid), targets.value));
 
+const verdictOf = (recordId: string, fieldId: string) => derived.fieldVerdicts(recordId).get(fieldId);
 const labelOf = (r: RecordRow) => (props.primary ? valueText(r, props.primary) : '') || '(untitled)';
 function valueText(r: RecordRow, f: FieldRow): string {
   if (f.type === 'link') return derived.linksFrom(r.id, f.id).map((id) => derived.labelOfId(id)).join(', ');
@@ -153,6 +155,8 @@ function dropInto(toKey: string, records: RecordRow[]) {
 .kcard-row { display: flex; gap: 6px; font-size: 11px; line-height: 1.5; min-width: 0; }
 .kcard-name { color: var(--text-faint); flex: 0 0 auto; }
 .kcard-val { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kcard-verdict { color: var(--warning); font-size: 11px; margin-left: auto; flex: none; cursor: help; }
+.kcard-verdict.ok { color: var(--success); opacity: 0.8; }
 .kcol-empty { margin: 0; color: var(--text-faint); font-size: 11px; text-align: center; padding: 8px; }
 .kanban.dragging .kcol-empty { color: var(--text-muted); }
 </style>

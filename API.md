@@ -400,6 +400,13 @@ server refuses a second `link.add` (400); a replacement is `link.remove` + `link
 in one batch, which every client path does (`src/client/links.ts`). Records that
 already link to several are left alone — only adding is refused.
 
+### The built-in Grid view
+
+Every table has a permanent default view, "Grid": first in the list, not deletable
+or renamable, never a board, but with its own saved sort/filter/hidden fields. Its
+view row has **the table's own id** (`view.create { id: tableId, tableId }`), created
+lazily on first use; that is how a client recognises it, with no flag in the config.
+
 ### View grouping
 
 `ViewConfig.groupBy?: fieldId[]` — at most two, outermost first; optional, and

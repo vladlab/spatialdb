@@ -45,7 +45,7 @@
       <div v-for="f in fields" :key="f.id" class="rp-field" :class="{ editing: editingId === f.id, block: f.type === 'rich_text' }">
         <label class="rp-name">
           <span v-if="f.id === primaryId" class="star" title="Primary field — this record's name">★</span>{{ f.name }}
-          <span v-if="differences.has(f.id)" class="cmp-badge" :title="badgeTitle(f.id)">⚠</span>
+          <span v-if="verdicts.get(f.id)" class="cmp-badge" :class="{ ok: verdicts.get(f.id)!.ok }" :title="verdicts.get(f.id)!.title">{{ verdicts.get(f.id)!.ok ? '✓' : '⚠' }}</span>
         </label>
 
         <!-- RICH TEXT is not a click-to-edit value like the rest: it is an editor that
@@ -178,8 +178,7 @@ const comparisons = computed(() => derived.comparisonsOf(props.recordId).flatMap
 })));
 // The target's table must be loaded for its values (and label) to be here.
 watch(() => derived.comparisonsOf(props.recordId).map((c) => String(c.link.options?.target_table_id ?? '')), (ids) => { for (const t of new Set(ids)) if (t) void store.loadTable(t); }, { immediate: true });
-const differences = computed(() => derived.differencesOf(props.recordId));
-const badgeTitle = (fieldId: string) => (differences.value.get(fieldId) ?? []).map((d) => `${d.link.name} → ${derived.labelOfId(d.target)}: ${d.result.detail}`).join('\n');
+const verdicts = computed(() => derived.fieldVerdicts(props.recordId));
 const sideBySide = ref<{ linkId: string; target: string } | null>(null);
 watch(() => props.recordId, () => { sideBySide.value = null; });
 
@@ -346,6 +345,7 @@ watch(() => props.recordId, () => {
 .rp-cmp-btn { background: none; border: 1px solid var(--border-main); color: var(--text-secondary); border-radius: 4px; padding: 0 7px; cursor: pointer; font: inherit; font-size: 11px; white-space: nowrap; }
 .rp-cmp-btn:hover { color: var(--accent); border-color: var(--accent); }
 .cmp-badge { color: var(--warning); margin-left: 5px; cursor: help; font-size: 12px; }
+.cmp-badge.ok { color: var(--success); opacity: 0.8; }
 .rp-field { padding: 6px 0; }
 .rp-field.block { padding: 10px 0; }
 /* min-height is set inline (richReserve): the editor's place, held while it loads. */

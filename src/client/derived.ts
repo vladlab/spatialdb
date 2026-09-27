@@ -155,5 +155,30 @@ export function useDerived(store: Store) {
     return out;
   }
 
-  return { labelKeys, linksFrom, linkedTo, labelOfId, lookupOf, backlinkOf, textOf, tablesNeededBy, referencedBy, comparisonsOf, compare, differencesOf };
+  /**
+   * For the ICON beside a field, wherever a record is drawn (tray, card, grid cell,
+   * board card — the same cue everywhere): `ok` when every comparison of that field
+   * matches, not ok when any differs or is missing; absent when nothing compares it
+   * (or every comparison is "unspecified"). `title` says why, and through which link.
+   */
+  function fieldVerdicts(recordId: string): Map<string, { ok: boolean; title: string }> {
+    const out = new Map<string, { ok: boolean; title: string }>();
+    for (const c of comparisonsOf(recordId)) {
+      for (const t of c.targets) {
+        const r = compare(c.link.id, recordId, t);
+        if (!r) continue;
+        for (const pr of r.results) {
+          if (pr.status === 'unspecified') continue;
+          const bad = pr.status === 'differ' || pr.status === 'missing';
+          const line = `${c.link.name} → ${labelOfId(t)}: ${pr.detail}`;
+          const cur = out.get(pr.pair.from);
+          if (!cur) out.set(pr.pair.from, { ok: !bad, title: line });
+          else out.set(pr.pair.from, { ok: cur.ok && !bad, title: `${cur.title}\n${line}` });
+        }
+      }
+    }
+    return out;
+  }
+
+  return { labelKeys, linksFrom, linkedTo, labelOfId, lookupOf, backlinkOf, textOf, tablesNeededBy, referencedBy, comparisonsOf, compare, differencesOf, fieldVerdicts };
 }

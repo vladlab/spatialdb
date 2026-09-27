@@ -968,6 +968,33 @@ red-checked. Also: the layout editor now writes nothing when nothing changed (a 
 re-typed as it was) — a no-op mutation is a log row, a broadcast and an undo step
 that visibly does nothing.
 
+### A UI pass from screenshots (Sept 27)
+
+- **A permanent built-in Grid.** The plain grid used to be "no saved view", materialised
+  as a view named Grid on the first sort and then falling back to views[0]: making a
+  board on a table with no saved grid removed the plain table — the schema editor —
+  from the list. Now the Grid is always first and cannot be renamed, deleted or turned
+  into a board — and its sort, filter and hidden fields ARE saved to it, like
+  Airtable's default view (a first cut kept it plain and started "View N" on the
+  first sort; the owner: "I don't like that… the default view can still be sorted and
+  filtered"). How every client knows which row it is, with no flag: **the Grid's view
+  id IS the table's id.** Existing tables keep any view named "Grid" they already had
+  as an ordinary view; delete it if redundant.
+- "+ new view" and "+ new board" drawn the same way (one had picked up a global button
+  style).
+- **The comparison cue everywhere**: ✓ (green, quiet) when a compared field matches,
+  ⚠ when not, with the reason in the tooltip — tray, canvas card, GRID CELL and BOARD
+  CARD, from one `derived.fieldVerdicts`. The owner: "I keep thinking the engine's not
+  working otherwise", and "keep the same visual cues across the app".
+- Field-settings popover always fully on screen (it ran off the right edge for the
+  last columns; `Popover.vue` now measures itself and pulls back).
+- Canvas port dots inset a touch (they sat astride the card edge).
+- The canvas-defaults switch is ONE switch for the session, for every canvas
+  (`client/prefs.ts`; it was per canvas and re-defaulted to ON). "+ add" resets after
+  adding one (it stayed on the last table's picker).
+- Tree: tables alphabetical; a Settings ("This browser") option lists scoped tables
+  above the rest, each group alphabetical.
+
 ### The comparison engine — BUILT (Sept 26)
 
 As designed in `COMPARE-BRIEF.md`, all seven steps in one session, on the reviewed

@@ -27,6 +27,12 @@
         <p v-if="accountNote" class="note" :class="{ warn: accountBad }">{{ accountNote }}</p>
       </section>
 
+      <!-- Ways of working: this browser only. -->
+      <section class="prefs">
+        <h3>This browser</h3>
+        <label class="pref"><input type="checkbox" v-model="scopedFirst" /> In the tree, list the tables that belong to a project above the rest (each group alphabetical)</label>
+      </section>
+
       <section v-if="me?.role === 'admin'" class="users">
         <h3>Users</h3>
         <p class="note">
@@ -95,6 +101,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { askFull } from '../dialogs';
+import { scopedFirst } from '../prefs';
 import type { Store } from '../store';
 
 const props = defineProps<{ store: Store }>();
@@ -198,4 +205,6 @@ tr.done td { opacity: 0.5; }
 .add-user { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .add-user input { flex: 1 1 120px; }
 .do .plain + .plain { margin-left: 4px; }
+.pref { display: flex; gap: 8px; align-items: baseline; font-size: 13px; cursor: pointer; }
+.pref input { margin: 0; }
 </style>

@@ -55,7 +55,7 @@
               @pointerdown.stop.prevent="$emit('link-start', { recordId, fieldId: r.id, e: $event })" />
         <span class="card-key"><span v-if="r.color" class="port-dot" :style="{ background: r.color }" />{{ r.name }}</span>
         <span class="card-val" :class="{ empty: !r.text, derived: r.derived, broken: r.broken }">{{ r.text || '—' }}</span>
-        <span v-if="r.warn" class="card-warn" :title="r.warn">⚠</span>
+        <span v-if="r.verdict" class="card-warn" :class="{ ok: r.verdict.ok }" :title="r.verdict.title">{{ r.verdict.ok ? '✓' : '⚠' }}</span>
       </div>
       <!-- NOTES: formatted, with their images, in a window of FIXED height that scrolls
            inside itself (cardLayout.ts says why it cannot be as tall as its content).
@@ -97,8 +97,8 @@ export interface CardRow {
   broken?: boolean;
   /** A LINK field's row: an output port, with a handle to drag a new link from. */
   link?: boolean;
-  /** A comparing link says this value differs from what is expected: a ⚠, with the why. */
-  warn?: string;
+  /** A comparing link's verdict on this value: ✓ or ⚠, with the why. */
+  verdict?: { ok: boolean; title: string };
   /** A link or backlink row whose field has an arrow colour: the row is a PORT,
    *  and the dot ties it to the arrows that leave from (or land on) it. */
   color?: string;
@@ -227,7 +227,8 @@ function onPointerDown(e: PointerEvent) {
    row's content edge). Hidden until the row (or a selected card) invites it, so an
    unfolded card is not a column of dots. */
 .port-handle {
-  position: absolute; right: -7px; top: 50%; width: 10px; height: 10px; margin-top: -5px;
+  /* A touch inside the card edge (it sat astride it and read as clipped). */
+  position: absolute; right: -3px; top: 50%; width: 10px; height: 10px; margin-top: -5px;
   border-radius: 50%; box-sizing: border-box; cursor: crosshair; z-index: 3;
   background: var(--card-bg); border: 2px solid var(--port, var(--accent));
   opacity: 0; transition: opacity 0.1s ease;
@@ -260,6 +261,7 @@ function onPointerDown(e: PointerEvent) {
 }
 .port-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
 .card-warn { color: var(--warning); font-size: 11px; margin-left: 3px; flex: none; }
+.card-warn.ok { color: var(--success); opacity: 0.8; }
 .card-val {
   color: var(--text-primary); overflow: hidden; min-width: 0;
   text-overflow: ellipsis; white-space: nowrap;

@@ -68,7 +68,7 @@
       <NavTree v-if="treeOpen" :store="store" :section-key="sectionKey" :scope="scopeApi"
                @go-section="goSection" @section-settings="sectionSettings = $event" @settings="settingsOpen = true">
         <template #contents>
-          <NavContents :tables="tables" :canvases="canvasRows" :view="view" :table-id="tableId" :canvas-id="canvasId"
+          <NavContents :tables="treeTables" :canvases="canvasRows" :view="view" :table-id="tableId" :canvas-id="canvasId"
                        :scoped-table-ids="scopedTableIds"
                        @open-table="openTable" @open-canvas="openBoard"
                        @table-settings="tableSettings = $event" @new-table="newTable" @new-canvas="newCanvas" />
@@ -144,6 +144,7 @@ import type { RecordRow } from './state';
 import { useSchemaActions } from './schemaActions';
 import NavTree from './components/NavTree.vue';
 import NavContents from './components/NavContents.vue';
+import { scopedFirst } from './prefs';
 import TableSettings from './components/TableSettings.vue';
 import SettingsDialog from './components/SettingsDialog.vue';
 import DialogHost from './components/DialogHost.vue';
@@ -192,8 +193,14 @@ const sectionSettings = ref('');
 const section = computed(() => (sectionKey.value && sectionKey.value !== 'all' ? store.state.sections.get(sectionKey.value) ?? null : null));
 
 const tables = computed(() => tablesOfSection(store.state, section.value));
-// Sorted by name so the list is scannable and stable — insertion order meant the
-// picker reshuffled whenever a peer created one.
+// The TREE's order: alphabetical, and — a preference, in Settings — the scoped tables
+// (those that belong to a project) above the rest, each group alphabetical.
+const treeTables = computed(() => {
+  const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, undefined, { numeric: true });
+  const list = [...tables.value].sort(byName);
+  if (!scopedFirst.value) return list;
+  return [...list.filter((t) => scopedTableIds.value.has(t.id)), ...list.filter((t) => !scopedTableIds.value.has(t.id))];
+});
 /* ── boards ───────────────────────────────────────────────────────────────
    A canvas is a RECORD in a table of kind 'canvas' (sql/010_boards.sql). So the
    picker lists records — named by their primary field, like any record — from the

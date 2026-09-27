@@ -67,7 +67,7 @@
         <button class="dchip-x" title="Stop linking new records to this" @click="removeDefault(d.recordId)">×</button>
       </span>
       <span v-if="!defaults.length && !scopeChip" class="defaults-none">nothing — new records start unlinked</span>
-      <button class="defaults-add" title="Choose a record that everything created on this canvas should be linked to" @click="addingDefault = !addingDefault">+ add</button>
+      <button class="defaults-add" title="Choose a record that everything created on this canvas should be linked to" @click="addingDefault = !addingDefault; addTable = ''">+ add</button>
       <span v-for="a in defaultAmbiguities" :key="a" class="defaults-warn" title="A new record of that table will NOT be linked: it has more than one link to the same table, and none (or several) is ticked “membership”. An admin can tick one, in that link field's ⚙ settings.">⚠ {{ a }}</span>
 
       <div v-if="addingDefault" class="defaults-pop" @keydown.stop>
@@ -206,6 +206,7 @@ import { useDerived } from '../derived';
 import { defaultLinkField } from '../../contract/canvasConfig';
 import LinkPicker from './LinkPicker.vue';
 import { addLink } from '../links';
+import { canvasDefaultsOff } from '../prefs';
 import { confirmDialog } from '../dialogs';
 import { SCOPE } from '../scope';
 import { isEmptyRichText, richTextToPlain } from '../../contract/richtext';
@@ -311,15 +312,15 @@ const cards = computed(() =>
     const rec = store.state.records.get(p.record_id);
     if (!rec) return [];   // placement without its record: mid-sync, skip a frame
     const table = store.state.tables.get(rec.table_id);
-    // ⚠ per row from comparing links (COMPARE-BRIEF.md) — derived, live.
-    const diffs = derived.differencesOf(p.record_id);
+    // ✓ / ⚠ per row from comparing links (COMPARE-BRIEF.md) — derived, live.
+    const verdicts = derived.fieldVerdicts(p.record_id);
     return [{
       recordId: p.record_id,
       tableId: rec.table_id,
       tableName: table?.name ?? 'unknown',
       tableColor: colorOf(rec.table_id),
       title: labelFrom(rec.data, labelKeys.value.get(rec.table_id), ''),
-      rows: rowFields(rec.table_id).map((f) => { const r = rowFor(rec, f); const d = diffs.get(f.id); return d ? { ...r, warn: d.map((x) => `${x.link.name} → ${derived.labelOfId(x.target)}: ${x.result.detail}`).join('\n') } : r; }),
+      rows: rowFields(rec.table_id).map((f) => { const r = rowFor(rec, f); const v = verdicts.get(f.id); return v ? { ...r, verdict: v } : r; }),
       rich: richBlocks(rec),
       collapsed: p.collapsed,
       x: p.x, y: p.y, w: p.w, h: p.h, z: p.z,
@@ -415,18 +416,18 @@ function addDefault(tableId: string, recordId: string) {
   if (isDefault(recordId) || rawDefaults.value.length >= 20) return;
   saveDefaults([...rawDefaults.value, { tableId, recordId }]);
   defaultsOn.value = true;                 // you just asked for it
+  addingDefault.value = false; addTable.value = '';   // the popover closes; "+ add" starts fresh next time
 }
 const removeDefault = (recordId: string) => saveDefaults(rawDefaults.value.filter((d) => d.recordId !== recordId));
 
 const addingDefault = ref(false);
 const addTable = ref('');
 
-/* On/off is a way of WORKING, not a fact about the board: per browser, per canvas. */
-const offKey = () => `spatialdb.canvas.defaults.off.${props.canvasId}`;
-const readOn = () => { try { return localStorage.getItem(offKey()) !== '1'; } catch { return true; } };
-const defaultsOn = ref(readOn());
-watch(() => props.canvasId, () => { defaultsOn.value = readOn(); addingDefault.value = false; });
-watch(defaultsOn, (on) => { try { if (on) localStorage.removeItem(offKey()); else localStorage.setItem(offKey(), '1'); } catch { /* unavailable */ } });
+/* On/off is a way of WORKING, not a fact about the board: ONE switch for every
+   canvas, for this tab's session (client/prefs.ts). It was per canvas and came back
+   ON with every canvas you opened. */
+const defaultsOn = computed({ get: () => !canvasDefaultsOff.value, set: (on: boolean) => { canvasDefaultsOff.value = !on; } });
+watch(() => props.canvasId, () => { addingDefault.value = false; addTable.value = ''; });
 
 /** What createAt hands to createRecord. */
 const activeDefaults = computed(() => (defaultsOn.value ? rawDefaults.value : []));

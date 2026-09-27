@@ -189,6 +189,13 @@ real browser — if one is off, it goes in the table above.
 
 | Note | What it was |
 |---|---|
+| Field settings popover off screen for the rightmost columns | Popover measures itself and stays on screen |
+| "+ new view" / "+ new board" different designs | Same style |
+| Matching compared fields showed nothing | Green ✓; and the cue now also in grid cells and board cards |
+| Port dots astride the card edge | Inset 4px |
+| Canvas defaults switch re-defaulting per canvas | One session-wide switch |
+| "+ add" in the defaults bar stuck on the last picker | Resets |
+| Board hid the plain grid | Permanent built-in Grid |
 | The docked grid "doesn't jive" with a future split-pane system. | Removed entirely. **Check the canvas still fills its area** — its wrapper element went with the dock, and a collapsed canvas is exactly what the headless tests cannot see. |
 | No way to follow a linked pill to its record. | ⤢ on every link / backlink pill, grid and tray; opens the record on the right. |
 | Compare did not belong in the audio layout cell. | Removed; the diff function and endpoint remain for a future validation area. |

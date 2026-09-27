@@ -45,7 +45,7 @@ async function main() {
     const go = async (tableId: string) => { win.location.hash = `#/all/table/${tableId}`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange')); await until(() => w.find('.gridview').exists() && w.findAll('.gridview tr.row').length > 0, 8000); };
     const th = (name: string) => w.findAll('.gridview thead th').find((t: any) => t.find('.th-name').exists() && t.find('.th-name').text() === name)!;
     const gridPop = () => w.find('.gridview .popover');
-    const pField = (label: string) => w.findAll('.record-panel .rp-field').find((f: any) => f.find('.rp-name').text().replace('★', '').replace('⚠', '').trim() === label)!;
+    const pField = (label: string) => w.findAll('.record-panel .rp-field').find((f: any) => f.find('.rp-name').text().replace(/[★⚠✓]/g, '').trim() === label)!;
     const openRecord = async (name: string) => { await w.findAll('.gridview tr.row').find((r: any) => r.findAll('td')[1].text() === name)!.find('.expand').trigger('click'); await until(() => w.find('.record-panel .rp-title').text() === name); };
 
     console.log('\nC1. Ticking "compare" on a link');
@@ -79,11 +79,11 @@ async function main() {
     await openRecord('ep101.mov');
     const strip = () => w.find('.record-panel .rp-compare');
     check('the tray shows the comparison: ✗, and the count of differences', await until(() => strip().exists() && /✗/.test(strip().text())) && /2 differences/.test(strip().text()), strip().text());
-    check('⚠ beside Size (120 > 100) and Audio layout (missing); none beside Codec (case-insensitive match)',
-      pField('Size').find('.cmp-badge').exists() && pField('Audio layout').find('.cmp-badge').exists() && !pField('Codec').find('.cmp-badge').exists());
+    check('⚠ beside Size (120 > 100) and Audio layout (missing); a green ✓ beside Codec (case-insensitive match) — so you can see the engine IS working',
+      pField('Size').find('.cmp-badge').text() === '⚠' && pField('Audio layout').find('.cmp-badge').text() === '⚠' && pField('Codec').find('.cmp-badge').classes('ok') && pField('Codec').find('.cmp-badge').text() === '✓');
     check('the badge says why, and through which link', /Spec → Network master: 120 is above the maximum 100/.test(pField('Size').find('.cmp-badge').attributes('title') ?? ''), pField('Size').find('.cmp-badge').attributes('title'));
     await post([{ type: 'record.update', id: file, set: { size: 90 }, unset: [] }]);
-    check('fix the size elsewhere and the badge goes — nothing was stored, it is computed', await until(() => !pField('Size').find('.cmp-badge').exists() && strip().text().match(/: (\d+) difference/)?.[1] === '1'), strip().text());
+    check('fix the size elsewhere and its ⚠ becomes ✓ — nothing was stored, it is computed', await until(() => pField('Size').find('.cmp-badge').classes('ok') && strip().text().match(/: (\d+) difference/)?.[1] === '1'), strip().text());
 
     console.log('\nC3. Side by side');
     await strip().find('.sbs-btn').trigger('click');
@@ -101,7 +101,7 @@ async function main() {
     const seeded = await untilDb(`select data from records where id = '${file}'`, (r) => r[0].data.audio_layout !== undefined);
     check('seeding copies the paired values into EMPTY fields: the layout arrives; codec and size are left as they were', JSON.stringify(seeded[0].data.audio_layout) === JSON.stringify(five1) && seeded[0].data.codec === 'prores 4444' && seeded[0].data.size === 90, JSON.stringify(seeded[0].data));
     check('…as one mutation', Number((await pool.query(`select count(*)::int n from mutations`)).rows[0].n) === before + 1);
-    check('and now everything matches: ✓, no badges', await until(() => /✓/.test(strip().text()) && !w.find('.record-panel .cmp-badge').exists()), strip().text());
+    check('and now everything matches: ✓ in the strip, and every badge is a green ✓', await until(() => /✓/.test(strip().text()) && w.findAll('.record-panel .cmp-badge').every((b: any) => b.classes('ok'))) && w.findAll('.record-panel .cmp-badge').length === 3, strip().text());
     win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
     check('one Ctrl+Z', (await untilDb(`select data from records where id = '${file}'`, (r) => r[0].data.audio_layout === undefined)).length === 1);
     dialogs.cancelNext = true;
@@ -115,10 +115,19 @@ async function main() {
     console.log('\nC5. On the canvas');
     await nav.openCanvas(board);
     const card = () => w.findAll('.canvas-world .card').find((c: any) => c.find('.card-label').text() === 'ep101.mov')!;
-    check('the card shows ⚠ on the row that differs (Audio layout), and only there', await until(() => !!card() && card().findAll('.card-warn').length === 1, 8000)
-      && card().findAll('.card-field').find((r: any) => r.find('.card-warn').exists())!.find('.card-key').text().includes('Audio layout'), card()?.text());
+    const warnRows = () => card().findAll('.card-field').filter((r: any) => r.find('.card-warn').exists() && !r.find('.card-warn').classes('ok')).map((r: any) => r.find('.card-key').text());
+    const okRows = () => card().findAll('.card-field').filter((r: any) => r.find('.card-warn.ok').exists()).map((r: any) => r.find('.card-key').text());
+    check('the card shows ⚠ on the row that differs (Audio layout) and ✓ on the ones that match — the same cue as the tray', await until(() => !!card() && warnRows().length === 1, 8000)
+      && warnRows()[0].includes('Audio layout') && okRows().length === 2, card()?.text());
     await post([{ type: 'record.update', id: file, set: { audio_layout: five1 }, unset: [] }]);
-    check('…and it goes when the value matches — live on the canvas too', await until(() => card().findAll('.card-warn').length === 0));
+    check('…and it turns ✓ when the value matches — live on the canvas too', await until(() => warnRows().length === 0 && okRows().length === 3));
+
+    console.log('\nC6. In the grid and on a board: the same cue');
+    await go(tFiles);
+    const cellIcon = (col: string) => { const ths = w.findAll('.gridview thead .th-name').map((x: any) => x.text()); return w.findAll('.gridview tr.row')[0].findAll('td')[ths.indexOf(col) + 1].find('.cell-verdict'); };
+    check('grid cells carry the verdict to the right of the value', await until(() => cellIcon('Codec').exists()) && cellIcon('Codec').classes('ok') && cellIcon('Size').classes('ok') && !cellIcon('Name').exists());
+    await post([{ type: 'record.update', id: file, set: { size: 500 }, unset: [] }]);
+    check('…live: Size over the maximum turns ⚠ in the cell', await until(() => cellIcon('Size').exists() && !cellIcon('Size').classes('ok')));
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);
     await ui.close();

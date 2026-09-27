@@ -106,8 +106,8 @@ async function main() {
     await cardNamed('Projects').trigger('click');
     // The tree's TABLES list is what the table picker used to be.
     const pickerOptions = () => nav.tableNames();
-    check('opening a section shows ITS tables in the picker, in its order — not all four',
-      await until(() => pickerOptions().join() === 'Projects,Files'), pickerOptions().join());
+    check('opening a section shows ITS tables in the tree, alphabetically — not all four',
+      await until(() => pickerOptions().join() === 'Files,Projects'), pickerOptions().join());
     check('the breadcrumb and the tree both say where you are', /Projects/.test(w.find('.section-crumb').text()) && nav.currentSection() === sProj, w.find('.crumbs').text());
     check('and so does the address bar', win.location.hash.startsWith(`#/s/projects-${sProj}/table/`), win.location.hash);
 

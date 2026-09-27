@@ -43,7 +43,7 @@ async function main() {
     const rowNamed = (name: string) => w.findAll('.gridview tr.row').find((r: any) => r.findAll('td')[1].text() === name);
     const cellOf = (name: string, col: string) => rowNamed(name).findAll('td')[ths().indexOf(col) + 1];
     const openRecord = async (name: string) => { await rowNamed(name).find('.expand').trigger('click'); await until(() => w.find('.record-panel .rp-title').text() === name); };
-    const pField = (label: string) => w.findAll('.record-panel .rp-field').find((f: any) => f.find('.rp-name').text().replace('★', '').trim() === label);
+    const pField = (label: string) => w.findAll('.record-panel .rp-field').find((f: any) => f.find('.rp-name').text().replace(/[★⚠✓]/g, '').trim() === label);
     const dbLayout = async (id: string) => (await pool.query(`select data->'audio_layout' v from records where id = $1`, [id])).rows[0].v;
     const mutations = async () => Number((await pool.query(`select count(*)::int n from mutations`)).rows[0].n);
 
