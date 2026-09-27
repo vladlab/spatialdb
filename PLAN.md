@@ -992,6 +992,10 @@ that visibly does nothing.
 - The canvas-defaults switch is ONE switch for the session, for every canvas
   (`client/prefs.ts`; it was per canvas and re-defaulted to ON). "+ add" resets after
   adding one (it stayed on the last table's picker).
+- (Sept 28) Link pills: the hover-only ⤢ was a few pixels wide and a miss selected the
+  cell — now the WHOLE PILL opens the record, × removes (Airtable's behaviour). And the
+  canvas's trackpad/mouse wheel mode is remembered per browser (I had misread "reverts
+  to pad" as the defaults switch).
 - Tree: tables alphabetical; a Settings ("This browser") option lists scoped tables
   above the rest, each group alphabetical.
 

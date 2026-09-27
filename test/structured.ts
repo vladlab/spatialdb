@@ -55,15 +55,17 @@ async function main() {
 
     console.log('\nT1b. Following a link');
     const pill = () => cellOf('ep101.mov', 'Targets').find('.chip');
-    check('a linked record\'s pill carries an "open" button (revealed on hover; its space is always reserved, so nothing shifts)',
-      await until(() => pill().exists()) && pill().find('.chip-open').exists() && pill().text().includes('Network master'));
-    await pill().find('.chip-open').trigger('click');
+    check('a linked record\'s pill is OPENABLE — the whole pill is the target (a hover-only glyph was too small to hit)',
+      await until(() => pill().exists()) && pill().classes('openable') && pill().find('.chip-open').exists() && pill().text().includes('Network master'));
+    // the full press, as a browser sends it: pointerdown, mousedown, click — the cell's own
+    // mousedown/pointerdown handlers must not get in the way
+    await pill().trigger('pointerdown'); await pill().trigger('mousedown'); await pill().trigger('click');
     check('clicking it opens THAT record in the tray — the deliverable, not the file', await until(() => w.find('.record-panel .rp-title').text() === 'Network master'));
     check('…without putting the cell into edit mode', !w.find('.gridview td.editing').exists());
     await w.find('.record-panel .rp-close').trigger('click');
     await openRecord('ep101.mov');
-    await pField('Targets').find('.chip .chip-open').trigger('click');
-    check('the same button on a pill INSIDE the tray walks the tray to the linked record', await until(() => w.find('.record-panel .rp-title').text() === 'Network master'));
+    await pField('Targets').find('.chip.openable').trigger('click');
+    check('the same on a pill INSIDE the tray walks the tray to the linked record', await until(() => w.find('.record-panel .rp-title').text() === 'Network master'));
     await w.find('.record-panel .rp-close').trigger('click');
 
     console.log('\nT2. Creating a structured field');

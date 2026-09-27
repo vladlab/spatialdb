@@ -63,9 +63,9 @@
              @click="startEdit(f)" @keydown.enter.prevent.stop="startEdit(f)">
           <!-- LINK -->
           <template v-if="f.type === 'link'">
-            <span v-for="to in linksFrom(f.id)" :key="to" class="chip">
-              {{ labelOfId(to) }}<button class="chip-open" tabindex="-1" :title="`Open ${labelOfId(to)}`"
-                                         @mousedown.stop.prevent @click.stop="$emit('open', to)">⤢</button><button class="chip-x" tabindex="-1" title="Remove this link"
+            <span v-for="to in linksFrom(f.id)" :key="to" class="chip openable" :title="`Open ${labelOfId(to)}`"
+                  @pointerdown.stop @mousedown.stop.prevent @click.stop="$emit('open', to)">
+              {{ labelOfId(to) }}<span class="chip-open">⤢</span><button class="chip-x" tabindex="-1" title="Remove this link"
                                         @click.stop="removeLink(f.id, to)">×</button>
             </span>
             <span v-if="!linksFrom(f.id).length && editingId !== f.id" class="placeholder">add a link…</span>

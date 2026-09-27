@@ -189,6 +189,7 @@ real browser — if one is off, it goes in the table above.
 
 | Note | What it was |
 |---|---|
+| Link pills' ⤢ too small to hit; the wheel mode reset to trackpad per canvas | The whole pill opens the record (× removes); wheel mode remembered per browser |
 | Field settings popover off screen for the rightmost columns | Popover measures itself and stays on screen |
 | "+ new view" / "+ new board" different designs | Same style |
 | Matching compared fields showed nothing | Green ✓; and the cue now also in grid cells and board cards |

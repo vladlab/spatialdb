@@ -287,12 +287,13 @@
               <div class="cell">
                 <!-- LINK: rows in `links`, so edited here rather than in CellEditor. -->
                 <template v-if="f.type === 'link'">
-                  <span v-for="to in linksFrom(r.id, f.id)" :key="to" class="chip">
-                    {{ labelFor(to) }}
-                    <!-- FOLLOW the link: opens the linked record in the tray. Appears on
-                         hover; it stops the press so the cell is not also selected/edited. -->
-                    <button class="chip-open" tabindex="-1" :title="`Open ${labelFor(to)}`"
-                            @mousedown.stop.prevent @click.stop="$emit('open-record', to)">⤢</button>
+                  <!-- CLICK A PILL to open the linked record (× removes the link). The whole
+                       pill is the target: a hover-only glyph was too small to hit, and a miss
+                       selected the cell instead. It stops the press so the cell does not
+                       also select or start editing. -->
+                  <span v-for="to in linksFrom(r.id, f.id)" :key="to" class="chip openable" :title="`Open ${labelFor(to)}`"
+                        @pointerdown.stop @mousedown.stop.prevent @click.stop="$emit('open-record', to)">
+                    {{ labelFor(to) }}<span class="chip-open">⤢</span>
                     <button class="chip-x" tabindex="-1" title="Remove this link"
                             @mousedown.stop.prevent @click.stop="removeLink(f.id, r.id, to)">×</button>
                   </span>
@@ -331,7 +332,7 @@
                          the link belongs to the record that holds it. -->
                     <template v-else-if="f.type === 'backlink'">
                       <span v-if="derived.backlinkOf(r.id, f) === null" class="broken" title="This backlink is broken: the link field it mirrored was deleted.">broken backlink</span>
-                      <span v-for="from in derived.backlinkOf(r.id, f) ?? []" v-else :key="from" class="chip plain back" title="Linked from that record — edit the link there">{{ labelFor(from) }}<button class="chip-open" tabindex="-1" :title="`Open ${labelFor(from)}`" @mousedown.stop.prevent @click.stop="$emit('open-record', from)">⤢</button></span>
+                      <span v-for="from in derived.backlinkOf(r.id, f) ?? []" v-else :key="from" class="chip plain back openable" :title="`Open ${labelFor(from)} — the link is edited there`" @pointerdown.stop @mousedown.stop.prevent @click.stop="$emit('open-record', from)">{{ labelFor(from) }}<span class="chip-open">⤢</span></span>
                     </template>
                     <!-- LOOKUP: computed, read-only. Broken (its link field or far field
                          was deleted) is shown as such, not as an empty cell. -->

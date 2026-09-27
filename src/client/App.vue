@@ -557,13 +557,12 @@ body {
   cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1;
 }
 .chip-x:hover { color: var(--danger); }
-/* Follow a link: a pill's "open" button. Its space is ALWAYS reserved and it is only
-   revealed on hover (visibility, not display): a pill that grew under the pointer
-   would push its neighbours along — the owner's standing preference is that nothing
-   jumps. */
-.chip-open { visibility: hidden; background: none; border: none; color: var(--accent); cursor: pointer; padding: 0 1px; font-size: 11px; line-height: 1; }
+/* A pill you can OPEN: the whole pill is the click target; the ⤢ is only a hint,
+   revealed on hover with its space always reserved so nothing shifts. */
+.chip.openable { cursor: pointer; }
+.chip.openable:hover { border-color: var(--accent); }
+.chip-open { visibility: hidden; color: var(--accent); padding: 0 1px; font-size: 11px; line-height: 1; }
 .chip:hover .chip-open { visibility: visible; }
-.chip-open:hover { color: var(--text-primary); }
 .chip-add {
   background: none; border: 1px dashed var(--border-main); color: var(--text-muted);
   border-radius: 10px; font-size: 11px; padding: 1px 4px; cursor: pointer;

@@ -9,7 +9,7 @@
  * around. Per-client, ephemeral, until there's a reason otherwise.
  */
 
-import { reactive, ref, computed, type Ref } from 'vue';
+import { watch, reactive, ref, computed, type Ref } from 'vue';
 import { fitTransform, toWorld, zoomAbout, type Rect } from './geometry.js';
 
 const MIN_SCALE = 0.1;
@@ -20,7 +20,12 @@ export type ScrollMode = 'mouse' | 'touchpad';
 export function useViewport(containerRef: Ref<HTMLElement | null>) {
   const transform = reactive({ x: 0, y: 0, scale: 1 });
   const isPanning = ref(false);
-  const scrollMode = ref<ScrollMode>('touchpad');
+  // Trackpad or mouse wheel: a fact about YOUR HARDWARE, so remembered per browser
+  // (it reset to trackpad on every canvas you opened).
+  const MODE_KEY = 'spatialdb.canvas.scrollMode';
+  const savedMode = (): ScrollMode => { try { return localStorage.getItem(MODE_KEY) === 'mouse' ? 'mouse' : 'touchpad'; } catch { return 'touchpad'; } };
+  const scrollMode = ref<ScrollMode>(savedMode());
+  watch(scrollMode, (m) => { try { localStorage.setItem(MODE_KEY, m); } catch { /* unavailable */ } });
   const panStart = { x: 0, y: 0 };
 
   const rect = () =>
