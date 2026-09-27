@@ -16,6 +16,13 @@ sandbox has no browser and `test/ui.ts` cannot see layout or paint.
 
 ## When you come back — a checking order
 
+**The desktop client (Sept 27)** has a checking order of its own at the end of
+`DESKTOP.md`; nobody has opened its window yet. Also unseen in the web app: the
+**Desktop tools** section at the bottom of Table settings (`ToolSettings.vue` — a
+four-column row per output; the dialog grew to 560 px and scrolls), the drop overlay
+and notices strip (`App.vue`, desktop only), and the `⤴ show` button in the record
+panel (desktop only).
+
 Five steps have landed since anyone last LOOKED at the app (the owner said he could
 not check each one). Everything below passes its tests; none of it has been seen.
 Ordered by how likely I think it is to be wrong, most likely first — so the first

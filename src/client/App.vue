@@ -125,6 +125,16 @@
 
     <DialogHost />
 
+    <!-- Desktop app only (client/desktop.ts): files being dragged over the window,
+         and what the tools are doing. In a browser neither ever appears. -->
+    <div v-if="fileDrag.active" class="file-drop" :class="{ ok: !!dropWhere }">
+      <div class="file-drop-msg">{{ dropWhere ? `Drop ${fileDrag.count === 1 ? 'to add to' : `${fileDrag.count} items into`} ${dropWhere}` : 'Open a table or canvas with File drop enabled' }}</div>
+    </div>
+    <div v-if="notices.length || jobs.size" class="desk-notices">
+      <div v-if="jobs.size" class="desk-job">{{ jobs.size }} file{{ jobs.size === 1 ? '' : 's' }} being read…</div>
+      <div v-for="n in notices.slice(0, 4)" :key="n.id" class="desk-notice" :class="n.kind" @click="dismiss(n.id)">{{ n.text }}</div>
+    </div>
+
     <div v-if="store.errors.value.length" class="errors">
       <div v-for="(e, i) in store.errors.value.slice(0, 5)" :key="i">{{ e }}</div>
     </div>
@@ -133,6 +143,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue';
+import { dismiss, fileDrag, handshake, isDesktop, jobs, listenFileDrops, notice, notices } from './desktop';
+import { runFileDrop } from './tools/fileDrop';
 import { SCOPE, useScope } from './scope';
 import { formatScope, parseScope } from '../contract/scope';
 import { dragGhost } from './recordDrag';
@@ -413,6 +425,32 @@ function onHistoryKey(e: KeyboardEvent) {
 onMounted(() => window.addEventListener('keydown', onHistoryKey));
 onUnmounted(() => window.removeEventListener('keydown', onHistoryKey));
 
+/* ── the desktop app's tools ──────────────────────────────────────────────
+   Native file drops (Tauri claims the webview's HTML5 drop events, so this is
+   the only way files arrive) go to the open table, or the open canvas at the
+   pointer — client/tools/fileDrop.ts does the rest. A no-op in a browser. */
+const dropWhere = computed(() => {
+  if (view.value === 'table' && tableId.value) return store.state.tables.get(tableId.value)?.name ?? '';
+  if (view.value === 'canvas' && canvasId.value) return derived.labelOfId(canvasId.value) || 'this canvas';
+  return '';
+});
+function onFilesDropped(paths: string[], x: number, y: number) {
+  const ctx = { store, createRecord: scopeApi.createRecord, defaults: view.value === 'canvas' ? canvasRef.value?.activeDefaults : undefined };
+  if (view.value === 'table' && tableId.value) void runFileDrop(ctx, paths, { tableId: tableId.value });
+  else if (view.value === 'canvas' && canvasId.value && canvasRef.value) {
+    const c = canvasRef.value;
+    void runFileDrop(ctx, paths, { canvas: { id: canvasId.value, clientX: x, clientY: y, onto: c.cardAtClient(x, y), place: c.placeMany } });
+  } else notice('Open a table or canvas first, then drop the files there', 'warn');
+}
+let unlistenDrops: (() => void) | null = null;
+onMounted(async () => {
+  if (!isDesktop()) return;
+  const a = await handshake();
+  if (a && !a.ffprobe) notice('ffprobe was not found on this machine — files will be added without probe data', 'warn');
+  unlistenDrops = await listenFileDrops(onFilesDropped);
+});
+onUnmounted(() => unlistenDrops?.());
+
 // Keep the pickers pointing at something real. They were only set once, on
 // mount — so on a fresh database, creating your FIRST table in the schema tab
 // left the table tab still saying "no tables", and deleting the selected table
@@ -648,6 +686,17 @@ body {
 .rich td, .rich th, .ProseMirror td, .ProseMirror th { border: 1px solid var(--border-main); padding: 3px 8px; vertical-align: top; min-width: 40px; }
 .rich th, .ProseMirror th { background: var(--controls-bg); font-weight: 600; text-align: left; }
 .ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--text-faint); float: left; height: 0; pointer-events: none; }
+
+/* desktop: files over the window, and the tools' notices (client/desktop.ts) */
+.file-drop { position: fixed; inset: 0; z-index: 400; pointer-events: none; display: flex; align-items: center; justify-content: center;
+             background: rgba(0, 0, 0, 0.35); border: 3px dashed var(--text-muted); }
+.file-drop.ok { border-color: var(--accent); }
+.file-drop-msg { background: var(--bg-app); border: 1px solid var(--border-main); border-radius: 8px; padding: 12px 20px; font-size: 14px; box-shadow: var(--card-shadow-drag); }
+.desk-notices { position: fixed; right: 12px; bottom: 12px; z-index: 300; display: flex; flex-direction: column; gap: 4px; max-width: 420px; }
+.desk-job { font-size: 11px; color: var(--accent); text-align: right; }
+.desk-notice { background: var(--bg-app); border: 1px solid var(--border-main); border-left: 3px solid var(--accent); border-radius: 4px; padding: 6px 10px; font-size: 12px; cursor: pointer; box-shadow: var(--card-shadow-drag); }
+.desk-notice.warn { border-left-color: #d9a441; }
+.desk-notice.error { border-left-color: var(--danger); }
 
 .errors {
   margin: 0; padding: 8px 12px; background: #3a1f1f; color: #f3b8b8;

@@ -385,6 +385,10 @@ its flushes by tag rather than mixing a tool's writes into a hand-edit batch. Th
 tag is provenance, not permission — an unknown tag is accepted, so a script may
 name itself. Only editors and admins can write at all, as before.
 
+**The desktop client that runs the tools** is in `src-tauri/` (DESKTOP.md). It talks
+to this API exactly as the browser does — same origin, same cookie — and adds
+nothing to it; the only new surface is on the CLIENT side (`window.__TAURI__`).
+
 **Client rule, not wire:** `store.mutate(m, { via, undoable: false })` for a tool's
 FOLLOW-UP writes (the probe facts and hash that arrive after a drop). They are not
 Ctrl+Z steps of their own, so undoing a drop deletes the records it created, probe

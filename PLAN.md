@@ -1033,7 +1033,31 @@ that visibly does nothing.
 - Tree: tables alphabetical; a Settings ("This browser") option lists scoped tables
   above the rest, each group alphabetical.
 
-### The tools contract — BUILT (Sept 27, `tauri` branch)
+### The desktop client — BUILT, UNSEEN (Sept 27)
+
+`src-tauri/`, `client/desktop.ts`, `client/tools/fileDrop.ts`, `DESKTOP.md`,
+`test/filedrop.ts` (32 checks through the real app with the shell faked; 4 of 5
+breakages caught — the fifth, drop-coordinate scaling, is invisible headlessly).
+Rust: `cargo check` clean, 3 unit tests. No one has opened the window.
+
+- **Option A made concrete.** No bundled frontend; the window navigates to the
+  configured server and a capability for that ONE origin is added at runtime.
+  `withGlobalTauri` so the web bundle carries no Tauri code and the browser build is
+  byte-identical; the page detects the shell by `window.__TAURI__`.
+- **Two security rules the handoff implied, now enforced in Rust:** commands are
+  fixed-purpose (never argv from the page), and reading commands only accept paths
+  the user dropped this session (a compromised server cannot hash `/etc/shadow`
+  through the app). No "open with default app" command, on purpose.
+- **Classification before creation**: file / bundle / sequence / channel_set decided
+  in Rust from stat and directory listing; probe and hash afterwards. One drop is one
+  Ctrl+Z including the probe results (`undoable: false` follow-ups); every write of a
+  drop is `via: file_drop`, placements included (the canvas's `placeMany` and
+  `createRecord` take `MutateOptions` now).
+- **Deferred, deliberately:** picking files with a dialog (would need the dialog
+  plugin and a widening of the allowlist); re-probing a record that was not dropped
+  this session; the Resolve reader; QC/waveforms; a Nix package; signed macOS builds.
+
+### The tools contract — BUILT (Sept 27)
 
 The desktop client's first patch touches no Rust: it is the server-side seam the
 tools need, done first and alone because it changes the wire format

@@ -11,6 +11,32 @@
     in
     {
       devShells = forAllSystems (pkgs: {
+        # UNVERIFIED on a real NixOS machine — written from viznotes' flake, which
+        # builds a Tauri 2 app on NixOS. The desktop client: `nix develop .#desktop`,
+        # then `npm run desktop:dev`. The Rust toolchain is nixpkgs' (Tauri 2 needs
+        # ≥ 1.77.2; nixos-24.11 ships 1.82). ffmpeg is a RUNTIME need of the app on
+        # every workstation, not a build input — it is here so `cargo run` finds it.
+        desktop = pkgs.mkShell {
+          packages = with pkgs; [
+            nodejs_22 git cargo rustc rustfmt clippy cargo-tauri
+            pkg-config gobject-introspection wrapGAppsHook3
+            openssl libsoup_3 webkitgtk_4_1 gtk3 glib cairo pango gdk-pixbuf atk harfbuzz
+            gsettings-desktop-schemas dconf xdg-utils librsvg
+            ffmpeg
+          ];
+          shellHook = ''
+            export PATH="$PWD/node_modules/.bin:$PATH"
+            export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS"
+            # WebKitGTK on Wayland/Sway: the DMA-BUF renderer is unreliable in some setups —
+            # the vcompare_imf/viznotes workaround. Remove if the window renders fine.
+            export WEBKIT_DISABLE_DMABUF_RENDERER=1
+            echo ""
+            echo "  spatialdb DESKTOP shell   (npm run desktop:dev | desktop:build | desktop:check)"
+            echo "  SPATIALDB_URL=https://… overrides the configured server for this run."
+            echo ""
+          '';
+        };
+
         default = pkgs.mkShell {
           packages = with pkgs; [
             postgresql_16   # server + psql/initdb/pg_ctl, pinned so everyone matches

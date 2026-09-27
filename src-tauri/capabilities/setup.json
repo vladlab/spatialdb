@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "setup",
+  "description": "The bundled first-run page (tauri://localhost): may read and set which server to load, nothing else. The server itself is granted its capability at runtime (src/lib.rs `grant`), for exactly one origin.",
+  "windows": ["main"],
+  "permissions": ["core:default", "allow-set-server", "allow-server-url", "allow-tools-available"]
+}

@@ -237,7 +237,7 @@ So the first tool is built against the real schema, not an imagined one
 - **The app is not for the public internet** (API.md says why). A desktop client does
   not change that.
 
-## 9. What "done" looks like for a first milestone
+## 9. What "done" looks like for a first milestone — BUILT (Sept 27), see DESKTOP.md
 
 A file dropped onto the Files table in the desktop app becomes a record with its path
 and size at once; ffprobe data and a hash arrive shortly after; it is linked to the

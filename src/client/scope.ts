@@ -19,7 +19,7 @@
  */
 
 import { computed, ref, watch, type InjectionKey, type Ref } from 'vue';
-import type { Store } from './store';
+import type { MutateOptions, Store } from './store';
 import { recordsOf, type FieldRow, type RecordRow, type SectionRow } from './state';
 import { ALL, formatScope, inScope, isMembership, membershipFieldOf, parseScope, type Scope } from '../contract/scope';
 import { defaultLinkField } from '../contract/canvasConfig';
@@ -126,10 +126,12 @@ export function useScope(store: Store, section: Ref<SectionRow | null>, labelOf:
    * decides what a new record starts out linked to.
    */
   function createRecord(
-    tableId: string, data: Record<string, unknown> = {}, id = crypto.randomUUID(),
+    tableId: string, data: Record<string, unknown> = {}, id: string = crypto.randomUUID(),
     context: { data?: Record<string, unknown>; links?: Array<{ fieldId: string; toRecord: string }>; defaults?: Array<{ tableId: string; recordId: string }> } = {},
+    /** Passed to every mutate here — a tool tags its batch (`via`); see store.ts MutateOptions. */
+    options: MutateOptions = {},
   ): string {
-    store.mutate({ type: 'record.create', id, tableId, data: { ...context.data, ...data } });
+    store.mutate({ type: 'record.create', id, tableId, data: { ...context.data, ...data } }, options);
 
     const links = new Map<string, { fieldId: string; toRecord: string }>();
     const want = (fieldId: string, toRecord: string) => links.set(fieldId + toRecord, { fieldId, toRecord });
@@ -147,7 +149,7 @@ export function useScope(store: Store, section: Ref<SectionRow | null>, labelOf:
     }
 
     for (const l of links.values()) {
-      store.mutate({ type: 'link.add', id: crypto.randomUUID(), fieldId: l.fieldId, fromRecord: id, toRecord: l.toRecord });
+      store.mutate({ type: 'link.add', id: crypto.randomUUID(), fieldId: l.fieldId, fromRecord: id, toRecord: l.toRecord }, options);
     }
     return id;
   }

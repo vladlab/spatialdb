@@ -1,0 +1,48 @@
+<!doctype html>
+<!--
+  The ONLY page bundled into the desktop app: it asks which spatialdb server to
+  load, once. Everything else is the server's own web app in this window.
+  Plain HTML on purpose — no build step, nothing to keep in sync with the Vue app.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>spatialdb — which server?</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 14px system-ui, sans-serif; margin: 0; min-height: 100vh; display: grid; place-items: center; background: #1b1d22; color: #e6e6e6; }
+  main { width: min(440px, 90vw); }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  p { color: #9aa0a8; margin: 0 0 16px; line-height: 1.5; }
+  input { width: 100%; box-sizing: border-box; font: inherit; padding: 8px 10px; border-radius: 6px; border: 1px solid #3a3f48; background: #14161a; color: inherit; }
+  button { margin-top: 10px; font: inherit; padding: 7px 14px; border-radius: 6px; border: 1px solid #4a90e2; background: #2a6fc2; color: #fff; cursor: pointer; }
+  .err { color: #ff8a80; min-height: 1.4em; margin-top: 8px; }
+  .host { font-size: 12px; color: #6f7680; margin-top: 18px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>spatialdb</h1>
+  <p>This window shows the web app from your spatialdb server, and adds the tools that need this machine (file drop, ffprobe). Which server?</p>
+  <input id="url" type="url" placeholder="https://spatialdb.example.com" autofocus />
+  <button id="go">Connect</button>
+  <div class="err" id="err"></div>
+  <div class="host" id="host"></div>
+</main>
+<script>
+  const { invoke } = window.__TAURI__.core;
+  const $ = (id) => document.getElementById(id);
+  invoke('tools_available').then((a) => {
+    $('host').textContent = `desktop ${a.version} · ${a.platform} · ffprobe ${a.ffprobe ?? 'NOT FOUND'} · ffmpeg ${a.ffmpeg ?? 'NOT FOUND'}`;
+  }).catch(() => {});
+  invoke('server_url').then((u) => { if (u) $('url').value = u; }).catch(() => {});
+  async function go() {
+    $('err').textContent = '';
+    try { await invoke('set_server', { url: $('url').value.trim() }); }
+    catch (e) { $('err').textContent = String(e); }
+  }
+  $('go').onclick = go;
+  $('url').onkeydown = (e) => { if (e.key === 'Enter') go(); };
+</script>
+</body>
+</html>

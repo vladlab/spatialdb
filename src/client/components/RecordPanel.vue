@@ -47,6 +47,10 @@
         <label class="rp-name">
           <span v-if="f.id === primaryId" class="star" title="Primary field — this record's name">★</span>{{ f.name }}
           <span v-if="verdicts.get(f.id)" class="cmp-badge" :class="{ ok: verdicts.get(f.id)!.ok }" :title="verdicts.get(f.id)!.title">{{ verdicts.get(f.id)!.ok ? '✓' : '⚠' }}</span>
+          <!-- Desktop app only: select the file in the file manager (never opens it — src-tauri/src/lib.rs). -->
+          <button v-if="desktop && f.type === 'file_path' && typeof record.data[f.key] === 'string'" class="reveal" title="Show in folder"
+                  @click.stop="reveal(String(record.data[f.key]))">⤴ show</button>
+          <span v-if="jobs.get(recordId) && f.type === 'file_path'" class="job">{{ jobs.get(recordId) }}…</span>
         </label>
 
         <!-- RICH TEXT is not a click-to-edit value like the rest: it is an editor that
@@ -147,6 +151,7 @@ import { labelFrom } from '../../contract/labels';
 import { useDerived } from '../derived';
 import { confirmDialog } from '../dialogs';
 import CellEditor, { type EditExit } from './CellEditor.vue';
+import { invoke, isDesktop, jobs, notice } from '../desktop';
 import LinkPicker from './LinkPicker.vue';
 import AttachmentField from './AttachmentField.vue';
 import StructuredField from './StructuredField.vue';
@@ -159,6 +164,9 @@ import SideBySide from './SideBySide.vue';
 // nothing needs them until a record with a rich_text field is opened — so they
 // stay out of the bundle the app starts with.
 const RichTextEditor = defineAsyncComponent(() => import('./RichTextEditor.vue'));
+
+const desktop = isDesktop();
+const reveal = (path: string) => invoke('reveal', { path }).catch((e) => notice(String(e), 'error'));
 
 const props = defineProps<{ store: Store; recordId: string }>();
 const emit = defineEmits<{ close: []; open: [recordId: string]; 'open-board': [recordId: string]; 'open-report': [recordId: string] }>();
@@ -348,6 +356,9 @@ watch(() => props.recordId, () => {
 .cmp-badge { color: var(--warning); margin-left: 5px; cursor: help; font-size: 12px; }
 .cmp-badge.ok { color: var(--success); opacity: 0.8; }
 .rp-field { padding: 6px 0; }
+.reveal { margin-left: 8px; font-size: 10px; background: none; border: 1px solid var(--border-main); color: var(--text-muted); border-radius: 3px; padding: 0 5px; cursor: pointer; }
+.reveal:hover { color: var(--accent); border-color: var(--accent); }
+.job { margin-left: 8px; font-size: 10px; color: var(--accent); }
 .rp-field.block { padding: 10px 0; }
 /* min-height is set inline (richReserve): the editor's place, held while it loads. */
 .rp-rich { display: flex; }

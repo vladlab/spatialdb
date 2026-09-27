@@ -52,6 +52,7 @@ so loudly. See API.md for what signing in does and does **not** make safe.
 
 ```
 PLAN.md                phases, status, open decisions
+DESKTOP.md             the desktop client: what it does, running and building it, what needs eyes
 UI-NOTES.md            first-impression UI notes, triaged: bug / friction / polish
 flake.nix              dev toolchain (thin — logic lives in scripts/)
 scripts/db.sh          postgres lifecycle: start/stop/reset/migrate/bootstrap/seed/psql
@@ -95,6 +96,8 @@ src/
     reads.ts             schema / scene / grid / lookup loaders
     index.ts             HTTP + SSE
   client/
+    desktop.ts           the desktop app's side: is this the Tauri window? the handshake, native file drops, notices
+    tools/fileDrop.ts    the file-drop tool: classify → create at once → probe and hash afterwards
     state.ts             local state + the ONE idempotent apply function
     derived.ts           links, lookups, backlinks as values — ONE link index and label rule
     fuzzy.ts             the palette's table matching and `table:text` parsing
@@ -137,6 +140,7 @@ src/
       Popover.vue        anchored panel for the grid's header menus
       CellEditor.vue     one grid cell, edited the way its field type wants
     App.vue              shell: canvas / table / schema / undo
+src-tauri/             the desktop client (Tauri 2 / Rust): the window, one capability per server, the tools — see DESKTOP.md
 test/harness.ts        spawns and RELIABLY kills the server for the suites
 test/e2e.ts            apply-layer suite against a real database
 test/store.ts          client store: idempotency + two-client convergence
@@ -191,6 +195,8 @@ invented their own shape. See PLAN.md.
 | `npm run test:reportview` | a report open in the app: Reports in the tree, the outline, live updates, + report |
 | `npm run test:kanban` | the board: columns by select and link, move/add, single links |
 | `npm run test:prod` | the server as deployed: built frontend, cache headers, CSP, loopback bind |
+| `npm run test:filedrop` | the file-drop tool through the real app with the native shell FAKED |
+| `npm run desktop:dev` / `desktop:build` / `desktop:check` | the desktop client (DESKTOP.md) |
 | `npm run test:tools` | the tools contract: a table's tool config, the `via` tag in the log/stream/History, the store's batching, Table settings → Desktop tools |
 | `npm run test:auth` | signing in, sessions, roles, users — against a server with sign-in ON |
 | `npm run test:ui` | mounts the app headlessly and clicks through it (happy-dom; no layout or paint) |

@@ -199,7 +199,7 @@
 
 <script setup lang="ts">
 import { computed, inject, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
-import type { Store } from '../store';
+import type { MutateOptions, Store } from '../store';
 import { fieldsOf, tablesSorted, type FieldRow, type RecordRow } from '../state';
 import { labelFrom } from '../../contract/labels';
 import { useDerived } from '../derived';
@@ -892,7 +892,7 @@ function placeOrJump(rec: RecordRow): 'placed' | 'jumped' {
  * whole drop ONE Ctrl+Z (see history.ts).
  */
 const DROP_GAP = 16, DROP_PER_COLUMN = 8;
-function placeMany(records: RecordRow[], clientX: number, clientY: number) {
+function placeMany(records: RecordRow[], clientX: number, clientY: number, options: MutateOptions = {}) {
   const at = viewport.clientToWorld(clientX, clientY);
   const fresh = records.filter((r) => !cardRects.value.has(r.id));
   store.adopt(fresh);
@@ -903,7 +903,7 @@ function placeMany(records: RecordRow[], clientX: number, clientY: number) {
     store.mutate({
       type: 'placement.add', id: crypto.randomUUID(), canvasId: props.canvasId, recordId: rec.id,
       x: Math.round(at.x + col * (CARD_W + DROP_GAP)), y: Math.round(y), w: null, h: null, z: ++z,
-    });
+    }, options);
     y += h + DROP_GAP;
     if (++row === DROP_PER_COLUMN) { row = 0; col++; y = at.y; }
   }
@@ -914,7 +914,9 @@ function placeMany(records: RecordRow[], clientX: number, clientY: number) {
 }
 
 const placedIds = computed(() => new Set(cardRects.value.keys()));
-defineExpose({ placeOrJump, placeMany, placedIds, resetCascade: () => { cascade = 0; } });
+/** The card under a CLIENT point, for a native file drop (client/desktop.ts). */
+const cardAtClient = (clientX: number, clientY: number) => cardAt(viewport.clientToWorld(clientX, clientY));
+defineExpose({ placeOrJump, placeMany, placedIds, cardAtClient, activeDefaults, resetCascade: () => { cascade = 0; } });
 
 /** The one place the canvas can destroy DATA, so it says so, and says it is undoable. */
 async function deleteRecord(recordId: string) {
