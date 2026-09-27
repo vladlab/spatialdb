@@ -81,6 +81,7 @@ src/
   contract/backlinks.ts  ★ backlink fields — the other end of a link
   contract/arrows.ts     ★ a link field's arrow colour and direction
   contract/compare.ts    ★ the comparison engine: rules, compareRecords, seedValues
+  contract/reports.ts    ★ reports: the definition, its validation, the walk, rollups, the flattener → CSV
   contract/shapes.ts     ★ structured values: shapes, summaries, layout operations, the layout diff
   contract/scope.ts      ★ scope: the membership flag and "is this record in scope"
   contract/richtext.ts   ★ rich text + attachment values: refer to files, never contain them
@@ -138,6 +139,7 @@ test/undo.ts           capture, cascades, FK safety, role gating
 test/canvas.ts         geometry + placement mutations through a real server
 test/stream.ts         HTTP + SSE suite against a real server
 test/grid.ts           view semantics, keyset paging, whole-table walk, saved views
+test/reports.ts        the reports contract, pure: validation, the walk, pins, roles, rollups, CSV
 test/assets.ts         upload, identity, serving, limits — real files in a temp dir
 test/sections.ts       routes, section mutations, home → section → pickers, deep links
 test/scope.ts          the membership rule, the server's part, and scope in the app

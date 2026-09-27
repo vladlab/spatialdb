@@ -40,7 +40,7 @@ const uuid = z.guid();
  * view, and a key is only unique within a table while an id is unique, full
  * stop — so a config can be checked without knowing which table it is for.
  */
-const SortEntry = z.strictObject({
+export const SortEntry = z.strictObject({
   fieldId: uuid,
   dir: z.enum(['asc', 'desc']),
 });
@@ -59,7 +59,7 @@ export const FILTER_OPS = [
 ] as const;
 export type FilterOp = typeof FILTER_OPS[number];
 
-const FilterEntry = z.strictObject({
+export const FilterEntry = z.strictObject({
   fieldId: uuid,
   op: z.enum(FILTER_OPS),
   /** Absent for empty/notEmpty. Scalars only — a filter compares to one thing. */
