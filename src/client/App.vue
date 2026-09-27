@@ -303,9 +303,14 @@ const currentName = computed(() => (view.value === 'table' ? store.state.tables.
 
 function openTable(id: string) { tableId.value = id; view.value = 'table'; }
 
-/** From a grid row, a card or the record panel: go to that board. */
+/**
+ * From a grid row, a card, the tree or the record panel: go to that board. An OPEN
+ * RECORD stays open — it persists across every navigation (it survived switching
+ * tables but was closed here). The one exception: the board being opened IS the open
+ * record; a tray showing the board you are now standing on is noise.
+ */
 function openBoard(id: string) {
-  openRecordId.value = '';
+  if (openRecordId.value === id) openRecordId.value = '';
   canvasId.value = id;
   view.value = 'canvas';
 }
@@ -402,7 +407,7 @@ function goSection(key: string) {
   // canvases, you want the other section's canvases.
   if (sectionKey.value === null) view.value = 'table';
   sectionKey.value = key;
-  openRecordId.value = '';
+  // The open record stays open across a section change too: it persists ALL navigation.
 }
 watch([sectionKey, view, tableId, canvasId, openRecordId, scopeApi.scope], () => {
   if (applying) return;

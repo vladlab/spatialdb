@@ -189,6 +189,7 @@ real browser — if one is off, it goes in the table above.
 
 | Note | What it was |
 |---|---|
+| An open record closed when going to a canvas or another section | Persists across all navigation (only closes if the board being opened IS that record) |
 | Link pills' ⤢ too small to hit; the wheel mode reset to trackpad per canvas | The whole pill opens the record (× removes); wheel mode remembered per browser |
 | Field settings popover off screen for the rightmost columns | Popover measures itself and stays on screen |
 | "+ new view" / "+ new board" different designs | Same style |

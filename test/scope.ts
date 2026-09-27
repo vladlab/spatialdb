@@ -274,6 +274,22 @@ async function main() {
     check('with a project scope on, the bar shows THAT too — it is the whole answer to "what will this be linked to"',
       await until(() => bar().find('.dchip.scope').exists() && /Duke/.test(bar().find('.dchip.scope').text())), bar().text());
 
+    console.log('\nC3b3. An open record persists across every navigation');
+    await nav.openTable(tFiles);
+    await until(() => w.findAll('.gridview tr.row').length > 0);
+    await w.findAll('.gridview tr.row')[0].find('.expand').trigger('click');
+    await until(() => w.find('.record-panel').exists());
+    const openTitle = () => w.find('.record-panel .rp-title').text();
+    const t0 = openTitle();
+    await nav.openCanvas(boardDuke);
+    check('going to a canvas keeps the open record open (it used to close it)', await until(() => w.find('.canvas-container').exists()) && w.find('.record-panel').exists() && openTitle() === t0, openTitle());
+    await nav.openTable(tProj);
+    check('…and so does going to another table', await until(() => w.find('.gridview').exists()) && openTitle() === t0);
+    await nav.scope('');
+    check('…and changing scope', w.find('.record-panel').exists() && openTitle() === t0);
+    await w.find('.record-panel .rp-close').trigger('click');
+    await nav.scope(duke);
+
     console.log('\nC3c. Pickers and the palette lean towards the scope, with a way out');
     await nav.openTable(tSpecs);
     await until(() => names().join() === 'Netflix IMF');
