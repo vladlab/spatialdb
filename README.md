@@ -124,6 +124,7 @@ src/
       AttachmentField.vue files on a record
       ComparePairs.vue / SideBySide.vue   comparing links: the pairs editor; two records side by side
       KanbanView.vue      a view whose body is columns of cards
+      ReportView.vue / ReportOutline.vue   a report, open: the walk run over the store, drawn as nested tables
       StructuredField.vue / ManifestView.vue / AudioLayoutEditor.vue   structured values in the tray
       RecordPanel.vue    one record, every field, editable — opened by grid AND canvas
       CellEditor.vue     the editor for ONE cell, mounted only while editing
@@ -141,6 +142,7 @@ test/canvas.ts         geometry + placement mutations through a real server
 test/stream.ts         HTTP + SSE suite against a real server
 test/grid.ts           view semantics, keyset paging, whole-table walk, saved views
 test/reports.ts        the reports contract, pure: validation, the walk, pins, roles, rollups, CSV
+test/reportview.ts     a report open in the app: the tree's Reports list, the outline, addresses, + report
 test/assets.ts         upload, identity, serving, limits — real files in a temp dir
 test/sections.ts       routes, section mutations, home → section → pickers, deep links
 test/scope.ts          the membership rule, the server's part, and scope in the app
@@ -182,6 +184,8 @@ invented their own shape. See PLAN.md.
 | `npm run migrate` | apply pending migrations to the database named by `DB_URL` (a real deployment; `db.sh migrate` is the dev cluster's) |
 | `npm run test:structured` | structured fields in the app: layout editor, compare, manifests, standard Files fields |
 | `npm run test:compare` | comparing links: the tick, the pairs editor, badges, side by side, seed from |
+| `npm run test:reports` | the reports contract, pure — no database needed |
+| `npm run test:reportview` | a report open in the app: Reports in the tree, the outline, live updates, + report |
 | `npm run test:kanban` | the board: columns by select and link, move/add, single links |
 | `npm run test:prod` | the server as deployed: built frontend, cache headers, CSP, loopback bind |
 | `npm run test:auth` | signing in, sessions, roles, users — against a server with sign-in ON |

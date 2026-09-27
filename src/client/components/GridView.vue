@@ -354,6 +354,7 @@
             <td class="act">
               <!-- In a table of BOARDS every row is a canvas: this goes to it. -->
               <button v-if="isBoards" class="open-board" title="Open this board" @click="$emit('open-board', r.id)">▦ open</button>
+              <button v-if="isReports" class="open-board open-report" title="Open this report" @click="$emit('open-report', r.id)">▤ open</button>
               <button class="x" :title="isBoards ? 'Delete this board and everything placed on it (undoable)' : 'Delete record (undoable)'" @click="remove(r.id)">×</button>
             </td>
           </tr>
@@ -402,7 +403,7 @@ import { beginRecordDrag } from '../recordDrag';
 const props = defineProps<{
   store: Store; tableId: string;
 }>();
-const emit = defineEmits<{ 'open-record': [recordId: string]; 'open-board': [recordId: string] }>();
+const emit = defineEmits<{ 'open-record': [recordId: string]; 'open-board': [recordId: string]; 'open-report': [recordId: string] }>();
 const store = props.store;
 
 /* ── schema, in place ─────────────────────────────────────────────────────
@@ -431,6 +432,7 @@ const fmtN = (n: number) => n.toLocaleString();
 
 const allFields = computed(() => fieldsOf(store.state, props.tableId));
 const isBoards = computed(() => store.state.tables.get(props.tableId)?.kind === 'canvas');
+const isReports = computed(() => store.state.tables.get(props.tableId)?.kind === 'report');
 const fieldById = computed(() => new Map(allFields.value.map((f) => [f.id, f])));
 const views = computed(() => viewsOf(store.state, props.tableId));
 const load = computed(() => store.tableLoads.get(props.tableId));

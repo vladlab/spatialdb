@@ -1,5 +1,5 @@
 <!--
-  What is INSIDE the current location of the tree: its tables and its canvases,
+  What is INSIDE the current location of the tree: its tables, canvases and reports,
   under their own subheaders (the owner's call — "Tables:" and "Canvases:" read
   better than icons alone).
 
@@ -37,6 +37,17 @@
       <span v-if="c.cards" class="tag">{{ c.cards }}</span>
     </div>
     <p v-if="!canvases.length" class="empty">none yet</p>
+
+    <div class="sub">
+      <span>Reports</span>
+      <button class="add new-report-btn" title="New report" @click="$emit('new-report')">+</button>
+    </div>
+    <div v-for="r in reports" :key="r.id" class="row leaf report-row" :class="{ on: view === 'report' && r.id === reportId }"
+         :data-report="r.id" @click="$emit('open-report', r.id)">
+      <span class="swatch report" />
+      <span class="name">{{ r.name }}</span>
+    </div>
+    <p v-if="!reports.length" class="empty">none yet</p>
   </div>
 </template>
 
@@ -46,12 +57,13 @@ import type { TableRow } from '../state';
 defineProps<{
   tables: TableRow[];
   canvases: Array<{ id: string; name: string; cards?: number }>;
-  view: string; tableId: string; canvasId: string;
+  reports: Array<{ id: string; name: string }>;
+  view: string; tableId: string; canvasId: string; reportId: string;
   scopedTableIds?: Set<string>;
 }>();
 defineEmits<{
-  'open-table': [id: string]; 'open-canvas': [id: string];
-  'table-settings': [id: string]; 'new-table': []; 'new-canvas': [];
+  'open-table': [id: string]; 'open-canvas': [id: string]; 'open-report': [id: string];
+  'table-settings': [id: string]; 'new-table': []; 'new-canvas': []; 'new-report': [];
 }>();
 </script>
 
@@ -68,6 +80,7 @@ defineEmits<{
 .row.on { color: var(--accent); background: var(--bg-surface-hover); }
 .swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
 .swatch.board { border: 1px solid var(--text-faint); background: none; }
+.swatch.report { border: 1px solid var(--text-faint); background: none; border-radius: 0; height: 9px; width: 7px; }
 .name { overflow: hidden; text-overflow: ellipsis; flex: 1; }
 .tag { font-size: 10px; color: var(--text-faint); }
 .tag.scoped { color: var(--accent); opacity: 0.85; }

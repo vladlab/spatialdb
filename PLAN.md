@@ -671,7 +671,17 @@ Design in REPORTS-BRIEF.md, agreed before any code. Built so far:
   schema (apply.ts, `assertValuesValid`) — the one check the shared parse cannot make.
 - A cycle to know about: `reports.ts` → `views.ts` → `shapes.ts`, so `shapes.ts` must
   not import `reports.ts`; the report parse lives in `values.ts` for that reason.
-Next: the outline renderer (step 3), then the editor.
+- **Step 3 — the outline** (`ReportView.vue`, `ReportOutline.vue`): a report is the
+  third VIEW of the app, `#/…/report/<recordId>`, listed in the tree under "Reports"
+  after Canvases (same arrangement as boards: records of the section's reports
+  tables, scoped like any record, loaded on sight). It parses the record's
+  definition, loads every table the walk lands in (like a lookup's far table), runs
+  `runReport` in a computed over the store — so a peer's link shows up in it as it
+  does in a grid — and draws sections as nested tables, roles as chips, zero rollups
+  in the warning colour, empty sections as "— nothing —". A definition that fails
+  the schema check still runs (read-time is lenient) with the error shown above it.
+  Rows open the record in the tray; "definition…" opens the report's own record.
+Next: the level editor (step 4), then exports and snapshots.
 
 ### Sections, a home page, and scope — the design (Sept 19–20)
 

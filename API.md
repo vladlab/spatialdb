@@ -475,9 +475,18 @@ table is a report; the app makes it with a Name and a **`structured` field of sh
   level. Read-time is lenient: a deleted field or link named by a definition is
   skipped, as a view skips a deleted sort field, so a schema change never bricks a
   report and undoing the delete restores it.
-- **The grid cell** summarises a definition structurally ("3 levels, 2 rollups").
-  The outline renderer, the editor, exports and snapshots are later steps of the
-  brief; a snapshot will be an `attachment` value on the same record.
+- **Opening a report** is a view of the app — `#/<section>/report/<recordId>`,
+  the third view beside table and canvas — drawn by `ReportView.vue` from
+  `runReport` over the store, so it updates live as records and links change. The
+  tree lists a section's reports under "Reports", after its canvases; "+" makes one
+  (and a "Reports" table first, if the section has none). The outline
+  (`ReportOutline.vue`) draws each section as a table — record, role, the level's
+  fields by name, its rollups by label — with child sections nested under each row;
+  an empty section is drawn as "— nothing —". Clicking a row opens that record in
+  the tray; "definition…" opens the report's own record. The grid cell summarises a
+  definition structurally ("3 levels, 2 rollups").
+- The editor, exports and snapshots are later steps of the brief; a snapshot will
+  be an `attachment` value on the same record.
 - The `report` shape is not offered by the field form; only a table of reports
   makes one.
 

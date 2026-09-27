@@ -4,6 +4,7 @@
  *     #/                              home
  *     #/s/<section>/table/<tableId>   a table, inside a section
  *     #/all/canvas/<canvasId>         a canvas, under "Everything"
+ *     #/all/report/<recordId>         a report (a record in a table of reports), open
  *     …?r=<recordId>                  with that record's panel open
  *     …?sc=<recordId|none>            scoped to that project (or to Unassigned)
  *
@@ -22,8 +23,8 @@
  * ignored when parsing, so an old link survives a rename too.
  */
 
-export type ViewName = 'canvas' | 'table';
-const VIEWS: readonly ViewName[] = ['canvas', 'table'];
+export type ViewName = 'canvas' | 'table' | 'report';
+const VIEWS: readonly ViewName[] = ['canvas', 'table', 'report'];
 /** Addresses from when Schema, Undo and History were tabs. They land on the table;
  *  App.vue also opens Settings (where History lives) for the last two. */
 const OLD_VIEWS: Record<string, ViewName> = { schema: 'table', undo: 'table', history: 'table' };
@@ -32,7 +33,7 @@ export interface Route {
   /** null = the home page. 'all' = the built-in "Everything" section. */
   section: string | 'all' | null;
   view: ViewName;
-  /** The table or canvas open in that view, if any. */
+  /** The table, canvas or report open in that view, if any. */
   target: string;
   /** The record whose panel is open, if any. */
   record: string;

@@ -68,10 +68,10 @@
       <NavTree v-if="treeOpen" :store="store" :section-key="sectionKey" :scope="scopeApi"
                @go-section="goSection" @section-settings="sectionSettings = $event" @settings="settingsOpen = true">
         <template #contents>
-          <NavContents :tables="treeTables" :canvases="canvasRows" :view="view" :table-id="tableId" :canvas-id="canvasId"
+          <NavContents :tables="treeTables" :canvases="canvasRows" :reports="reportRows" :view="view" :table-id="tableId" :canvas-id="canvasId" :report-id="reportId"
                        :scoped-table-ids="scopedTableIds"
-                       @open-table="openTable" @open-canvas="openBoard"
-                       @table-settings="tableSettings = $event" @new-table="newTable" @new-canvas="newCanvas" />
+                       @open-table="openTable" @open-canvas="openBoard" @open-report="openReport"
+                       @table-settings="tableSettings = $event" @new-table="newTable" @new-canvas="newCanvas" @new-report="newReport" />
         </template>
       </NavTree>
 
@@ -87,17 +87,23 @@
               <!-- Keyed by table so switching tables is a fresh component: scroll
                    position, search text and the "rows I just made" set all reset. -->
               <GridView v-if="view === 'table' && tableId" :key="tableId" :store="store" :table-id="tableId"
-                        @open-record="openRecordId = $event" @open-board="openBoard" />
+                        @open-record="openRecordId = $event" @open-board="openBoard" @open-report="openReport" />
               <p v-else-if="view === 'table'" class="hint">No table open — pick one in the tree, or press + beside “Tables” to make one.</p>
+
+              <!-- A report is DERIVED each time it is looked at (ReportView.vue). Keyed
+                   like the grid, so switching reports is a fresh component. -->
+              <ReportView v-if="view === 'report' && reportId" :key="reportId" :store="store" :report-id="reportId"
+                          @open-record="openRecordId = $event" />
+              <p v-else-if="view === 'report'" class="hint">No report open — pick one in the tree, or press + beside “Reports” to make one.</p>
 
             </div>
 
             <!-- A TRAY, not a float: a flex sibling of the viewport, so opening it
                  makes the viewport narrower instead of covering its right edge. -->
-            <template v-if="openRecordId && (view === 'canvas' || view === 'table')">
+            <template v-if="openRecordId && (view === 'canvas' || view === 'table' || view === 'report')">
               <div class="tray-splitter" title="Drag to resize" @pointerdown="startTrayResize" />
               <RecordPanel :store="store" :record-id="openRecordId" :style="{ width: trayWidth + 'px' }"
-                           @close="openRecordId = ''" @open="openRecordId = $event" @open-board="openBoard" />
+                           @close="openRecordId = ''" @open="openRecordId = $event" @open-board="openBoard" @open-report="openReport" />
             </template>
           </div>
         </template>
@@ -131,13 +137,14 @@ import { SCOPE, useScope } from './scope';
 import { formatScope, parseScope } from '../contract/scope';
 import { dragGhost } from './recordDrag';
 import { createStore } from './store';
-import { boardsOf, isBoardsTable, tablesOfSection } from './state';
+import { boardsOf, isBoardsTable, isReportsTable, reportsOf, tablesOfSection } from './state';
 import { useDerived } from './derived';
 import { formatRoute, parseRoute, sameRoute, type Route, type ViewName } from './router';
 import HomePage from './components/HomePage.vue';
 import SectionSettings from './components/SectionSettings.vue';
 import CanvasView from './components/CanvasView.vue';
 import GridView from './components/GridView.vue';
+import ReportView from './components/ReportView.vue';
 import RecordPanel from './components/RecordPanel.vue';
 import CommandPalette from './components/CommandPalette.vue';
 import type { RecordRow } from './state';
@@ -184,6 +191,7 @@ const statusText = computed(() => {
 });
 const canvasId = ref<string>('');
 const tableId = ref<string>('');
+const reportId = ref<string>('');
 
 /* ── sections: where you are ──────────────────────────────────────────────
    null = the home page · 'all' = Everything · otherwise a section id.
@@ -301,8 +309,47 @@ const scopedTableIds = computed(() => new Set(scopeApi.available.value
 
 /** The tree's canvas rows: name plus a card count, where one is known. */
 const canvasRows = computed(() => canvases.value.map((c) => ({ id: c.id, name: c.name, cards: cardCount(c.id) || undefined })));
-/** The last crumb: the table or canvas you are looking at. */
+
+/* ── reports ──────────────────────────────────────────────────────────────
+   Same arrangement as boards: a report is a RECORD in a table of kind 'report'
+   (sql/013), so the tree lists the records of this section's reports tables.
+   Those tables are small and must be loaded for the list to exist at all. */
+const reportTables = computed(() => tables.value.filter(isReportsTable));
+watch(reportTables, (ts) => { for (const t of ts) void store.loadTable(t.id); }, { immediate: true });
+const reportRows = computed(() => reportsOf(store.state, new Set(reportTables.value.map((t) => t.id)))
+  .filter((r) => scopeApi.filterFor(r.table_id)?.(r) ?? true)
+  .map((r) => ({ id: r.id, name: derived.labelOfId(r.id) }))
+  .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })));
+function openReport(id: string) {
+  if (openRecordId.value === id) openRecordId.value = '';
+  reportId.value = id;
+  view.value = 'report';
+}
+/** "+ report": a new record in a reports table — made first, as "Reports", if the section has none. */
+async function newReport() {
+  const many = reportTables.value.length > 1;
+  const r = await askFull({
+    title: 'New report', label: 'Name',
+    ...(many ? { select: { label: 'In', options: reportTables.value.map((t) => ({ value: t.id, label: t.name })), initial: reportTables.value[0].id } } : {}),
+  });
+  const name = r?.value.trim();
+  if (!name) return;
+  let table = (many ? reportTables.value.find((t) => t.id === r!.choice) : undefined) ?? reportTables.value[0];
+  let nameKey = 'name';
+  if (!table) {
+    const id_ = schema.createTable('Reports', 'report')!;
+    fileTable(id_);
+    table = store.state.tables.get(id_)!;
+  } else nameKey = derived.labelKeys.value.get(table.id) ?? 'name';
+  const id = crypto.randomUUID();
+  scopeApi.createRecord(table.id, { [nameKey]: name }, id);
+  openReport(id);
+  openRecordId.value = id;    // straight to the definition: a report with none shows nothing
+}
+
+/** The last crumb: the table, canvas or report you are looking at. */
 const currentName = computed(() => (view.value === 'table' ? store.state.tables.get(tableId.value)?.name
+  : view.value === 'report' ? reportRows.value.find((c) => c.id === reportId.value)?.name
   : canvases.value.find((c) => c.id === canvasId.value)?.name) ?? '');
 
 function openTable(id: string) { tableId.value = id; view.value = 'table'; }
@@ -386,7 +433,7 @@ let applying = false;
 const currentRoute = (): Route => ({
   section: sectionKey.value,
   view: view.value,
-  target: view.value === 'canvas' ? canvasId.value : view.value === 'table' ? tableId.value : '',
+  target: view.value === 'canvas' ? canvasId.value : view.value === 'table' ? tableId.value : view.value === 'report' ? reportId.value : '',
   record: openRecordId.value,
   scope: formatScope(scopeApi.scope.value),
 });
@@ -398,7 +445,7 @@ function applyRoute(r: Route) {
   // lands on Home rather than on an empty shell.
   sectionKey.value = r.section && r.section !== 'all' && !store.state.sections.has(r.section) ? null : r.section;
   view.value = r.view;
-  if (r.target) { if (r.view === 'canvas') canvasId.value = r.target; else tableId.value = r.target; }
+  if (r.target) { if (r.view === 'canvas') canvasId.value = r.target; else if (r.view === 'report') reportId.value = r.target; else tableId.value = r.target; }
   openRecordId.value = r.record;
   // After the section has switched (the scope composable resets on that), and only
   // if the link actually names a scope — a bare link keeps whatever you had.
@@ -413,7 +460,7 @@ function goSection(key: string) {
   sectionKey.value = key;
   // The open record stays open across a section change too: it persists ALL navigation.
 }
-watch([sectionKey, view, tableId, canvasId, openRecordId, scopeApi.scope], () => {
+watch([sectionKey, view, tableId, canvasId, reportId, openRecordId, scopeApi.scope], () => {
   if (applying) return;
   const hash = formatRoute(currentRoute(), section.value?.name);
   if (location.hash !== hash && !sameRoute(parseRoute(location.hash), currentRoute())) location.hash = hash;

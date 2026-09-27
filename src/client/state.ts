@@ -610,6 +610,12 @@ export const isReportsTable = (t: TableRow | undefined) => t?.kind === 'report';
 export const reportFieldOf = (state: State, tableId: string): FieldRow | undefined =>
   fieldsOf(state, tableId).find((f) => f.type === 'structured' && f.options?.shape === 'report');
 
+/** Every report the client knows of, optionally only those in the given tables. */
+export function reportsOf(state: State, tableIds?: ReadonlySet<string>): RecordRow[] {
+  return [...state.records.values()].filter((r) =>
+    isReportsTable(state.tables.get(r.table_id)) && (!tableIds || tableIds.has(r.table_id)));
+}
+
 /** Every board the client knows of, optionally only those in the given tables. */
 export function boardsOf(state: State, tableIds?: ReadonlySet<string>): RecordRow[] {
   return [...state.records.values()].filter((r) =>
