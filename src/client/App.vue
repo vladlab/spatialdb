@@ -235,12 +235,16 @@ function cardCount(id: string) {
 async function newTable() {
   const r = await askFull({
     title: 'New table', label: 'Name', placeholder: 'Files, Edits, Deliverables…',
-    checkboxes: [{ key: 'boards', label: 'A table of boards',
-      hint: 'Every record in it is a canvas — with fields and links like any record. Cannot be changed later.' }],
+    select: { label: 'Kind — cannot be changed later', initial: 'records', options: [
+      { value: 'records', label: 'Ordinary table' },
+      { value: 'canvas', label: 'A table of boards — every record is a canvas' },
+      { value: 'report', label: 'A table of reports — every record is a report' },
+    ] },
   });
   // Ask FIRST, mutate after: everything below is one synchronous run, so the
   // table, its first field and its filing under the section are one Ctrl+Z.
-  const id = r ? schema.createTable(r.value, r.checks.boards ? 'canvas' : 'records') : null;
+  const kind = r?.choice === 'canvas' || r?.choice === 'report' ? r.choice : 'records';
+  const id = r ? schema.createTable(r.value, kind) : null;
   if (!id) return;
   fileTable(id);
   openTable(id);

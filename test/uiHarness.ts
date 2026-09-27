@@ -97,7 +97,8 @@ export function navigator(w: any, until: (p: () => boolean, ms?: number) => Prom
     tableNames: () => w.findAll('.tree .table-row .name').map((x: any) => x.text()),
     canvasNames: () => w.findAll('.tree .canvas-row .name').map((x: any) => x.text()),
     scopeNames: () => w.findAll('.tree .scope-row').map((x: any) => x.text().replace(/[▸▾]/g, '').trim()),
-    newTable: async (name: string, boards = false) => { dialogs.text = name; dialogs.checks = { boards }; await row('.new-table-btn').trigger('click'); },
+    /** The new-table dialog's KIND is a select now (records / canvas / report); `true` keeps meaning boards for the older suites. */
+    newTable: async (name: string, kind: boolean | 'records' | 'canvas' | 'report' = false) => { dialogs.text = name; dialogs.choice = kind === true ? 'canvas' : kind || 'records'; await row('.new-table-btn').trigger('click'); },
     newCanvas: async (name: string) => { dialogs.text = name; await row('.new-canvas-btn').trigger('click'); },
   };
 }

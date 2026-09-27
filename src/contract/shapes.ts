@@ -90,11 +90,19 @@ export const LAYOUT_PRESETS: Array<{ id: string; label: string; channels: string
 
 /* ── the registry ─────────────────────────────────────────────────────────── */
 
-export const SHAPES = ['manifest', 'audio_layout', 'json'] as const;
+export const SHAPES = ['manifest', 'audio_layout', 'json', 'report'] as const;
 export type Shape = (typeof SHAPES)[number];
 export const SHAPE_LABELS: Record<Shape, string> = {
-  manifest: 'File manifest', audio_layout: 'Audio layout', json: 'Generic JSON',
+  manifest: 'File manifest', audio_layout: 'Audio layout', json: 'Generic JSON', report: 'Report definition',
 };
+/**
+ * 'report' is a shape only a table of REPORTS makes (sql/013), so the field form does
+ * not offer it. Its schema is in contract/reports.ts, which imports views.ts, which
+ * imports THIS file — so the report parse is done by values.ts (which imports both),
+ * never here: a cycle through zod schemas evaluated at module load would be a TDZ
+ * error the moment views.ts is imported first.
+ */
+export const FIELD_FORM_SHAPES: readonly Shape[] = ['manifest', 'audio_layout', 'json'];
 
 export const shapeOf = (f: { options?: Record<string, unknown> | null }): Shape | null =>
   (SHAPES as readonly string[]).includes(String(f.options?.shape)) ? (f.options!.shape as Shape) : null;
@@ -114,7 +122,7 @@ export function structuredError(key: string, shape: Shape | null, value: unknown
   if (JSON.stringify(value).length > STRUCTURED_MAX_BYTES) return `'${key}' is larger than ${STRUCTURED_MAX_BYTES / 1024} KB — a structured value describes a record; it is not a place to keep an inventory`;
   if (shape === 'manifest') { const r = Manifest.safeParse(value); return r.success ? null : `'${key}' (manifest) — ${first(r.error)}`; }
   if (shape === 'audio_layout') { const r = AudioLayout.safeParse(value); return r.success ? null : `'${key}' (audio layout) — ${first(r.error)}`; }
-  return null;                                                  // 'json', or a shape this build does not know: an object is enough
+  return null;                                                  // 'json' (an object is enough), or 'report' (values.ts parses it)
 }
 
 /* ── summaries: the one line a grid cell or a card row shows ───────────────── */
@@ -167,6 +175,16 @@ export function summarise(shape: Shape | null, value: unknown): string {
     const t = r.data.tracks;
     if (!t.length) return 'no tracks';
     return `${t.length} track${t.length === 1 ? '' : 's'} / ${flattenChannels(r.data).length} ch (${t.map(trackFormat).join(', ')})`;
+  }
+  if (shape === 'report') {
+    // Structural, deliberately without the schema: "3 levels, 2 rollups". The
+    // outline renderer shows the real thing; this is the grid cell.
+    const root = (value as { root?: unknown }).root;
+    if (!root || typeof root !== 'object') return 'empty report';
+    let levels = 0, rollups = 0;
+    const walk = (l: { rollups?: unknown[]; children?: unknown[] }) => { levels++; rollups += l.rollups?.length ?? 0; for (const c of l.children ?? []) walk(c as typeof l); };
+    walk(root as { rollups?: unknown[]; children?: unknown[] });
+    return `${levels} level${levels === 1 ? '' : 's'}${rollups ? `, ${rollups} rollup${rollups === 1 ? '' : 's'}` : ''}`;
   }
   const keys = Object.keys(value as object);
   return keys.length ? `{ ${keys.slice(0, 4).join(', ')}${keys.length > 4 ? ', …' : ''} }` : '{ }';

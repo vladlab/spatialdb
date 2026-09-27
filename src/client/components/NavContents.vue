@@ -21,6 +21,7 @@
            accent colour because it is the one that changes what you SEE. -->
       <span v-if="scopedTableIds?.has(t.id)" class="tag scoped" title="Its rows belong to a project: inside one, this table shows only that project's">scoped</span>
       <span v-if="t.kind === 'canvas'" class="tag" title="A table of boards: each record is a canvas">boards</span>
+      <span v-if="t.kind === 'report'" class="tag" title="A table of reports: each record is a report">reports</span>
       <button class="act" title="Table settings" @click.stop="$emit('table-settings', t.id)">⚙</button>
     </div>
     <p v-if="!tables.length" class="empty">none yet</p>

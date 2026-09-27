@@ -23,7 +23,7 @@
          validated against it, so it cannot be changed afterwards. -->
     <select v-if="d.type === 'structured'" v-model="d.shape" class="shape" title="What kind of structured value this field holds. It cannot be changed later.">
       <option value="" disabled>shape…</option>
-      <option v-for="sh in SHAPES" :key="sh" :value="sh">{{ SHAPE_LABELS[sh] }}</option>
+      <option v-for="sh in FIELD_FORM_SHAPES" :key="sh" :value="sh">{{ SHAPE_LABELS[sh] }}</option>
     </select>
     <select v-if="d.type === 'backlink'" v-model="d.source" class="source">
       <option value="" disabled>{{ linksIn.length ? 'other end of which link…' : 'no link field points at this table yet' }}</option>
@@ -56,7 +56,7 @@ import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import type { Store } from '../store';
 import { tablesSorted } from '../state';
 import { CREATABLE_TYPES, deriveKey, emptyDraft, type SchemaActions } from '../schemaActions';
-import { SHAPES, SHAPE_LABELS } from '../../contract/shapes';
+import { FIELD_FORM_SHAPES, SHAPE_LABELS } from '../../contract/shapes';
 
 const props = defineProps<{
   store: Store; actions: SchemaActions; tableId: string;

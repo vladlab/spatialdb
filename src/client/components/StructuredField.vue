@@ -40,7 +40,9 @@
 import { computed, ref } from 'vue';
 import type { Store } from '../store';
 import type { FieldRow } from '../state';
-import { shapeOf, structuredError, summarise } from '../../contract/shapes';
+import { shapeOf, summarise } from '../../contract/shapes';
+import { validateValue } from '../../contract/values';
+import { reportDefError } from '../../contract/reports';
 import ManifestView from './ManifestView.vue';
 import AudioLayoutEditor from './AudioLayoutEditor.vue';
 
@@ -60,7 +62,10 @@ function openRaw() {
 function saveRaw() {
   let parsed: unknown;
   try { parsed = JSON.parse(draft.value); } catch (e) { error.value = `not valid JSON — ${(e as Error).message}`; return; }
-  const err = structuredError(props.field.key, shape.value, parsed);
+  // The same checks the server makes, in the same order: the shape (values.ts),
+  // then — for a report — that what it names exists (contract/reports.ts).
+  const err = validateValue(props.field as any, parsed)
+    ?? (shape.value === 'report' ? reportDefError(parsed, [...props.store.state.fields.values()] as any, [...props.store.state.tables.values()]) : null);
   if (err) { error.value = err; return; }
   emit('set', props.field.key, parsed);
   raw.value = false;

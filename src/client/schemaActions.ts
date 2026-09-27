@@ -102,7 +102,7 @@ export function useSchemaActions(store: Store) {
   /* ── tables ───────────────────────────────────────────────────────────── */
 
   /** Returns the new table's id, or null for a blank name. */
-  function createTable(rawName: string, kind: 'records' | 'canvas' = 'records'): string | null {
+  function createTable(rawName: string, kind: 'records' | 'canvas' | 'report' = 'records'): string | null {
     const name = rawName.trim();
     if (!name) return null;
     const id = crypto.randomUUID();
@@ -110,10 +110,14 @@ export function useSchemaActions(store: Store) {
     // mutations — table.create carries no position — but they share a debounce
     // flush and therefore a transaction. (API.md: "set the position".)
     const pos = Math.max(0, ...tablesSorted(store.state).map((t) => t.position ?? 0)) + 1;
-    store.mutate({ type: 'table.create', id, name, singularName: '', color: '', icon: '', ...(kind === 'canvas' ? { kind } : {}) });
-    // A table of boards is useless without somewhere to put a board's NAME.
-    if (kind === 'canvas') {
+    store.mutate({ type: 'table.create', id, name, singularName: '', color: '', icon: '', ...(kind !== 'records' ? { kind } : {}) });
+    // A table of boards is useless without somewhere to put a board's NAME; a
+    // table of reports also needs the field that holds the DEFINITION.
+    if (kind !== 'records') {
       store.mutate({ type: 'field.create', id: crypto.randomUUID(), tableId: id, name: 'Name', key: 'name', fieldType: 'text', options: {}, required: false });
+    }
+    if (kind === 'report') {
+      store.mutate({ type: 'field.create', id: crypto.randomUUID(), tableId: id, name: 'Report', key: 'report', fieldType: 'structured', options: { shape: 'report' }, required: false });
     }
     store.mutate({ type: 'table.update', id, position: pos });
     return id;
@@ -128,7 +132,8 @@ export function useSchemaActions(store: Store) {
     const t = store.state.tables.get(id);
     if (!t) return false;
     const n = recordsOf(store.state, id).length;
-    const boards = t.kind === 'canvas' ? ' Every record in it is a canvas — the boards and everything placed on them go too.' : '';
+    const boards = t.kind === 'canvas' ? ' Every record in it is a canvas — the boards and everything placed on them go too.'
+      : t.kind === 'report' ? ' Every record in it is a report — their definitions and any snapshots attached to them go too.' : '';
     if (!await confirmDialog({ title: `Delete the table “${t.name}”?`, danger: true, okText: 'Delete table',
       body: `It and its ${n} loaded record(s) will be deleted.${boards}\nEverything is captured, and can be restored from History.` })) return false;
     store.mutate({ type: 'table.delete', id });

@@ -36,6 +36,7 @@ import { compareConfigError } from '../contract/compare.js';
 import { assetIdsIn } from '../contract/richtext.js';
 import { membershipError } from '../contract/scope.js';
 import { shapeOptionError } from '../contract/shapes.js';
+import { reportDefError } from '../contract/reports.js';
 import { captureFor, type Capture } from './capture.js';
 
 export class MutationError extends Error {
@@ -247,6 +248,17 @@ async function assertValuesValid(
     const err = validateValue(f, data[f.key]);
     if (err) throw new MutationError(err);
     for (const id of assetIdsIn(f.type, data[f.key])) referenced.add(id);
+    // A report definition names tables and fields; `validateValue` checked its
+    // shape, this checks they EXIST and fit together (contract/reports.ts). Only
+    // for records that carry one — two small queries, and reports are few.
+    if (f.type === 'structured' && f.options?.shape === 'report' && data[f.key] !== undefined) {
+      const [fields, tables] = await Promise.all([
+        db.query(`select id, key, name, type, table_id, options from fields`),
+        db.query(`select id, name from tables`),
+      ]);
+      const rerr = reportDefError(data[f.key], fields.rows, tables.rows);
+      if (rerr) throw new MutationError(`'${f.key}': ${rerr}`);
+    }
   }
 
   // The one check the shared contract cannot make: that every asset a value

@@ -187,7 +187,7 @@ async function main() {
     await w.find('.ss .x').trigger('click');
     await nav.section('all');
     await nav.tab('table');
-    await nav.newTable('Flow boards', true);      // the "a table of boards" tick box in the dialog
+    await nav.newTable('Flow boards', true);      // "a table of boards" in the dialog's kind select
     const flow = await untilDb(`select t.id, t.kind, (select count(*)::int from fields f where f.table_id = t.id) nf from tables t where t.name = 'Flow boards'`, (r) => r.length === 1 && r[0].nf === 1);
     check('the new-table dialog can make "a table of boards" — kind canvas, with a Name to call each board by', flow[0]?.kind === 'canvas' && flow[0].nf === 1, JSON.stringify(flow[0]));
     const flowId = flow[0].id as string;

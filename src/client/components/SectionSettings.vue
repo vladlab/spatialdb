@@ -30,7 +30,7 @@
       <p class="note">A table can be in several sections. Unticking one here hides it from this section — it is still under Everything, and its data is untouched.</p>
       <div class="checks">
         <label v-for="t in allTables" :key="t.id">
-          <input type="checkbox" :checked="section.table_ids.includes(t.id)" @change="toggleTable(t.id)" /> {{ t.kind === 'canvas' ? '▦ ' : '' }}{{ t.name }}
+          <input type="checkbox" :checked="section.table_ids.includes(t.id)" @change="toggleTable(t.id)" /> {{ t.kind === 'canvas' ? '▦ ' : t.kind === 'report' ? '▤ ' : '' }}{{ t.name }}
         </label>
         <p v-if="!allTables.length" class="note">No tables exist yet.</p>
       </div>

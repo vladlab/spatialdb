@@ -188,6 +188,11 @@ flatten → download. Client-side, no endpoint. Grouped views flatten the same w
 
 ## 8. Build order
 
+Status: steps 1 and 2 built (Sept 27–28, 2026): `contract/reports.ts` with
+`test/reports.ts` (pure, 50 checks); `sql/013`, the `report` kind and shape, the
+new-table dialog's kind select, and the server's schema check on every write
+(`test/structured.ts` T9). The record tray shows the definition as JSON until step 4.
+
 1. `contract/reports.ts`: `ReportDef` zod, `runReport`, the flattener, tests (pure;
    red-checked, including the worked example below). **Stop for the owner's review
    of the shape** — the standing rule.

@@ -87,12 +87,13 @@ const TableCreate = z.strictObject({
   color: z.string().default(''),
   icon: z.string().default(''),
   /**
-   * 'canvas' = a table of BOARDS: every record in it is a canvas (sql/010). Set
+   * 'canvas' = a table of BOARDS: every record in it is a canvas (sql/010).
+   * 'report' = a table of REPORTS: every record in it is a report (sql/013). Set
    * here and nowhere else — table.update deliberately cannot change it.
    */
   // optional, not defaulted: every table.create already in the log (and in callers)
   // predates it, and absent must keep meaning an ordinary table.
-  kind: z.enum(['records', 'canvas']).optional(),
+  kind: z.enum(['records', 'canvas', 'report']).optional(),
 });
 
 const TableUpdate = z.strictObject({

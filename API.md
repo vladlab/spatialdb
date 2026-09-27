@@ -296,7 +296,7 @@ its internal CA is a few lines.
 A `structured` field holds a JSON **object** whose SHAPE is named in the field's
 options: `field.create { fieldType: 'structured', options: { shape } }`.
 
-- `shape` must be one of **`manifest` · `audio_layout` · `json`**. An unknown name is a
+- `shape` must be one of **`manifest` · `audio_layout` · `json` · `report`** (the last only in a table of reports, below). An unknown name is a
   400 at field creation (not "generic JSON": a typo must not switch validation off —
   generic is spelled `json`). **A field's shape cannot be changed afterwards**; every
   stored value was validated against it.
@@ -449,6 +449,37 @@ Everything else — filtering the grid and the canvas picker, auto-linking recor
 created inside a scope (`record.create` + `link.add`, one client-side undo step),
 narrowing the link picker — is the client applying that rule to tables it has
 already loaded. There is no scoped LOADING yet; deliberately (rule 3 in the file).
+
+### Reports: a report IS a record
+
+`sql/013`, rules in the twelfth shared contract file, **`src/contract/reports.ts`**;
+the design is REPORTS-BRIEF.md. `table.create` takes **`kind: 'report'`** — "a table
+of reports" — exactly as `'canvas'` makes a table of boards. Every record in such a
+table is a report; the app makes it with a Name and a **`structured` field of shape
+`report`** that holds the definition. `kind` is set at creation and cannot be changed.
+
+- **A definition is `ReportDef`**: `{ v: 1, root }`, a tree of levels — each with
+  `fields` (explicit columns), `filters`/`sort` (the grid's, verbatim), `rollups`, and
+  `children`, where a child names the link fields it descends through (`via`, one or
+  more into one table, each optionally role-labelled) and may be `pins`-ed to an
+  ancestor level. Field ids everywhere, never keys, so renames never break a report.
+- **Validated twice on write.** `contract/values.ts` parses the shape (the same
+  parse the record tray's JSON editor runs); then the server runs
+  **`reportDefError`** against the whole schema: every table and field named must
+  exist and belong to the level it is used on, every `via` must connect to the
+  parent and land in one table, every pin must name an ancestor through a link
+  that joins the two tables, every rollup must be over a direct child with a field
+  of the right type. Any failure is a **400** naming the level and the reason.
+- **Nothing else is stored.** A report is derived when opened — `runReport` in the
+  contract, pure, on the client over loaded tables, scope filtering only the root
+  level. Read-time is lenient: a deleted field or link named by a definition is
+  skipped, as a view skips a deleted sort field, so a schema change never bricks a
+  report and undoing the delete restores it.
+- **The grid cell** summarises a definition structurally ("3 levels, 2 rollups").
+  The outline renderer, the editor, exports and snapshots are later steps of the
+  brief; a snapshot will be an `attachment` value on the same record.
+- The `report` shape is not offered by the field form; only a table of reports
+  makes one.
 
 ### Boards: a canvas IS a record
 

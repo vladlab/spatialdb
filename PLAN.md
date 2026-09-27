@@ -658,6 +658,21 @@ Not done: rich text EDITING on a canvas card, and showing more than its first li
 there — card height is arithmetic (`canvas/cardLayout.ts`), so a growing text block
 needs the row model extended first. PDF/attachment previews beyond a thumbnail.
 
+### Reports — steps 1 and 2 (Sept 27–28)
+
+Design in REPORTS-BRIEF.md, agreed before any code. Built so far:
+- **`contract/reports.ts`**: the definition (a walk along links: levels, `via` with
+  roles, `pins` to an ancestor, explicit `fields`, the grid's filters and sort,
+  rollups incl. "count where a child's rollup > 0"), strict write-time validation,
+  the pure walk, and the flattener → CSV. `test/reports.ts` needs no database.
+- **A report is a record** (sql/013): `tables.kind = 'report'`, the definition a
+  `structured` value of shape `report`. The new-table dialog's boards tick box became
+  a KIND select. The server re-validates every written definition against the whole
+  schema (apply.ts, `assertValuesValid`) — the one check the shared parse cannot make.
+- A cycle to know about: `reports.ts` → `views.ts` → `shapes.ts`, so `shapes.ts` must
+  not import `reports.ts`; the report parse lives in `values.ts` for that reason.
+Next: the outline renderer (step 3), then the editor.
+
 ### Sections, a home page, and scope — the design (Sept 19–20)
 
 The owner wants this to be an internal tool for more than projects — computers,

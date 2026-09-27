@@ -64,6 +64,7 @@ sql/                   migrations, applied in filename order
   005_canvas_config.sql  per-canvas card settings
   006_assets.sql         index of uploaded files (the bytes live in .pg/assets)
   012_structured.sql     the `structured` field type (manifests, audio layouts)
+  013_reports.sql        a report IS a record: tables.kind = 'report'
   011_auth.sql           passwords and sessions (users and roles existed since 001)
   010_boards.sql         a canvas IS a record: tables.kind, canvases = board state
   009_sections.sql       sections — the home page's navigation

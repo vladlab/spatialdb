@@ -202,6 +202,36 @@ async function main() {
     check('…and the fields that were there keep their order — Name is still first, still the primary field', order[0] === 'name', order.join());
     win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'z', ctrlKey: true, shiftKey: true, bubbles: true }));
     check('Redo brings all five back', (await untilDb(`select count(*)::int n from fields where table_id = '${tFiles}'`, (r) => Number(r[0].n) === fieldsBefore + 5, 8000))[0].n == fieldsBefore + 5);
+
+    console.log('\nT9. A table of reports (sql/013, REPORTS-BRIEF.md §4)');
+    const bogus = await post([{ type: 'table.create', id: randomUUID(), name: 'Nope', kind: 'ledger' }]);
+    check('an unknown table kind is refused by the contract', bogus.status === 400);
+    await nav.newTable('Reports', 'report');
+    const rep = await untilDb(`select t.id, t.kind, (select json_agg(json_build_object('key', key, 'type', type, 'shape', options->>'shape') order by position) from fields where table_id = t.id) fs from tables t where name = 'Reports'`, (r) => r.length === 1 && r[0].fs?.length === 2);
+    const tRep = rep[0].id;
+    check('the new-table dialog makes a table of REPORTS: kind report, with a Name and a structured "report" field', rep[0].kind === 'report' && JSON.stringify(rep[0].fs) === JSON.stringify([{ key: 'name', type: 'text', shape: null }, { key: 'report', type: 'structured', shape: 'report' }]), JSON.stringify(rep[0]));
+    await until(() => w.find('.tree').text().includes('reports'));
+    check('the tree tags it "reports", as it tags boards', w.findAll('.tree .tag').some((t: any) => t.text() === 'reports'));
+    const refused = async (data: Record<string, unknown>) => { const r = await post([{ type: 'record.create', id: randomUUID(), tableId: tRep, data }]); return `${r.status} ${await r.text()}`; };
+    const badShape = await refused({ name: 'bad', report: { v: 1 } });
+    check('a definition of the wrong SHAPE is refused, naming the field and the path', /^400 .*'report' \(report\)/.test(badShape), badShape);
+    const ghost = randomUUID();
+    const badRef = await refused({ name: 'bad', report: { v: 1, root: { id: 'r', table: ghost, children: [] } } });
+    check('a definition naming a table that does not EXIST is refused (the server checks the schema)', /^400 .*does not exist/.test(badRef), badRef);
+    const badField = await refused({ name: 'bad', report: { v: 1, root: { id: 'r', table: tFiles, fields: [fDelName], children: [] } } });
+    check('…or a field of the wrong table', /^400 .*not a field of this level/.test(badField), badField);
+    const good = randomUUID();
+    const def = { v: 1, root: { id: 'files', table: tFiles, fields: [fFileName, fSize], sort: [{ fieldId: fFileName, dir: 'asc' }],
+      rollups: [{ id: 'n', label: 'targets', op: 'count', over: 'specs' }],
+      children: [{ id: 'specs', via: [{ fieldId: fTargets, role: 'target' }], fields: [fDelName], children: [] }] } };
+    const ok = await post([{ type: 'record.create', id: good, tableId: tRep, data: { name: 'Files by spec', report: def } }]);
+    check('a sound definition is accepted', ok.status === 200, (await ok.text()).slice(0, 200));
+    await go(tRep);
+    check('the grid cell summarises it structurally: "2 levels, 1 rollup"', await until(() => cellOf('Files by spec', 'Report').text() === '2 levels, 1 rollup'), cellOf('Files by spec', 'Report').text());
+    await openRecord('Files by spec');
+    check('the tray shows the report field with "edit as JSON…" (the editor is a later step)', !!pField('Report') && pField('Report').find('.edit-json').exists());
+    const ts = (await pool.query(`select options from fields where id = $1`, [fDelName])).rows;
+    check('the field form does not offer "report" as a shape — only a table of reports makes one', ts.length === 1 && !w.findAll('.gridview select.shape option').some((o: any) => o.text() === 'Report definition'));
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);
     await ui.close();

@@ -54,8 +54,8 @@ import { compareFields, labelFrom, primaryKeyOf } from '../contract/labels.js';
 export interface TableRow {
   id: string; name: string; singular_name: string;
   color: string; icon: string; position: number;
-  /** 'canvas' = a table of BOARDS: each record in it is a canvas (sql/010). */
-  kind?: 'records' | 'canvas';
+  /** 'canvas' = a table of BOARDS: each record is a canvas (sql/010); 'report' = a table of REPORTS: each record is a report (sql/013). */
+  kind?: 'records' | 'canvas' | 'report';
 }
 export interface FieldRow {
   id: string; table_id: string; name: string; key: string; type: string;
@@ -604,6 +604,11 @@ export function ingestCanvases(
 
 /** Tables whose records are boards. */
 export const isBoardsTable = (t: TableRow | undefined) => t?.kind === 'canvas';
+/** Tables whose records are reports (REPORTS-BRIEF.md §4). */
+export const isReportsTable = (t: TableRow | undefined) => t?.kind === 'report';
+/** The one field of a reports table that holds the definition: structured, shape 'report'. */
+export const reportFieldOf = (state: State, tableId: string): FieldRow | undefined =>
+  fieldsOf(state, tableId).find((f) => f.type === 'structured' && f.options?.shape === 'report');
 
 /** Every board the client knows of, optionally only those in the given tables. */
 export function boardsOf(state: State, tableIds?: ReadonlySet<string>): RecordRow[] {

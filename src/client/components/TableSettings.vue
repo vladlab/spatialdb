@@ -24,14 +24,15 @@
 
       <p class="info">
         <template v-if="table.kind === 'canvas'"><b>▦ A table of boards.</b> Every record in it is a canvas. This is set when a table is made and cannot be changed.</template>
-        <template v-else>An ordinary table. (Tables of boards — where each record is a canvas — are made with the tick box in the new-table dialog.)</template>
+        <template v-else-if="table.kind === 'report'"><b>▤ A table of reports.</b> Every record in it is a report: its “Report” field holds the definition. This is set when a table is made and cannot be changed.</template>
+        <template v-else>An ordinary table. (Tables of boards or of reports are chosen in the new-table dialog.)</template>
       </p>
       <p class="info">{{ nFields }} field{{ nFields === 1 ? '' : 's' }} — edit them from the grid's column headers (⚙ on a column, + to add one).</p>
 
       <!-- A CONVENIENCE, not a rule: the fields a Files table conventionally has for
            "delivered unit" records (contract/shapes.ts). Adds only what is missing, by
            key, so it is safe on a Files table that already exists — and to run twice. -->
-      <div v-if="table.kind !== 'canvas'" class="std">
+      <div v-if="!table.kind || table.kind === 'records'" class="std">
         <button class="plain add-files-fields" @click="addFilesFields">Add standard Files fields…</button>
         <span v-if="stdNote" class="hint">{{ stdNote }}</span>
         <span v-else class="hint">kind, path, manifest, file count, total size, hash, audio layout, parent</span>

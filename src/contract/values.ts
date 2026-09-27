@@ -31,6 +31,7 @@
 import type { FIELD_TYPES } from './mutations.js';
 import { attachmentError, richTextError } from './richtext.js';
 import { shapeOf, structuredError } from './shapes.js';
+import { ReportDef } from './reports.js';
 
 export type FieldType = (typeof FIELD_TYPES)[number];
 
@@ -131,7 +132,18 @@ export function validateValue(field: FieldShape, value: unknown): string | null 
       return attachmentError(field.key, value);
 
     case 'structured':
-      return structuredError(field.key, shapeOf(field), value);
+    {
+      const shape = shapeOf(field);
+      const err = structuredError(field.key, shape, value);
+      if (err || shape !== 'report') return err;
+      // The definition's SHAPE, on both sides. Whether the fields and tables it names
+      // exist is `reportDefError`, which needs the schema: the server runs it in
+      // apply.ts, the report editor runs it before saving.
+      const r = ReportDef.safeParse(value);
+      if (r.success) return null;
+      const i = r.error.issues[0];
+      return `'${field.key}' (report) — ${i.path.length ? i.path.join('.') + ': ' : ''}${i.message}`;
+    }
 
     case 'backlink':
       return `'${field.key}' is a backlink — it shows links made elsewhere; add the link on the other record`;
