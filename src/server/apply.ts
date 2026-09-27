@@ -37,6 +37,7 @@ import { assetIdsIn } from '../contract/richtext.js';
 import { membershipError } from '../contract/scope.js';
 import { shapeOptionError } from '../contract/shapes.js';
 import { reportDefError } from '../contract/reports.js';
+import { toolsProblem } from '../contract/tools.js';
 import { captureFor, type Capture } from './capture.js';
 
 export class MutationError extends Error {
@@ -153,6 +154,13 @@ async function assertCompareValid(db: PoolClient, tableId: string, options: Reco
   const target = String(options.target_table_id ?? '');
   const fields = (await db.query(`select id, key, name, type, table_id, options from fields where table_id = $1 or table_id = $2`, [tableId, target])).rows;
   const err = compareConfigError({ table_id: tableId, options }, fields);
+  if (err) throw new MutationError(err);
+}
+
+/** `tables.tools` — the mapping must name this table's own fields, of types that accept each output (contract/tools.ts). */
+async function assertToolsValid(db: PoolClient, tableId: string, tools: Record<string, unknown>) {
+  const fields = (await db.query(`select id, type, options from fields where table_id = $1`, [tableId])).rows;
+  const err = toolsProblem(tools, fields);
   if (err) throw new MutationError(err);
 }
 
@@ -307,16 +315,18 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
       return;
 
     case 'table.update':
+      if (m.tools !== undefined) await assertToolsValid(db, m.id, m.tools);
       await db.query(
         `update tables set
            name          = coalesce($2, name),
            singular_name = coalesce($3, singular_name),
            color         = coalesce($4, color),
            icon          = coalesce($5, icon),
-           position      = coalesce($6, position)
+           position      = coalesce($6, position),
+           tools         = coalesce($7::jsonb, tools)
          where id = $1`,
         [m.id, m.name ?? null, m.singularName ?? null, m.color ?? null, m.icon ?? null,
-         m.position ?? null],
+         m.position ?? null, m.tools === undefined ? null : JSON.stringify(m.tools)],
       );
       return;
 
@@ -852,12 +862,13 @@ export async function applyBatch(
       await applyOne(db, entry.mutation, actor);
 
       const { rows } = await db.query(
-        `insert into mutations (id, actor_id, client_id, type, payload, undo)
-         values ($1,$2,$3,$4,$5,$6)
-         returning seq, id, client_id, type, payload, applied_at`,
+        `insert into mutations (id, actor_id, client_id, type, payload, undo, via)
+         values ($1,$2,$3,$4,$5,$6,$7)
+         returning seq, id, client_id, type, payload, applied_at, via`,
         [entry.id, actor.id, req.clientId, entry.mutation.type,
          JSON.stringify(entry.mutation),
-         capture ? JSON.stringify(capture) : null],
+         capture ? JSON.stringify(capture) : null,
+         req.via ?? null],
       );
       events.push(toMutationEvent(rows[0], false));
       seq = Number(rows[0].seq);

@@ -76,7 +76,7 @@
         <table class="hist">
           <tbody>
             <tr v-for="u in list" :key="u.id" :class="{ done: u.undone_by }">
-              <td class="what">{{ LABEL[u.type] ?? u.type }}</td>
+              <td class="what">{{ LABEL[u.type] ?? u.type }}<span v-if="u.via" class="via" :title="'written by a desktop tool: ' + u.via">via {{ VIA[u.via] ?? u.via }}</span></td>
               <td class="muted">{{ describe(u.counts) }}</td>
               <td class="muted when">{{ u.actor_name ? u.actor_name + " · " : "" }}{{ when(u.applied_at) }}</td>
               <td class="do">
@@ -103,6 +103,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { askFull } from '../dialogs';
 import { scopedFirst } from '../prefs';
 import type { Store } from '../store';
+import { TOOLS } from '../../contract/tools';
 
 const props = defineProps<{ store: Store }>();
 const emit = defineEmits<{ close: [] }>();
@@ -153,6 +154,7 @@ const LABEL: Record<string, string> = {
   'view.delete': 'View deleted', 'section.delete': 'Section deleted', 'link.remove': 'Link removed',
   'placement.remove': 'Card removed from a canvas', 'annotation.delete': 'Annotation deleted', 'canvas.delete': 'Canvas deleted',
 };
+const VIA: Record<string, string> = Object.fromEntries(Object.values(TOOLS).map((t) => [t.id, t.name]));
 const list = ref<Awaited<ReturnType<Store['undoable']>>>([]);
 // Never rejects: this also runs from a timer, possibly just after signing out (a
 // 401), and a rejected promise nobody awaits is an unhandled rejection.
@@ -188,6 +190,7 @@ h3 { margin: 16px 0 4px; font-size: 11px; text-transform: uppercase; letter-spac
 .hist { width: 100%; border-collapse: collapse; }
 .hist td { padding: 5px 8px 5px 0; border-bottom: 1px solid var(--border-main); vertical-align: baseline; }
 .what { white-space: nowrap; }
+.via { margin-left: 6px; font-size: 10px; color: var(--accent); border: 1px solid var(--accent); border-radius: 3px; padding: 0 4px; }
 .when { white-space: nowrap; font-size: 11px; }
 .do { text-align: right; width: 1%; white-space: nowrap; }
 .muted { color: var(--text-muted); }

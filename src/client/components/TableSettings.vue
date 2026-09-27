@@ -38,6 +38,8 @@
         <span v-else class="hint">kind, path, manifest, file count, total size, hash, audio layout, parent</span>
       </div>
 
+      <ToolSettings v-if="!table.kind || table.kind === 'records'" :store="store" :table-id="tableId" />
+
       <footer><button class="danger" @click="remove">Delete table…</button></footer>
     </div>
   </div>
@@ -48,6 +50,7 @@ import { computed, nextTick, onMounted, ref } from 'vue';
 import type { Store } from '../store';
 import { fieldsOf } from '../state';
 import { useSchemaActions } from '../schemaActions';
+import ToolSettings from './ToolSettings.vue';
 
 const props = defineProps<{ store: Store; tableId: string }>();
 const emit = defineEmits<{ close: [] }>();
@@ -73,7 +76,7 @@ onMounted(() => void nextTick(() => nameInput.value?.focus()));
 
 <style scoped>
 .ts-backdrop { position: fixed; inset: 0; z-index: 150; background: rgba(0, 0, 0, 0.4); display: flex; justify-content: center; align-items: flex-start; padding-top: 10vh; }
-.ts { width: min(480px, 92vw); background: var(--bg-app); border: 1px solid var(--border-main); border-radius: 8px; padding: 16px 18px; box-shadow: var(--card-shadow-drag); font-size: 13px; }
+.ts { width: min(560px, 92vw); max-height: 85vh; overflow-y: auto; background: var(--bg-app); border: 1px solid var(--border-main); border-radius: 8px; padding: 16px 18px; box-shadow: var(--card-shadow-drag); font-size: 13px; }
 header { display: flex; align-items: center; margin-bottom: 10px; }
 h2 { margin: 0; font-size: 15px; flex: 1; }
 .x { background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; }

@@ -65,6 +65,7 @@ sql/                   migrations, applied in filename order
   006_assets.sql         index of uploaded files (the bytes live in .pg/assets)
   012_structured.sql     the `structured` field type (manifests, audio layouts)
   013_reports.sql        a report IS a record: tables.kind = 'report'
+  014_tools.sql          tables.tools (the desktop client's tools, per table) and mutations.via (who wrote a batch)
   011_auth.sql           passwords and sessions (users and roles existed since 001)
   010_boards.sql         a canvas IS a record: tables.kind, canvases = board state
   009_sections.sql       sections — the home page's navigation
@@ -83,6 +84,7 @@ src/
   contract/arrows.ts     ★ a link field's arrow colour and direction
   contract/compare.ts    ★ the comparison engine: rules, compareRecords, seedValues
   contract/reports.ts    ★ reports: the definition, its validation, the walk, rollups, the flattener → CSV
+  contract/tools.ts      ★ the desktop client's tools: outputs, a table's mapping and its validation, the `via` tag
   contract/shapes.ts     ★ structured values: shapes, summaries, layout operations, the layout diff
   contract/scope.ts      ★ scope: the membership flag and "is this record in scope"
   contract/richtext.ts   ★ rich text + attachment values: refer to files, never contain them
@@ -189,6 +191,7 @@ invented their own shape. See PLAN.md.
 | `npm run test:reportview` | a report open in the app: Reports in the tree, the outline, live updates, + report |
 | `npm run test:kanban` | the board: columns by select and link, move/add, single links |
 | `npm run test:prod` | the server as deployed: built frontend, cache headers, CSP, loopback bind |
+| `npm run test:tools` | the tools contract: a table's tool config, the `via` tag in the log/stream/History, the store's batching, Table settings → Desktop tools |
 | `npm run test:auth` | signing in, sessions, roles, users — against a server with sign-in ON |
 | `npm run test:ui` | mounts the app headlessly and clicks through it (happy-dom; no layout or paint) |
 | `npm run typecheck` | `tsc` (server) + `vue-tsc` (client) |

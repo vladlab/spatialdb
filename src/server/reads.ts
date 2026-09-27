@@ -25,7 +25,7 @@ import { ALL, inScope, type Scope } from '../contract/scope.js';
 export async function loadSchema(db: PoolClient) {
   // Sequential, not Promise.all: a single PoolClient cannot run concurrent
   // queries — pg serialises them and warns, and it errors outright in pg@9.
-  const tables = await db.query(`select id, name, singular_name, color, icon, position, kind
+  const tables = await db.query(`select id, name, singular_name, color, icon, position, kind, tools
                                    from tables order by position, name`);
   const fields = await db.query(`select id, table_id, name, key, type, options, position, required
                                    from fields order by table_id, position`);
@@ -463,7 +463,7 @@ export async function mutationsSince(
 
   // One extra row is the truncation probe.
   const { rows } = await db.query(
-    `select seq, id, client_id, type, payload, applied_at
+    `select seq, id, client_id, type, payload, applied_at, via
        from mutations where seq > $1 order by seq limit $2`,
     [since, limit + 1],
   );
@@ -493,6 +493,8 @@ export interface UndoableEntry {
   truncated: boolean;
   /** Already reversed by a later `restore`, so offering undo again is noise. */
   undone_by: string | null;
+  /** The tool that wrote it, if one did (sql/014). */
+  via: string | null;
 }
 
 /**
@@ -505,7 +507,7 @@ export interface UndoableEntry {
  */
 export async function loadUndoable(db: PoolClient, limit = 50): Promise<UndoableEntry[]> {
   const { rows } = await db.query(
-    `select m.seq, m.id, m.type, m.applied_at,
+    `select m.seq, m.id, m.type, m.applied_at, m.via,
             u.name as actor_name,
             m.undo->'counts'    as counts,
             m.undo->'total'     as total,

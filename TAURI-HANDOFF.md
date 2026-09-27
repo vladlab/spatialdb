@@ -148,29 +148,26 @@ These were agreed with the owner. Treat them as constraints, not suggestions.
 ## 5. Open decisions (bring these to the owner; do not guess)
 
 1. ~~§2 — load from server vs bundle~~ — decided: load from the server.
-2. **The same file, seen twice.** Dropping a file that is already a record: update it,
-   or create a second? Needs a MATCHING RULE — by hash, by path, or both — and the
-   Resolve reader needs the same rule to link edits to existing file records.
-3. **Which hash.** Full SHA-256 of a 200 GB file is minutes of I/O. xxhash, or a
-   partial hash (head + tail + size), changes the wait by an order of magnitude and
-   changes what "same file" means. His call; he understands the trade.
-4. **Paths across machines.** The same file is `/mnt/san/…` here and something else
-   on another workstation (and the shop is migrating a grading workstation between
-   Linux distributions). Proposal, NOT decided: store paths relative to a named
-   STORAGE ROOT (`san:Projects/Duke/…`); each desktop client maps roots → local
-   mounts. He plans to catalogue drives in this same database — roots could be
-   records in that table.
-5. **Where probing runs, and what it needs.** Bundle ffprobe/ffmpeg as a Tauri sidecar,
-   or require a system install? On NixOS a system package is natural; bundling native
-   binaries is the recurring pain there (it is why passwords use Node's scrypt and
-   not argon2). Ask.
-6. **The Resolve reader's runtime.** Resolve's external scripting needs Resolve
-   running on that machine (and Studio). Python as a sidecar, or a standalone script
-   that talks to the API with a token? Principle 2 makes both legitimate.
-7. **Distribution and updates** — how the app reaches 3–10 workstations he
-   administers himself. If §2 is A, this matters much less.
+2. ~~The same file, seen twice~~ — decided (Sept 27): match on the exact absolute
+   path within the table → update that record and say so; dropped ONTO a record of
+   the table → update that record (placeholders); otherwise a new record. Hash
+   matching later.
+3. ~~Which hash~~ — xxh3 by default, computed last and only when a hash field is
+   mapped; the algorithm is in the value (`xxh3:…`), so SHA-256 can be a second
+   output later without touching old rows.
+4. ~~Paths across machines~~ — plain absolute paths; the finishing systems share a
+   mount convention. No storage-root mapping.
+5. ~~Where probing runs~~ — the host's own ffprobe/ffmpeg (and Resolve + Python for
+   the timeline reader); a clear error if missing. No sidecars, no server agents.
+6. **The Resolve reader's runtime** — still open; file drop first.
+7. **Distribution** — NixOS (flake package), AppImage for Fedora/Rocky, macOS; Windows
+   maybe later. Under A the app rarely needs rebuilding.
+8. **Outputs and the drop pipeline** — decided (Sept 27): classify (Rust, before any
+   write) → create at once (path, kind, manifest, counts, context links) → enrich
+   afterwards (ffprobe facts, then hash). One Files table. Outputs are listed in
+   `contract/tools.ts`.
 
-## 6. Server-side work the tools need — NOT BUILT YET
+## 6. Server-side work the tools need — BUILT (Sept 27, `tauri` branch, to merge to `main`)
 
 Small, no Rust, and it touches shared contract files — so do it first, deliberately,
 as its own reviewed commit (the owner reviews wire-format changes before anything is
@@ -193,8 +190,15 @@ built on them; that is a standing rule of this project):
 - **A version handshake** (only if §2 is B): an endpoint saying which contract version
   the server speaks; the client refuses to run against a mismatch.
 
-I offered to build this in the previous session; the owner chose to write this
-handoff first. It is unclaimed.
+**Status:** all of the above except the version handshake (not needed under A) is
+built: `sql/014_tools.sql`, `src/contract/tools.ts`, `table.update { tools }`,
+`MutationRequest.via`, `ToolSettings.vue` in Table settings, `test/tools.ts` (64
+checks). See API.md "Tools". Decisions taken with the owner on the way: ONE Files
+table (not per-kind tables); no raw ffprobe kept, only mapped outputs; N loose files
+that form no sequence/bundle/channel set become N records (capped, one Ctrl+Z);
+dropping a file ONTO an existing record of the table updates that record (a
+placeholder made before the file existed); same absolute path already in the table
+→ update it and say so; a tool's follow-up writes are queued `undoable: false`.
 
 ## 7. The data the tools write into
 

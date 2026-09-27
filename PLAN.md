@@ -1033,6 +1033,33 @@ that visibly does nothing.
 - Tree: tables alphabetical; a Settings ("This browser") option lists scoped tables
   above the rest, each group alphabetical.
 
+### The tools contract — BUILT (Sept 27, `tauri` branch)
+
+The desktop client's first patch touches no Rust: it is the server-side seam the
+tools need, done first and alone because it changes the wire format
+(TAURI-HANDOFF.md §6). `sql/014`, `contract/tools.ts`, API.md "Tools",
+`test/tools.ts` (64 checks, 7 deliberate breakages each caught).
+
+- **The server knows about tools and never runs them.** `tables.tools` is
+  `{ toolId: { map: { outputKey: fieldId } } }`, validated on write against the
+  table's fields by the same function the settings UI runs. No foreign keys
+  (views/sections precedent): a deleted field is skipped at run time, an undone
+  delete heals it. Nothing executable ever crosses the wire.
+- **`via`** on the request envelope → `mutations.via` → every stream event (absent,
+  not null, when untagged) → `/api/undoable` → History. Provenance, not permission:
+  an unknown tag is accepted so a script can name itself.
+- **The store groups flushes by tag** and takes `undoable: false` for a tool's
+  follow-up writes, so Ctrl+Z on a drop of 45 files is ONE step that takes the probe
+  results with it (the owner's requirement: "I shouldn't have to undo 45 times").
+- **Decisions taken with the owner:** one Files table; no raw ffprobe kept; N loose
+  files → N records (capped); dropped onto a record → update it (placeholders);
+  same path → update it and say so; timecode/duration are text, frame rate a
+  3-decimal number, `modified` a day. Outputs and the three-stage drop are in the
+  contract file's comments.
+- **A lesson from the session:** breaking code on purpose and restoring it with
+  `git checkout <file>` BEFORE committing threw away three files of real edits.
+  Commit, then break.
+
 ### The comparison engine — BUILT (Sept 26)
 
 As designed in `COMPARE-BRIEF.md`, all seven steps in one session, on the reviewed

@@ -20,6 +20,7 @@ import { backlinkConfigError, backlinkSourceOf } from '../contract/backlinks';
 import { arrowStyleOf, type ArrowStyle } from '../contract/arrows';
 import { isMembership } from '../contract/scope';
 import { FILES_STANDARD_FIELDS, shapeOptionError } from '../contract/shapes';
+import { TOOLS, fieldAccepts, toolsProblem, type TablesTools, type ToolOutput } from '../contract/tools';
 import { fieldsOf, recordsOf, tablesSorted, type FieldRow } from './state';
 import type { Store } from './store';
 import { confirmDialog } from './dialogs';
@@ -203,6 +204,72 @@ export function useSchemaActions(store: Store) {
     return added;
   }
 
+  /* ── the desktop client's tools on a table (contract/tools.ts) ──────────── */
+
+  /**
+   * Write a table's whole tools config. Refused here, before it is queued, with
+   * the same rule the server runs — a bad mapping must never reach the log.
+   * Returns the problem, or null.
+   */
+  function setTools(tableId: string, tools: TablesTools): string | null {
+    const err = toolsProblem(tools, fields(tableId));
+    if (err) return err;
+    store.mutate({ type: 'table.update', id: tableId, tools });
+    return null;
+  }
+
+  /**
+   * Turn a tool on: map every output to a same-KEY field that accepts it, and
+   * CREATE fields for the outputs the tool cannot run without (`path`). One
+   * Ctrl+Z. Nothing else is created — the admin picks which of the ~40 outputs
+   * deserve a column (`addToolFields` does that on request).
+   */
+  function enableTool(tableId: string, toolId: string): string | null {
+    const tool = TOOLS[toolId];
+    if (!tool) return `unknown tool: ${toolId}`;
+    const map: Record<string, string> = {};
+    for (const out of tool.outputs) {
+      const f = fields(tableId).find((x) => x.key === out.key && fieldAccepts(out, x));
+      if (f) map[out.key] = f.id;
+    }
+    const missing = tool.outputs.filter((o) => tool.required.includes(o.key) && !map[o.key]);
+    for (const [key, id] of Object.entries(addToolFields(tableId, missing))) map[key] = id;
+    const table = store.state.tables.get(tableId);
+    return setTools(tableId, { ...(table?.tools as TablesTools ?? {}), [toolId]: { map } });
+  }
+
+  function disableTool(tableId: string, toolId: string) {
+    const tools = { ...(store.state.tables.get(tableId)?.tools as TablesTools ?? {}) };
+    delete tools[toolId];
+    return setTools(tableId, tools);
+  }
+
+  /**
+   * A field per output, shaped as the output wants it (a select gets the tool's
+   * choices, a structured field its shape, a byte count its display format), named
+   * and keyed like the output — so `enableTool` and a re-run find them by key.
+   * Skips keys the table already has. Returns output key → new field id.
+   */
+  function addToolFields(tableId: string, outputs: readonly ToolOutput[]): Record<string, string> {
+    const have = new Set(fields(tableId).map((f) => f.key));
+    let pos = Math.max(0, ...fields(tableId).map((f) => f.position));
+    const made: Record<string, string> = {};
+    for (const out of outputs) {
+      if (have.has(out.key)) continue;
+      const id = crypto.randomUUID();
+      const [type, shape] = out.type.split(':');
+      const options: Record<string, unknown> = {};
+      if (shape) options.shape = shape;
+      if (out.choices) options.choices = [...out.choices];
+      if (out.key === 'total_size') options.format = 'bytes';
+      store.mutate({ type: 'field.create', id, tableId, name: out.name, key: out.key, fieldType: type as FieldType, options, required: false });
+      store.mutate({ type: 'field.update', id, position: ++pos });
+      made[out.key] = id;
+      have.add(out.key);
+    }
+    return made;
+  }
+
   function renameField(id: string, rawName: string) {
     const name = rawName.trim();
     if (name && name !== store.state.fields.get(id)?.name) store.mutate({ type: 'field.update', id, name });
@@ -318,7 +385,7 @@ export function useSchemaActions(store: Store) {
     createTable, renameTable, deleteTable,
     draftError, createField, renameField, setChoices, moveField, makePrimary, isPrimary,
     canBePrimary, deleteField,
-    setArrowStyle, setMembership, setSingle, addStandardFilesFields, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
+    setArrowStyle, setMembership, setSingle, addStandardFilesFields, setTools, enableTool, disableTool, addToolFields, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
   };
 }
 export type SchemaActions = ReturnType<typeof useSchemaActions>;

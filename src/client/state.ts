@@ -56,6 +56,8 @@ export interface TableRow {
   color: string; icon: string; position: number;
   /** 'canvas' = a table of BOARDS: each record is a canvas (sql/010); 'report' = a table of REPORTS: each record is a report (sql/013). */
   kind?: 'records' | 'canvas' | 'report';
+  /** The desktop client's tools on this table — `{ toolId: { map } }` (contract/tools.ts). */
+  tools?: Record<string, unknown>;
 }
 export interface FieldRow {
   id: string; table_id: string; name: string; key: string; type: string;
@@ -245,6 +247,7 @@ export function applyMutation(state: State, m: Mutation): void {
       if (m.color !== undefined) t.color = m.color;
       if (m.icon !== undefined) t.icon = m.icon;
       if (m.position !== undefined) t.position = m.position;
+      if (m.tools !== undefined) t.tools = m.tools;
       return;
     }
     case 'table.delete':

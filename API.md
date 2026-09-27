@@ -342,6 +342,54 @@ Reported most-serious first, each kind only when the ones above it are clean: `c
 (then nothing else), `order`, `grouping` (same channels, same order, contained
 differently), and — only when the grouping matches — `name` / `language` per track.
 
+### Tools: what the desktop client may do to a table
+
+`sql/014`, rules in the twelfth shared contract file, **`src/contract/tools.ts`**,
+and `test/tools.ts`. A TOOL is code compiled into the desktop client (file drop;
+later a Resolve timeline reader and QC). **The server never runs one and never
+sends anything to execute.** Its whole knowledge of a tool is that file plus one
+column:
+
+```jsonc
+// tables.tools — written by table.update { tools }, replaced WHOLE, admin-only
+{ "file_drop": { "map": { "path": "<fieldId>", "width": "<fieldId>", "…": "…" } } }
+```
+
+- Presence of a tool's entry means ENABLED. `map` is output key → field id: "the
+  tool's `width` goes into that field". Outputs with no entry are not written.
+- **Validated on write** (`toolsProblem`, the same function the settings UI runs
+  before queueing): the tool and each output must exist by name; each mapped field
+  must be on THIS table and of a type that accepts the output (`text` → text or
+  long_text; `number`, `date`, `checkbox`, `file_path` → the same; `select` → select
+  or text; `structured:<shape>` → a structured field of that shape); the tool's
+  REQUIRED outputs (`path` for file drop) must be mapped; two outputs may not share a
+  field. Strict objects — an unknown key is a 400.
+- **No foreign keys**, by the precedent of views and sections: `field.delete` does
+  not rewrite the config, `resolveMap` skips an id that no longer resolves when the
+  tool runs, and undoing the delete heals it. `table.delete` captures the column
+  like any other; restore brings it back.
+- `GET /api/schema` returns `tools` on every table. An older client ignores it.
+- **Tools write ORDINARY mutations** — `record.create`, `record.update`, `link.add`
+  in the same `POST /api/mutate` batches the web app sends — so undo, the stream,
+  History, scope and validation apply to tool-written data unchanged, and a script
+  with a login token can do the same job. What the outputs are, and the three-stage
+  drop (classify → create at once → enrich afterwards), is documented in
+  `contract/tools.ts` itself.
+
+**`via` — who wrote a batch.** `MutationRequest.via` is an optional tag
+(`^[a-z][a-z0-9_]{1,39}$`, e.g. `file_drop`) stored on the log row
+(`mutations.via`), echoed on every stream event (**absent, never null**, when there
+was none — an older strict parser still passes) and returned by `GET /api/undoable`,
+which History shows as "via File drop". One tag per batch: the client store groups
+its flushes by tag rather than mixing a tool's writes into a hand-edit batch. The
+tag is provenance, not permission — an unknown tag is accepted, so a script may
+name itself. Only editors and admins can write at all, as before.
+
+**Client rule, not wire:** `store.mutate(m, { via, undoable: false })` for a tool's
+FOLLOW-UP writes (the probe facts and hash that arrive after a drop). They are not
+Ctrl+Z steps of their own, so undoing a drop deletes the records it created, probe
+results and all, in one step (`test/tools.ts` T4).
+
 ### Canvas defaults
 
 `canvas.update { config: { cardFields, defaults? } }` — `defaults` is

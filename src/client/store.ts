@@ -73,6 +73,21 @@ const RETRY_MAX_MS = 10_000;
 export interface PendingEntry {
   id: string;
   mutation: Mutation;
+  /** Provenance tag for the batch this rides in (MutationRequest.via). Not sent per entry. */
+  via?: string;
+}
+
+export interface MutateOptions {
+  /** The tool writing this (contract/tools.ts `Via`). Batches carry ONE tag, so a
+   *  flush stops where the tag changes rather than mixing tool writes with hand edits. */
+  via?: string;
+  /**
+   * False for a tool's FOLLOW-UP writes: the ffprobe facts and the hash that arrive
+   * after a file drop. They must not become Ctrl+Z steps of their own, or undoing
+   * the drop would first peel off the last probe result. Ctrl+Z on the drop itself
+   * deletes the records it created, probe results and all. Default true.
+   */
+  undoable?: boolean;
 }
 
 export type StreamState = 'offline' | 'connecting' | 'connected' | 'reconnecting' | 'resyncing';
@@ -196,14 +211,14 @@ export function createStore(opts: StoreOptions = {}) {
     for (let i = unechoed.length - 1; i >= 0; i--) if (gone.has(unechoed[i].id)) unechoed.splice(i, 1);
   };
 
-  function mutate(mutation: Mutation) {
+  function mutate(mutation: Mutation, options: MutateOptions = {}) {
     localChanges++;
     const id = crypto.randomUUID();
     // BEFORE applying: the inverse is read off the state this is about to change.
-    if (mutation.type !== 'restore') record(inverseOf(state, mutation, id));
+    if (mutation.type !== 'restore' && options.undoable !== false) record(inverseOf(state, mutation, id));
     applyMutation(state, mutation);
     touch(mutation, Infinity);   // see loadTable: a page must not revert this
-    pending.value.push({ id, mutation });
+    pending.value.push(options.via ? { id, mutation, via: options.via } : { id, mutation });
     unechoed.push({ id, mutation });
     if (unechoed.length > 5000) unechoed.splice(0, unechoed.length - 5000);   // a stream that never echoes must not become a leak
     scheduleFlush();
@@ -285,14 +300,20 @@ export function createStore(opts: StoreOptions = {}) {
     // should reflect what actually happened.
     if (inflight.value.length || !pending.value.length) return;
 
-    const batch = pending.value.splice(0, MAX_BATCH);
+    // A batch carries one `via`: take entries up to the first change of tag.
+    const via = pending.value[0].via;
+    let n = 0;
+    while (n < pending.value.length && n < MAX_BATCH && pending.value[n].via === via) n++;
+    const batch = pending.value.splice(0, n);
     inflight.value = batch;
 
     try {
       const res = await fetch(`${baseUrl}/api/mutate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, mutations: batch }),
+        // Entries are sent as { id, mutation } only: the envelope is strict, and the
+        // tag belongs to the request, not to each mutation.
+        body: JSON.stringify({ clientId, ...(via ? { via } : {}), mutations: batch.map(({ id, mutation }) => ({ id, mutation })) }),
       });
 
       if (!res.ok) {
@@ -778,7 +799,7 @@ export function createStore(opts: StoreOptions = {}) {
     return get(`/api/undoable?limit=${limit}`) as Promise<Array<{
       seq: number; id: string; type: string; applied_at: string;
       actor_name: string | null; counts: Record<string, number>;
-      total: number; truncated: boolean; undone_by: string | null;
+      total: number; truncated: boolean; undone_by: string | null; via?: string | null;
     }>>;
   }
 

@@ -27,6 +27,7 @@
  */
 
 import { z } from 'zod';
+import { Via } from './tools.js';
 import { ViewConfig } from './views.js';
 import { CanvasConfig } from './canvasConfig.js';
 
@@ -104,6 +105,14 @@ const TableUpdate = z.strictObject({
   color: z.string().optional(),
   icon: z.string().optional(),
   position: z.number().int().optional(),
+  /**
+   * The desktop client's tools on this table (sql/014, rules in contract/tools.ts):
+   * `{ "<toolId>": { "map": { "<outputKey>": "<fieldId>" } } }`. Replaced WHOLE,
+   * like a view's config. Loosely typed here so the envelope stays parseable by an
+   * older client; the real check (known tool, known output, a field on THIS table
+   * of a type that accepts it) needs the table's fields and runs in apply.
+   */
+  tools: z.record(z.string(), z.unknown()).optional(),
 });
 
 const TableDelete = z.strictObject({
@@ -522,6 +531,14 @@ export const SCHEMA_MUTATIONS: ReadonlySet<string> = new Set([
 export const MutationRequest = z.strictObject({
   /** Lets a client recognise and skip the broadcast echo of its own writes. */
   clientId: uuid,
+  /**
+   * Provenance: the TOOL that produced this batch ("file_drop"), for the audit
+   * trail. Absent for everything a person typed. One tag per batch — a tool's
+   * writes are its own request, never mixed with hand edits (store.ts groups by
+   * it). Stored on the log row (mutations.via, sql/014) and echoed on every
+   * stream event; rules in contract/tools.ts.
+   */
+  via: Via.optional(),
   mutations: z
     .array(
       z.strictObject({

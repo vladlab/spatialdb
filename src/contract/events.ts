@@ -72,6 +72,10 @@ const MutationEvent = z.object({
 
   appliedAt: z.string(),
 
+  /** The tool that wrote it (`MutationRequest.via`), when one did. Absent, never
+   *  null, for a person's edit — so an older client's strict parse still passes. */
+  via: z.string().optional(),
+
   /** True when this arrived as catch-up rather than live. Purely informational
    *  — it must NOT change how the event is applied. Always present, so no
    *  consumer has to test for undefined. */
@@ -133,6 +137,7 @@ export interface MutationLogRow {
   type: string;
   payload: unknown;
   applied_at: Date | string;
+  via?: string | null;
 }
 
 export function toMutationEvent(row: MutationLogRow, replay: boolean): MutationEvent {
@@ -145,6 +150,7 @@ export function toMutationEvent(row: MutationLogRow, replay: boolean): MutationE
     mutation: row.payload,
     appliedAt:
       row.applied_at instanceof Date ? row.applied_at.toISOString() : String(row.applied_at),
+    ...(row.via ? { via: row.via } : {}),
     replay,
   });
 }
