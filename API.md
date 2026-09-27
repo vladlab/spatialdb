@@ -485,8 +485,19 @@ table is a report; the app makes it with a Name and a **`structured` field of sh
   an empty section is drawn as "— nothing —". Clicking a row opens that record in
   the tray; "definition…" opens the report's own record. The grid cell summarises a
   definition structurally ("3 levels, 2 rollups").
-- The editor, exports and snapshots are later steps of the brief; a snapshot will
-  be an `attachment` value on the same record.
+- **The editor** (`ReportEditor.vue` → `ReportLevelEditor.vue`, one per level) is
+  what the record tray shows for the report field: every choice is a pick from the
+  schema — the root table; for a descent, the link fields that connect to the parent
+  (forward on the parent, or pointing at it), each with a role box, narrowed to one
+  landing table once the first is ticked; pins offered from the links joining the
+  level's table to an ancestor above the parent; fields as tick boxes; the grid's
+  filter and sort rows; rollups over a direct child, with "where a field…" or
+  "where its rollup…". Level ids come from table names (`files`, `files2`). It edits
+  a draft, validates it live with `reportDefError`, and **Save writes once** (one
+  mutation, one Ctrl+Z); a half-built draft cannot be saved. "edit as JSON…" remains
+  the escape hatch.
+- Exports and snapshots are later steps of the brief; a snapshot will be an
+  `attachment` value on the same record.
 - The `report` shape is not offered by the field form; only a table of reports
   makes one.
 

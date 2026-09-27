@@ -119,6 +119,48 @@ async function main() {
     const made = await ui.untilDb(`select r.id from records r join tables t on t.id = r.table_id where t.kind = 'report' and r.data->>'name' = 'Manifest'`, (r) => r.length === 1);
     check('"+ report" makes a record in the existing reports table (no second table)', made.length === 1 && (await pool.query(`select count(*)::int n from tables where kind = 'report'`)).rows[0].n === 1);
     check('…opens it, with its record in the tray ready for the definition', await until(() => w.find('.reportview .rv-title').text() === 'Manifest' && w.find('.record-panel .rp-title').text() === 'Manifest'));
+
+    console.log('\nV5. The level editor (step 4): a definition built without typing an id');
+    const ed = () => w.find('.record-panel .re');
+    check('the tray shows the report field as an EDITOR, with "edit as JSON…" still underneath', ed().exists() && w.find('.record-panel .edit-json').exists());
+    const rootEd = () => ed().find('.rl.root');
+    await rootEd().find('select.rl-table').setValue(tFiles);
+    await until(() => rootEd().findAll('.rl-field').length === 5);
+    check('picking the root table lists its fields to show, and gives the level an id from the table\'s name', rootEd().findAll('.rl-field').map((x: any) => x.text().trim()).join() === 'Name,Path,Status,Work,Deliverable' && rootEd().find('.rl-id').text() === 'files');
+    const tick = async (scope: any, label: string, on = true) => { const l = scope.findAll('.rl-field, .rl-via').find((x: any) => x.find('.rl-via-name').exists() ? x.find('.rl-via-name').text() === label : x.text().trim() === label)!; await l.find('input[type="checkbox"]').setValue(on); };
+    await tick(rootEd(), 'Path'); await tick(rootEd(), 'Status');
+    await rootEd().find('.add-filter').trigger('click');
+    await until(() => rootEd().findAll('.rl-line').length >= 1);
+    const filterLine = () => rootEd().findAll('.rl-block').find((b: any) => b.find('.rl-label').text() === 'filter')!.find('.rl-line');
+    await filterLine().findAll('select')[0].setValue(fDeliv);
+    await filterLine().findAll('select')[1].setValue('notEmpty');
+    check('a filter row offers the ops for the field\'s TYPE (a link: contains / is empty / is not empty)', filterLine().findAll('select')[1].findAll('option').map((o: any) => o.attributes('value')).join() === 'contains,empty,notEmpty');
+    await rootEd().find('.add-level').trigger('click');
+    await until(() => ed().findAll('.rl:not(.root)').length === 1);
+    const child = () => ed().find('.rl:not(.root)');
+    check('"+ descend into…" adds a level offering every link that connects to Files — forward and back — landing table shown',
+      child().findAll('.rl-via .rl-via-name').map((x: any) => x.text()).sort().join() === 'Deliverable,Work', child().findAll('.rl-via').map((x: any) => x.text()).join('|'));
+    check('save is disabled while the draft is incomplete (a level with no via), and says why', ed().find('.save-report').attributes('disabled') !== undefined && /via/.test(ed().find('.re-error').text()), ed().find('.re-error').exists() ? ed().find('.re-error').text() : '(no error shown)');
+    await tick(child(), 'Deliverable');
+    await until(() => child().find('.rl-id').text() === 'deliverables');
+    check('ticking a via names the level after the table it lands in, and the other link (to Works) is now disabled — different table',
+      child().findAll('.rl-via').find((x: any) => x.find('.rl-via-name').text() === 'Work')!.classes('off'));
+    await child().find('.rl-role').setValue('target');
+    await tick(child(), 'Codec');
+    await rootEd().find('.add-rollup').trigger('click');
+    await until(() => rootEd().find('.rl-rollup').exists());
+    await rootEd().find('.rl-rollup .rl-rlabel').setValue('specs');
+    check('the error is gone and save is enabled', !ed().find('.re-error').exists() && ed().find('.save-report').attributes('disabled') === undefined, ed().find('.re-error').exists() ? ed().find('.re-error').text() : '');
+    await ed().find('.save-report').trigger('click');
+    const savedRows = await ui.untilDb(`select data->'report' d from records where id = '${made[0].id}'`, (r) => r[0]?.d?.root?.table === tFiles, 8000);
+    const saved = savedRows[0].d;
+    const canon = (v: any): string => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));   // jsonb reorders keys
+    check('save writes the definition ONCE — ids from table names, explicit fields, the filter, the via with its role, the rollup',
+      canon(saved) === canon({ v: 1, root: { id: 'files', fields: [fPath, fStatus], filters: [{ fieldId: fDeliv, op: 'notEmpty' }], sort: [], rollups: [{ id: 'deliverables', label: 'specs', op: 'count', over: 'deliverables' }], table: tFiles,
+        children: [{ id: 'deliverables', fields: [fDCodec], filters: [], sort: [], rollups: [], via: [{ fieldId: fDeliv, role: 'target' }], children: [] }] } }), canon(saved));
+    check('…and the open report draws it: three files, each with its deliverable beneath', await until(() => w.findAll('.reportview .ro.root > table > tbody > .ro-row').length === 3 && w.findAll('.reportview .ro-role').length === 3, 8000));
+    check('after saving, the editor is clean (no unsaved changes)', ed().find('.save-report').attributes('disabled') !== undefined && !/unsaved/.test(ed().text()));
+
     check('the grid of a reports table offers "open" on each row', await (async () => { await nav.openTable(tRep); await until(() => w.findAll('.gridview tr.row').length === 3); return w.find('.gridview .open-report').exists(); })());
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);

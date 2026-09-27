@@ -188,13 +188,14 @@ flatten → download. Client-side, no endpoint. Grouped views flatten the same w
 
 ## 8. Build order
 
-Status: steps 1–3 built (Sept 27–28, 2026): `contract/reports.ts` with
+Status: steps 1–4 built (Sept 27–28, 2026): `contract/reports.ts` with
 `test/reports.ts` (pure, 50 checks); `sql/013`, the `report` kind and shape, the
 new-table dialog's kind select, and the server's schema check on every write
 (`test/structured.ts` T9); step 3, `ReportView.vue` + `ReportOutline.vue` — a report
 is a view of the app with an address, listed under "Reports" in the tree, drawn live
-from the store (`test/reportview.ts`). The record tray shows the definition as JSON
-until step 4.
+from the store (`test/reportview.ts`); step 4, the level editor in the tray
+(`ReportEditor.vue`, `ReportLevelEditor.vue`) — picks only, no ids typed, a draft saved
+once (`test/reportview.ts` V5). Owner to test the editor by hand.
 
 1. `contract/reports.ts`: `ReportDef` zod, `runReport`, the flattener, tests (pure;
    red-checked, including the worked example below). **Stop for the owner's review

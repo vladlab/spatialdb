@@ -681,7 +681,16 @@ Design in REPORTS-BRIEF.md, agreed before any code. Built so far:
   in the warning colour, empty sections as "— nothing —". A definition that fails
   the schema check still runs (read-time is lenient) with the error shown above it.
   Rows open the record in the tray; "definition…" opens the report's own record.
-Next: the level editor (step 4), then exports and snapshots.
+- **Step 4 — the level editor**: the tray's Report field is a tree of
+  `ReportLevelEditor`s over a DRAFT, saved once by `ReportEditor` (one mutation, one
+  Ctrl+Z; a half-built draft is unsaveable and says why — the same `reportDefError`
+  the server runs). Choices are enumerated from the schema, never typed: vias are
+  the link fields that connect to the parent's table (forward or back), narrowed to
+  one landing table once the first is ticked; pins the links joining the level's
+  table to an ancestor above the parent; rollups over a direct child. Level ids are
+  made from table names. Removing a level drops the rollups over it. The JSON editor
+  stays underneath. Lightly tested headless; the owner tests it by hand.
+Next: exports (step 5), then snapshots.
 
 ### Sections, a home page, and scope — the design (Sept 19–20)
 

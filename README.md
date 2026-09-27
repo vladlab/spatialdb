@@ -125,6 +125,7 @@ src/
       ComparePairs.vue / SideBySide.vue   comparing links: the pairs editor; two records side by side
       KanbanView.vue      a view whose body is columns of cards
       ReportView.vue / ReportOutline.vue   a report, open: the walk run over the store, drawn as nested tables
+      ReportEditor.vue / ReportLevelEditor.vue   the definition, edited in the tray: one component per level, saved once
       StructuredField.vue / ManifestView.vue / AudioLayoutEditor.vue   structured values in the tray
       RecordPanel.vue    one record, every field, editable — opened by grid AND canvas
       CellEditor.vue     the editor for ONE cell, mounted only while editing

@@ -21,6 +21,8 @@
       <ManifestView v-if="shape === 'manifest' && value !== undefined" :value="value" />
       <AudioLayoutEditor v-else-if="shape === 'audio_layout'" :store="store" :record-id="recordId" :field="field" :value="value"
                          @set="(v) => $emit('set', field.key, v)" @unset="$emit('unset', field.key)" />
+      <ReportEditor v-else-if="shape === 'report'" :store="store" :record-id="recordId" :field="field" :value="value"
+                    @set="(v) => $emit('set', field.key, v)" />
     </template>
 
     <div v-if="raw" class="sf-raw">
@@ -45,6 +47,7 @@ import { validateValue } from '../../contract/values';
 import { reportDefError } from '../../contract/reports';
 import ManifestView from './ManifestView.vue';
 import AudioLayoutEditor from './AudioLayoutEditor.vue';
+import ReportEditor from './ReportEditor.vue';
 
 const props = defineProps<{ store: Store; recordId: string; field: FieldRow; value: unknown }>();
 const emit = defineEmits<{ set: [key: string, value: unknown]; unset: [key: string] }>();
