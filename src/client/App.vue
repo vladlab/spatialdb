@@ -127,8 +127,8 @@
 
     <!-- Desktop app only (client/desktop.ts): files being dragged over the window,
          and what the tools are doing. In a browser neither ever appears. -->
-    <div v-if="fileDrag.active" class="file-drop" :class="{ ok: !!dropWhere }">
-      <div class="file-drop-msg">{{ dropWhere ? `Drop ${fileDrag.count === 1 ? 'to add to' : `${fileDrag.count} items into`} ${dropWhere}` : 'Open a table or canvas with File drop enabled' }}</div>
+    <div v-if="fileDrag.active" class="file-drop" :class="{ ok: dropReady }">
+      <div class="file-drop-msg">{{ dropMessage }}</div>
     </div>
     <div v-if="notices.length || jobs.size" class="desk-notices">
       <div v-if="jobs.size" class="desk-job">{{ jobs.size }} file{{ jobs.size === 1 ? '' : 's' }} being read…</div>
@@ -433,6 +433,22 @@ const dropWhere = computed(() => {
   if (view.value === 'table' && tableId.value) return store.state.tables.get(tableId.value)?.name ?? '';
   if (view.value === 'canvas' && canvasId.value) return derived.labelOfId(canvasId.value) || 'this canvas';
   return '';
+});
+// Said on the OVERLAY, before the files are released — a refusal after the drop is
+// a notice at the bottom right, which is not where anyone is looking.
+const dropEnabledHere = computed(() => {
+  const on = (t?: { tools?: Record<string, unknown> }) => !!t?.tools?.file_drop;
+  if (view.value === 'table' && tableId.value) return on(store.state.tables.get(tableId.value));
+  if (view.value === 'canvas' && canvasId.value) return [...store.state.tables.values()].some((t) => (!t.kind || t.kind === 'records') && on(t));
+  return false;
+});
+const dropReady = computed(() => !!dropWhere.value && dropEnabledHere.value);
+const dropMessage = computed(() => {
+  if (!dropWhere.value) return 'Open a table or canvas first, then drop the files there';
+  if (!dropEnabledHere.value) return view.value === 'table'
+    ? `File drop is not enabled on ${dropWhere.value} — turn it on under ⚙ Table settings → Desktop tools`
+    : `No table has File drop enabled yet — ⚙ Table settings → Desktop tools on the table the files belong in`;
+  return `Drop ${fileDrag.count === 1 ? 'to add to' : `${fileDrag.count} items into`} ${dropWhere.value}`;
 });
 function onFilesDropped(paths: string[], x: number, y: number) {
   const ctx = { store, createRecord: scopeApi.createRecord, defaults: view.value === 'canvas' ? canvasRef.value?.activeDefaults : undefined };

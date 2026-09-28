@@ -113,7 +113,7 @@ async function chooseTable(store: Store, target: DropTarget): Promise<string | n
   const enabled = enabledTables(store);
   if (target.tableId) {
     if (enabled.some((t) => t.id === target.tableId)) return target.tableId;
-    notice(`File drop is not enabled on this table — turn it on in Table settings → Desktop tools`, 'warn');
+    notice(`File drop is not enabled on this table — turn it on under ⚙ Table settings → Desktop tools`, 'warn');
     return null;
   }
   if (target.canvas?.onto) {
@@ -121,7 +121,7 @@ async function chooseTable(store: Store, target: DropTarget): Promise<string | n
     notice(`File drop is not enabled on that card's table`, 'warn');
     return null;
   }
-  if (!enabled.length) { notice(`File drop is not enabled on any table yet — Table settings → Desktop tools`, 'warn'); return null; }
+  if (!enabled.length) { notice(`No table has File drop enabled yet — ⚙ Table settings → Desktop tools on the table the files belong in`, 'warn'); return null; }
   if (enabled.length === 1) return enabled[0].id;
   const r = await askFull({ title: 'Which table?', noText: true, okText: 'Add',
     select: { label: 'Files become records of', options: enabled.map((t) => ({ value: t.id, label: t.name })), initial: enabled[0].id } });

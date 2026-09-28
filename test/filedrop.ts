@@ -110,13 +110,16 @@ async function main() {
     console.log('\nF3. Dropping on a table');
     await go(tPlain);
     enter(['/mnt/san/a.mov']);
-    check('while files are over the window an overlay names the target', await until(() => w.find('.file-drop').exists()) && /Notes/.test(w.find('.file-drop').text()), w.find('.file-drop').text());
+    check('while files are over a table WITHOUT File drop, the overlay says so BEFORE the release, not in the accent colour', await until(() => w.find('.file-drop').exists()) && /not enabled on Notes/.test(w.find('.file-drop').text()) && !w.find('.file-drop').classes('ok'), w.find('.file-drop').text());
     drop(['/mnt/san/a.mov']);
     check('a table WITHOUT File drop refuses, with a notice pointing at Table settings', await until(() => /not enabled on this table/.test(noticesText())) && (await filesRows()).length === 0 && (await rows(`select 1 from records where table_id = '${tPlain}'`)).length === 0);
     check('…and the overlay is gone', !w.find('.file-drop').exists());
     await w.find('.desk-notice').trigger('click');
 
     await go(tFiles);
+    enter(['/mnt/san/a.mov']);
+    check('over a table WITH File drop it says "Drop to add to Files", in the accent colour', await until(() => /Drop to add to Files/.test(w.find('.file-drop').text())) && w.find('.file-drop').classes('ok'), w.find('.file-drop').text());
+    dropCb!({ payload: { type: 'leave' } });
     calls.length = 0;
     const before = Number((await rows(`select coalesce(max(seq), 0) n from mutations`))[0].n);
     drop(['/mnt/san/a.mov', '/mnt/san/mix.wav']);
