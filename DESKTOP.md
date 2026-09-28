@@ -89,10 +89,13 @@ tool, a new output — and `tools_available` reports its version so the page can
 
 In the order most likely to be wrong:
 
-1. **The window opens and shows the login page** from your HTTPS server. If the page
-   is blank: WebKitGTK does not trust the certificate (Caddy's internal CA needs
-   `security.pki.certificateFiles` on NixOS / `update-ca-trust` on Rocky), or the
-   compositing env var in the flake's shellHook is wrong for your GPU.
+1. **The window opens and shows the login page** from your HTTPS server. Seen so far
+   (Sept 27): "TLS support not available" — glib-networking missing from the dev
+   shell's environment; fixed by exporting `GIO_EXTRA_MODULES` in the shellHook. If
+   the page is blank or shows a certificate error next: WebKitGTK does not trust the
+   certificate (Caddy's internal CA needs `security.pki.certificateFiles` on NixOS /
+   `update-ca-trust` on Rocky; the shell points `SSL_CERT_FILE` at the system bundle),
+   or the compositing env var in the shellHook is wrong for your GPU.
 2. **Native calls work from the served page**: a `⤴ show` button appears in the
    record panel on a file record, and clicking it opens the file manager. If the
    button is there but nothing happens, the runtime capability (`grant`) did not

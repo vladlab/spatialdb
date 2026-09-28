@@ -33,11 +33,21 @@
             pkg-config gobject-introspection wrapGAppsHook3
             openssl libsoup_3 webkitgtk_4_1 gtk3 glib cairo pango gdk-pixbuf atk harfbuzz
             gsettings-desktop-schemas dconf xdg-utils librsvg
+            glib-networking cacert
             ffmpeg
           ];
           shellHook = ''
             export PATH="$PWD/node_modules/.bin:$PATH"
             export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS"
+            # HTTPS in the webview: libsoup takes TLS from GIO modules (glib-networking),
+            # which a packaged app gets from wrapGAppsHook and a bare `cargo run` does
+            # not — hence "TLS support not available" on the first try. Unlike viznotes,
+            # this app loads its whole UI over HTTPS, so this is not optional.
+            export GIO_EXTRA_MODULES="${pkgs.glib-networking}/lib/gio/modules''${GIO_EXTRA_MODULES:+:$GIO_EXTRA_MODULES}"
+            # The trust store the webview verifies the server against. On NixOS
+            # /etc/ssl/certs/ca-certificates.crt includes security.pki.certificateFiles,
+            # so a Caddy-internal-CA root added there is trusted here too.
+            export SSL_CERT_FILE="''${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}"
             # WebKitGTK on Wayland/Sway: the DMA-BUF renderer is unreliable in some setups —
             # the vcompare_imf/viznotes workaround. Remove if the window renders fine.
             export WEBKIT_DISABLE_DMABUF_RENDERER=1
