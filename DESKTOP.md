@@ -102,7 +102,9 @@ In the order most likely to be wrong:
    match the origin — `SPATIALDB_URL` and the address the page was served from must
    agree exactly (scheme, host, port).
 3. **Dropping a file on the Files grid** creates a record, then fills in probe data.
-   Watch the notices at bottom right.
+   Watch the notices at bottom right. Seen (Sept 27): every drop refused as "was not
+   dropped onto this window" — the allowlist listened on the WEBVIEW event, which
+   never fires for a window-filling webview; it is a WINDOW event. Fixed in `lib.rs`.
 4. **Drop position on a canvas**: the card should land under the pointer. If it
    lands scaled away from it, the devicePixelRatio correction in `desktop.ts` is
    wrong for your display (the viznotes lesson, unverifiable headlessly).

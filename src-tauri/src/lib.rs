@@ -29,7 +29,7 @@
 mod tools;
 
 use std::{fs, path::{Path, PathBuf}, sync::Mutex};
-use tauri::{AppHandle, Manager, State, WebviewEvent, WebviewUrl, WebviewWindowBuilder, DragDropEvent};
+use tauri::{AppHandle, DragDropEvent, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 /// Paths the user has dropped this session: the roots a reading command may touch.
 #[derive(Default)]
@@ -103,10 +103,14 @@ fn open_main(app: &AppHandle, url: WebviewUrl) -> Result<(), String> {
         .min_inner_size(700.0, 450.0)
         .build().map_err(|e| e.to_string())?;
     let handle = app.clone();
-    w.on_webview_event(move |e| {
-        // The same native event the page receives as `onDragDropEvent`; here it
-        // feeds the allowlist, so a path is readable exactly when a person dropped it.
-        if let WebviewEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = e {
+    // The same native event the page receives as `onDragDropEvent`; here it feeds
+    // the allowlist, so a path is readable exactly when a person dropped it.
+    // A WINDOW event, not a webview event: for a webview that fills its window wry
+    // synthesizes `WindowEvent::DragDrop` (tauri-runtime-wry, `WebviewKind::
+    // WindowContent`) and `on_webview_event` never fires. The first real drop
+    // (Sept 27) found that out: every path was "not dropped onto this window".
+    w.on_window_event(move |e| {
+        if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = e {
             handle.state::<Allowed>().add(paths);
         }
     });
