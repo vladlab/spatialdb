@@ -33,6 +33,7 @@ import { lookupConfigError, type LookupFieldInfo } from '../contract/lookups.js'
 import { backlinkConfigError } from '../contract/backlinks.js';
 import { arrowStyleError } from '../contract/arrows.js';
 import { compareConfigError } from '../contract/compare.js';
+import { SYSTEM_FIELD_TYPES, isSystemKey } from '../contract/systemFields.js';
 import { assetIdsIn } from '../contract/richtext.js';
 import { membershipError } from '../contract/scope.js';
 import { shapeOptionError } from '../contract/shapes.js';
@@ -336,6 +337,8 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
       return;
 
     case 'field.create':
+      if (SYSTEM_FIELD_TYPES.has(m.fieldType)) throw new MutationError(`'${m.fieldType}' is a system field type — every table has it already`);
+      if (isSystemKey(m.key)) throw new MutationError(`a field key may not start with '_' (reserved for system fields)`);
       assertArrowStyleValid(m.options);
       if (m.fieldType === 'link') await assertCompareValid(db, m.tableId, m.options);
       if (m.fieldType === 'structured') { const err = shapeOptionError(m.options); if (err) throw new MutationError(err); }
@@ -408,6 +411,8 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
 
     /* ── records ── */
     case 'record.create':
+      // Reserved keys (system fields the client folded into data) are never written.
+      for (const k of Object.keys(m.data)) if (isSystemKey(k)) delete (m.data as Record<string, unknown>)[k];
       // Against the TABLE, since the record does not exist yet. This is the
       // check that used to be a no-op.
       await assertFieldKeysExistForTable(db, m.tableId, Object.keys(m.data));
@@ -420,6 +425,8 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
       return;
 
     case 'record.update': {
+      for (const k of Object.keys(m.set)) if (isSystemKey(k)) delete (m.set as Record<string, unknown>)[k];
+      m.unset = m.unset.filter((k) => !isSystemKey(k));
       const keys = [...Object.keys(m.set), ...m.unset];
       await assertFieldKeysExist(db, m.id, keys);
       {

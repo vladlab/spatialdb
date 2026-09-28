@@ -832,6 +832,19 @@ async function main() {
   check('a structured value is found by search through the record\'s other text, and the mutation log holds the value once',
     (await pool.query(`select count(*)::int n from mutations where payload::text like '%ep101_L.wav%'`)).rows[0].n === 1);
 
+  console.log('\nG12. System fields: Created and Created by');
+  const sysT = randomUUID(), sysName = randomUUID(), sysRec = randomUUID();
+  await mutate([{ type: 'table.create', id: sysT, name: 'Sys' }, { type: 'field.create', id: sysName, tableId: sysT, name: 'Name', key: 'name', fieldType: 'text' },
+    { type: 'record.create', id: sysRec, tableId: sysT, data: { name: 'one', _created_at: '1999-01-01T00:00:00Z', _created_by: 'Mallory' } }]);
+  const sysPage: any = await (await fetch(`${API}/api/tables/${sysT}/records`)).json();
+  const sysGot = sysPage.records.find((r: any) => r.id === sysRec);
+  check('a loaded record carries created_at and the creator\'s NAME (from users), beside its data', !!sysGot && typeof sysGot.created_at === 'string' && !/1999/.test(sysGot.created_at) && 'created_by_name' in sysGot, JSON.stringify(sysGot));
+  check('reserved "_" keys sent in a write are STRIPPED, never stored — a client cannot forge a creation date', !('_created_at' in sysGot.data) && !('_created_by' in sysGot.data), JSON.stringify(sysGot.data));
+  check('…the same on update', (await mutate([{ type: 'record.update', id: sysRec, set: { _created_at: '1999-01-01' }, unset: ['_created_by'] }])).status === 200
+    && !('_created_at' in (await pool.query(`select data from records where id = $1`, [sysRec])).rows[0].data));
+  check('a field of a system TYPE cannot be created — every table has it already', (await mutate([{ type: 'field.create', id: randomUUID(), tableId: sysT, name: 'X', key: 'x', fieldType: 'created_at' }])).status === 400);
+  check('a user field key may not start with "_"', (await mutate([{ type: 'field.create', id: randomUUID(), tableId: sysT, name: 'X', key: '_x', fieldType: 'text' }])).status === 400);
+
   console.log('\nG11. Comparing links on the server');
   const cT = randomUUID(), cD = randomUUID(), cCodecF = randomUUID(), cCodecD = randomUUID(), cLink = randomUUID(), cF = randomUUID(), cS = randomUUID();
   await mutate([{ type: 'table.create', id: cT, name: 'CFiles' }, { type: 'table.create', id: cD, name: 'CSpecs' },

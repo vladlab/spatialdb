@@ -234,7 +234,7 @@
               <span v-if="schema.isPrimary(f.id)" class="star" title="Primary field: records in this table are named by it">★</span>
               <span class="th-name">{{ f.name }}</span>
               <span v-if="sortMark(f.id)" class="mark">{{ sortMark(f.id) }}</span>
-              <button class="th-menu" title="Field settings" @click.stop="menuFor = menuFor === f.id ? '' : f.id">⚙</button>
+              <button v-if="!SYSTEM_FIELD_TYPES.has(f.type)" class="th-menu" title="Field settings" @click.stop="menuFor = menuFor === f.id ? '' : f.id">⚙</button>
               <!-- The SAME controls as the schema tab's rows — see schemaActions.ts. -->
               <Popover v-if="menuFor === f.id" :anchor="headerEls.get(f.id)" @close="menuFor = ''">
                 <FieldSettings layout="stack" :store="store" :actions="schema" :field="f"
@@ -340,7 +340,7 @@
                       <span v-if="lookupOf(r.id, f) === null" class="broken" title="This lookup is broken: the link field it follows, or the field it shows, was deleted. Undo that delete, or delete this field.">broken lookup</span>
                       <span v-else class="value looked-up" title="Looked up — edit it on the linked record">{{ lookupOf(r.id, f)!.join(', ') }}</span>
                     </template>
-                    <span v-else class="value" :class="{ num: f.type === 'number' }">{{ formatNumberField(f, r.data[f.key]) ?? display(r.data[f.key]) }}</span>
+                    <span v-else class="value" :class="{ num: f.type === 'number' }">{{ f.type === 'created_at' ? formatCreated(r.data[f.key]) : formatNumberField(f, r.data[f.key]) ?? display(r.data[f.key]) }}</span>
                     <!-- The comparison's verdict on this cell — the same ✓ / ⚠ as the tray and cards. -->
                     <span v-if="verdictOf(r.id, f.id)" class="cell-verdict" :class="{ ok: verdictOf(r.id, f.id)!.ok }" :title="verdictOf(r.id, f.id)!.title">{{ verdictOf(r.id, f.id)!.ok ? '✓' : '⚠' }}</span>
                   </span>
@@ -363,7 +363,7 @@
           <tr v-if="padBottom" aria-hidden="true"><td :colspan="shown.length + 3" :style="{ height: padBottom + 'px', padding: 0, border: 0 }" /></tr>
         </tbody>
       </table>
-      <p v-if="!allFields.length" class="hint">This table has no fields yet — press + in the header to add one.</p>
+      <p v-if="!ownFields.length" class="hint">This table has no fields yet — press + in the header to add one.</p>
       <p v-else-if="!matched.length && load?.state === 'loaded'" class="hint">
         <template v-if="total">No records match this view.</template>
         <template v-else-if="scopeInfo.scoped && everything.length">Nothing {{ scopeInfo.note }} — {{ everything.length.toLocaleString() }} across all of them. Widen the scope in the breadcrumb.</template>
@@ -398,6 +398,7 @@ import { ask, confirmDialog } from '../dialogs';
 import { richTextToPlain } from '../../contract/richtext';
 import { formatNumberField, shapeOf, summarise as summariseValue } from '../../contract/shapes';
 import { addLink as addLinkVia } from '../links';
+import { SYSTEM_FIELD_TYPES, formatCreated } from '../../contract/systemFields';
 import KanbanView from './KanbanView.vue';   // (`summarise` here is the VIEW's summary)
 import { beginRecordDrag } from '../recordDrag';
 
@@ -706,6 +707,9 @@ async function create(context: { data?: Record<string, unknown>; links?: Array<{
   startEdit(id, firstField);
 }
 
+/** The table's OWN fields — without Created / Created by, which every table has. */
+const ownFields = computed(() => allFields.value.filter((f) => !SYSTEM_FIELD_TYPES.has(f.type)));
+
 /* ── comparison verdicts per cell (derived; cached per render pass) ── */
 // Computed over the VISIBLE rows only, so it re-runs when a value or link changes and
 // costs nothing for rows that are scrolled away.
@@ -859,7 +863,7 @@ function onCellDown(rec: string, f: FieldRow, e: MouseEvent) {
 }
 
 function startEdit(rec: string, f: FieldRow, withSeed?: string) {
-  if (f.type === 'lookup' || f.type === 'backlink') return;
+  if (f.type === 'lookup' || f.type === 'backlink' || SYSTEM_FIELD_TYPES.has(f.type)) return;
   select(rec, f.id);
   // No room for these in a row: their editor is the record panel.
   if (f.type === 'rich_text' || f.type === 'attachment' || f.type === 'structured') { emit('open-record', rec); return; }
@@ -958,7 +962,7 @@ function onGridKey(e: KeyboardEvent) {
       // Links are rows, not a value; "clear" there would mean deleting N links on
       // one keypress. Use the × on each chip.
       // …and one keypress must not wipe a whole document or a set of files.
-      if (['link', 'lookup', 'backlink', 'rich_text', 'attachment', 'structured'].includes(f.type)) return;
+      if (['link', 'lookup', 'backlink', 'rich_text', 'attachment', 'structured', 'created_at', 'created_by'].includes(f.type)) return;
       e.preventDefault();
       if (store.state.records.get(s.rec)?.data[f.key] !== undefined) unsetValue(s.rec, f.key);
       return;

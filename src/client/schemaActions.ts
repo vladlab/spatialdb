@@ -20,6 +20,7 @@ import { backlinkConfigError, backlinkSourceOf } from '../contract/backlinks';
 import { arrowStyleOf, type ArrowStyle } from '../contract/arrows';
 import { isMembership } from '../contract/scope';
 import { FILES_STANDARD_FIELDS, shapeOptionError } from '../contract/shapes';
+import { SYSTEM_FIELD_TYPES } from '../contract/systemFields';
 import { choicesOf as contractChoices } from '../contract/values';
 import { vocabularyOptionError } from '../contract/vocab';
 import { REQUIRED, analyzerOf, defaultRecipe, fieldAccepts, toolsProblem, type Output, type TablesTools } from '../contract/tools';
@@ -71,7 +72,10 @@ export function ownChoices(f: { options?: Record<string, unknown> | null }): str
 }
 
 export function useSchemaActions(store: Store) {
-  const fields = (tableId: string) => fieldsOf(store.state, tableId);
+  // The table's OWN fields: the schema actions reorder, rename and delete these. The
+  // system fields (Created, Created by — contract/systemFields.ts) are not schema, and
+  // counting them here once renumbered a table's real fields above 1,000,000.
+  const fields = (tableId: string) => fieldsOf(store.state, tableId).filter((f) => !SYSTEM_FIELD_TYPES.has(f.type));
 
   /* ── lookups ─────────────────────────────────────────────────────────── */
 

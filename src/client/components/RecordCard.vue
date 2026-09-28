@@ -227,7 +227,7 @@ function onPointerDown(e: PointerEvent) {
   box-sizing: border-box; height: var(--title-h); padding: 0 8px 0 4px;
   font-weight: 600; color: var(--text-primary);
 }
-.card-fold { color: var(--text-muted); font-size: 10px; width: 14px; }
+.card-fold { color: inherit; opacity: 0.7; font-size: 10px; width: 14px; }
 .card-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-label.empty { color: var(--text-faint); font-weight: 400; font-style: italic; }
 

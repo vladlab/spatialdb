@@ -78,6 +78,8 @@ export const FIELD_TYPES = [
   'rich_text',
   'attachment',
   'structured',
+  'created_at',      // SYSTEM (contract/systemFields.ts): never a row in `fields`; refused on field.create
+  'created_by',
 ] as const;
 
 const TableCreate = z.strictObject({

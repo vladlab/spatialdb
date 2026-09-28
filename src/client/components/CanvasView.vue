@@ -217,6 +217,7 @@ import { confirmDialog } from '../dialogs';
 import { SCOPE } from '../scope';
 import { isEmptyRichText, richTextToPlain } from '../../contract/richtext';
 import { formatNumberField, shapeOf, summarise } from '../../contract/shapes';
+import { formatCreated } from '../../contract/systemFields';
 import { beginRecordDrag, registerDropTarget } from '../recordDrag';
 import { arrowStyleOf, type ArrowStyle } from '../../contract/arrows';
 import { backlinkSourceOf } from '../../contract/backlinks';
@@ -282,6 +283,7 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
     return { id: f.id, name: f.name, text: n ? `${n} file${n === 1 ? '' : 's'}` : '' };
   }
   const v = rec.data[f.key];
+  if (f.type === 'created_at') return { id: f.id, name: f.name, text: formatCreated(v), derived: true };
   const formatted = formatNumberField(f, v);
   if (formatted !== null) return { id: f.id, name: f.name, text: formatted };
   const text = v === undefined || v === null || v === '' ? ''

@@ -170,7 +170,7 @@ async function main() {
   check('the key was derived from the name without being typed (it is behind "advanced")',
     !gridPop().find('input.key').exists());
   await gridPop().trigger('keydown', { key: 'Escape' });
-  check('three columns, in the order they were added', await until(() => ths().join() === 'Name,Frames,Status'), ths().join());
+  check('three columns, in the order they were added — then the two SYSTEM columns every table has', await until(() => ths().join() === 'Name,Frames,Status,Created,Created by'), ths().join());
 
   const savedRows = await untilDb(
     `select f.key, f.type, f.options from fields f join tables t on t.id = f.table_id
@@ -184,7 +184,7 @@ async function main() {
     JSON.stringify(saved.rows[2]?.options));
 
   console.log('\nU3. The grid for the new table');
-  check('with a column per field', ths().join() === 'Name,Frames,Status', ths().join());
+  check('with a column per field', ths().join() === 'Name,Frames,Status,Created,Created by', ths().join());
   check('a table with no saved view still shows a Grid tab',
     w.find('.gridview .view-menu .view-name').text() === 'Grid', w.find('.gridview .view-menu').text());
   check('and says it is empty rather than looking broken',
@@ -255,12 +255,14 @@ async function main() {
   check('arrows move the selection', selAt() === '1,1', selAt());
   await key('ArrowUp'); await key('ArrowUp'); await key('ArrowUp');
   check('and stop at the edge', selAt() === '0,1', selAt());
+  await key('Tab'); await key('Tab');   // → Created, Created by (the system columns, last)
+  check('Tab reaches the system columns (Created, Created by) at the end of the row', selAt() === '0,3', selAt());
   await key('Tab'); await key('Tab');
   check('Tab off the end of a row wraps to the start of the next', selAt() === '1,0', selAt());
   await key('Tab', { shiftKey: true });
-  check('Shift+Tab wraps back', selAt() === '0,2', selAt());
+  check('Shift+Tab wraps back — to the LAST column, which is now Created by', selAt() === '0,4', selAt());
   await key('ArrowDown'); await key('ArrowDown'); await key('ArrowDown');
-  check('ArrowDown on the last row does nothing', selAt() === '2,2' && rowsNow().length === 3, selAt());
+  check('ArrowDown on the last row does nothing', selAt() === '2,4' && rowsNow().length === 3, selAt());
 
   console.log('\nU4c. What gets written, and what must not');
   await untilDb(`select data from records`, (r) => r.length === 3 && r.every((x) => x.data.status));
@@ -388,7 +390,8 @@ async function main() {
     await until(() => picker().exists()) && (picker().find('input').element as HTMLInputElement).value === 'b'
     && options().join() === 'Beta', options().join());
   await pkey('Tab');
-  check('Tab closes it and moves on (wrapping to the next row)', !picker().exists() && selAt() === '1,0', selAt());
+  check('Tab closes it and moves on to the next column', !picker().exists() && selAt().startsWith('0,') && Number(selAt().split(',')[1]) === LINK + 1, `${selAt()} (link col ${LINK})`);
+  await key('Escape');
 
   console.log('\nU5. Sorting from a column header');
   const header = (name: string) => w.findAll('.gridview thead th').find((t) => t.text().includes(name))!;
@@ -437,7 +440,7 @@ async function main() {
   check('the "+" header opens the add-field form — the SAME component as the schema tab',
     gridPop().exists() && gridPop().find('.field-form').exists());
   await addField('Frame Rate', 'number', undefined, gridPop());
-  check('the new column appears, last', await until(() => ths().at(-1) === 'Frame Rate'), ths().join());
+  check('the new column appears last among the table\'s OWN fields (the system columns stay after it)', await until(() => ths().at(-3) === 'Frame Rate' && ths().slice(-2).join() === 'Created,Created by'), ths().join());
   const fr = await untilDb(`select key, position from fields where name = 'Frame Rate'`, (r) => r.length === 1);
   const maxOther = (await pool.query(`select max(f.position) m from fields f join tables t on t.id = f.table_id where t.name = 'Files' and f.name <> 'Frame Rate'`)).rows[0].m;
   check('stored with a derived key and a position after every other field',
@@ -563,8 +566,8 @@ async function main() {
   // so counting the server's fields straight away came up one short.
   await untilDb(`select 1 from fields where key = 'notes'`, (r) => r.length === 1);
   const nFields = (await pool.query(`select count(*)::int n from fields where table_id = $1`, [filesId])).rows[0].n;
-  check('it lists every field of the table, primary starred',
-    panel().findAll('.rp-field').length === nFields && pField('Name').find('.star').exists(),
+  check('it lists every field of the table, primary starred — plus the two system fields, last',
+    panel().findAll('.rp-field').length === nFields + 2 && pField('Name').find('.star').exists() && panel().findAll('.rp-name').slice(-2).map((n) => n.text().trim()).join() === 'Created,Created by',
     `${panel().findAll('.rp-field').length} of ${nFields}; names: ${panel().findAll('.rp-name').map((n) => n.text()).join('|')}`);
   check('a record with data opens READING, not editing', !pEditor().exists());
 

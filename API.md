@@ -492,6 +492,19 @@ server refuses a second `link.add` (400); a replacement is `link.remove` + `link
 in one batch, which every client path does (`src/client/links.ts`). Records that
 already link to several are left alone — only adding is refused.
 
+### System fields: Created and Created by
+
+Every table has two read-only fields with NO row in `fields` and no migration
+(`src/contract/systemFields.ts`): **Created** (`records.created_at`) and **Created by**
+(the creator's name, from `records.created_by`). `GET /api/tables/:id/records` returns
+`created_at` and `created_by_name` beside each record; the client folds them into
+`data` under the reserved keys `_created_at` / `_created_by` and synthesises a
+FieldRow per table per field, whose id is the table's uuid with its last group replaced
+(`…00000000c7ea` / `…c7eb`) — stable and uuid-shaped, so a saved view can sort or
+filter by it. On any write the server STRIPS reserved keys (a client cannot forge a
+creation date), refuses `field.create` with a system type or a key starting with `_`.
+They appear last in field order, in the grid, tray, cards and reports; nothing edits them.
+
 ### The built-in Grid view
 
 Every table has a permanent default view, "Grid": first in the list, not deletable

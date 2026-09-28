@@ -32,7 +32,7 @@
     <!-- COMPARISONS (COMPARE-BRIEF.md): for each comparing link this record has, and
          each record it links to through it — a verdict, "side by side", and "seed
          from". Derived, live; nothing here is stored. -->
-    <div v-if="comparisons.length" class="rp-compare">
+    <div v-if="comparisons.length" class="rp-compare rp-well">
       <div v-for="c in comparisons" :key="c.link.id + c.target" class="rp-cmp" :class="{ same: c.result?.same }">
         <span class="rp-cmp-verdict">{{ c.result ? (c.result.same ? '✓' : '✗') : '…' }}</span>
         <span class="rp-cmp-text"><b>{{ c.link.name }}</b> → {{ c.targetLabel }}<template v-if="c.result && !c.result.same">: {{ c.diffs }} difference{{ c.diffs === 1 ? '' : 's' }}</template></span>
@@ -42,7 +42,12 @@
       <SideBySide v-if="sideBySide" :store="store" :link-id="sideBySide.linkId" :owner-id="recordId" :target-id="sideBySide.target" @close="sideBySide = null" />
     </div>
 
+    <!-- The tray reads like the tree: each SECTION is a recessed WELL (the comparison
+         strip; the record's own fields), and "Referenced by" — automatic, not the
+         record's data — sits outside, below. The darker well behind the fields is
+         what makes them read without a font change. -->
     <div class="rp-body">
+      <div class="rp-well rp-fields">
       <div v-for="f in fields" :key="f.id" class="rp-field" :class="{ editing: editingId === f.id, block: f.type === 'rich_text' }">
         <label class="rp-name">
           <span v-if="f.id === primaryId" class="star" title="Primary field — this record's name">★</span>{{ f.name }}
@@ -117,10 +122,11 @@
             <span v-if="f.type === 'multi_select'" class="chips">
               <span v-for="c in asList(record.data[f.key])" :key="c" class="chip plain">{{ c }}</span>
             </span>
-            <span v-else class="text" :class="{ pre: f.type === 'long_text' }">{{ formatNumberField(f, record.data[f.key]) ?? display(record.data[f.key]) }}</span>
+            <span v-else class="text" :class="{ pre: f.type === 'long_text' }">{{ f.type === 'created_at' ? formatCreated(record.data[f.key]) : formatNumberField(f, record.data[f.key]) ?? display(record.data[f.key]) }}</span>
             <span v-if="isEmpty(record.data[f.key])" class="placeholder">empty</span>
           </template>
         </div>
+      </div>
       </div>
       <!-- EVERYTHING that points at this record, whether or not the table has a
            backlink field for it. A record's role — output of what, input to what —
@@ -162,6 +168,7 @@ import { formatNumberField } from '../../contract/shapes';
 import { addLink as addLinkVia } from '../links';
 import { beginRecordDrag } from '../recordDrag';
 import { compareOf, seedValues } from '../../contract/compare';
+import { SYSTEM_FIELD_TYPES, formatCreated, isSystemKey } from '../../contract/systemFields';
 import SideBySide from './SideBySide.vue';
 
 // Loaded ON DEMAND. TipTap + ProseMirror are most of a megabyte of source, and
@@ -262,7 +269,7 @@ const linksFrom = (fieldId: string) => derived.linksFrom(props.recordId, fieldId
 const lookupOf = (f: FieldRow) => derived.lookupOf(props.recordId, f);
 const targetOf = (f: FieldRow) => f.options?.target_table_id as string | undefined;
 const referencedBy = computed(() => derived.referencedBy(props.recordId));
-const READONLY = (f: FieldRow) => f.type === 'lookup' || f.type === 'backlink';
+const READONLY = (f: FieldRow) => f.type === 'lookup' || f.type === 'backlink' || SYSTEM_FIELD_TYPES.has(f.type);
 
 /* ── editing ──────────────────────────────────────────────────────────── */
 
@@ -327,7 +334,7 @@ watch(() => props.recordId, () => {
   editingId.value = '';
   void nextTick(() => {
     const r = record.value;
-    if (!r || Object.keys(r.data).length) return;
+    if (!r || Object.keys(r.data).some((k) => !isSystemKey(k))) return;   // (the folded-in system keys do not count as data)
     const first = fields.value.find((f) => f.id === primaryId.value) ?? fields.value.find(EDITABLE);
     if (first) startEdit(first);
   });
@@ -356,8 +363,11 @@ watch(() => props.recordId, () => {
 .rp-close { grid-column: 3; grid-row: 1 / span 2; background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; }
 .rp-close:hover { color: var(--text-primary); }
 
-.rp-body { flex: 1; overflow-y: auto; padding: 8px 12px; }
-.rp-compare { padding: 6px 12px 0; border-bottom: 1px solid var(--border-main); }
+.rp-body { flex: 1; overflow-y: auto; padding: 8px 10px; }
+/* A WELL, as in the tree (NavTree.vue): recessed, an accent rule down the left. */
+.rp-well { background: rgba(0, 0, 0, 0.28); border-radius: 6px; border-left: 2px solid var(--accent); padding: 6px 10px 8px; }
+.rp-compare { margin: 8px 10px 0; }
+.rp-fields { }
 .rp-cmp { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 3px 0; }
 .rp-cmp-verdict { font-weight: 700; color: var(--danger); width: 14px; }
 .rp-cmp.same .rp-cmp-verdict { color: var(--success); }
@@ -398,7 +408,7 @@ watch(() => props.recordId, () => {
   padding: 1px 8px;
 }
 .chip.back:hover { border-color: var(--accent); color: var(--text-primary); }
-.rp-refs { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border-main); }
+.rp-refs { margin-top: 14px; padding: 0 2px; }
 .rp-refs h3 { margin: 0 0 6px; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
 .rp-ref { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 3px 0; }
 .rp-ref-via { color: var(--text-muted); font-size: 11px; margin-right: 4px; }

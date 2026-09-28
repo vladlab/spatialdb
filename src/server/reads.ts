@@ -287,16 +287,16 @@ async function loadRecordsIn(
   // that, because nothing happened to the skipped row. test/grid.ts shows both.
   const { rows } = after
     ? await db.query(
-        `select id, table_id, data, created_at, updated_at, created_at::text as _ts
-           from records
-          where table_id = $1 and (created_at, id) > ($3::timestamptz, $4::uuid)
+        `select r.id, r.table_id, r.data, r.created_at, r.updated_at, r.created_at::text as _ts, u.name as created_by_name
+           from records r left join users u on u.id = r.created_by
+          where r.table_id = $1 and (r.created_at, r.id) > ($3::timestamptz, $4::uuid)
           order by created_at, id
           limit $2`,
         [tableId, limit + 1, after[0], after[1]])
     : await db.query(
-        `select id, table_id, data, created_at, updated_at, created_at::text as _ts
-           from records where table_id = $1
-          order by created_at, id
+        `select r.id, r.table_id, r.data, r.created_at, r.updated_at, r.created_at::text as _ts, u.name as created_by_name
+           from records r left join users u on u.id = r.created_by where r.table_id = $1
+          order by r.created_at, r.id
           limit $2 offset $3`,
         [tableId, limit + 1, offset]);
 

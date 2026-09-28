@@ -168,7 +168,7 @@ function partA() {
   const casc = emptyState();
   for (const m of script) applyMutation(casc, m);
   check('deleted table left no fields behind',
-    fieldsOf(casc, ids.tableA).length === 3 && [...casc.fields.values()].every((f) => casc.tables.has(f.table_id)));
+    fieldsOf(casc, ids.tableA).length === 5 && [...casc.fields.values()].every((f) => casc.tables.has(f.table_id)));   // 3 of its own + Created, Created by
   check('deleted table left no records behind',
     [...casc.records.values()].every((r) => casc.tables.has(r.table_id)));
   check('deleted canvas left no placements behind',

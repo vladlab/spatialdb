@@ -1002,6 +1002,20 @@ red-checked. Also: the layout editor now writes nothing when nothing changed (a 
 re-typed as it was) — a no-op mutation is a log row, a broadcast and an undo step
 that visibly does nothing.
 
+### System fields, and the tray as wells (Sept 29)
+
+- **1. Created / Created by** — see API.md. Decided as VIRTUAL rather than rows in
+  `fields`: `records.created_by` already existed, so it is a read-side join plus a
+  client fold and two synthesised FieldRows, with no migration and nothing for
+  `table.create` to do. Found on the way: the field-reorder actions counted the
+  synthesised fields (position 1e6) and renumbered a table's real fields above a
+  million; the tray's "open a new record editing" test took the folded keys for
+  data. Both fixed at the source (`schemaActions.fields()`, `isSystemKey`).
+- **The tan bug**: the text-flip used a 0.5 luminance midpoint; a tan at 0.49 kept white
+  text. Now: whichever of black/white has the higher contrast ratio (crossover 0.179).
+- **The tray as wells**, like the tree: the comparison strip and the record's fields
+  each in a recessed well; "Referenced by" outside, below.
+
 ### Canvas pass (Sept 28): arrows from the card, focus dimming, vertical link lists
 
 The owner's list of eight, done in dependency order. This step is the canvas half:

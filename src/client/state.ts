@@ -39,6 +39,7 @@
  *  local and server apply must agree, or clients converge on the wrong answer.
  */
 
+import { SYSTEM_FIELDS, systemFieldId } from '../contract/systemFields';
 import type { Mutation } from '../contract/mutations.js';
 import { compareFields, labelFrom, primaryKeyOf } from '../contract/labels.js';
 
@@ -579,6 +580,10 @@ export function ingestPage(
   let taken = 0;
   for (const r of page.records) {
     if (newer(`r:${r.id}`)) continue;
+    // System fields (contract/systemFields.ts) folded into data under reserved keys.
+    const raw = r as RecordRow & { created_at?: string; created_by_name?: string | null };
+    if (raw.created_at !== undefined) r.data._created_at = raw.created_at;
+    if (raw.created_by_name !== undefined) r.data._created_by = raw.created_by_name ?? '';
     state.records.set(r.id, r);
     taken++;
   }
@@ -655,9 +660,22 @@ export function ingestScene(
  * ──────────────────────────────────────────────────────────────────────────*/
 
 export function fieldsOf(state: State, tableId: string): FieldRow[] {
-  return [...state.fields.values()]
+  const own = [...state.fields.values()]
     .filter((f) => f.table_id === tableId)
     .sort(compareFields);   // the ONE field order — see contract/labels.ts
+  return state.tables.has(tableId) ? [...own, ...systemFieldsOf(tableId)] : own;
+}
+
+/**
+ * "Created" and "Created by": every table has them, LAST, read-only, with no row in
+ * `fields` (contract/systemFields.ts). Made fresh per call — cheap, and `fieldsOf` is
+ * already what everything reads.
+ */
+export function systemFieldsOf(tableId: string): FieldRow[] {
+  return SYSTEM_FIELDS.map((f, i) => ({
+    id: systemFieldId(tableId, f.suffix), table_id: tableId, name: f.name, key: f.key, type: f.type,
+    options: {}, position: 1e6 + i, required: false,
+  }));
 }
 
 export function recordsOf(state: State, tableId: string): RecordRow[] {

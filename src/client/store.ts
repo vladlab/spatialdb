@@ -216,6 +216,14 @@ export function createStore(opts: StoreOptions = {}) {
     const id = crypto.randomUUID();
     // BEFORE applying: the inverse is read off the state this is about to change.
     if (mutation.type !== 'restore' && options.undoable !== false) record(inverseOf(state, mutation, id));
+    // A new record's SYSTEM FIELDS, as this client knows them: created now, by whoever
+    // is signed in. Put on the mutation itself (not in the pure apply, which must give
+    // the same state however many times it runs); the server strips these keys.
+    if (mutation.type === 'record.create') {
+      const d = mutation.data as Record<string, unknown>;
+      if (d._created_at === undefined) d._created_at = new Date().toISOString();
+      if (d._created_by === undefined) d._created_by = me.value?.name ?? me.value?.email ?? '';
+    }
     applyMutation(state, mutation);
     touch(mutation, Infinity);   // see loadTable: a page must not revert this
     pending.value.push(options.via ? { id, mutation, via: options.via } : { id, mutation });

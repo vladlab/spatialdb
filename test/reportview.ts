@@ -125,8 +125,8 @@ async function main() {
     check('the tray shows the report field as an EDITOR, with "edit as JSON…" still underneath', ed().exists() && w.find('.record-panel .edit-json').exists());
     const rootEd = () => ed().find('.rl.root');
     await rootEd().find('select.rl-table').setValue(tFiles);
-    await until(() => rootEd().findAll('.rl-field').length === 5);
-    check('picking the root table lists its fields to show, and gives the level an id from the table\'s name', rootEd().findAll('.rl-field').map((x: any) => x.text().trim()).join() === 'Name,Path,Status,Work,Deliverable' && rootEd().find('.rl-id').text() === 'files');
+    await until(() => rootEd().findAll('.rl-field').length === 7);
+    check('picking the root table lists its fields to show — the system fields Created / Created by included — and gives the level an id from the table\'s name', rootEd().findAll('.rl-field').map((x: any) => x.text().trim()).join() === 'Name,Path,Status,Work,Deliverable,Created,Created by' && rootEd().find('.rl-id').text() === 'files');
     const tick = async (scope: any, label: string, on = true) => { const l = scope.findAll('.rl-field, .rl-via').find((x: any) => x.find('.rl-via-name').exists() ? x.find('.rl-via-name').text() === label : x.text().trim() === label)!; await l.find('input[type="checkbox"]').setValue(on); };
     await tick(rootEd(), 'Path'); await tick(rootEd(), 'Status');
     await rootEd().find('.add-filter').trigger('click');

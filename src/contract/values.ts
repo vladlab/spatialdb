@@ -153,6 +153,11 @@ export function validateValue(field: FieldShape, value: unknown): string | null 
       const i = r.error.issues[0];
       return `'${field.key}' (report) — ${i.path.length ? i.path.join('.') + ': ' : ''}${i.message}`;
     }
+    case 'created_at':
+    case 'created_by':
+      // System fields are folded in by the client and stripped by the server; a value
+      // never reaches validation. Read-only everywhere.
+      return `'${field.key}' is a system field and cannot be set`;
 
     case 'backlink':
       return `'${field.key}' is a backlink — it shows links made elsewhere; add the link on the other record`;
