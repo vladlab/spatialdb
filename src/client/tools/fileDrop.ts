@@ -1,36 +1,37 @@
 /**
- * File drop — the first desktop tool (contract/tools.ts FILE_DROP).
- *
- * Three stages, all ordinary mutations tagged `via: "file_drop"`:
+ * File drop — the first desktop tool. It RUNS THE TABLE'S RECIPE (contract/tools.ts):
+ * an ordered list of steps, each an analyzer, what it runs on, and where its
+ * outputs go. Three stages, all ordinary mutations tagged `via: "file_drop"`:
  *
  *   1. CLASSIFY  the shell says what physically arrived (units: file / bundle /
- *                sequence / channel_set). Milliseconds; nothing written yet.
+ *                sequence / channel_set, with a media class). Nothing written yet.
  *   2. CREATE    at once, in ONE synchronous run — one Ctrl+Z for a drop of 45
- *                files: the `file` outputs (path, kind, manifest, size…), the
- *                context links `createRecord` adds (scope, board defaults), and on
- *                a canvas the placements. A unit whose `path` already IS a record
- *                of this table updates that record instead; so does a unit dropped
- *                ONTO a card of this table (a placeholder made before the file
- *                existed).
- *   3. ENRICH    afterwards, per unit: ffprobe outputs, then the hash — each its
- *                own `record.update`, queued `undoable: false` so Ctrl+Z on the
- *                drop takes the probe results with it instead of peeling them off
- *                one at a time.
+ *                files. The IMMEDIATE steps (filesystem, sequence, imf — everything
+ *                the classifier already knows) are applied here, with the context
+ *                links `createRecord` adds (scope, board defaults) and, on a canvas,
+ *                the placements. A unit whose `path` already IS a record of this
+ *                table updates that record instead; so does a unit dropped ONTO a
+ *                card of this table (a placeholder made before the file existed).
+ *   3. ANALYZE   afterwards, per unit, per remaining step that applies to it
+ *                (ffprobe, a hash…) in recipe order — each its own `record.update`,
+ *                queued `undoable: false` so Ctrl+Z on the drop takes the results
+ *                with it instead of peeling them off one at a time.
  *
- * What is written is only what the table's mapping names (Table settings →
- * Desktop tools), and only values `validateValue` accepts: a select output whose
- * value is not one of the field's choices is skipped and reported, never written,
- * never turned into a schema change.
+ * What is written is only what a step's map names, and only values
+ * `validateValue` accepts: a select output whose value is not one of the field's
+ * choices is skipped and reported, never written, never turned into a schema
+ * change.
  *
- * The pure parts (`outputsOf`, `mappedData`) are what test/filedrop.ts pins down;
- * the shell is faked there.
+ * The pure parts (`immediateOutputs`, `mappedData`) are what test/filedrop.ts pins
+ * down; the shell is faked there.
  */
 
 import type { Store, MutateOptions } from '../store';
 import type { FieldRow, RecordRow } from '../state';
+export type { Step };
 import { fieldsOf, recordsOf } from '../state';
 import { validateValue } from '../../contract/values';
-import { FILE_DROP, resolveMap, type TablesTools } from '../../contract/tools';
+import { analyzerOf, resolveMap, stepApplies, type Recipe, type Step, type TablesTools } from '../../contract/tools';
 import { invoke, jobs, notice } from '../desktop';
 import { confirmDialog, askFull } from '../dialogs';
 
@@ -44,26 +45,35 @@ export interface Unit {
   bundle_type: string | null; cpl_title: string | null;
 }
 
-export const VIA: MutateOptions = { via: FILE_DROP.id };
-const FOLLOW_UP: MutateOptions = { via: FILE_DROP.id, undoable: false };
+export const VIA: MutateOptions = { via: 'file_drop' };
+const FOLLOW_UP: MutateOptions = { via: 'file_drop', undoable: false };
+/** Steps the classifier has already answered: applied at creation, no shell call. */
+const IMMEDIATE = new Set(['filesystem', 'sequence', 'imf']);
 /** Above this many units, ask before creating. The shell caps at 500 regardless. */
 export const ASK_ABOVE = 50;
 
 /* ── pure: outputs and mapping ────────────────────────────────────────────── */
 
-/** The `file` (+ sequence / bundle) outputs of a unit — everything known before ffprobe. */
-export function outputsOf(u: Unit): Record<string, unknown> {
-  const o: Record<string, unknown> = {
-    path: u.path, name: u.name, kind: u.kind, manifest: u.manifest, file_count: u.file_count,
-    total_size: u.total_size, extension: u.extension, modified: u.modified, media: u.media,
-  };
-  if (u.kind === 'sequence') {
-    const m = u.manifest as { first: number; last: number; count: number; gaps: [number, number][] };
-    o.first_frame = m.first; o.last_frame = m.last; o.frame_count = m.count;
-    o.gaps = m.gaps.reduce((n, [a, b]) => n + (b - a + 1), 0);
+/** An IMMEDIATE analyzer's outputs for a unit — everything the classifier already knows. */
+export function immediateOutputs(analyzer: string, u: Unit): Record<string, unknown> {
+  switch (analyzer) {
+    case 'filesystem':
+      return { path: u.path, name: u.name, kind: u.kind, manifest: u.manifest, file_count: u.file_count,
+               total_size: u.total_size, extension: u.extension, modified: u.modified, media: u.media };
+    case 'sequence': {
+      if (u.kind !== 'sequence') return {};
+      const m = u.manifest as { first: number; last: number; count: number; gaps: [number, number][] };
+      return { first_frame: m.first, last_frame: m.last, frame_count: m.count, gaps: m.gaps.reduce((n, [a, b]) => n + (b - a + 1), 0) };
+    }
+    case 'imf': {
+      if (u.kind !== 'bundle') return {};
+      const o: Record<string, unknown> = {};
+      if (u.bundle_type) o.bundle_type = u.bundle_type;
+      if (u.cpl_title) o.cpl_title = u.cpl_title;
+      return o;
+    }
+    default: return {};
   }
-  if (u.kind === 'bundle') { if (u.bundle_type) o.bundle_type = u.bundle_type; if (u.cpl_title) o.cpl_title = u.cpl_title; }
-  return o;
 }
 
 /**
@@ -105,7 +115,7 @@ export interface DropContext {
 }
 
 const enabledTables = (store: Store) => [...store.state.tables.values()]
-  .filter((t) => (t.tools as TablesTools | undefined)?.[FILE_DROP.id] && (!t.kind || t.kind === 'records'))
+  .filter((t) => (t.tools as Partial<TablesTools> | undefined)?.file_drop && (!t.kind || t.kind === 'records'))
   .sort((a, b) => a.position - b.position);
 
 /** Which table takes this drop, or null (with the reason already shown). */
@@ -133,11 +143,12 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
   const tableId = await chooseTable(store, target);
   if (!tableId) return;
   const table = store.state.tables.get(tableId)!;
-  const cfg = (table.tools as TablesTools)[FILE_DROP.id];
+  const recipe: Recipe = (table.tools as TablesTools).file_drop!;
   const fields = fieldsOf(store.state, tableId);
-  const map = resolveMap(cfg, fields);
-  const pathKey = map.get('path');
+  const steps = recipe.steps.map((step) => ({ step, map: resolveMap(step, fields) }));
+  const pathKey = steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('path');
   if (!pathKey) { notice(`File drop on ${table.name}: its Path output is mapped to a field that no longer exists`, 'error'); return; }
+  const applying = (u: Unit) => steps.filter(({ step, map }) => map.size && stepApplies(step, u));
 
   let units: Unit[];
   try { units = await invoke<Unit[]>('classify', { paths }); }
@@ -162,8 +173,12 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
   const allSkipped: string[] = [];
   let updated = 0;
   for (const u of units) {
-    const { data, skipped } = mappedData(outputsOf(u), map, fields);
-    allSkipped.push(...skipped);
+    const data: Record<string, unknown> = {};
+    for (const { step, map } of applying(u)) {
+      if (!IMMEDIATE.has(step.analyzer)) continue;
+      const m = mappedData(immediateOutputs(step.analyzer, u), map, fields);
+      Object.assign(data, m.data); allSkipped.push(...m.skipped);
+    }
     const existing = onto && units.length === 1 ? store.state.records.get(onto) : byPath.get(u.path);
     if (existing) {
       store.mutate({ type: 'record.update', id: existing.id, set: data, unset: [] }, VIA);
@@ -184,27 +199,20 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
   notice(`File drop → ${table.name}: ${what}`);
   for (const s of new Set(allSkipped)) notice(`not written — ${s}`, 'warn');
 
-  // ── stage 3: the slow parts, each its own small update, not undoable ──
-  const wantsProbe = FILE_DROP.outputs.some((o) => (o.when === 'video' || o.when === 'audio') && map.has(o.key));
-  const wantsHash = map.has('hash');
+  // ── stage 3: the analyzers that run a program or read the bytes, in recipe
+  //    order, each its own small update, not undoable ──
   for (const { id, unit } of touched) {
-    if (wantsProbe && (unit.probe_target || unit.kind === 'channel_set')) {
-      jobs.set(id, 'probing');
+    for (const { step, map } of applying(unit)) {
+      if (IMMEDIATE.has(step.analyzer)) continue;
+      if (!store.state.records.has(id)) break;   // undone meanwhile: stop, write nothing
+      const a = analyzerOf(step.analyzer);
+      jobs.set(id, a?.program ?? a?.name ?? step.analyzer);
       try {
-        const { outputs } = await invoke<{ outputs: Record<string, unknown> }>('probe', { unit });
+        const { outputs } = await invoke<{ outputs: Record<string, unknown> }>('analyze', { unit, analyzer: step.analyzer });
         const { data, skipped } = mappedData(outputs, map, fields);
         if (Object.keys(data).length && store.state.records.has(id)) store.mutate({ type: 'record.update', id, set: data, unset: [] }, FOLLOW_UP);
-        for (const s of skipped) notice(`${unit.name}: not written — ${s}`, 'warn');
-      } catch (e) { notice(`${unit.name}: ${String(e)}`, 'error'); }
-      jobs.delete(id);
-    }
-    if (wantsHash) {
-      jobs.set(id, 'hashing');
-      try {
-        const hash = await invoke<string>('fingerprint', { unit, algo: 'xxh3' });
-        const { data } = mappedData({ hash }, map, fields);
-        if (store.state.records.has(id)) store.mutate({ type: 'record.update', id, set: data, unset: [] }, FOLLOW_UP);
-      } catch (e) { notice(`${unit.name}: hash — ${String(e)}`, 'error'); }
+        for (const sk of skipped) notice(`${unit.name}: not written — ${sk}`, 'warn');
+      } catch (e) { notice(`${unit.name}: ${a?.name ?? step.analyzer} — ${String(e)}`, 'error'); }
       jobs.delete(id);
     }
   }

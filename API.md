@@ -342,39 +342,52 @@ Reported most-serious first, each kind only when the ones above it are clean: `c
 (then nothing else), `order`, `grouping` (same channels, same order, contained
 differently), and — only when the grouping matches — `name` / `language` per track.
 
-### Tools: what the desktop client may do to a table
+### Tools: how the desktop client derives data from files
 
-`sql/014`, rules in the twelfth shared contract file, **`src/contract/tools.ts`**,
-and `test/tools.ts`. A TOOL is code compiled into the desktop client (file drop;
-later a Resolve timeline reader and QC). **The server never runs one and never
-sends anything to execute.** Its whole knowledge of a tool is that file plus one
-column:
+`sql/014` + `sql/015`, rules in the twelfth shared contract file,
+**`src/contract/tools.ts`**, and `test/tools.ts`. A TOOL is code compiled into the
+desktop client (file drop; later a Resolve timeline reader and QC). **The server
+never runs one and never sends anything to execute.** Its whole knowledge of a
+tool is that file plus one column, `tables.tools`, which for File drop holds a
+RECIPE:
 
 ```jsonc
 // tables.tools — written by table.update { tools }, replaced WHOLE, admin-only
-{ "file_drop": { "map": { "path": "<fieldId>", "width": "<fieldId>", "…": "…" } } }
+{ "file_drop": { "steps": [
+    { "analyzer": "filesystem",                                        "map": { "path": "<fieldId>", "name": "<fieldId>" } },
+    { "analyzer": "ffprobe",   "runs_on": { "media": ["video", "audio"] }, "map": { "width": "<fieldId>" } },
+    { "analyzer": "hash-xxh3",                                         "map": { "hash": "<fieldId>" } } ] } }
 ```
 
-- Presence of a tool's entry means ENABLED. `map` is output key → field id: "the
-  tool's `width` goes into that field". Outputs with no entry are not written.
-- **Validated on write** (`toolsProblem`, the same function the settings UI runs
-  before queueing): the tool and each output must exist by name; each mapped field
-  must be on THIS table and of a type that accepts the output (`text` → text or
-  long_text; `number`, `date`, `checkbox`, `file_path` → the same; `select` → select
-  or text; `structured:<shape>` → a structured field of that shape); the tool's
-  REQUIRED outputs (`path` for file drop) must be mapped; two outputs may not share a
-  field. Strict objects — an unknown key is a 400.
+- An **analyzer** is one compiled unit of derivation, declared in `tools.ts` with
+  the program it runs (or built in), a one-line `how`, a default `runs_on`, and its
+  outputs: `filesystem`, `sequence`, `imf`, `ffprobe`, `hash-xxh3`, `hash-sha256`.
+  Each that runs a program offers its version as an output (`ffprobe.version`) —
+  provenance a table may keep per record. The desktop's handshake reports which
+  analyzers a build has and their versions.
+- A **recipe** is an ordered list of steps. `runs_on` (media class and/or kind;
+  absent = the analyzer's default; `{}` = everything; `other` is the media class
+  everything unrecognised falls into, so nothing is unreachable) says what a step
+  applies to. `map` is output key → field id. Steps run in order and do not feed
+  each other: a list, not a DAG, and DATA, not a script.
+- **Validated on write** (`toolsProblem`, the same function the editor runs before
+  queueing): each step's analyzer and each mapped output must exist by name; each
+  mapped field must be on THIS table and of a type that accepts the output (`text` →
+  text or long_text; `number`, `date`, `checkbox`, `file_path` → the same; `select` →
+  select or text; `structured:<shape>` → a structured field of that shape); `path`
+  on a `filesystem` step must be mapped; two DIFFERENT outputs may not share a
+  field. Strict objects — an unknown key is a 400. `{}` disables everything.
 - **No foreign keys**, by the precedent of views and sections: `field.delete` does
-  not rewrite the config, `resolveMap` skips an id that no longer resolves when the
-  tool runs, and undoing the delete heals it. `table.delete` captures the column
+  not rewrite the recipe, `resolveMap` skips an id that no longer resolves when the
+  recipe runs, and undoing the delete heals it. `table.delete` captures the column
   like any other; restore brings it back.
 - `GET /api/schema` returns `tools` on every table. An older client ignores it.
+- `describe(recipe, fields, versions)` renders a recipe as sentences ("If video or
+  audio: ffprobe 7.1 → Width → Width…") — the Summary view of the editor.
 - **Tools write ORDINARY mutations** — `record.create`, `record.update`, `link.add`
   in the same `POST /api/mutate` batches the web app sends — so undo, the stream,
   History, scope and validation apply to tool-written data unchanged, and a script
-  with a login token can do the same job. What the outputs are, and the three-stage
-  drop (classify → create at once → enrich afterwards), is documented in
-  `contract/tools.ts` itself.
+  with a login token can do the same job.
 
 **`via` — who wrote a batch.** `MutationRequest.via` is an optional tag
 (`^[a-z][a-z0-9_]{1,39}$`, e.g. `file_drop`) stored on the log row

@@ -22,19 +22,25 @@ API.md "Tools".
 - **Grants native calls to that one origin.** The capability is added at runtime
   (`grant` in `src-tauri/src/lib.rs`) for exactly the configured server; the
   bundled setup page has its own, smaller one (`capabilities/setup.json`).
-- **Seven fixed-purpose commands**, arguments built in Rust, never taken from the
-  page: `tools_available` (the handshake), `server_url`, `set_server` (setup page
-  only), `classify`, `probe`, `fingerprint`, `reveal`.
-- **Reads only what you dropped.** `classify`, `probe` and `fingerprint` accept a
+- **Six fixed-purpose commands**, arguments built in Rust, never taken from the
+  page: `tools_available` (the handshake: version, and every analyzer with the
+  version of the program it runs), `server_url`, `set_server` (setup page only),
+  `classify`, `analyze(unit, analyzer)` — the analyzer named by id from the closed
+  set — and `reveal`.
+- **Reads only what you dropped.** `classify` and `analyze` accept a
   path only if it — or a folder containing it — was dropped onto the window this
   session (`Allowed`). So the served JavaScript, even from a compromised server,
   cannot probe or hash arbitrary files. `reveal` takes any path (it selects a file in
   the file manager and executes nothing). There is deliberately no "open with the
   default app" command: `xdg-open` on the wrong file runs it.
 - **File drop** (the first tool): drop files or folders onto an open table, or onto a
-  canvas. `contract/tools.ts` and `src/client/tools/fileDrop.ts` describe the three
-  stages. What it writes is what the table's mapping names — Table settings →
-  Desktop tools, in the browser or here.
+  canvas. What it writes is the table's RECIPE — ⚙ Table settings → Desktop tools —
+  an ordered list of steps, each an ANALYZER (`filesystem`, `sequence`, `imf`,
+  `ffprobe`, a hash…), what it runs on, and which outputs go to which fields. The
+  editor shows the same recipe three ways: Steps, JSON, and a Summary in sentences
+  ("If video or audio: ffprobe 7.1 → Width → Width"), so whoever reads it in a year
+  can tell where every value came from. `contract/tools.ts` is the reference;
+  `src/client/tools/fileDrop.ts` runs it.
 - **Show in folder**: a `⤴ show` button beside every `file_path` value in the record
   panel.
 

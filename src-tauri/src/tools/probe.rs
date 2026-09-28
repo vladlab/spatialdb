@@ -37,6 +37,8 @@ fn run_ffprobe(path: &str) -> Result<Value, String> {
 
 pub fn probe(unit: &Unit) -> Result<Probed, String> {
     let mut o = Map::new();
+    // Provenance first: which ffprobe wrote everything below.
+    if let Some(v) = version("ffprobe") { o.insert("ffprobe.version".into(), json!(v)); }
     if unit.kind == "channel_set" {
         let mut tracks = Vec::new();
         for (m, member) in unit.members.iter().enumerate() {

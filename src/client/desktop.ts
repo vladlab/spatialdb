@@ -38,7 +38,8 @@ export function invoke<T = unknown>(cmd: string, args: Record<string, unknown> =
 }
 
 /** The handshake (`tools_available`). Null until asked; `tools: []` in a browser. */
-export interface Available { version: string; tools: string[]; ffprobe: string | null; ffmpeg: string | null; platform: string }
+/** `analyzers`: id → the version of the program it runs, or null when it is not on this machine. */
+export interface Available { version: string; tools: string[]; analyzers: Record<string, string | null>; platform: string }
 export const available = ref<Available | null>(null);
 export async function handshake(): Promise<Available | null> {
   if (!isDesktop()) return null;

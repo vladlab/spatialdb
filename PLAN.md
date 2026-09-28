@@ -1033,7 +1033,26 @@ that visibly does nothing.
 - Tree: tables alphabetical; a Settings ("This browser") option lists scoped tables
   above the rest, each group alphabetical.
 
-### The desktop client — BUILT, UNSEEN (Sept 27)
+### Recipes — BUILT (Sept 27, after the first real drops)
+
+The owner's objection to the first mapping UI: one flat list of forty outputs, with
+WHICH program derived each value and WHEN it ran hidden in Rust — "a different user a
+year from now will wonder how all these values are derived". Rebuilt as
+`contract/tools.ts` ANALYZERS + RECIPES (API.md "Tools"), `sql/015` rewriting the
+old shape, one `analyze(unit, analyzer)` command, and a three-view editor (Steps /
+JSON / Summary). `test/tools.ts` 90 checks, `test/filedrop.ts` 37; five deliberate
+breakages caught. Decisions: media class + kind for `runs_on`, with `other` the
+explicit fallback class (no extension lists yet); provenance columns available, not
+pushed; recipes are data, not scripts, and linear, not a DAG. Also: every `<select>`
+is now drawn by the app (`appearance: none`) — WebKitGTK rendered GTK's light theme.
+
+### The desktop client — BUILT, SEEN ONCE (Sept 27)
+
+First real run on the owner's NixOS desktop found, in order: Cargo 1.82 too old
+for the lockfile (→ rust-overlay), "TLS support not available" (→ glib-networking
+via `GIO_EXTRA_MODULES`), and every drop refused by the allowlist (→ the drop is a
+WINDOW event for a window-filling webview, not a webview event). `⤴ show` and a
+real file drop then worked.
 
 `src-tauri/`, `client/desktop.ts`, `client/tools/fileDrop.ts`, `DESKTOP.md`,
 `test/filedrop.ts` (32 checks through the real app with the shell faked; 4 of 5

@@ -462,7 +462,7 @@ let unlistenDrops: (() => void) | null = null;
 onMounted(async () => {
   if (!isDesktop()) return;
   const a = await handshake();
-  if (a && !a.ffprobe) notice('ffprobe was not found on this machine — files will be added without probe data', 'warn');
+  if (a && a.analyzers.ffprobe === null) notice('ffprobe was not found on this machine — files will be added without probe data', 'warn');
   // A failed subscription must be VISIBLE: otherwise a drop simply does nothing and
   // nobody knows whether the shell, the capability, or the compositor is at fault.
   try { unlistenDrops = await listenFileDrops(onFilesDropped); }
@@ -579,6 +579,19 @@ onUnmounted(() => store.stop());
   --arrow: #6b7f8f;
 }
 * { box-sizing: border-box; }
+/* Every <select> is drawn by the app, not the platform: WebKitGTK (the desktop
+   client) renders a native GTK select in the SYSTEM theme and ignores the
+   background the component set — light text on a light box. `appearance: none`
+   and the app's own chevron make every dropdown identical everywhere. */
+:root { color-scheme: dark; }
+select {
+  -webkit-appearance: none; appearance: none;
+  background-color: var(--controls-bg); color: var(--text-primary);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23999' stroke-width='1.5'/></svg>");
+  background-repeat: no-repeat; background-position: right 6px center;
+  padding-right: 20px !important;
+}
+select option { background: var(--controls-bg); color: var(--text-primary); }
 html, body, #app { height: 100%; margin: 0; }
 body {
   background: var(--bg-app);

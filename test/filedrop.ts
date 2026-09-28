@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { mountApp, sleep } from './uiHarness.js';
 import { boardsTableMutations } from './harness.js';
 import type { Unit } from '../src/client/tools/fileDrop.js';
-import { resolveMap } from '../src/contract/tools.js';
+import { resolveMap, stepApplies } from '../src/contract/tools.js';
 
 let pass = 0, fail = 0;
 function check(label: string, ok: boolean, detail = '') {
@@ -34,17 +34,20 @@ const shell = {
     async invoke(cmd: string, args: any = {}) {
       calls.push({ cmd, args });
       switch (cmd) {
-        case 'tools_available': return { version: '0.1.0-test', tools: ['file_drop', 'reveal'], ffprobe: '7.1', ffmpeg: '7.1', platform: 'linux' };
+        case 'tools_available': return { version: '0.1.0-test', tools: ['file_drop', 'reveal'], analyzers: { filesystem: '0.1.0-test', sequence: '0.1.0-test', imf: '0.1.0-test', ffprobe: '7.1', 'hash-xxh3': '0.1.0-test', 'hash-sha256': '0.1.0-test' }, platform: 'linux' };
         case 'classify': return (args.paths as string[]).map((p) => p.endsWith('.exr')
           ? unit(p.replace(/\/[^/]+$/, ''), { kind: 'sequence', name: 'plate', extension: 'exr', media: 'image', manifest: { kind: 'sequence', pattern: 'plate.%04d.exr', first: 1001, last: 1010, count: 8, gaps: [[1004, 1005]] }, file_count: 8, total_size: 8000, probe_target: p, members: [p] })
-          : p.endsWith('.wav') ? unit(p, { media: 'audio' }) : unit(p));
-        case 'probe':
-          if (probeDelay) await sleep(probeDelay);
-          if (args.unit.path.includes('broken')) throw 'ffprobe: Invalid data found when processing input';
-          return { outputs: args.unit.media === 'audio'
-            ? { container: 'wav', audio_codec: 'pcm_s24le', audio_channels: 2, audio_layout: { tracks: [{ name: 'A1', channels: ['L', 'R'] }] } }
-            : { container: 'mov', video_codec: 'prores', width: 1920, height: 1080, frame_rate: 23.976, scan: 'progressive', color_range: 'tv' } };
-        case 'fingerprint': return `xxh3:${'ab'.repeat(8)}`;
+          : p.endsWith('.wav') ? unit(p, { media: 'audio' }) : p.endsWith('.pdf') ? unit(p, { media: 'document' }) : unit(p));
+        case 'analyze':
+          if (args.analyzer === 'ffprobe') {
+            if (probeDelay) await sleep(probeDelay);
+            if (args.unit.path.includes('broken')) throw 'ffprobe: Invalid data found when processing input';
+            return { outputs: args.unit.media === 'audio'
+              ? { 'ffprobe.version': '7.1', container: 'wav', audio_codec: 'pcm_s24le', audio_channels: 2, audio_layout: { tracks: [{ name: 'A1', channels: ['L', 'R'] }] } }
+              : { 'ffprobe.version': '7.1', container: 'mov', video_codec: 'prores', width: 1920, height: 1080, frame_rate: 23.976, scan: 'progressive', color_range: 'tv' } };
+          }
+          if (args.analyzer === 'hash-xxh3') return { outputs: { hash: `xxh3:${'ab'.repeat(8)}` } };
+          throw new Error(`fake shell: no analyzer ${args.analyzer}`);
         case 'reveal': return null;
         default: throw new Error(`fake shell: unknown command ${cmd}`);
       }
@@ -62,19 +65,22 @@ async function main() {
   const { w, win, pool, until, untilDb, post, nav } = ui;
   try {
     // Imported AFTER mountApp: @vue/runtime-dom captures `document` when it loads.
-    const { outputsOf, mappedData } = await import('../src/client/tools/fileDrop.js');
+    const { immediateOutputs, mappedData } = await import('../src/client/tools/fileDrop.js');
     console.log('\nF1. The pure parts');
-    const seq = unit('/mnt/san/plates', { kind: 'sequence', manifest: { kind: 'sequence', pattern: 'plate.%04d.exr', first: 1001, last: 1010, count: 8, gaps: [[1004, 1005]] }, file_count: 8 });
-    const o = outputsOf(seq);
-    check('a sequence yields first/last/frame_count and the COUNT of missing frames', o.first_frame === 1001 && o.last_frame === 1010 && o.frame_count === 8 && o.gaps === 2, JSON.stringify(o));
-    const b = outputsOf(unit('/mnt/san/EP101_IMF', { kind: 'bundle', bundle_type: 'imf', cpl_title: 'EP101 UHD', extension: 'imf' }));
-    check('a bundle yields its type and CPL title', b.bundle_type === 'imf' && b.cpl_title === 'EP101 UHD' && b.kind === 'bundle');
+    const seq = unit('/mnt/san/plates', { kind: 'sequence', manifest: { kind: 'sequence', pattern: 'plate.%04d.exr', first: 1001, last: 1010, count: 8, gaps: [[1004, 1005]] }, file_count: 8, media: 'image' });
+    const o = immediateOutputs('sequence', seq);
+    check('the sequence analyzer yields first/last/frame_count and the COUNT of missing frames', o.first_frame === 1001 && o.last_frame === 1010 && o.frame_count === 8 && o.gaps === 2, JSON.stringify(o));
+    check('…and nothing for a plain file', Object.keys(immediateOutputs('sequence', unit('/x/a.mov'))).length === 0);
+    const b = immediateOutputs('imf', unit('/mnt/san/EP101_IMF', { kind: 'bundle', bundle_type: 'imf', cpl_title: 'EP101 UHD', extension: 'imf' }));
+    check('the package analyzer yields its type and CPL title', b.bundle_type === 'imf' && b.cpl_title === 'EP101 UHD');
+    const fsOut = immediateOutputs('filesystem', seq);
+    check('the filesystem analyzer yields path, name, kind, media, manifest, counts', fsOut.path === '/mnt/san/plates' && fsOut.kind === 'sequence' && fsOut.media === 'image' && fsOut.file_count === 8);
     const fields = [
       { id: 'a', table_id: 't', name: 'Path', key: 'path', type: 'file_path', options: {}, position: 0, required: false },
       { id: 'b', table_id: 't', name: 'Width', key: 'width', type: 'number', options: {}, position: 1, required: false },
       { id: 'c', table_id: 't', name: 'Media', key: 'media', type: 'select', options: { choices: ['video'] }, position: 2, required: false },
     ];
-    const map = resolveMap({ map: { path: 'a', width: 'b', media: 'c', height: 'zz' } }, fields);
+    const map = resolveMap({ analyzer: 'ffprobe', map: { path: 'a', width: 'b', media: 'c', height: 'zz' } }, fields);
     const m = mappedData({ path: '/x/a.wav', width: 1920, media: 'audio', height: 1080, name: 'a.wav' }, map, fields as any);
     check('mapped + valid values are written; unmapped (name) and dangling (height) are dropped silently', JSON.stringify(m.data) === JSON.stringify({ path: '/x/a.wav', width: 1920 }), JSON.stringify(m.data));
     check('a select value that is not a choice is SKIPPED and named — never written, never a schema change', m.skipped.length === 1 && /^Media: /.test(m.skipped[0]), JSON.stringify(m.skipped));
@@ -96,7 +102,13 @@ async function main() {
       { type: 'field.create', id: f.hash, tableId: tFiles, name: 'Hash', key: 'hash', fieldType: 'text' }, pos(f.hash, 8),
       { type: 'field.create', id: f.media, tableId: tFiles, name: 'Media', key: 'media', fieldType: 'select', options: { choices: ['video', 'image'] } }, pos(f.media, 9),
       { type: 'field.create', id: f.plainName, tableId: tPlain, name: 'Name', key: 'name', fieldType: 'text' }, pos(f.plainName, 0),
-      { type: 'table.update', id: tFiles, tools: { file_drop: { map: { path: f.path, name: f.name, kind: f.kind, manifest: f.manifest, total_size: f.size, width: f.width, frame_rate: f.rate, audio_layout: f.layout, hash: f.hash, media: f.media } } } },
+      // The recipe: filesystem for everything; ffprobe on video and audio (its default);
+      // an xxh3 hash of everything. The order is the order the analyzers run.
+      { type: 'table.update', id: tFiles, tools: { file_drop: { steps: [
+        { analyzer: 'filesystem', map: { path: f.path, name: f.name, kind: f.kind, manifest: f.manifest, total_size: f.size, media: f.media } },
+        { analyzer: 'ffprobe', map: { width: f.width, frame_rate: f.rate, audio_layout: f.layout } },
+        { analyzer: 'hash-xxh3', map: { hash: f.hash } },
+      ] } } },
     ]);
     check('fixture accepted', r.status === 200, (await r.text()).slice(0, 300));
     check('the app did the handshake with the shell at mount', await until(() => calls.some((c) => c.cmd === 'tools_available')));
@@ -129,8 +141,9 @@ async function main() {
     fr = await untilDb(`select id, data from records where table_id = '${tFiles}' order by created_at`, (x) => x.length === 2 && x[0].data.width === 1920 && x[1].data.audio_layout);
     check('ffprobe facts ARRIVE AFTERWARDS: width and rate on the movie, an audio layout on the wav', fr[0].data.width === 1920 && fr[0].data.frame_rate === 23.976 && fr[1].data.audio_layout?.tracks?.[0]?.channels?.join() === 'L,R', JSON.stringify(fr.map((x) => x.data)));
     fr = await untilDb(`select id, data from records where table_id = '${tFiles}' order by created_at`, (x) => x.length === 2 && x[0].data.hash && x[1].data.hash);
-    check('then the hash, last, because it is mapped', fr[0].data.hash === 'xxh3:abababababababab' && calls.filter((c) => c.cmd === 'fingerprint').length === 2);
-    check('the probe never waited for the hash (probe calls precede fingerprint calls per file)', calls.findIndex((c) => c.cmd === 'probe') < calls.findIndex((c) => c.cmd === 'fingerprint'));
+    const analyzeCalls = () => calls.filter((c) => c.cmd === 'analyze').map((c) => `${c.args.analyzer}:${c.args.unit.name}`);
+    check('then the hash, last, because it is the last step', fr[0].data.hash === 'xxh3:abababababababab' && analyzeCalls().filter((x) => x.startsWith('hash')).length === 2);
+    check('the analyzers ran in RECIPE order per file: ffprobe, then hash', analyzeCalls().join() === 'ffprobe:a.mov,hash-xxh3:a.mov,ffprobe:mix.wav,hash-xxh3:mix.wav', analyzeCalls().join());
     check('the wav\'s "media: audio" was NOT written (not a choice on that select) and the notice says which field', fr[1].data.media === undefined && fr[0].data.media === 'video' && /not written — Media/.test(noticesText()), noticesText());
     const tagged = await rows(`select type, via from mutations where seq > ${before} order by seq`);
     check('EVERY write of the drop is tagged via file_drop — creates, follow-ups, all', tagged.length >= 6 && tagged.every((m) => m.via === 'file_drop'), JSON.stringify(tagged));
@@ -149,7 +162,7 @@ async function main() {
     calls.length = 0;
     const idA = fr[0].id;
     drop(['/mnt/san/a.mov']);
-    check('a path already in the table UPDATES that record — no duplicate — and the notice says so', await until(() => /1 updated/.test(noticesText())) && (await filesRows()).length === 2 && calls.some((c) => c.cmd === 'probe' && c.args.unit.path === '/mnt/san/a.mov'), noticesText());
+    check('a path already in the table UPDATES that record — no duplicate — and the notice says so', await until(() => /1 updated/.test(noticesText())) && (await filesRows()).length === 2 && calls.some((c) => c.cmd === 'analyze' && c.args.analyzer === 'ffprobe' && c.args.unit.path === '/mnt/san/a.mov'), noticesText());
     check('…same record id', (await filesRows())[0].id === idA);
     await sleep(100);
 
@@ -158,7 +171,14 @@ async function main() {
     fr = await untilDb(`select id, data from records where table_id = '${tFiles}' and data->>'name' = 'broken.mov'`, (x) => x.length === 1);
     check('the record is still created (path, size) and the failure is a notice about THAT file', fr.length === 1 && fr[0].data.total_size === 1000 && await until(() => /broken\.mov: ffprobe/.test(noticesText())), noticesText());
     fr = await untilDb(`select data from records where table_id = '${tFiles}' and data->>'name' = 'broken.mov'`, (x) => !!x[0]?.data.hash);
-    check('…and the hash still ran after the failed probe', !!fr[0]?.data.hash);
+    check('…and the next step (the hash) still ran after the failed one', !!fr[0]?.data.hash);
+
+    console.log('\nF6b. runs_on is obeyed: a document goes to no ffprobe');
+    calls.length = 0;
+    drop(['/mnt/san/spec.pdf']);
+    fr = await untilDb(`select id, data from records where table_id = '${tFiles}' and data->>'name' = 'spec.pdf'`, (x) => x.length === 1 && x[0].data.hash);
+    check('a PDF is a record with its filesystem facts and a hash, and ffprobe was NEVER asked (its default is video or audio)', fr[0].data.media === undefined /* not a choice */ && fr[0].data.hash && !analyzeCalls().some((x) => x.startsWith('ffprobe')) && analyzeCalls().includes('hash-xxh3:spec.pdf'), analyzeCalls().join());
+    check('stepApplies agrees, from the contract alone', !stepApplies({ analyzer: 'ffprobe', map: {} }, { media: 'document', kind: 'file' }));
     check('no connection-error banner: a bad file is not a store error', !w.find('.errors').exists());
 
     console.log('\nF7. Dropping on a canvas');

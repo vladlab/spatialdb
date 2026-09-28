@@ -89,7 +89,7 @@ fn grant(app: &AppHandle, server: &url::Url) -> Result<(), String> {
             "core:event:default",
             "core:webview:allow-internal-toggle-devtools",
             "allow-tools-available", "allow-server-url",
-            "allow-classify", "allow-probe", "allow-fingerprint", "allow-reveal",
+            "allow-classify", "allow-analyze", "allow-reveal",
         ]
     });
     app.add_capability(cap.to_string()).map_err(|e| e.to_string())
@@ -124,19 +124,24 @@ fn open_main(app: &AppHandle, url: WebviewUrl) -> Result<(), String> {
 pub struct Available {
     pub version: String,
     pub tools: Vec<&'static str>,
-    pub ffprobe: Option<String>,
-    pub ffmpeg: Option<String>,
+    /// Every analyzer this build knows (contract/tools.ts ANALYZERS), with the version
+    /// of the program it runs — `None` when that program is not on this machine.
+    /// Built-in analyzers report the app's own version.
+    pub analyzers: std::collections::BTreeMap<&'static str, Option<String>>,
     pub platform: &'static str,
 }
 
 /// The handshake: what this build of the desktop app can do, and what the host has.
 #[tauri::command]
 fn tools_available() -> Available {
+    let own = Some(env!("CARGO_PKG_VERSION").to_string());
+    let mut analyzers = std::collections::BTreeMap::new();
+    for a in ["filesystem", "sequence", "imf", "hash-xxh3", "hash-sha256"] { analyzers.insert(a, own.clone()); }
+    analyzers.insert("ffprobe", tools::probe::version("ffprobe"));
     Available {
         version: env!("CARGO_PKG_VERSION").to_string(),
         tools: vec!["file_drop", "reveal"],
-        ffprobe: tools::probe::version("ffprobe"),
-        ffmpeg: tools::probe::version("ffmpeg"),
+        analyzers,
         platform: std::env::consts::OS,
     }
 }
@@ -163,20 +168,23 @@ fn classify(allowed: State<Allowed>, paths: Vec<String>) -> Result<Vec<tools::cl
     Ok(tools::classify::classify(&roots))
 }
 
-/// Stage 3: ffprobe facts for one unit. Runs on a blocking thread; the page shows
-/// progress and never waits on it.
+/// Stage 3: run ONE analyzer of the table's recipe on one unit. The analyzer is
+/// named by id from the closed set in contract/tools.ts; the page picks which and
+/// in what order, the arguments are built here. Runs on a blocking thread — a hash
+/// of a large file takes minutes — and the page never waits on it.
 #[tauri::command]
-async fn probe(allowed: State<'_, Allowed>, unit: tools::classify::Unit) -> Result<tools::probe::Probed, String> {
+async fn analyze(allowed: State<'_, Allowed>, unit: tools::classify::Unit, analyzer: String) -> Result<tools::probe::Probed, String> {
     allowed.check(&unit.path)?;
-    tauri::async_runtime::spawn_blocking(move || tools::probe::probe(&unit)).await.map_err(|e| e.to_string())?
-}
-
-/// Stage 3, last: the hash. `xxh3` (the default; fast, not cryptographic) or
-/// `sha256`. Minutes for a large file — always the final step, only if mapped.
-#[tauri::command]
-async fn fingerprint(allowed: State<'_, Allowed>, unit: tools::classify::Unit, algo: String) -> Result<String, String> {
-    allowed.check(&unit.path)?;
-    tauri::async_runtime::spawn_blocking(move || tools::hash::fingerprint(&unit, &algo)).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || match analyzer.as_str() {
+        "ffprobe" => tools::probe::probe(&unit),
+        "hash-xxh3" | "hash-sha256" => {
+            let hash = tools::hash::fingerprint(&unit, &analyzer["hash-".len()..])?;
+            let mut outputs = serde_json::Map::new();
+            outputs.insert("hash".into(), serde_json::Value::String(hash));
+            Ok(tools::probe::Probed { outputs })
+        }
+        other => Err(format!("this desktop build has no analyzer called \"{other}\"")),
+    }).await.map_err(|e| e.to_string())?
 }
 
 /// Select the file in the platform's file manager. Executes nothing.
@@ -187,7 +195,7 @@ fn reveal(path: String) -> Result<(), String> { tools::reveal::reveal(&path) }
 pub fn run() {
     tauri::Builder::default()
         .manage(Allowed::default())
-        .invoke_handler(tauri::generate_handler![tools_available, server_url, set_server, classify, probe, fingerprint, reveal])
+        .invoke_handler(tauri::generate_handler![tools_available, server_url, set_server, classify, analyze, reveal])
         .setup(|app| {
             let handle = app.handle().clone();
             match configured_server(&handle) {

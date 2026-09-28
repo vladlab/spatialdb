@@ -20,7 +20,7 @@ import { backlinkConfigError, backlinkSourceOf } from '../contract/backlinks';
 import { arrowStyleOf, type ArrowStyle } from '../contract/arrows';
 import { isMembership } from '../contract/scope';
 import { FILES_STANDARD_FIELDS, shapeOptionError } from '../contract/shapes';
-import { TOOLS, fieldAccepts, toolsProblem, type TablesTools, type ToolOutput } from '../contract/tools';
+import { REQUIRED, analyzerOf, defaultRecipe, fieldAccepts, toolsProblem, type Output, type TablesTools } from '../contract/tools';
 import { fieldsOf, recordsOf, tablesSorted, type FieldRow } from './state';
 import type { Store } from './store';
 import { confirmDialog } from './dialogs';
@@ -207,9 +207,9 @@ export function useSchemaActions(store: Store) {
   /* ── the desktop client's tools on a table (contract/tools.ts) ──────────── */
 
   /**
-   * Write a table's whole tools config. Refused here, before it is queued, with
-   * the same rule the server runs — a bad mapping must never reach the log.
-   * Returns the problem, or null.
+   * Write a table's whole tools config (a recipe per tool). Refused here, before it
+   * is queued, with the same rule the server runs — a bad recipe must never reach
+   * the log. Returns the problem, or null.
    */
   function setTools(tableId: string, tools: TablesTools): string | null {
     const err = toolsProblem(tools, fields(tableId));
@@ -219,38 +219,47 @@ export function useSchemaActions(store: Store) {
   }
 
   /**
-   * Turn a tool on: map every output to a same-KEY field that accepts it, and
-   * CREATE fields for the outputs the tool cannot run without (`path`). One
-   * Ctrl+Z. Nothing else is created — the admin picks which of the ~40 outputs
-   * deserve a column (`addToolFields` does that on request).
+   * Turn File drop on with the DEFAULT recipe (filesystem, then ffprobe), every
+   * output mapped to a same-KEY field that accepts it, and a field CREATED for the
+   * one output the tool cannot run without (Path). One Ctrl+Z. Nothing else is
+   * created: the admin picks which outputs deserve a column.
    */
-  function enableTool(tableId: string, toolId: string): string | null {
-    const tool = TOOLS[toolId];
-    if (!tool) return `unknown tool: ${toolId}`;
-    const map: Record<string, string> = {};
-    for (const out of tool.outputs) {
-      const f = fields(tableId).find((x) => x.key === out.key && fieldAccepts(out, x));
-      if (f) map[out.key] = f.id;
+  function enableFileDrop(tableId: string): string | null {
+    const recipe = defaultRecipe();
+    for (const step of recipe.steps) {
+      const a = analyzerOf(step.analyzer)!;
+      for (const out of a.outputs) {
+        const f = fields(tableId).find((x) => x.key === out.key && fieldAccepts(out, x));
+        if (f) step.map[out.key] = f.id;
+      }
     }
-    const missing = tool.outputs.filter((o) => tool.required.includes(o.key) && !map[o.key]);
-    for (const [key, id] of Object.entries(addToolFields(tableId, missing))) map[key] = id;
-    const table = store.state.tables.get(tableId);
-    return setTools(tableId, { ...(table?.tools as TablesTools ?? {}), [toolId]: { map } });
+    for (const r of REQUIRED) {
+      const step = recipe.steps.find((s) => s.analyzer === r.analyzer);
+      if (!step || r.key in step.map) continue;
+      const out = analyzerOf(r.analyzer)!.outputs.find((o) => o.key === r.key)!;
+      const made = addToolFields(tableId, [out]);
+      if (made[r.key]) step.map[r.key] = made[r.key];
+    }
+    return setTools(tableId, { ...currentTools(tableId), file_drop: recipe });
   }
 
-  function disableTool(tableId: string, toolId: string) {
-    const tools = { ...(store.state.tables.get(tableId)?.tools as TablesTools ?? {}) };
-    delete tools[toolId];
-    return setTools(tableId, tools);
+  function disableFileDrop(tableId: string) {
+    const tools = { ...currentTools(tableId) } as Partial<TablesTools>;
+    delete tools.file_drop;
+    return setTools(tableId, tools as TablesTools);
+  }
+
+  function currentTools(tableId: string): TablesTools {
+    return (store.state.tables.get(tableId)?.tools ?? {}) as TablesTools;
   }
 
   /**
-   * A field per output, shaped as the output wants it (a select gets the tool's
+   * A field per output, shaped as the output wants it (a select gets the analyzer's
    * choices, a structured field its shape, a byte count its display format), named
-   * and keyed like the output — so `enableTool` and a re-run find them by key.
-   * Skips keys the table already has. Returns output key → new field id.
+   * and keyed like the output. Skips keys the table already has. Returns output
+   * key → new field id.
    */
-  function addToolFields(tableId: string, outputs: readonly ToolOutput[]): Record<string, string> {
+  function addToolFields(tableId: string, outputs: readonly Output[]): Record<string, string> {
     const have = new Set(fields(tableId).map((f) => f.key));
     let pos = Math.max(0, ...fields(tableId).map((f) => f.position));
     const made: Record<string, string> = {};
@@ -385,7 +394,7 @@ export function useSchemaActions(store: Store) {
     createTable, renameTable, deleteTable,
     draftError, createField, renameField, setChoices, moveField, makePrimary, isPrimary,
     canBePrimary, deleteField,
-    setArrowStyle, setMembership, setSingle, addStandardFilesFields, setTools, enableTool, disableTool, addToolFields, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
+    setArrowStyle, setMembership, setSingle, addStandardFilesFields, setTools, enableFileDrop, disableFileDrop, addToolFields, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
   };
 }
 export type SchemaActions = ReturnType<typeof useSchemaActions>;

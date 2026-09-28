@@ -103,7 +103,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { askFull } from '../dialogs';
 import { scopedFirst } from '../prefs';
 import type { Store } from '../store';
-import { TOOLS } from '../../contract/tools';
+import { TOOL_NAMES } from '../../contract/tools';
 
 const props = defineProps<{ store: Store }>();
 const emit = defineEmits<{ close: [] }>();
@@ -154,7 +154,7 @@ const LABEL: Record<string, string> = {
   'view.delete': 'View deleted', 'section.delete': 'Section deleted', 'link.remove': 'Link removed',
   'placement.remove': 'Card removed from a canvas', 'annotation.delete': 'Annotation deleted', 'canvas.delete': 'Canvas deleted',
 };
-const VIA: Record<string, string> = Object.fromEntries(Object.values(TOOLS).map((t) => [t.id, t.name]));
+const VIA = TOOL_NAMES;
 const list = ref<Awaited<ReturnType<Store['undoable']>>>([]);
 // Never rejects: this also runs from a timer, possibly just after signing out (a
 // 401), and a rejected promise nobody awaits is an unhandled rejection.
