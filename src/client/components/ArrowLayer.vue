@@ -30,7 +30,7 @@
         v-for="a in arrows"
         :key="a.key"
         class="arrow"
-        :class="{ dimmed: highlightId && !a.touches.includes(highlightId) && a.key !== selectedKey, selected: a.key === selectedKey }"
+        :class="{ dimmed: focusIds && focusIds.size > 0 && !a.touches.some((t) => focusIds!.has(t)) && a.key !== selectedKey, selected: a.key === selectedKey }"
         :style="a.color ? { '--arrow': a.color } : undefined"
         :data-field="a.fieldId"
         :data-key="a.key"
@@ -61,7 +61,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import {
-  anchorPoint, arrowheadPath, bestSides, bezierMid, bezierPath, type AnchorSide, type Point, type Rect,
+  anchorPoint, arrowheadPath, bestSides, bezierMid, bezierPath, type Point, type Rect,
 } from '../canvas/geometry';
 import type { ArrowStyle } from '../../contract/arrows';
 
@@ -77,9 +77,9 @@ const props = defineProps<{
   transform: { x: number; y: number; scale: number };
   links: Array<{ field_id: string; from_record: string; to_record: string }>;
   rects: Map<string, Rect>;
-  ports?: Map<string, CardPorts>;
   styles?: Map<string, ArrowStyle>;
-  highlightId?: string | null;
+  /** The selected cards: arrows touching none of them dim (focus mode). Null/empty = no dimming. */
+  focusIds?: ReadonlySet<string> | null;
   /** `field|from|to` of the selected arrow, if any. */
   selectedKey?: string | null;
   /** field id → its name, for the selected arrow's label. */
@@ -96,13 +96,6 @@ const svgTransform = computed(
   () => `translate(${props.transform.x}, ${props.transform.y}) scale(${props.transform.scale})`,
 );
 
-const GAP = 4;   // same stand-off as anchorPoint, so ported and edge ends look alike
-
-/** A port on the side of `r` that faces `other`. */
-function portEnd(r: Rect, y: number, other: Rect): { p: Point; side: AnchorSide } {
-  const side: AnchorSide = other.x + other.w / 2 >= r.x + r.w / 2 ? 'right' : 'left';
-  return { side, p: { x: side === 'right' ? r.x + r.w + GAP : r.x - GAP, y: r.y + y } };
-}
 
 const arrows = computed(() => {
   const out: Array<{ key: string; fieldId: string; path: string; head: string; touches: string[]; color?: string; mid: Point; link: typeof props.links[number] }> = [];
@@ -111,11 +104,13 @@ const arrows = computed(() => {
     const to = props.rects.get(l.to_record);
     if (!from || !to) continue;   // endpoint not on this canvas
 
-    const outY = props.ports?.get(l.from_record)?.out.get(l.field_id);
-    const inY = props.ports?.get(l.to_record)?.in.get(l.field_id);
+    // Every arrow anchors to the CARD, on whichever sides face each other — never to a
+    // field's row. (Arrows once left from the link's row and landed on the backlink's
+    // row; the owner retired that: ports still START a link, but a drawn arrow is a
+    // relationship between two records, not two cells.)
     const edge = bestSides(from, to);
-    const a = outY !== undefined ? portEnd(from, outY, to) : { side: edge.from, p: anchorPoint(from, edge.from) };
-    const b = inY !== undefined ? portEnd(to, inY, from) : { side: edge.to, p: anchorPoint(to, edge.to) };
+    const a = { side: edge.from, p: anchorPoint(from, edge.from) };
+    const b = { side: edge.to, p: anchorPoint(to, edge.to) };
 
     // `reversed` swaps which end gets the head; the geometry is otherwise identical.
     const style = props.styles?.get(l.field_id);

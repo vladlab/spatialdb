@@ -100,9 +100,8 @@
       :transform="viewport.transform"
       :links="visibleLinks"
       :rects="cardRects"
-      :ports="cardPorts"
       :styles="arrowStyles"
-      :highlight-id="hoveredId"
+      :focus-ids="arrowMode === 'focus' ? selected : null"
       :selected-key="selectedLinkKey"
       :field-names="linkFieldNames"
       :rubber="rubber"
@@ -127,7 +126,6 @@
         @fold="toggleFold"
         @open="(id) => (isBoardRecord(id) ? $emit('open-board', id) : $emit('open-record', id))"
         @menu="onCardMenu"
-        @hover="hoveredId = $event"
       />
     </div>
 
@@ -218,7 +216,7 @@ import type { ArrowLink, CardPorts } from './ArrowLayer.vue';
 import { linkKey } from '../state';
 import { bezierPath, type Point } from '../canvas/geometry';
 import { CanvasConfig, cardFieldsFor } from '../../contract/canvasConfig';
-import { CARD_W, effectiveHeight, rowPortY } from '../canvas/cardLayout';
+import { CARD_W, effectiveHeight, lineCount, rowPortY } from '../canvas/cardLayout';
 import type { CardRow } from './RecordCard.vue';
 import type { Rect } from '../canvas/geometry';
 import { useViewport } from '../canvas/useViewport';
@@ -234,7 +232,6 @@ const store = props.store;
 
 const containerRef = ref<HTMLElement | null>(null);
 const selected = reactive(new Set<string>());
-const hoveredId = ref<string | null>(null);
 const spaceHeld = ref(false);
 
 const viewport = useViewport(containerRef);
@@ -265,7 +262,7 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
     const styleField = f.type === 'link' ? f.id : f.type === 'backlink' ? backlinkSourceOf(f) : null;
     const color = styleField ? arrowStyles.value.get(styleField)?.color : undefined;
     return broken ? { id: f.id, name: f.name, broken: true, text: `broken ${f.type}` }
-      : { id: f.id, name: f.name, derived: true, text: texts.join(', '), color, link: f.type === 'link' };
+      : { id: f.id, name: f.name, derived: true, text: texts.join(', '), lines: texts.length > 1 ? texts : undefined, color, link: f.type === 'link' };
   }
   if (f.type === 'rich_text') return { id: f.id, name: f.name, text: richTextToPlain(rec.data[f.key]).split('\n', 1)[0] };
   // A structured value is a one-line SUMMARY on a card ("4 tracks / 12 ch (5.1, 2.0…)"):
@@ -335,7 +332,7 @@ const cards = computed(() =>
 const cardRects = computed(() => {
   const m = new Map<string, Rect>();
   for (const c of cards.value) {
-    m.set(c.recordId, { x: c.x, y: c.y, w: c.w ?? CARD_W, h: effectiveHeight(c.h, c.rows.length, c.collapsed, c.rich.length) });
+    m.set(c.recordId, { x: c.x, y: c.y, w: c.w ?? CARD_W, h: effectiveHeight(c.h, lineCount(c.rows), c.collapsed, c.rich.length) });
   }
   return m;
 });
@@ -366,7 +363,7 @@ const cardPorts = computed(() => {
     const rect = cardRects.value.get(c.recordId);
     if (!rows || !rect || (!rows.out.length && !rows.in.length)) continue;
     const at = (pairs: Array<[string, number]>) => new Map(pairs.flatMap(([id, i]) => {
-      const y = rowPortY(i, rect.h, c.collapsed);
+      const y = rowPortY(i, rect.h, c.collapsed, c.rows);
       return y === null ? [] : [[id, y] as [string, number]];
     }));
     m.set(c.recordId, { out: at(rows.out), in: at(rows.in) });
@@ -581,19 +578,28 @@ const rubber = computed(() => {
 
    Relational arrows only; hand-drawn canvas arrows (not built yet) get their own
    switch. Kept per browser, per canvas. */
-type ArrowMode = 'all' | 'selected' | 'off';
-const ARROW_MODES: ArrowMode[] = ['all', 'selected', 'off'];
+/**
+ * always  every arrow, never dimmed.
+ * focus   every arrow; once something is SELECTED, arrows touching none of the
+ *         selection dim. Nothing happens on hover — hovering used to dim, which
+ *         made the canvas flicker as the pointer crossed it. (The default.)
+ * off     no arrows.
+ * The per-relationship visibility list (the ▾) applies in every mode.
+ */
+type ArrowMode = 'always' | 'focus' | 'off';
+const ARROW_MODES: ArrowMode[] = ['always', 'focus', 'off'];
 const ARROW_MODE_TITLE: Record<ArrowMode, string> = {
-  all: 'Showing every relationship between cards on this canvas — click for: selected only',
-  selected: 'Showing only relationships touching the selected cards — click for: off',
-  off: 'Relationship arrows hidden — click for: all',
+  always: 'Every relationship, never dimmed — click for: focus',
+  focus: 'Every relationship; selecting cards dims the arrows that do not touch them — click for: off',
+  off: 'Relationship arrows hidden — click for: always',
 };
 const arrowKey = () => `spatialdb.arrows.${props.canvasId}`;
 function readArrowMode(): ArrowMode {
   try {
     const v = localStorage.getItem(arrowKey());
-    return ARROW_MODES.includes(v as ArrowMode) ? (v as ArrowMode) : 'all';
-  } catch { return 'all'; }   // storage can be unavailable (private mode, tests)
+    if (v === 'all') return 'always'; if (v === 'selected') return 'focus';   // the old names, remembered by older builds
+    return ARROW_MODES.includes(v as ArrowMode) ? (v as ArrowMode) : 'focus';
+  } catch { return 'focus'; }   // storage can be unavailable (private mode, tests)
 }
 const arrowMode = ref<ArrowMode>(readArrowMode());
 watch(() => props.canvasId, () => { arrowMode.value = readArrowMode(); });
@@ -637,9 +643,7 @@ const legend = computed(() => {
 
 const visibleLinks = computed(() => {
   if (arrowMode.value === 'off') return [];
-  const onCanvas = linksOnCanvas.value.filter((l) => !hiddenFields.value.has(l.field_id));
-  return arrowMode.value === 'all' ? onCanvas
-    : onCanvas.filter((l) => selected.has(l.from_record) || selected.has(l.to_record));
+  return linksOnCanvas.value.filter((l) => !hiddenFields.value.has(l.field_id));
 });
 
 function colorOf(tableId: string) {

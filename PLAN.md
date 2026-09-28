@@ -1002,6 +1002,25 @@ red-checked. Also: the layout editor now writes nothing when nothing changed (a 
 re-typed as it was) — a no-op mutation is a log row, a broadcast and an undo step
 that visibly does nothing.
 
+### Canvas pass (Sept 28): arrows from the card, focus dimming, vertical link lists
+
+The owner's list of eight, done in dependency order. This step is the canvas half:
+- **7. Arrows anchor to the CARD**, never to a field's row (`ArrowLayer` ignores ports;
+  `bestSides`/`anchorPoint` for every arrow). Ports STAY on link rows — as the handle to
+  start a link from, because "the little dot next to a field reduces ambiguity of
+  intent, and choosing which fields are shown on the card lets me focus which links I
+  can make" — the rubber-band leaves the port; once placed, the arrow is card-to-card.
+- **4. Arrow modes: always / focus / off.** Hover no longer dims anything (it flickered
+  as the pointer crossed the canvas). In *focus* (the default), selecting cards dims the
+  arrows that touch none of them. The per-relationship list stays. Old stored names
+  ("all"/"selected") are read and mapped.
+- **8. Multi-value link rows are vertical lists** on cards (one line per record, up to
+  6 then "+N more"); `cardHeight` now counts LINES (`rowLines`/`lineCount`), and port
+  positions follow. Only possible cleanly after 7, since arrows no longer depend on
+  row positions.
+- **6. Text flips dark on a light table colour** (`client/colorText.ts`, WCAG luminance)
+  — the card header was the surface that hurt.
+
 ### A UI pass from screenshots (Sept 27)
 
 - **A permanent built-in Grid.** The plain grid used to be "no saved view", materialised

@@ -38,6 +38,19 @@ export const CARD_RICH_LABEL_H = 16;
 export const CARD_RICH_H = CARD_RICH_LABEL_H + 132;
 
 /** Height of a card showing `rows` field lines. Folded: title only. */
+/**
+ * A row is usually one line. A link/backlink/lookup row with SEVERAL values is a
+ * vertical list — one line per value, up to CARD_MAX_LINES, then one "+N more" line —
+ * so `cardHeight` counts LINES, not rows. `rowLines` is the one place that rule lives.
+ */
+export const CARD_MAX_LINES = 6;
+export function rowLines(row: { lines?: string[] }): number {
+  const n = row.lines?.length ?? 1;
+  return n <= 1 ? 1 : Math.min(n, CARD_MAX_LINES) + (n > CARD_MAX_LINES ? 1 : 0);
+}
+export const lineCount = (rows: Array<{ lines?: string[] }>): number => rows.reduce((n, r) => n + rowLines(r), 0);
+
+/** Height for `rows` LINES (see `rowLines`) — the name is historical. */
 export function cardHeight(rows: number, collapsed: boolean, rich = 0): number {
   const chrome = CARD_BORDER + CARD_HEAD_H + CARD_TITLE_H;
   return collapsed || (rows === 0 && rich === 0) ? chrome : chrome + CARD_BODY_PAD + rows * CARD_ROW_H + rich * CARD_RICH_H;
@@ -63,8 +76,10 @@ export function effectiveHeight(h: number | null, rows: number, collapsed: boole
  * has been resized shorter than its rows (the body clips). An arrow aimed at a
  * clipped row would end in mid-air, so the caller falls back to the card's edge.
  */
-export function rowPortY(index: number, cardH: number, collapsed: boolean): number | null {
+export function rowPortY(index: number, cardH: number, collapsed: boolean, rows?: Array<{ lines?: string[] }>): number | null {
   if (collapsed || index < 0) return null;
-  const y = CARD_BORDER / 2 + CARD_HEAD_H + CARD_TITLE_H + CARD_BODY_PAD / 2 + index * CARD_ROW_H + CARD_ROW_H / 2;
+  // Lines above this row (rows may be several lines tall); the port sits on its FIRST line.
+  const above = rows ? lineCount(rows.slice(0, index)) : index;
+  const y = CARD_BORDER / 2 + CARD_HEAD_H + CARD_TITLE_H + CARD_BODY_PAD / 2 + above * CARD_ROW_H + CARD_ROW_H / 2;
   return y + CARD_ROW_H / 2 <= cardH ? y : null;
 }

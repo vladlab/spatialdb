@@ -689,15 +689,26 @@ async function main() {
   console.log('\nU11b. Which relationship arrows are drawn');
   const arrows = () => w.findAll('.arrow-layer .arrow').length;
   const modeBtn = () => w.find('.arrows-mode');
-  check('"all": the link between two placed cards is drawn', await until(() => arrows() >= 1) && /all/.test(modeBtn().text()), `${arrows()} arrows`);
-  await modeBtn().trigger('click');
-  check('"selected": nothing selected, nothing drawn', /selected/.test(modeBtn().text()) && arrows() === 0, `${arrows()}`);
+  const dimmed = () => w.findAll('.arrow-layer .arrow.dimmed').length;
+  // (the mode is remembered per canvas in localStorage; a fresh browser starts in "focus")
+  await until(() => arrows() >= 1);
+  while (!/focus/.test(modeBtn().text())) await modeBtn().trigger('click');
+  check('"focus" (the default): every arrow is drawn, and with nothing selected NOTHING is dimmed — hovering no longer dims anything', arrows() >= 1 && dimmed() === 0, `${arrows()} arrows, ${dimmed()} dimmed`);
+  await cardBy('reel_10').trigger('pointerenter');
+  check('…hovering a card changes nothing', dimmed() === 0);
   await cardBy('reel_10').trigger('pointerdown', { button: 0, clientX: 60, clientY: 60 });
   await bg().trigger('pointerup', { button: 0, clientX: 60, clientY: 60 });
-  check('select a card and ITS relationships appear', await until(() => arrows() >= 1), `${arrows()}`);
+  await until(() => cardBy('reel_10').classes('selected'));
+  const touching = w.findAll('.arrow-layer .arrow').filter((a) => !a.classes('dimmed')).length;
+  check('select a card: arrows that do not touch the selection dim; the rest stay full', arrows() >= 1 && touching >= 1 && touching + dimmed() === arrows(), `${arrows()} arrows, ${dimmed()} dimmed`);
   await modeBtn().trigger('click');
   check('"off": none', /off/.test(modeBtn().text()) && arrows() === 0);
   await modeBtn().trigger('click');
+  check('"always": every arrow, never dimmed, selection or not', /always/.test(modeBtn().text()) && arrows() >= 1 && dimmed() === 0, `${dimmed()}`);
+  await modeBtn().trigger('click');   // back to focus
+  await bg().trigger('pointerdown', { button: 0, clientX: 5, clientY: 5 });   // deselect
+  const arrowD = w.find('.arrow-layer .arrow-line').attributes('d') ?? '';
+  check('arrows anchor to the CARD edge, not to a field row (no port rows are consulted)', !!arrowD && !w.find('.arrow-layer').attributes('ports'));
 
   console.log('\nU11c. Ctrl+Z on the canvas');
   const PE = (win as any).PointerEvent ?? (win as any).MouseEvent;
@@ -821,6 +832,18 @@ async function main() {
   check('clicking a referrer opens THAT record', await until(() => panel().find('.rp-title').text() === 'reel_10'), panel().find('.rp-title').text());
   await panel().find('.rp-close').trigger('click');
 
+  await tab('canvas').trigger('click');
+  console.log('\nU13b. Several links on a card: a vertical list');
+  // reel_10 links to Gamma AND Beta. On its card the Show row is one line per record —
+  // what the record panel already does — and the card is taller by one line for it.
+  await until(() => !!cardBy('reel_10'));
+  if (cardBy('reel_10').find('.card-fold').text().includes('▸')) await cardBy('reel_10').find('.card-fold').trigger('click');   // unfold (an earlier section folded it)
+  await until(() => cardBy('reel_10').find('.card-list').exists(), 8000);
+  const listRow = cardBy('reel_10').findAll('.card-field').find((f) => f.find('.card-key').text() === 'Show')!;
+  check('a link row with two records is a LIST, one per line, not "Gamma, Beta" on one line',
+    listRow.find('.card-list').exists() && listRow.findAll('.card-line').map((l) => l.text()).sort().join() === 'Beta,Gamma', listRow.text());
+  await tab('table').trigger('click');
+
   console.log('\nU14. The command palette (Ctrl+K)');
   const pal = () => w.find('.palette');
   const palInput = () => pal().find('input.pq');
@@ -903,22 +926,23 @@ async function main() {
   check('fixture: reel_2\'s card shows its link row and Alpha\'s shows the backlink row', showRowIdx >= 0 && usedByIdx >= 0,
     `${filesRows.join()} / ${alphaRows.join()}`);
 
-  const expectOutY = pr2.y + rowPortY(showRowIdx, cardHeight(filesRows.length, false), false)!;
-  const startsAt = (y: number) => pathFor(r2, showIds[0]).some((d) => Math.abs(startOf(d)[1] - y) < 0.6);
-  check('on an UNFOLDED card the arrow leaves from the link field\'s ROW, not the card\'s middle',
-    await until(() => startsAt(expectOutY)), `want y=${expectOutY}; got ${pathFor(r2, showIds[0]).map((d) => startOf(d).join()).join(' | ')}`);
-  const expectInY = pAlpha.y + rowPortY(usedByIdx, cardHeight(alphaRows.length, false), false)!;
-  check('and lands on the BACKLINK row of the card it points at',
-    pathFor(r2, showIds[0]).some((d) => { const end = d.trim().split(' ').pop()!.split(',').map(Number); return Math.abs(end[1] - expectInY) < 12; }),
-    `want ≈${expectInY}; ends ${pathFor(r2, showIds[0]).map((d) => d.trim().split(' ').pop()).join(' | ')}`);
-  check('a port is on the card\'s left or right EDGE', pathFor(r2, showIds[0]).some((d) => {
-    const x = startOf(d)[0]; return Math.abs(x - (pr2.x - 4)) < 0.6 || Math.abs(x - (pr2.x + (pr2.w ?? CARD_W) + 4)) < 0.6; }));
-
+  // ARROWS ANCHOR TO THE CARD, never to a field's row (the owner retired row anchoring:
+  // "let's just have all arrows stem from the card"). The row's PORT still exists — as
+  // the handle to START a link from, tested in U18 — but a drawn arrow leaves the
+  // card's left or right EDGE, at its vertical middle, folded or not.
+  // The four edge MIDPOINTS of reel_2's card (bestSides picks whichever faces the other card), ±4px stand-off.
+  const mids = (h: number) => { const w0 = pr2.w ?? CARD_W; return [[pr2.x - 4, pr2.y + h / 2], [pr2.x + w0 + 4, pr2.y + h / 2], [pr2.x + w0 / 2, pr2.y - 4], [pr2.x + w0 / 2, pr2.y + h + 4]]; };
+  const atAnEdgeMid = (h: number) => pathFor(r2, showIds[0]).some((d) => mids(h).some(([x, y]) => Math.abs(startOf(d)[0] - x) < 1 && Math.abs(startOf(d)[1] - y) < 1));
+  const openH = cardHeight(filesRows.length, false);
+  check('the arrow leaves the CARD\'s edge at its midpoint — not the link field\'s row', await until(() => atAnEdgeMid(openH)),
+    `want one of ${JSON.stringify(mids(openH))}; got ${pathFor(r2, showIds[0]).map((d) => startOf(d).join()).join(' | ')}`);
+  const rowY = pr2.y + rowPortY(showRowIdx, openH, false)!;
+  check('…and not from the row', !pathFor(r2, showIds[0]).some((d) => Math.abs(startOf(d)[1] - rowY) < 0.6 && Math.abs(startOf(d)[0] - (pr2.x + (pr2.w ?? CARD_W) + 4)) < 0.6));
   await cardBy('reel_2').find('.card-fold').trigger('click');
-  check('FOLD the card and the same arrow moves to the card\'s edge',
-    await until(() => !startsAt(expectOutY)), pathFor(r2, showIds[0]).map((d) => startOf(d).join()).join(' | '));
+  check('FOLD the card and the arrow follows the smaller card\'s edge', await until(() => atAnEdgeMid(cardHeight(filesRows.length, true))), pathFor(r2, showIds[0]).map((d) => startOf(d).join()).join(' | '));
   await cardBy('reel_2').find('.card-fold').trigger('click');
-  await until(() => startsAt(expectOutY));
+  await until(() => atAnEdgeMid(openH));
+  void pAlpha; void usedByIdx;
 
   // Colour and direction live on the FIELD. Set them the way a person would: the
   // column's ▾ menu in the grid.
@@ -946,7 +970,7 @@ async function main() {
   await post([{ type: 'field.update', id: linkField, options: { target_table_id: shows, arrow: { color: '#ff3366', reversed: true } } }]);
   check('"reversed" moves the arrowhead to the record that HOLDS the link — live, from a peer',
     await until(() => arrowsOfField().map((a) => a.find('.arrow-head').attributes('d')).join('|') !== headBefore)
-    && pathFor(r2, showIds[0]).some((d) => Math.abs(d.trim().split(' ').pop()!.split(',').map(Number)[1] - expectOutY) < 12));
+    && pathFor(r2, showIds[0]).some((d) => { const e = d.trim().split(' ').pop()!.split(',').map(Number); return mids(openH).some(([x, y]) => Math.abs(e[0] - x) < 12 && Math.abs(e[1] - y) < 12); }));
 
   await w.find('.arrows-legend').trigger('click');
   const legendRow = () => w.findAll('.legend .legend-row').find((r) => r.text().includes('Files · Show'))!;

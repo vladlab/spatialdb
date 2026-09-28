@@ -23,7 +23,7 @@ import {
   rectsIntersect, toWorld, zoomAbout, type Rect,
 } from '../src/client/canvas/geometry.js';
 import { createStore } from '../src/client/store.js';
-import { cardHeight, effectiveHeight, rowPortY, CARD_RICH_H, CARD_ROW_H } from '../src/client/canvas/cardLayout.js';
+import { cardHeight, effectiveHeight, rowPortY, CARD_RICH_H, CARD_ROW_H, CARD_MAX_LINES, lineCount, rowLines } from '../src/client/canvas/cardLayout.js';
 import { arrowStyleError, arrowStyleOf } from '../src/contract/arrows.js';
 import { bezierMid } from '../src/client/canvas/geometry.js';
 import { CanvasConfig, defaultLinkField } from '../src/contract/canvasConfig.js';
@@ -436,6 +436,13 @@ async function partB() {
   check('the midpoint of a straight left-to-right arrow is halfway along it, on it', Math.abs(mid.x - 200) < 0.01 && Math.abs(mid.y) < 0.01, JSON.stringify(mid));
   const mid2 = bezierMid({ x: 0, y: 0 }, 'right', { x: 400, y: 300 }, 'left');
   check('for a diagonal one it is still between the two ends — not out at a control point', mid2.x > 100 && mid2.x < 300 && mid2.y > 100 && mid2.y < 200, JSON.stringify(mid2));
+
+  console.log('\nB8b2c. Card heights count LINES: a multi-value link row is a vertical list');
+  const one = { lines: undefined }, two = { lines: ['a', 'b'] }, nine = { lines: 'abcdefghi'.split('') };
+  check('a plain row is one line; a two-record link row is two', rowLines(one) === 1 && rowLines(two) === 2);
+  check(`a long list is capped at ${CARD_MAX_LINES} lines plus one "+N more" line`, rowLines(nine) === CARD_MAX_LINES + 1);
+  check('the card is taller by exactly one line per extra value', cardHeight(lineCount([one, two]), false) - cardHeight(lineCount([one, one]), false) === CARD_ROW_H);
+  check('a port below a two-line row sits one extra line down', rowPortY(2, 999, false, [one, two, one])! - rowPortY(2, 999, false, [one, one, one])! === CARD_ROW_H);
 
   console.log('\nB8b2d. Canvas defaults: which field carries the link');
   const LF = (id: string, table_id: string, target: string, extra: Record<string, unknown> = {}) => ({ id, name: id, table_id, type: 'link', options: { target_table_id: target, ...extra } });

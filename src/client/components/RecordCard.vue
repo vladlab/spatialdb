@@ -27,7 +27,7 @@
     @dblclick.stop="$emit('open', recordId)"
     @contextmenu.prevent.stop="$emit('menu', { recordId, x: $event.clientX, y: $event.clientY })"
   >
-    <header class="card-head" :style="{ background: tableColor }">
+    <header class="card-head" :style="{ background: tableColor, color: textOn(tableColor) }">
       <span class="card-table">{{ tableName }}</span>
       <button
         class="card-unplace"
@@ -54,7 +54,11 @@
               :title="`Drag to a card to link it through “${r.name}”`"
               @pointerdown.stop.prevent="$emit('link-start', { recordId, fieldId: r.id, e: $event })" />
         <span class="card-key"><span v-if="r.color" class="port-dot" :style="{ background: r.color }" />{{ r.name }}</span>
-        <span class="card-val" :class="{ empty: !r.text, derived: r.derived, broken: r.broken }">{{ r.text || '—' }}</span>
+        <span v-if="r.lines && r.lines.length > 1" class="card-val card-list" :class="{ derived: r.derived }">
+          <span v-for="(l, i) in r.lines.slice(0, CARD_MAX_LINES)" :key="i" class="card-line">{{ l }}</span>
+          <span v-if="r.lines.length > CARD_MAX_LINES" class="card-line more">+{{ r.lines.length - CARD_MAX_LINES }} more</span>
+        </span>
+        <span v-else class="card-val" :class="{ empty: !r.text, derived: r.derived, broken: r.broken }">{{ r.text || '—' }}</span>
         <span v-if="r.verdict" class="card-warn" :class="{ ok: r.verdict.ok }" :title="r.verdict.title">{{ r.verdict.ok ? '✓' : '⚠' }}</span>
       </div>
       <!-- NOTES: formatted, with their images, in a window of FIXED height that scrolls
@@ -80,6 +84,8 @@
 </template>
 
 <script setup lang="ts">
+import { CARD_MAX_LINES } from '../canvas/cardLayout';
+import { textOn } from '../colorText';
 import { computed, defineAsyncComponent } from 'vue';
 import type { Store } from '../store';
 import {
@@ -97,6 +103,8 @@ export interface CardRow {
   broken?: boolean;
   /** A LINK field's row: an output port, with a handle to drag a new link from. */
   link?: boolean;
+  /** Several values (a link to three works): shown as a vertical list, one per line. */
+  lines?: string[];
   /** A comparing link's verdict on this value: ✓ or ⚠, with the why. */
   verdict?: { ok: boolean; title: string };
   /** A link or backlink row whose field has an arrow colour: the row is a PORT,
@@ -260,6 +268,10 @@ function onPointerDown(e: PointerEvent) {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .port-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+.card-list { display: flex; flex-direction: column; }
+.card-line { line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-line.more { color: var(--text-faint); font-size: 10px; }
+.card-field { align-items: flex-start; }
 .card-warn { color: var(--warning); font-size: 11px; margin-left: 3px; flex: none; }
 .card-warn.ok { color: var(--success); opacity: 0.8; }
 .card-val {
