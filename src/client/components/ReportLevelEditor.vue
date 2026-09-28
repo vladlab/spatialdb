@@ -187,6 +187,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { choicesOf as contractChoices } from '../../contract/values';
 import type { Store } from '../store';
 import { fieldsOf, type FieldRow } from '../state';
 import { opsFor, type FilterOp } from '../../contract/views';
@@ -221,7 +222,7 @@ const fieldById = (id: string) => store.state.fields.get(id);
 const typeOf = (id: string) => fieldById(id)?.type ?? 'text';
 const opsOf = (id: string) => opsFor(typeOf(id));
 const opsForId = opsOf;
-const choicesOf = (id: string): string[] => { const c = fieldById(id)?.options?.choices; return Array.isArray(c) ? c.map(String) : []; };
+const choicesOf = (id: string): string[] => contractChoices(fieldById(id)?.options) ?? [];
 
 /** A unique level id from a table name: 'files', then 'files2'. */
 function idFor(name: string): string {

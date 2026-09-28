@@ -389,6 +389,27 @@ RECIPE:
   History, scope and validation apply to tool-written data unchanged, and a script
   with a login token can do the same job.
 
+### Vocabularies: choices that live in the code
+
+`src/contract/vocab.ts`, `test/tools.ts` T1b/T2d/T5c. A select field may bind to a
+built-in list instead of storing choices: `options.vocabulary = "video_codec"`
+(`field.create` / `field.update`; an unknown list, or a bound select that also
+carries `choices`, is a 400). Bound, its choices are READ FROM THE CODE each time
+(`choicesOf` in values.ts — the one place choices are read, used by validation, the
+grid editor, filters, reports and the compare engine), so every bound select — on
+Files, on Deliverables — agrees and grows with the list, and nobody can add a
+near-duplicate through the UI. Values are validated against the list at write.
+
+The first vocabulary, **`video_codec`**, is a lookup table from what ffprobe reports
+(`codec_name`, `profile`) to one canonical spelling: an entry constrains only the raw
+fields it lists, may give several spellings, and the MOST SPECIFIC match wins — so
+`{ codec: 'h264' }` gathers every H.264 profile while `{ codec: 'prores', profile:
+'4444 XQ' }` keeps ProRes profiles apart. `ambiguities()` must be empty (tested). The
+ffprobe analyzer's `codec` output is derived through it ON THE CLIENT
+(`withVocabulary` in fileDrop.ts, so the table exists once); an unknown pair writes
+nothing and is reported with the raw pair, which is how the table learns. That
+output maps only into a select bound to the same vocabulary, or a text field.
+
 **`via` — who wrote a batch.** `MutationRequest.via` is an optional tag
 (`^[a-z][a-z0-9_]{1,39}$`, e.g. `file_drop`) stored on the log row
 (`mutations.via`), echoed on every stream event (**absent, never null**, when there

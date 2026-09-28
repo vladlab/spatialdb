@@ -10,8 +10,10 @@
  */
 import { randomUUID } from 'node:crypto';
 import { mountApp, sleep } from './uiHarness.js';
-import { ANALYZERS, MEDIA, TablesTools, Via, describe, resolveMap, stepApplies, toolsProblem } from '../src/contract/tools.js';
+import { ANALYZERS, MEDIA, TablesTools, Via, describe, fieldAccepts, resolveMap, stepApplies, toolsProblem } from '../src/contract/tools.js';
 import { MutationRequest } from '../src/contract/mutations.js';
+import { VIDEO_CODECS, VOCABULARIES, ambiguities, lookupCodec, vocabularyOptionError } from '../src/contract/vocab.js';
+import { choicesOf, validateValue } from '../src/contract/values.js';
 import { StreamEvent } from '../src/contract/events.js';
 
 let pass = 0, fail = 0;
@@ -77,6 +79,28 @@ async function main() {
     check('Via: lowercase snake, 2–40 chars', Via.safeParse('file_drop').success && !Via.safeParse('File Drop').success && !Via.safeParse('x').success && !Via.safeParse('a'.repeat(41)).success);
     check('MutationRequest accepts `via` and refuses a bad one', MutationRequest.safeParse({ clientId: randomUUID(), via: 'file_drop', mutations: [{ id: randomUUID(), mutation: { type: 'record.delete', id: randomUUID() } }] }).success && !MutationRequest.safeParse({ clientId: randomUUID(), via: 'File drop', mutations: [{ id: randomUUID(), mutation: { type: 'record.delete', id: randomUUID() } }] }).success);
     check('TablesTools is the config\'s schema', TablesTools.safeParse(ok).success);
+
+    /* ── T1b. The video-codec vocabulary ────────────────────────────────── */
+    console.log('\nT1b. contract/vocab.ts — raw ffprobe pair → one canonical name');
+    check('the table is unambiguous: no two entries can match one input without one being strictly more specific', ambiguities().length === 0, JSON.stringify(ambiguities()));
+    check('entry ids and names are unique', new Set(VIDEO_CODECS.map((c) => c.id)).size === VIDEO_CODECS.length && new Set(VIDEO_CODECS.map((c) => c.name)).size === VIDEO_CODECS.length);
+    check('ProRes keeps its profiles apart: prores / 4444 XQ → "ProRes 4444 XQ", prores / HQ → "ProRes 422 HQ"', lookupCodec('prores', '4444 XQ')?.name === 'ProRes 4444 XQ' && lookupCodec('prores', 'HQ')?.name === 'ProRes 422 HQ');
+    check('H.264 gathers EVERY profile into one name — the rare spec that cares rules on the raw profile', lookupCodec('h264', 'High')?.name === 'H.264' && lookupCodec('h264', 'Main')?.name === 'H.264' && lookupCodec('h264', 'High 4:2:2')?.name === 'H.264' && lookupCodec('h264', undefined)?.name === 'H.264');
+    check('the MOST SPECIFIC entry wins: dnxhd / DNxHR HQX → "DNxHR HQX", dnxhd / anything else → "DNxHD"', lookupCodec('dnxhd', 'DNxHR HQX')?.name === 'DNxHR HQX' && lookupCodec('dnxhd', 'DNxHD 145')?.name === 'DNxHD' && lookupCodec('dnxhd', undefined)?.name === 'DNxHD');
+    check('…and mpeg2video / 4:2:2 → "XDCAM HD422" while plain mpeg2video → "MPEG-2"', lookupCodec('mpeg2video', '4:2:2')?.name === 'XDCAM HD422' && lookupCodec('mpeg2video', 'Main')?.name === 'MPEG-2');
+    check('one entry gathers several raw spellings: hevc and h265 → "HEVC"', lookupCodec('hevc', 'Main 10')?.name === 'HEVC' && lookupCodec('h265', undefined)?.name === 'HEVC');
+    check('matching is case-insensitive on both fields', lookupCodec('PRORES', '4444 xq')?.name === 'ProRes 4444 XQ');
+    check('an unknown pair yields NOTHING — never a guess', lookupCodec('prores', '4444 XQ HDR-ish') === undefined && lookupCodec('some_new_codec', undefined) === undefined && lookupCodec(undefined, 'High') === undefined);
+    check('a ProRes with an unknown profile does NOT fall back to some other ProRes', lookupCodec('prores', 'Something New') === undefined);
+    check('the vocabulary\'s choices ARE the canonical names, in table order', JSON.stringify(VOCABULARIES.video_codec.choices) === JSON.stringify(VIDEO_CODECS.map((c) => c.name)));
+    check('vocabularyOptionError: unknown list refused by name; a bound select may not also carry typed choices; unbound passes', /unknown vocabulary 'colours'/.test(String(vocabularyOptionError({ vocabulary: 'colours' }))) && vocabularyOptionError({ vocabulary: 'video_codec', choices: ['x'] }) !== null && vocabularyOptionError({ vocabulary: 'video_codec' }) === null && vocabularyOptionError({ choices: ['a'] }) === null && vocabularyOptionError({}) === null);
+    check('choicesOf resolves a bound select to the vocabulary, a typed select to its own list, and an empty select to null', JSON.stringify(choicesOf({ vocabulary: 'video_codec' })) === JSON.stringify(VOCABULARIES.video_codec.choices) && JSON.stringify(choicesOf({ choices: ['a', 'b'] })) === '["a","b"]' && choicesOf({}) === null);
+    const bound = { key: 'codec', type: 'select' as const, options: { vocabulary: 'video_codec' } };
+    check('validateValue on a bound select: a canonical name passes, anything else is refused naming the list', validateValue(bound, 'ProRes 4444 XQ') === null && /is not one of/.test(String(validateValue(bound, 'PR4444XQ'))));
+    const rowFor = (id: string, vocabulary?: string, choices?: string[]) => ({ id, key: 'c', type: 'select', options: { ...(vocabulary ? { vocabulary } : {}), ...(choices ? { choices } : {}) } });
+    const codecOut = ANALYZERS.find((a) => a.id === 'ffprobe')!.outputs.find((o) => o.key === 'codec')!;
+    check('the ffprobe "Codec" output is a select bound to video_codec', codecOut.type === 'select' && codecOut.vocabulary === 'video_codec');
+    check('fieldAccepts: a vocabulary output goes into a select bound to the SAME vocabulary, or a text field — never a select with typed choices', fieldAccepts(codecOut, rowFor('x', 'video_codec')) && fieldAccepts(codecOut, { id: 'y', type: 'text', options: {} }) && !fieldAccepts(codecOut, rowFor('z', undefined, ['ProRes 4444 XQ'])) && !fieldAccepts(codecOut, rowFor('w')));
 
     /* ── T2. Storing it ─────────────────────────────────────────────────── */
     console.log('\nT2. tables.tools — written by table.update, validated against the table\'s fields');
@@ -157,6 +181,29 @@ async function main() {
     const tcap = await (await fetch(`${API}/api/mutations/${delTable}/undo`)).json() as { rows: unknown };
     r = await post([{ type: 'restore', id: randomUUID(), undoOf: delTable, rows: tcap.rows }]);
     check('the restored table has its recipe (capture takes every column)', r.status === 200 && (await dbTools(tFiles))?.file_drop?.steps?.[0]?.map?.path === gPath, JSON.stringify(await dbTools(tFiles)));
+
+    console.log('\nT2d. A bound select on the server');
+    const gCodec = randomUUID(), tSpec = randomUUID(), sCodec = randomUUID(), recA = randomUUID();
+    r = await post([{ type: 'field.create', id: gCodec, tableId: tFiles, name: 'Codec', key: 'codec', fieldType: 'select', options: { vocabulary: 'colours' } }]);
+    check('an unknown vocabulary is refused (400) by name', r.status === 400 && /unknown vocabulary 'colours'/.test(await r.clone().text()));
+    r = await post([{ type: 'field.create', id: gCodec, tableId: tFiles, name: 'Codec', key: 'codec', fieldType: 'select', options: { vocabulary: 'video_codec', choices: ['x'] } }]);
+    check('a bound select with typed choices too is refused', r.status === 400);
+    r = await post([{ type: 'field.create', id: gCodec, tableId: tFiles, name: 'Codec', key: 'codec', fieldType: 'select', options: { vocabulary: 'video_codec' } }, pos(gCodec, 3),
+                    { type: 'table.create', id: tSpec, name: 'Deliverables' }, { type: 'field.create', id: sCodec, tableId: tSpec, name: 'Codec', key: 'codec', fieldType: 'select', options: { vocabulary: 'video_codec' } }, pos(sCodec, 0)]);
+    check('a bound select is accepted — on Files AND on Deliverables, no choices stored on either', r.status === 200 && (await pool.query(`select options from fields where id = $1`, [gCodec])).rows[0].options.choices === undefined);
+    r = await post([{ type: 'record.create', id: recA, tableId: tFiles, data: { name: 'x', codec: 'PR4444XQ' } }]);
+    check('a value outside the vocabulary is refused (400) — the spelling everyone sees is enforced at write', r.status === 400 && /not one of/.test(await r.clone().text()));
+    r = await post([{ type: 'record.create', id: recA, tableId: tFiles, data: { name: 'x', codec: 'ProRes 4444 XQ' } }]);
+    check('a canonical name is accepted', r.status === 200);
+    r = await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: gPath } }, { analyzer: 'ffprobe', map: { codec: gCodec } }] } } }]);
+    check('the ffprobe Codec output maps into the bound select', r.status === 200, await r.text());
+    r = await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: gPath } }, { analyzer: 'ffprobe', map: { codec: gName } }] } } }]);
+    check('…and into a text field (the raw-name people), but…', r.status === 200);
+    const gTyped = randomUUID();
+    await post([{ type: 'field.create', id: gTyped, tableId: tFiles, name: 'Typed', key: 'typed', fieldType: 'select', options: { choices: ['ProRes 4444 XQ'] } }]);
+    r = await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: gPath } }, { analyzer: 'ffprobe', map: { codec: gTyped } }] } } }]);
+    check('…NOT into a select with its own typed choices (400)', r.status === 400 && /cannot be written/.test(await r.clone().text()));
+    await post([{ type: 'table.update', id: tFiles, tools: good }, { type: 'record.delete', id: recA }]);
 
     /* ── T3. via ────────────────────────────────────────────────────────── */
     console.log('\nT3. `via` — who wrote a batch, in the log and on every event');
@@ -299,6 +346,30 @@ async function main() {
     await w.find('.ts .tools input[type=checkbox]').setValue(false);
     cfg = await ui.untilDb(`select tools from tables where id = '${tNew}'`, (x) => JSON.stringify(x[0]?.tools) === '{}');
     check('turning it off removes the recipe; the fields stay', JSON.stringify(cfg[0].tools) === '{}' && (await pool.query(`select 1 from fields where table_id = $1 and key = 'kind'`, [tNew])).rowCount === 1);
+    console.log('\nT5c. Field settings: choices from a built-in list');
+    const tCat = randomUUID(), cName = randomUUID(), cSel = randomUUID();
+    await post([{ type: 'table.create', id: tCat, name: 'Catalog' }, { type: 'field.create', id: cName, tableId: tCat, name: 'Name', key: 'name', fieldType: 'text' }, pos(cName, 0),
+      { type: 'field.create', id: cSel, tableId: tCat, name: 'Codec', key: 'codec', fieldType: 'select', options: { choices: ['a', 'b'] } }, pos(cSel, 1),
+      { type: 'record.create', id: randomUUID(), tableId: tCat, data: { name: 'one' } }]);
+    win.location.hash = `#/all/table/${tCat}`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange'));
+    await until(() => w.find('.gridview').exists() && w.findAll('.gridview thead th .th-name').some((t: any) => t.text() === 'Codec'), 8000);
+    const th = (name: string) => w.findAll('.gridview thead th').find((t: any) => t.find('.th-name').exists() && t.find('.th-name').text() === name)!;
+    const pop = () => w.find('.gridview .popover');
+    await th('Codec').find('.th-menu').trigger('click');
+    check('a select\'s settings offer where its choices come from: typed, or a built-in list', await until(() => pop().find('select.vocab').exists()) && pop().findAll('select.vocab option').map((o: any) => o.text()).join('|') === 'typed choices|built-in: Video codec' && pop().find('input.choices').exists());
+    await pop().find('select.vocab').setValue('video_codec');
+    const boundOpts = await ui.untilDb(`select options from fields where id = '${cSel}'`, (x) => x[0]?.options?.vocabulary === 'video_codec');
+    check('binding writes options.vocabulary and DROPS the typed choices', boundOpts[0].options.vocabulary === 'video_codec' && boundOpts[0].options.choices === undefined, JSON.stringify(boundOpts[0].options));
+    check('…and the settings now say how many choices come from the list, with no text box to type in', await until(() => /choices from the built-in list/.test(pop().text())) && !pop().find('input.choices').exists() && new RegExp(`${VOCABULARIES.video_codec.choices.length} choices`).test(pop().text()), pop().text());
+    await pop().trigger('keydown', { key: 'Escape' });
+    const cellOf = (row: number, col: number) => w.findAll('.gridview tbody tr')[row].findAll('td')[col + 1];
+    await cellOf(0, 1).trigger('mousedown');
+    await cellOf(0, 1).trigger('dblclick');
+    check('editing the cell offers the vocabulary as choices', await until(() => w.find('.gridview .popover select, .gridview td select, .gridview .cell-editor select').exists() || w.findAll('.gridview option').length > 5) && w.findAll('.gridview option').map((o: any) => o.text()).includes('ProRes 4444 XQ'), w.findAll('.gridview option').map((o: any) => o.text()).slice(0, 5).join());
+    await w.find('.gridview .editor select').setValue('DNxHR HQX');
+    await w.find('.gridview .editor select').trigger('keydown', { key: 'Enter' });
+    const stored = await ui.untilDb(`select data from records where table_id = '${tCat}'`, (x) => x[0]?.data?.codec === 'DNxHR HQX');
+    check('picking one stores the canonical name', stored[0].data.codec === 'DNxHR HQX');
     check('no error banner', !w.find('.banner.error').exists());
     await sleep(50);
   } finally {

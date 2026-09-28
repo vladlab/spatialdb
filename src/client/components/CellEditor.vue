@@ -76,6 +76,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue';
+import { choicesOf as contractChoices } from '../../contract/values';
 import { validateValue, type FieldShape } from '../../contract/values';
 
 export type EditExit = 'down' | 'right' | 'left' | 'none';
@@ -106,10 +107,7 @@ const shape = computed(() => props.field as FieldShape);
 const str = (v: unknown) => (v === undefined || v === null ? '' : String(v));
 const draft = ref(props.seed ?? str(props.value));
 
-const choices = computed(() => {
-  const c = props.field.options?.choices;
-  return Array.isArray(c) ? c.filter((x): x is string => typeof x === 'string') : [];
-});
+const choices = computed(() => contractChoices(props.field.options) ?? []);
 const picked = computed(() =>
   Array.isArray(props.value) ? (props.value as unknown[]).filter((x): x is string => typeof x === 'string') : []);
 const remaining = computed(() => choices.value.filter((c) => !picked.value.includes(c)));

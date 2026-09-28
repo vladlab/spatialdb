@@ -1033,6 +1033,18 @@ that visibly does nothing.
 - Tree: tables alphabetical; a Settings ("This browser") option lists scoped tables
   above the rest, each group alphabetical.
 
+### Vocabularies — BUILT (Sept 28)
+
+The owner's codec question: ffprobe says `prores / 4444 XQ`, a spec says "Apple
+ProRes 4444 XQ", a colleague types "PR4444XQ". Normalise ONCE at extraction through
+a table anyone can read (`contract/vocab.ts`), not at compare time. Chosen shape
+(his, better than either of mine): not a utility table, not a link field — a
+regular select with one optional setting, "choices from a built-in list", so the
+field-type list stays short and no utility tables confuse people. `choicesOf` in
+values.ts is now the one place choices are read. The ffprobe analyzer gains a
+canonical `Codec` output; the raw name and profile stay as separate outputs. Next
+vocabularies when needed, same pattern: container, primaries, transfer.
+
 ### Recipes — BUILT (Sept 27, after the first real drops)
 
 The owner's objection to the first mapping UI: one flat list of forty outputs, with

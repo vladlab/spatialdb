@@ -20,6 +20,8 @@ import { backlinkConfigError, backlinkSourceOf } from '../contract/backlinks';
 import { arrowStyleOf, type ArrowStyle } from '../contract/arrows';
 import { isMembership } from '../contract/scope';
 import { FILES_STANDARD_FIELDS, shapeOptionError } from '../contract/shapes';
+import { choicesOf as contractChoices } from '../contract/values';
+import { vocabularyOptionError } from '../contract/vocab';
 import { REQUIRED, analyzerOf, defaultRecipe, fieldAccepts, toolsProblem, type Output, type TablesTools } from '../contract/tools';
 import { fieldsOf, recordsOf, tablesSorted, type FieldRow } from './state';
 import type { Store } from './store';
@@ -35,6 +37,8 @@ export interface FieldDraft {
   target: string;
   /** select / multi_select: comma separated. */
   choices: string;
+  /** A select bound to a built-in vocabulary (contract/vocab.ts) instead of typed choices. */
+  vocabulary: string;
   /** lookup: the link field to follow, and the far field to show. */
   via: string; show: string;
   /** backlink: the link field (anywhere) this is the other end of. */
@@ -43,7 +47,7 @@ export interface FieldDraft {
   shape: string;
 }
 export const emptyDraft = (): FieldDraft =>
-  ({ name: '', key: '', type: 'text', target: '', choices: '', via: '', show: '', source: '', shape: '' });
+  ({ name: '', key: '', type: 'text', target: '', choices: '', vocabulary: '', via: '', show: '', source: '', shape: '' });
 
 /**
  * name → key, the way a person would: "Frame Rate" → frame_rate. A convenience,
@@ -56,7 +60,12 @@ export function deriveKey(name: string): string {
 }
 
 export const parseChoices = (raw: string) => raw.split(',').map((c) => c.trim()).filter(Boolean);
+/** A field's choices — through the contract, so a vocabulary-bound select resolves. */
 export function choicesOf(f: { options?: Record<string, unknown> | null }): string[] {
+  return contractChoices(f.options) ?? [];
+}
+/** The choices a select field STORES (typed by hand) — empty for a vocabulary-bound one. */
+export function ownChoices(f: { options?: Record<string, unknown> | null }): string[] {
   const c = f.options?.choices;
   return Array.isArray(c) ? c.filter((x): x is string => typeof x === 'string') : [];
 }
@@ -172,8 +181,8 @@ export function useSchemaActions(store: Store) {
     if (d.type === 'backlink') options.source_field_id = d.source;
     if (d.type === 'structured') options.shape = d.shape;
     if (d.type === 'select' || d.type === 'multi_select') {
-      const choices = parseChoices(d.choices);
-      if (choices.length) options.choices = choices;
+      if (d.vocabulary) options.vocabulary = d.vocabulary;
+      else { const choices = parseChoices(d.choices); if (choices.length) options.choices = choices; }
     }
     const id = crypto.randomUUID();
     const pos = Math.max(0, ...fields(tableId).map((f) => f.position)) + 1;
@@ -269,7 +278,8 @@ export function useSchemaActions(store: Store) {
       const [type, shape] = out.type.split(':');
       const options: Record<string, unknown> = {};
       if (shape) options.shape = shape;
-      if (out.choices) options.choices = [...out.choices];
+      if (out.vocabulary) options.vocabulary = out.vocabulary;
+      else if (out.choices) options.choices = [...out.choices];
       if (out.key === 'total_size') options.format = 'bytes';
       store.mutate({ type: 'field.create', id, tableId, name: out.name, key: out.key, fieldType: type as FieldType, options, required: false });
       store.mutate({ type: 'field.update', id, position: ++pos });
@@ -290,6 +300,23 @@ export function useSchemaActions(store: Store) {
     // Merged into the existing options rather than replacing them — a select
     // field may grow other options later, and this line should not eat them.
     store.mutate({ type: 'field.update', id, options: { ...f.options, choices: parseChoices(raw) } });
+  }
+
+  /**
+   * Bind a select to a built-in vocabulary (contract/vocab.ts), or unbind it (''):
+   * bound, its choices come from the code and the typed list is dropped; unbound,
+   * it is an ordinary select again with no choices until some are typed.
+   */
+  function setVocabulary(id: string, vocabulary: string): string | null {
+    const f = store.state.fields.get(id);
+    if (!f) return null;
+    const options: Record<string, unknown> = { ...f.options };
+    delete options.choices;
+    if (vocabulary) options.vocabulary = vocabulary; else delete options.vocabulary;
+    const err = vocabularyOptionError(options);
+    if (err) return err;
+    store.mutate({ type: 'field.update', id, options });
+    return null;
   }
 
   /**
@@ -394,7 +421,7 @@ export function useSchemaActions(store: Store) {
     createTable, renameTable, deleteTable,
     draftError, createField, renameField, setChoices, moveField, makePrimary, isPrimary,
     canBePrimary, deleteField,
-    setArrowStyle, setMembership, setSingle, addStandardFilesFields, setTools, enableFileDrop, disableFileDrop, addToolFields, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
+    setArrowStyle, setMembership, setSingle, addStandardFilesFields, setVocabulary, setTools, enableFileDrop, disableFileDrop, addToolFields, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
   };
 }
 export type SchemaActions = ReturnType<typeof useSchemaActions>;

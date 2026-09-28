@@ -378,6 +378,7 @@
 </template>
 
 <script setup lang="ts">
+import { choicesOf as contractChoices } from '../../contract/values';
 import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { SCOPE } from '../scope';
 import type { Store } from '../store';
@@ -567,8 +568,7 @@ const opsOf = (fieldId: string) => opsFor(typeOf(fieldId));
 function choicesOf(fieldId: string): string[] {
   const f = fieldById.value.get(fieldId);
   if (!f || (f.type !== 'select' && f.type !== 'multi_select')) return [];
-  const c = f.options?.choices;
-  return Array.isArray(c) ? c.filter((x): x is string => typeof x === 'string') : [];
+  return contractChoices(f.options) ?? [];
 }
 const inputType = (fieldId: string) =>
   ({ number: 'number', date: 'date' } as Record<string, string>)[typeOf(fieldId)] ?? 'text';

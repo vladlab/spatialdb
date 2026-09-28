@@ -32,6 +32,7 @@ export type { Step };
 import { fieldsOf, recordsOf } from '../state';
 import { validateValue } from '../../contract/values';
 import { analyzerOf, resolveMap, stepApplies, type Recipe, type Step, type TablesTools } from '../../contract/tools';
+import { lookupCodec } from '../../contract/vocab';
 import { invoke, jobs, notice } from '../desktop';
 import { confirmDialog, askFull } from '../dialogs';
 
@@ -74,6 +75,22 @@ export function immediateOutputs(analyzer: string, u: Unit): Record<string, unkn
     }
     default: return {};
   }
+}
+
+/**
+ * Outputs an analyzer reports RAW, normalised through the contract's vocabularies
+ * (contract/vocab.ts) — here, not in Rust, so the lookup table exists once. An
+ * unknown pair yields no `codec`; the raw pair stays, and the caller reports it.
+ */
+export function withVocabulary(analyzer: string, outputs: Record<string, unknown>): { outputs: Record<string, unknown>; unknown: string[] } {
+  const out = { ...outputs };
+  const unknown: string[] = [];
+  if (analyzer === 'ffprobe' && typeof out.video_codec === 'string') {
+    const hit = lookupCodec(out.video_codec, typeof out.codec_profile === 'string' ? out.codec_profile : undefined);
+    if (hit) out.codec = hit.name;
+    else unknown.push(`Codec: ${out.video_codec}${out.codec_profile ? ' / ' + String(out.codec_profile) : ''} is not in the vocabulary (contract/vocab.ts)`);
+  }
+  return { outputs: out, unknown };
 }
 
 /**
@@ -208,10 +225,13 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
       const a = analyzerOf(step.analyzer);
       jobs.set(id, a?.program ?? a?.name ?? step.analyzer);
       try {
-        const { outputs } = await invoke<{ outputs: Record<string, unknown> }>('analyze', { unit, analyzer: step.analyzer });
+        const raw = await invoke<{ outputs: Record<string, unknown> }>('analyze', { unit, analyzer: step.analyzer });
+        const { outputs, unknown } = withVocabulary(step.analyzer, raw.outputs);
         const { data, skipped } = mappedData(outputs, map, fields);
         if (Object.keys(data).length && store.state.records.has(id)) store.mutate({ type: 'record.update', id, set: data, unset: [] }, FOLLOW_UP);
         for (const sk of skipped) notice(`${unit.name}: not written — ${sk}`, 'warn');
+        // Only worth saying when the table wanted the canonical name.
+        if (map.has('codec')) for (const u of unknown) notice(`${unit.name}: not written — ${u}`, 'warn');
       } catch (e) { notice(`${unit.name}: ${a?.name ?? step.analyzer} — ${String(e)}`, 'error'); }
       jobs.delete(id);
     }

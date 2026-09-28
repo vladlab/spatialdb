@@ -22,11 +22,22 @@
     <span v-if="field.type === 'lookup'" class="meta lookup" :class="{ broken: lookup.broken }"
           title="A lookup is computed: it follows a link field and shows a field from the far record. To re-point it, delete it and add another — it stores no data of its own.">{{ lookup.text }}</span>
 
-    <input v-if="field.type === 'select' || field.type === 'multi_select'" class="choices"
-           :value="choicesOf(field).join(', ')" placeholder="choices, comma separated"
-           title="Values already stored under a removed choice stay readable; they fail validation the next time that cell is edited."
-           @change="actions.setChoices(field.id, ($event.target as HTMLInputElement).value)"
-           @keydown.enter="($event.target as HTMLInputElement).blur()" />
+    <!-- A select's choices: typed here, OR from a built-in list (contract/vocab.ts) —
+         then they live in the code, every bound select agrees, and nobody can add
+         a near-duplicate. -->
+    <template v-if="field.type === 'select' || field.type === 'multi_select'">
+      <select class="vocab" :value="String(field.options?.vocabulary ?? '')" title="Where the choices come from"
+              @change="onVocabulary(($event.target as HTMLSelectElement).value)">
+        <option value="">typed choices</option>
+        <option v-for="id in VOCABULARY_IDS" :key="id" :value="id">built-in: {{ VOCABULARIES[id].name }}</option>
+      </select>
+      <input v-if="!field.options?.vocabulary" class="choices"
+             :value="ownChoices(field).join(', ')" placeholder="choices, comma separated"
+             title="Values already stored under a removed choice stay readable; they fail validation the next time that cell is edited."
+             @change="actions.setChoices(field.id, ($event.target as HTMLInputElement).value)"
+             @keydown.enter="($event.target as HTMLInputElement).blur()" />
+      <span v-else class="meta vocab-note" :title="choicesOf(field).join(', ')">{{ choicesOf(field).length }} choices from the built-in list — grows with the app, not editable here</span>
+    </template>
 
     <!-- LINK fields: how their relationships are drawn, on EVERY canvas. -->
     <span v-if="field.type === 'link'" class="arrow-style">
@@ -90,7 +101,8 @@ import type { Store } from '../store';
 import { fieldsOf, type FieldRow } from '../state';
 import { suggestPairs } from '../../contract/compare';
 import ComparePairs from './ComparePairs.vue';
-import { choicesOf, type SchemaActions } from '../schemaActions';
+import { choicesOf, ownChoices, type SchemaActions } from '../schemaActions';
+import { VOCABULARIES, VOCABULARY_IDS } from '../../contract/vocab';
 import { arrowStyleOf } from '../../contract/arrows';
 
 const props = defineProps<{
@@ -119,6 +131,13 @@ const targetName = computed(() => {
   const id = props.field.options?.target_table_id as string | undefined;
   return (id && props.store.state.tables.get(id)?.name) || '(missing table)';
 });
+
+// The contract refuses an unknown vocabulary; the dropdown only offers known ones,
+// so an error here would be a bug worth seeing, not a dialog worth designing.
+function onVocabulary(id: string) {
+  const err = props.actions.setVocabulary(props.field.id, id);
+  if (err) console.error(err);
+}
 </script>
 
 <style scoped>
@@ -127,6 +146,8 @@ const targetName = computed(() => {
 .field-settings.row .name { width: 200px; }
 .field-settings.row .meta { width: 140px; }
 .field-settings.row .choices { flex: 1; }
+.vocab { font-size: 11px; }
+.vocab-note { flex: 1; }
 .field-settings.row .buttons { margin-left: auto; }
 /* Text inputs only. Applied to every <input>, this gave checkboxes padding and a
    border box too. */

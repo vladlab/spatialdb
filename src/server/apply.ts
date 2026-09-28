@@ -38,6 +38,7 @@ import { membershipError } from '../contract/scope.js';
 import { shapeOptionError } from '../contract/shapes.js';
 import { reportDefError } from '../contract/reports.js';
 import { toolsProblem } from '../contract/tools.js';
+import { vocabularyOptionError } from '../contract/vocab.js';
 import { captureFor, type Capture } from './capture.js';
 
 export class MutationError extends Error {
@@ -338,6 +339,7 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
       assertArrowStyleValid(m.options);
       if (m.fieldType === 'link') await assertCompareValid(db, m.tableId, m.options);
       if (m.fieldType === 'structured') { const err = shapeOptionError(m.options); if (err) throw new MutationError(err); }
+      if (m.fieldType === 'select' || m.fieldType === 'multi_select') { const err = vocabularyOptionError(m.options); if (err) throw new MutationError(err); }
       await assertMembershipValid(db, m.tableId, m.fieldType, m.options, m.id);
       if (m.fieldType === 'lookup') await assertLookupConfigValid(db, m.tableId, m.options);
       if (m.fieldType === 'backlink') await assertBacklinkConfigValid(db, m.tableId, m.options);
@@ -363,6 +365,7 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
         if (cur.rows[0]?.type === 'lookup') await assertLookupConfigValid(db, cur.rows[0].table_id, m.options);
         if (cur.rows[0]?.type === 'backlink') await assertBacklinkConfigValid(db, cur.rows[0].table_id, m.options);
         if (cur.rows[0]?.type === 'link') await assertCompareValid(db, cur.rows[0].table_id, m.options);
+        if (cur.rows[0]?.type === 'select' || cur.rows[0]?.type === 'multi_select') { const err = vocabularyOptionError(m.options); if (err) throw new MutationError(err); }
         if (cur.rows[0]?.type === 'structured') {
           const err = shapeOptionError(m.options);
           if (err) throw new MutationError(err);

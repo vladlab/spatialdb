@@ -44,7 +44,9 @@ const shell = {
             if (args.unit.path.includes('broken')) throw 'ffprobe: Invalid data found when processing input';
             return { outputs: args.unit.media === 'audio'
               ? { 'ffprobe.version': '7.1', container: 'wav', audio_codec: 'pcm_s24le', audio_channels: 2, audio_layout: { tracks: [{ name: 'A1', channels: ['L', 'R'] }] } }
-              : { 'ffprobe.version': '7.1', container: 'mov', video_codec: 'prores', width: 1920, height: 1080, frame_rate: 23.976, scan: 'progressive', color_range: 'tv' } };
+              : args.unit.path.includes('weird')
+                ? { 'ffprobe.version': '7.1', container: 'mov', video_codec: 'prores', codec_profile: 'Something New', width: 1920 }
+                : { 'ffprobe.version': '7.1', container: 'mov', video_codec: 'prores', codec_profile: '4444 XQ', width: 1920, height: 1080, frame_rate: 23.976, scan: 'progressive', color_range: 'tv' } };
           }
           if (args.analyzer === 'hash-xxh3') return { outputs: { hash: `xxh3:${'ab'.repeat(8)}` } };
           throw new Error(`fake shell: no analyzer ${args.analyzer}`);
@@ -87,7 +89,7 @@ async function main() {
 
     console.log('\nF2. Setup: a Files table with File drop mapped');
     const tFiles = randomUUID(), tPlain = randomUUID(), tBoards = randomUUID();
-    const f = { name: randomUUID(), path: randomUUID(), kind: randomUUID(), manifest: randomUUID(), size: randomUUID(), width: randomUUID(), rate: randomUUID(), layout: randomUUID(), hash: randomUUID(), media: randomUUID(), plainName: randomUUID() };
+    const f = { name: randomUUID(), path: randomUUID(), kind: randomUUID(), manifest: randomUUID(), size: randomUUID(), width: randomUUID(), rate: randomUUID(), layout: randomUUID(), hash: randomUUID(), media: randomUUID(), codec: randomUUID(), rawCodec: randomUUID(), plainName: randomUUID() };
     const pos = (id: string, position: number) => ({ type: 'field.update', id, position });
     const r = await post([
       { type: 'table.create', id: tFiles, name: 'Files' }, { type: 'table.create', id: tPlain, name: 'Notes' }, ...boardsTableMutations(tBoards),
@@ -101,12 +103,14 @@ async function main() {
       { type: 'field.create', id: f.layout, tableId: tFiles, name: 'Audio', key: 'audio_layout', fieldType: 'structured', options: { shape: 'audio_layout' } }, pos(f.layout, 7),
       { type: 'field.create', id: f.hash, tableId: tFiles, name: 'Hash', key: 'hash', fieldType: 'text' }, pos(f.hash, 8),
       { type: 'field.create', id: f.media, tableId: tFiles, name: 'Media', key: 'media', fieldType: 'select', options: { choices: ['video', 'image'] } }, pos(f.media, 9),
+      { type: 'field.create', id: f.codec, tableId: tFiles, name: 'Codec', key: 'codec', fieldType: 'select', options: { vocabulary: 'video_codec' } }, pos(f.codec, 10),
+      { type: 'field.create', id: f.rawCodec, tableId: tFiles, name: 'Raw codec', key: 'video_codec', fieldType: 'text' }, pos(f.rawCodec, 11),
       { type: 'field.create', id: f.plainName, tableId: tPlain, name: 'Name', key: 'name', fieldType: 'text' }, pos(f.plainName, 0),
       // The recipe: filesystem for everything; ffprobe on video and audio (its default);
       // an xxh3 hash of everything. The order is the order the analyzers run.
       { type: 'table.update', id: tFiles, tools: { file_drop: { steps: [
         { analyzer: 'filesystem', map: { path: f.path, name: f.name, kind: f.kind, manifest: f.manifest, total_size: f.size, media: f.media } },
-        { analyzer: 'ffprobe', map: { width: f.width, frame_rate: f.rate, audio_layout: f.layout } },
+        { analyzer: 'ffprobe', map: { width: f.width, frame_rate: f.rate, audio_layout: f.layout, codec: f.codec, video_codec: f.rawCodec } },
         { analyzer: 'hash-xxh3', map: { hash: f.hash } },
       ] } } },
     ]);
@@ -140,6 +144,7 @@ async function main() {
     check('the shell was asked to classify exactly the dropped paths', calls.find((c) => c.cmd === 'classify')?.args.paths.join() === '/mnt/san/a.mov,/mnt/san/mix.wav');
     fr = await untilDb(`select id, data from records where table_id = '${tFiles}' order by created_at`, (x) => x.length === 2 && x[0].data.width === 1920 && x[1].data.audio_layout);
     check('ffprobe facts ARRIVE AFTERWARDS: width and rate on the movie, an audio layout on the wav', fr[0].data.width === 1920 && fr[0].data.frame_rate === 23.976 && fr[1].data.audio_layout?.tracks?.[0]?.channels?.join() === 'L,R', JSON.stringify(fr.map((x) => x.data)));
+    check('the CANONICAL codec is written from the raw pair through the vocabulary, beside the raw name', fr[0].data.codec === 'ProRes 4444 XQ' && fr[0].data.video_codec === 'prores' && fr[1].data.codec === undefined, JSON.stringify(fr[0].data));
     fr = await untilDb(`select id, data from records where table_id = '${tFiles}' order by created_at`, (x) => x.length === 2 && x[0].data.hash && x[1].data.hash);
     const analyzeCalls = () => calls.filter((c) => c.cmd === 'analyze').map((c) => `${c.args.analyzer}:${c.args.unit.name}`);
     check('then the hash, last, because it is the last step', fr[0].data.hash === 'xxh3:abababababababab' && analyzeCalls().filter((x) => x.startsWith('hash')).length === 2);
@@ -172,6 +177,11 @@ async function main() {
     check('the record is still created (path, size) and the failure is a notice about THAT file', fr.length === 1 && fr[0].data.total_size === 1000 && await until(() => /broken\.mov: ffprobe/.test(noticesText())), noticesText());
     fr = await untilDb(`select data from records where table_id = '${tFiles}' and data->>'name' = 'broken.mov'`, (x) => !!x[0]?.data.hash);
     check('…and the next step (the hash) still ran after the failed one', !!fr[0]?.data.hash);
+
+    console.log('\nF6a. A codec the vocabulary does not know');
+    drop(['/mnt/san/weird.mov']);
+    fr = await untilDb(`select data from records where table_id = '${tFiles}' and data->>'name' = 'weird.mov'`, (x) => x.length === 1 && x[0].data.width === 1920);
+    check('the raw name is written, the canonical cell stays EMPTY, and the notice names the pair so the table can learn it', fr[0].data.video_codec === 'prores' && fr[0].data.codec === undefined && await until(() => /weird\.mov: not written — Codec: prores \/ Something New is not in the vocabulary/.test(noticesText())), noticesText());
 
     console.log('\nF6b. runs_on is obeyed: a document goes to no ffprobe');
     calls.length = 0;

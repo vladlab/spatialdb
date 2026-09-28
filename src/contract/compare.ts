@@ -16,6 +16,7 @@
 
 import { z } from 'zod';
 import { diffLayouts, AudioLayout } from './shapes.js';
+import { choicesOf } from './values.js';
 
 /* ── the rule set ─────────────────────────────────────────────────────────── */
 
@@ -181,7 +182,7 @@ export function seedValues(
     } else {
       const tv = target.data[to.key]; if (isEmpty(tv)) continue;
       if (!overwrite && !isEmpty(owner.data[from.key])) { skipped.push(from.name); continue; }
-      if (from.type === 'select') { const choices = (from.options?.choices as string[] | undefined) ?? []; if (!choices.includes(String(tv))) { skipped.push(`${from.name} (“${String(tv)}” is not one of its choices)`); continue; } }
+      if (from.type === 'select') { const choices = choicesOf(from.options) ?? []; if (!choices.includes(String(tv))) { skipped.push(`${from.name} (“${String(tv)}” is not one of its choices)`); continue; } }
       set[from.key] = tv;
     }
   }

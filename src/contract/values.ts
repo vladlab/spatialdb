@@ -29,6 +29,7 @@
  */
 
 import type { FIELD_TYPES } from './mutations.js';
+import { VOCABULARIES } from './vocab.js';
 import { attachmentError, richTextError } from './richtext.js';
 import { shapeOf, structuredError } from './shapes.js';
 import { ReportDef } from './reports.js';
@@ -42,8 +43,16 @@ export interface FieldShape {
   options: Record<string, unknown>;
 }
 
-function choicesOf(options: Record<string, unknown>): string[] | null {
-  const c = options.choices;
+/**
+ * A select's choices — THE one place they are read. A select bound to a built-in
+ * vocabulary (`options.vocabulary`, contract/vocab.ts) has no choices of its own:
+ * they come from the code, so every bound select grows when the list grows. Null
+ * when the field has none (an unconstrained select).
+ */
+export function choicesOf(options: Record<string, unknown> | null | undefined): string[] | null {
+  const v = options?.vocabulary;
+  if (typeof v === 'string' && VOCABULARIES[v]) return [...VOCABULARIES[v].choices];
+  const c = options?.choices;
   if (!Array.isArray(c) || c.length === 0) return null;
   return c.filter((x): x is string => typeof x === 'string');
 }

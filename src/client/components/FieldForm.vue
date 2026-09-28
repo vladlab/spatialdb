@@ -41,8 +41,13 @@
         <option v-for="f in lookupTargets" :key="f.id" :value="f.id">{{ f.name }}</option>
       </select>
     </template>
-    <input v-if="d.type === 'select' || d.type === 'multi_select'" v-model="d.choices"
-           class="choices" placeholder="choices, comma separated" />
+    <template v-if="d.type === 'select' || d.type === 'multi_select'">
+      <select v-model="d.vocabulary" class="vocab" title="Where the choices come from">
+        <option value="">typed choices</option>
+        <option v-for="id in VOCABULARY_IDS" :key="id" :value="id">built-in: {{ VOCABULARIES[id].name }}</option>
+      </select>
+      <input v-if="!d.vocabulary" v-model="d.choices" class="choices" placeholder="choices, comma separated" />
+    </template>
     <label class="adv"><input v-model="advanced" type="checkbox" /> advanced</label>
     <input v-if="advanced" v-model="d.key" class="key mono" :placeholder="derived || 'key'"
            title="The property name values are stored under. lowercase_snake_case; cannot be changed later." />
@@ -57,6 +62,7 @@ import type { Store } from '../store';
 import { tablesSorted } from '../state';
 import { CREATABLE_TYPES, deriveKey, emptyDraft, type SchemaActions } from '../schemaActions';
 import { FIELD_FORM_SHAPES, SHAPE_LABELS } from '../../contract/shapes';
+import { VOCABULARIES, VOCABULARY_IDS } from '../../contract/vocab';
 
 const props = defineProps<{
   store: Store; actions: SchemaActions; tableId: string;

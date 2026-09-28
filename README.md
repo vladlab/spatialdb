@@ -86,6 +86,7 @@ src/
   contract/arrows.ts     ★ a link field's arrow colour and direction
   contract/compare.ts    ★ the comparison engine: rules, compareRecords, seedValues
   contract/reports.ts    ★ reports: the definition, its validation, the walk, rollups, the flattener → CSV
+  contract/vocab.ts      ★ built-in choice lists a select can bind to; the video-codec lookup (raw ffprobe pair → one spelling)
   contract/tools.ts      ★ the desktop client's tools: ANALYZERS (what derives what, how), a table's RECIPE and its validation, the `via` tag
   contract/shapes.ts     ★ structured values: shapes, summaries, layout operations, the layout diff
   contract/scope.ts      ★ scope: the membership flag and "is this record in scope"

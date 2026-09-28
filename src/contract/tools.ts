@@ -38,6 +38,7 @@
 
 import { z } from 'zod';
 import { MANIFEST_KINDS } from './shapes.js';
+import { VOCABULARIES } from './vocab.js';
 
 /* ── what a dropped thing is ─────────────────────────────────────────────── */
 
@@ -79,6 +80,9 @@ export interface Output {
   type: OutputType;
   /** For `select` outputs: the values the analyzer can produce (so the UI can make the field). */
   choices?: readonly string[];
+  /** For `select` outputs normalised through a built-in list (contract/vocab.ts): the
+   *  target select must be bound to the SAME vocabulary (or be a text field). */
+  vocabulary?: string;
   note?: string;
 }
 
@@ -86,7 +90,11 @@ export interface Output {
 export interface ToolFieldLike { id: string; type: string; options?: Record<string, unknown> | null }
 
 export function fieldAccepts(out: Output, field: ToolFieldLike): boolean {
-  return ACCEPTS[out.type].some((a) => a.type === field.type && (!a.shape || field.options?.shape === a.shape));
+  if (!ACCEPTS[out.type].some((a) => a.type === field.type && (!a.shape || field.options?.shape === a.shape))) return false;
+  // A vocabulary output into a select: only one bound to the same list — a select
+  // with its own typed choices would silently refuse most values.
+  if (out.vocabulary && field.type === 'select' && field.options?.vocabulary !== out.vocabulary) return false;
+  return true;
 }
 
 /* ── analyzers ───────────────────────────────────────────────────────────── */
@@ -149,8 +157,9 @@ const FFPROBE: Analyzer = {
   outputs: [
     { key: 'ffprobe.version',  name: 'ffprobe version', type: 'text',   note: 'provenance: which ffprobe wrote the rest' },
     { key: 'container',        name: 'Container',       type: 'text',   note: 'format_name, first entry: "mov", "mxf"' },
-    { key: 'video_codec',      name: 'Video codec',     type: 'text',   note: '"prores", "dnxhd", "h264", "exr"' },
-    { key: 'codec_profile',    name: 'Codec profile',   type: 'text',   note: '"4444 XQ", "HQ", "High"' },
+    { key: 'codec',            name: 'Codec',           type: 'select', vocabulary: 'video_codec', choices: VOCABULARIES.video_codec.choices, note: 'the CANONICAL name, looked up from codec + profile in contract/vocab.ts: "ProRes 4444 XQ", "H.264"; absent when the table has no entry' },
+    { key: 'video_codec',      name: 'Video codec (raw)', type: 'text', note: 'as ffprobe says it: "prores", "dnxhd", "h264", "exr"' },
+    { key: 'codec_profile',    name: 'Codec profile (raw)', type: 'text', note: 'as ffprobe says it: "4444 XQ", "HQ", "High"' },
     { key: 'width',            name: 'Width',           type: 'number' },
     { key: 'height',           name: 'Height',          type: 'number' },
     { key: 'frame_rate',       name: 'Frame rate',      type: 'number', note: '23.976, 25, 29.97 — 3 decimals' },
