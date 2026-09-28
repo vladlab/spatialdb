@@ -3,7 +3,8 @@ name = "spatialdb-desktop"
 version = "0.1.0"
 description = "spatialdb desktop client — the web app in a native window, plus the tools that need a real machine"
 edition = "2021"
-rust-version = "1.77.2"
+# Cargo.lock carries 2024-edition crates: Cargo ≥ 1.85 (the flake's .#desktop shell provides a current stable).
+rust-version = "1.85"
 
 [lib]
 name = "spatialdb_desktop_lib"

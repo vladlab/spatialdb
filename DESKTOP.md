@@ -10,8 +10,9 @@ API.md "Tools".
 > and server with the native shell FAKED. Nobody has yet opened the Tauri window:
 > the first-run page, the runtime capability for the server origin, the drag-drop
 > stream and its coordinate scaling, `reveal`, and every `classify`/`probe` against
-> real files are unverified until you run it. The Nix shell is written from
-> viznotes' flake and not run either. See "Needs eyes" at the end.
+> real files are unverified until you run it. The Nix shell was run once
+> (Sept 27) and failed on nixos-24.11's Cargo 1.82 being too old for the lockfile;
+> the fix — rust-overlay's current stable, as viznotes uses — is not yet confirmed. See "Needs eyes" at the end.
 
 ## What it does
 
@@ -49,7 +50,7 @@ nix develop .#desktop
 npm run desktop:dev                     # cargo run: opens the window
 SPATIALDB_URL=https://spatialdb.example.com npm run desktop:dev   # skip the setup page
 
-# Anything else — with Rust ≥ 1.77.2, and Tauri 2's Linux/macOS prerequisites
+# Anything else — with Rust ≥ 1.85 (Cargo.lock has 2024-edition crates) and Tauri 2's prerequisites
 cd src-tauri && cargo run
 ```
 

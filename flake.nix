@@ -1,24 +1,35 @@
 {
   description = "spatialdb — a relational database with a manual canvas view";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
+    # A CURRENT Rust for the desktop client only. nixos-24.11's Cargo is 1.82, and
+    # Cargo.lock (resolved with 1.91) carries crates on the 2024 edition, which
+    # needs Cargo ≥ 1.85 — the exact error of the first `nix develop .#desktop`.
+    # Same input viznotes uses; the server shell does not touch it.
+    rust-overlay = { url = "github:oxalica/rust-overlay"; inputs.nixpkgs.follows = "nixpkgs"; };
+  };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, rust-overlay }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAllSystems = f:
         nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+      # Only the desktop shell imports nixpkgs with the overlay applied.
+      rustFor = system: (import nixpkgs { inherit system; overlays = [ (import rust-overlay) ]; }).rust-bin.stable.latest.default.override {
+        extensions = [ "rust-src" "rust-analyzer" ];
+      };
     in
     {
       devShells = forAllSystems (pkgs: {
-        # UNVERIFIED on a real NixOS machine — written from viznotes' flake, which
-        # builds a Tauri 2 app on NixOS. The desktop client: `nix develop .#desktop`,
-        # then `npm run desktop:dev`. The Rust toolchain is nixpkgs' (Tauri 2 needs
-        # ≥ 1.77.2; nixos-24.11 ships 1.82). ffmpeg is a RUNTIME need of the app on
-        # every workstation, not a build input — it is here so `cargo run` finds it.
+        # Written from viznotes' flake, which builds a Tauri 2 app on NixOS. The
+        # desktop client: `nix develop .#desktop`, then `npm run desktop:dev`. The
+        # Rust toolchain is rust-overlay's current stable (see inputs), not
+        # nixpkgs'. ffmpeg is a RUNTIME need of the app on every workstation, not a
+        # build input — it is here so `cargo run` finds it.
         desktop = pkgs.mkShell {
           packages = with pkgs; [
-            nodejs_22 git cargo rustc rustfmt clippy cargo-tauri
+            nodejs_22 git (rustFor pkgs.system) cargo-tauri
             pkg-config gobject-introspection wrapGAppsHook3
             openssl libsoup_3 webkitgtk_4_1 gtk3 glib cairo pango gdk-pixbuf atk harfbuzz
             gsettings-desktop-schemas dconf xdg-utils librsvg
