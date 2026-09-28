@@ -1243,6 +1243,37 @@ async function main() {
   check('Escape abandons the drag', await until(() => !w.find('.rubber').exists()) && await linkCount() === afterAdd);
   winEv('pointerup', toClient(pGamma.x + 30, pGamma.y + 20));
 
+  // Drop on EMPTY canvas: a picker at that spot — choose an existing record, or make one.
+  const emptySpot = toClient(2200, 900);
+  await handle().trigger('pointerdown', { button: 0, ...toClient(1100, 80) });
+  winEv('pointermove', emptySpot);
+  winEv('pointerup', emptySpot);
+  const lp = () => w.find('.link-pick');
+  check('dropping a link on EMPTY canvas opens a picker there (the same search as a link cell), naming the link', await until(() => lp().exists()) && /reel_1/.test(lp().text()) && /Shows/.test(lp().text()), lp().text());
+  await lp().find('.picker input').setValue('Beta');
+  await until(() => lp().findAll('.picker .list li').some((li) => li.find('.name').text() === 'Beta'));
+  const betaId = (await pool.query(`select id from records where data->>'name' = 'Beta'`)).rows[0].id;
+  await lp().findAll('.picker .list li').find((li) => li.find('.name').text() === 'Beta')!.trigger('mousedown');
+  check('choosing a record LINKS it and PLACES its card at the drop point', (await untilDb(`select 1 from links where field_id = '${linkField}' and from_record = '${r1}' and to_record = '${betaId}'`, (r) => r.length === 1)).length === 1
+    && (await untilDb(`select x, y from placements where canvas_id = '${boardId}' and record_id = '${betaId}'`, (r) => r.length === 1))[0].x > 2000 && !lp().exists());
+  await handle().trigger('pointerdown', { button: 0, ...toClient(1100, 80) });
+  winEv('pointermove', toClient(2200, 1300));
+  winEv('pointerup', toClient(2200, 1300));
+  await until(() => lp().exists());
+  await lp().find('.picker input').setValue('Zeta (new)');
+  check('a name that matches nothing offers "+ new"', await until(() => lp().find('.picker .create').exists()) && /Zeta \(new\)/.test(lp().find('.picker .create').text()));
+  await lp().find('.picker .create').trigger('mousedown');
+  const zeta = await untilDb(`select r.id, r.data->>'name' n from records r where r.table_id = '${shows}' and r.data->>'name' = 'Zeta (new)'`, (r) => r.length === 1);
+  check('"+ new" CREATES the record, named as typed, LINKS it and PLACES it', zeta.length === 1
+    && (await untilDb(`select 1 from links where field_id = '${linkField}' and from_record = '${r1}' and to_record = '${zeta[0].id}'`, (r) => r.length === 1)).length === 1
+    && (await untilDb(`select 1 from placements where canvas_id = '${boardId}' and record_id = '${zeta[0].id}'`, (r) => r.length === 1)).length === 1
+    && await until(() => !!cardBy('Zeta (new)')), JSON.stringify(zeta));
+  hotkey('z');
+  check('…and that is ONE Ctrl+Z: record, link and card all go', (await untilDb(`select 1 from records where id = '${zeta[0].id}'`, (r) => r.length === 0)).length === 0
+    && (await pool.query(`select count(*)::int n from placements where record_id = $1`, [zeta[0].id])).rows[0].n === 0);
+  hotkey('z');   // the Beta link + placement
+  await untilDb(`select 1 from placements where canvas_id = '${boardId}' and record_id = '${betaId}'`, (r) => r.length === 0);
+
   hotkey('z');
   check('a link made by dragging is one Ctrl+Z', (await untilDb(`select count(*)::int n from links where field_id = '${linkField}'`, (r) => Number(r[0].n) === afterAdd - 1))[0].n == afterAdd - 1);
 

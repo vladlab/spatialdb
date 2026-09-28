@@ -64,7 +64,9 @@ async function main() {
     check('…without putting the cell into edit mode', !w.find('.gridview td.editing').exists());
     await w.find('.record-panel .rp-close').trigger('click');
     await openRecord('ep101.mov');
-    await pField('Targets').find('.chip.openable').trigger('click');
+    // In the tray a pill is also DRAGGABLE (onto a canvas), so a click is a press-and-release without movement.
+    await pField('Targets').find('.chip.openable').trigger('pointerdown', { button: 0, clientX: 300, clientY: 300 });
+    win.dispatchEvent(new ((win as any).PointerEvent ?? (win as any).MouseEvent)('pointerup', { bubbles: true, clientX: 300, clientY: 300 }));
     check('the same on a pill INSIDE the tray walks the tray to the linked record', await until(() => w.find('.record-panel .rp-title').text() === 'Network master'));
     await w.find('.record-panel .rp-close').trigger('click');
 

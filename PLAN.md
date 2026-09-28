@@ -1018,6 +1018,16 @@ The owner's list of eight, done in dependency order. This step is the canvas hal
   6 then "+N more"); `cardHeight` now counts LINES (`rowLines`/`lineCount`), and port
   positions follow. Only possible cleanly after 7, since arrows no longer depend on
   row positions.
+- **3. Link pills drag onto the canvas.** From the tray (a plain click still opens —
+  the drag service tells them apart by movement) and from a card's link rows (each line
+  of a list picks up that record). A drop places the record; a drop of a record already
+  here JUMPS to it — pans and selects — because a drop that silently did nothing would
+  read as a failure (the palette's `placeOrJump`, reused). Grid pills stay click-only:
+  with no split panes there is no canvas to drop onto from the grid.
+- **5. A link dragged onto EMPTY canvas opens the picker there**: the same search as a
+  link cell, plus "+ new: ‹name›" (`LinkPicker` gains `allow-create`). Choosing links
+  and places at the drop point; "+ new" creates (named by the primary field), links and
+  places — one Ctrl+Z for all three.
 - **6. Text flips dark on a light table colour** (`client/colorText.ts`, WCAG luminance)
   — the card header was the surface that hurt.
 

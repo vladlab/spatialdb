@@ -428,6 +428,12 @@ FOLLOW-UP writes (the probe facts and hash that arrive after a drop). They are n
 Ctrl+Z steps of their own, so undoing a drop deletes the records it created, probe
 results and all, in one step (`test/tools.ts` T4).
 
+### Canvas: arrows and ports
+
+A drawn arrow anchors to the CARD (whichever edges face), never to a field's row. A
+link row's port is only the handle to start a link from. Arrow display modes (always /
+focus / off) and the per-relationship list are browser-local, never written.
+
 ### Canvas defaults
 
 `canvas.update { config: { cardFields, defaults? } }` — `defaults` is

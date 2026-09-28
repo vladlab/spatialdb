@@ -290,6 +290,55 @@ async function main() {
     await w.find('.record-panel .rp-close').trigger('click');
     await nav.scope(duke);
 
+    console.log('\nC3b4. Drag a link pill onto the canvas');
+    // A file that links to Ep 101 (the work) is open in the tray while the Duke board is
+    // showing. Dragging the "Ep 101" pill onto the canvas PLACES Ep 101 there; dragging it
+    // again JUMPS to the card (a drop that silently did nothing would read as a failure).
+    const dragFile = randomUUID();
+    await post([{ type: 'record.create', id: dragFile, tableId: tFiles, data: { name: 'dragme.mov' } },
+      { type: 'link.add', id: randomUUID(), fieldId: fFileWork, fromRecord: dragFile, toRecord: ep102 }]);
+    await nav.scope('');
+    await nav.openTable(tFiles);
+    await until(() => w.findAll('.gridview tr.row').some((r: any) => r.findAll('td')[1].text() === 'dragme.mov'));
+    await w.findAll('.gridview tr.row').find((r: any) => r.findAll('td')[1].text() === 'dragme.mov')!.find('.expand').trigger('click');
+    await until(() => w.find('.record-panel .rp-title').text() === 'dragme.mov');
+    await nav.openCanvas(boardDuke);
+    await until(() => w.find('.canvas-container').exists() && w.find('.record-panel').exists());
+    const pill = () => w.findAll('.record-panel .chip.openable').find((c: any) => c.text().includes('Ep 102'))!;
+    check('the pill is there, in the tray, beside the canvas', !!pill() && !cardOf('Ep 102'));
+    const PE2 = (win as any).PointerEvent ?? (win as any).MouseEvent;
+    const box = (el: any, r: { left: number; top: number; right: number; bottom: number }) => { (el.element as HTMLElement).getBoundingClientRect = () => ({ ...r, width: r.right - r.left, height: r.bottom - r.top, x: r.left, y: r.top, toJSON() {} }) as DOMRect; };
+    box(w.find('.canvas-container'), { left: 0, top: 0, right: 800, bottom: 600 });
+    const dragPillTo = async (x: number, y: number) => {
+      await pill().trigger('pointerdown', { button: 0, clientX: 900, clientY: 300 });
+      win.dispatchEvent(new PE2('pointermove', { bubbles: true, clientX: 880, clientY: 300 }));
+      win.dispatchEvent(new PE2('pointermove', { bubbles: true, clientX: x, clientY: y }));
+      win.dispatchEvent(new PE2('pointerup', { bubbles: true, clientX: x, clientY: y }));
+      await sleep(400);
+    };
+    await dragPillTo(120, 90);       // off-centre, so a later jump has somewhere to pan TO
+    check('dropping it on the canvas PLACES Ep 102 there', (await untilDb(`select 1 from placements where canvas_id = '${boardDuke}' and record_id = '${ep102}'`, (r) => r.length === 1)).length === 1
+      && await until(() => !!cardOf('Ep 102')), w.findAll('.canvas-world .card').map((c: any) => c.find('.card-label').text()).join());
+    await w.find('.canvas-container').trigger('keydown', { key: 'Escape' });   // deselect
+    await until(() => !cardOf('Ep 102')?.classes('selected'));
+    // PAN the view away (a real pan gesture on the background), so the jump has somewhere to come back from.
+    const centred = w.find('.canvas-world').attributes('style');
+    await w.find('.canvas-container').trigger('pointerdown', { button: 1, clientX: 5, clientY: 5 });      // middle button pans
+    await w.find('.canvas-container').trigger('pointermove', { clientX: 205, clientY: 155 });
+    await w.find('.canvas-container').trigger('pointerup', { button: 1, clientX: 205, clientY: 155 });
+    check('(a pan moved the view away from the card)', await until(() => w.find('.canvas-world').attributes('style') !== centred), w.find('.canvas-world').attributes('style'));
+    const worldBefore = w.find('.canvas-world').attributes('style');
+    await dragPillTo(500, 400);
+    check('dropping it AGAIN jumps to the card — the view pans to it and selects it — rather than placing a second one', await until(() => cardOf('Ep 102').classes('selected'))
+      && w.find('.canvas-world').attributes('style') !== worldBefore
+      && (await pool.query(`select count(*)::int n from placements where canvas_id = $1 and record_id = $2`, [boardDuke, ep102])).rows[0].n === 1, `${worldBefore} → ${w.find('.canvas-world').attributes('style')}`);
+    await pill().trigger('pointerdown', { button: 0, clientX: 900, clientY: 300 });
+    win.dispatchEvent(new PE2('pointerup', { bubbles: true, clientX: 900, clientY: 300 }));
+    check('a plain CLICK on the pill (no movement) still opens the record', await until(() => w.find('.record-panel .rp-title').text() === 'Ep 102'));
+    await w.find('.record-panel .rp-close').trigger('click');
+    await post([{ type: 'record.delete', id: dragFile }]);
+    await nav.scope(duke);
+
     console.log('\nC3c. Pickers and the palette lean towards the scope, with a way out');
     await nav.openTable(tSpecs);
     await until(() => names().join() === 'Netflix IMF');

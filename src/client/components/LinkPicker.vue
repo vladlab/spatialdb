@@ -52,8 +52,14 @@
         <span class="name">{{ c.label }}</span>
         <span class="rest">{{ c.rest }}</span>
       </li>
+      <!-- CREATE a record named by what was typed — offered when the caller can do
+           something with one (`allowCreate`) and nothing matches the query exactly. -->
+      <li v-if="allowCreate && canCreate" class="create" :class="{ hi: hi === visible.length }"
+          @mousedown.prevent="emit('create', query.trim())" @mousemove="hi = visible.length">
+        <span class="name">+ new: “{{ query.trim() }}”</span>
+      </li>
     </ul>
-    <div v-if="!visible.length" class="note">
+    <div v-if="!visible.length && !(allowCreate && canCreate)" class="note">
       {{ candidates.length ? 'nothing matches' : (loading ? '' : `no ${linked.length ? 'other ' : ''}records in ${targetName}`) }}
     </div>
     <div v-else-if="matches.length > visible.length" class="note">
@@ -79,12 +85,16 @@ const props = defineProps<{
   anchor?: HTMLElement | null;
   /** Sit in the normal flow of whatever contains it (a popover), not floating over a cell. */
   inline?: boolean;
+  /** Offer "+ new: …" for a query that matches nothing exactly; the caller creates it. */
+  allowCreate?: boolean;
   /** Set when the edit was started by typing: becomes the first search character. */
   seed?: string;
 }>();
 const emit = defineEmits<{
   add: [toRecord: string];
   remove: [toRecord: string];
+  /** "+ new" was chosen: a record with this name is wanted (and, presumably, linked). */
+  create: [name: string];
   done: [exit: EditExit];
 }>();
 
@@ -135,6 +145,7 @@ const matches = computed(() => {
   return candidates.value.filter((c) => terms.every((t) => c.hay.includes(t)));
 });
 const visible = computed(() => matches.value.slice(0, MAX_SHOWN));
+const canCreate = computed(() => { const q = query.value.trim().toLowerCase(); return !!q && !candidates.value.some((c) => c.label.toLowerCase() === q); });
 
 watch([query, () => matches.value.length], () => { hi.value = 0; });
 
@@ -153,10 +164,11 @@ function finish(exit: EditExit) {
 
 function onKey(e: KeyboardEvent) {
   switch (e.key) {
-    case 'ArrowDown': e.preventDefault(); hi.value = Math.min(visible.value.length - 1, hi.value + 1); return;
+    case 'ArrowDown': e.preventDefault(); hi.value = Math.min(visible.value.length - (props.allowCreate && canCreate.value ? 0 : 1), hi.value + 1); return;
     case 'ArrowUp': e.preventDefault(); hi.value = Math.max(0, hi.value - 1); return;
     case 'Enter': {
       e.preventDefault();
+      if (props.allowCreate && canCreate.value && hi.value === visible.value.length) { emit('create', query.value.trim()); return; }
       const c = visible.value[hi.value];
       // Enter with nothing to pick closes, so Enter-Enter on a link cell is a
       // no-op round trip rather than a trap.
@@ -208,6 +220,7 @@ onMounted(() => {
 .name { color: var(--text-primary); }
 .rest { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
 .scope-toggle { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.create .name { color: var(--accent); }
 .note { padding: 4px 8px; color: var(--text-muted); font-size: 11px;
         border-top: 1px solid var(--border-main); }
 </style>

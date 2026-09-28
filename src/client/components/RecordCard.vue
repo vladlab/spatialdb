@@ -55,10 +55,14 @@
               @pointerdown.stop.prevent="$emit('link-start', { recordId, fieldId: r.id, e: $event })" />
         <span class="card-key"><span v-if="r.color" class="port-dot" :style="{ background: r.color }" />{{ r.name }}</span>
         <span v-if="r.lines && r.lines.length > 1" class="card-val card-list" :class="{ derived: r.derived }">
-          <span v-for="(l, i) in r.lines.slice(0, CARD_MAX_LINES)" :key="i" class="card-line">{{ l }}</span>
+          <span v-for="(l, i) in r.lines.slice(0, CARD_MAX_LINES)" :key="i" class="card-line" :class="{ draggable: r.ids?.[i] }"
+                :title="r.ids?.[i] ? 'Drag onto the canvas to place this record here' : undefined"
+                @pointerdown="r.ids?.[i] && $emit('drag-linked', { recordId: r.ids[i], e: $event })">{{ l }}</span>
           <span v-if="r.lines.length > CARD_MAX_LINES" class="card-line more">+{{ r.lines.length - CARD_MAX_LINES }} more</span>
         </span>
-        <span v-else class="card-val" :class="{ empty: !r.text, derived: r.derived, broken: r.broken }">{{ r.text || '—' }}</span>
+        <span v-else class="card-val" :class="{ empty: !r.text, derived: r.derived, broken: r.broken, draggable: r.ids?.length === 1 }"
+              :title="r.ids?.length === 1 ? 'Drag onto the canvas to place this record here' : undefined"
+              @pointerdown="r.ids?.length === 1 && $emit('drag-linked', { recordId: r.ids[0], e: $event })">{{ r.text || '—' }}</span>
         <span v-if="r.verdict" class="card-warn" :class="{ ok: r.verdict.ok }" :title="r.verdict.title">{{ r.verdict.ok ? '✓' : '⚠' }}</span>
       </div>
       <!-- NOTES: formatted, with their images, in a window of FIXED height that scrolls
@@ -105,6 +109,8 @@ export interface CardRow {
   link?: boolean;
   /** Several values (a link to three works): shown as a vertical list, one per line. */
   lines?: string[];
+  /** The linked records behind a link/backlink row, in `lines` (or `text`) order — draggable onto this canvas. */
+  ids?: string[];
   /** A comparing link's verdict on this value: ✓ or ⚠, with the why. */
   verdict?: { ok: boolean; title: string };
   /** A link or backlink row whose field has an arrow colour: the row is a PORT,
@@ -136,6 +142,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'pointerdown', payload: { recordId: string; e: PointerEvent }): void;
   (e: 'link-start', payload: { recordId: string; fieldId: string; e: PointerEvent }): void;
+  /** A linked record named on this card, picked up to be placed on the canvas. */
+  (e: 'drag-linked', payload: { recordId: string; e: PointerEvent }): void;
   (e: 'resize', payload: { recordId: string; handle: 'e' | 's' | 'se'; e: PointerEvent }): void;
   (e: 'unplace', recordId: string): void;
   (e: 'fold', recordId: string): void;
@@ -269,6 +277,8 @@ function onPointerDown(e: PointerEvent) {
 }
 .port-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
 .card-list { display: flex; flex-direction: column; }
+.draggable { cursor: grab; }
+.draggable:hover { color: var(--accent); }
 .card-line { line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-line.more { color: var(--text-faint); font-size: 10px; }
 .card-field { align-items: flex-start; }

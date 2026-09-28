@@ -79,6 +79,13 @@
                     @add="addDefault(addTable, $event)" @remove="removeDefault($event)" @done="addingDefault = false" />
       </div>
     </div>
+
+    <!-- A link dragged onto EMPTY canvas: pick the other end here, or make it. -->
+    <div v-if="linkPick" class="link-pick" :style="{ left: linkPick.client.x + 'px', top: linkPick.client.y + 'px' }" @pointerdown.stop @keydown.stop>
+      <p class="link-pick-head">Link <b>{{ derived.labelOfId(linkPick.fromRecord) }}</b> → {{ store.state.tables.get(linkPick.targetTable)?.name }}: choose, or type a new name</p>
+      <LinkPicker inline allow-create :store="store" :target-table-id="linkPick.targetTable" :linked="derived.linksFrom(linkPick.fromRecord, linkPick.fieldId)"
+                  @add="linkPickChoose" @create="linkPickCreate" @done="linkPick = null" />
+    </div>
   <div
     ref="containerRef"
     class="canvas-container"
@@ -121,6 +128,7 @@
         :link-target="linkTargetState(c.recordId, c.tableId)"
         @pointerdown="onCardPointerDown"
         @link-start="startLinkDrag"
+        @drag-linked="onDragLinked"
         @resize="onCardResize"
         @unplace="unplace"
         @fold="toggleFold"
@@ -209,7 +217,7 @@ import { confirmDialog } from '../dialogs';
 import { SCOPE } from '../scope';
 import { isEmptyRichText, richTextToPlain } from '../../contract/richtext';
 import { formatNumberField, shapeOf, summarise } from '../../contract/shapes';
-import { registerDropTarget } from '../recordDrag';
+import { beginRecordDrag, registerDropTarget } from '../recordDrag';
 import { arrowStyleOf, type ArrowStyle } from '../../contract/arrows';
 import { backlinkSourceOf } from '../../contract/backlinks';
 import type { ArrowLink, CardPorts } from './ArrowLayer.vue';
@@ -262,7 +270,8 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
     const styleField = f.type === 'link' ? f.id : f.type === 'backlink' ? backlinkSourceOf(f) : null;
     const color = styleField ? arrowStyles.value.get(styleField)?.color : undefined;
     return broken ? { id: f.id, name: f.name, broken: true, text: `broken ${f.type}` }
-      : { id: f.id, name: f.name, derived: true, text: texts.join(', '), lines: texts.length > 1 ? texts : undefined, color, link: f.type === 'link' };
+      : { id: f.id, name: f.name, derived: true, text: texts.join(', '), lines: texts.length > 1 ? texts : undefined,
+          ids: f.type === 'lookup' ? undefined : (f.type === 'link' ? derived.linksFrom(rec.id, f.id) : derived.backlinkOf(rec.id, f) ?? []), color, link: f.type === 'link' };
   }
   if (f.type === 'rich_text') return { id: f.id, name: f.name, text: richTextToPlain(rec.data[f.key]).split('\n', 1)[0] };
   // A structured value is a one-line SUMMARY on a card ("4 tracks / 12 ch (5.1, 2.0…)"):
@@ -377,6 +386,42 @@ const arrowStyles = computed(() => {
   for (const f of store.state.fields.values()) if (f.type === 'link') m.set(f.id, arrowStyleOf(f));
   return m;
 });
+
+/**
+ * A linked record named on a card, dragged off it: place it on this canvas where it is
+ * dropped, or jump to it if it is already here (the same drop path pills from the tray
+ * use). It stops the press so the card itself does not start moving.
+ */
+function onDragLinked({ recordId, e }: { recordId: string; e: PointerEvent }) {
+  const rec = store.state.records.get(recordId);
+  if (!rec) return;
+  e.stopPropagation();
+  beginRecordDrag(() => [rec], e, () => derived.labelOfId(recordId));
+}
+
+/* ── a link dragged onto empty canvas: choose or create the other end ── */
+const linkPick = ref<{ fieldId: string; fromRecord: string; targetTable: string; client: { x: number; y: number }; world: { x: number; y: number } } | null>(null);
+function linkPickChoose(recordId: string) {
+  const p = linkPick.value; if (!p) return;
+  linkPick.value = null;
+  const rec = store.state.records.get(recordId);
+  addLink(store, p.fieldId, p.fromRecord, recordId);
+  if (rec) placeMany([rec], p.client.x, p.client.y);
+}
+function linkPickCreate(name: string) {
+  const p = linkPick.value; if (!p) return;
+  linkPick.value = null;
+  const key = derived.labelKeys.value.get(p.targetTable);
+  const id = crypto.randomUUID();
+  const z = placements.value.reduce((n, q) => Math.max(n, q.z), 0) + 1;
+  // Record, its name, the link and the placement: ONE run, one Ctrl+Z.
+  const data = key ? { [key]: name } : {};
+  if (scopeApi) scopeApi.createRecord(p.targetTable, data, id, { defaults: activeDefaults.value });
+  else store.mutate({ type: 'record.create', id, tableId: p.targetTable, data });
+  addLink(store, p.fieldId, p.fromRecord, id);
+  store.mutate({ type: 'placement.add', id: crypto.randomUUID(), canvasId: props.canvasId, recordId: id, x: Math.round(p.world.x - CARD_W / 2), y: Math.round(p.world.y - 24), w: null, h: null, z });
+  selected.clear(); selected.add(id);
+}
 
 /* ── defaults: what a record created here starts out linked to ─────────────
    contract/canvasConfig.ts (`defaults`, `defaultLinkField`) and client/scope.ts
@@ -532,9 +577,11 @@ function startLinkDrag({ recordId, fieldId, e }: { recordId: string; fieldId: st
   const from = { x: rect.x + rect.w, y: rect.y + portY };
   linkDrag.value = { fromRecord: recordId, fieldId, targetTable, from, to: viewport.clientToWorld(e.clientX, e.clientY), over: null };
 
+  const lastClient = { x: e.clientX, y: e.clientY };
   const move = (ev: PointerEvent) => {
     const d = linkDrag.value;
     if (!d) return;
+    lastClient.x = ev.clientX; lastClient.y = ev.clientY;
     const to = viewport.clientToWorld(ev.clientX, ev.clientY);
     const hit = cardAt(to);
     linkDrag.value = { ...d, to, over: hit && canTakeLink(d, hit.recordId, hit.tableId) ? hit.recordId : null };
@@ -542,9 +589,13 @@ function startLinkDrag({ recordId, fieldId, e }: { recordId: string; fieldId: st
   const up = () => {
     const d = linkDrag.value;
     end();
-    // Dropped on a card that can take it: the link exists. Anywhere else — the wrong
-    // table, itself, a record already linked, empty canvas — NOTHING happens.
-    if (d?.over) addLink(store, d.fieldId, d.fromRecord, d.over);
+    // Dropped on a card that can take it: the link exists. Dropped on EMPTY canvas: a
+    // picker opens there — choose a record (it is linked and placed at that point) or
+    // type a name for a new one (created, linked, placed). The wrong table, itself, a
+    // record already linked: nothing.
+    if (!d) return;
+    if (d.over) { addLink(store, d.fieldId, d.fromRecord, d.over); return; }
+    if (!cardAt(d.to)) linkPick.value = { fieldId: d.fieldId, fromRecord: d.fromRecord, targetTable: d.targetTable, client: { ...lastClient }, world: d.to };
   };
   const cancel = (ev: KeyboardEvent) => { if (ev.key === 'Escape') end(); };
   function end() {
@@ -708,6 +759,7 @@ function onCanvasPointerMove(e: PointerEvent) {
 function onCanvasPointerDown(e: PointerEvent) {
   menu.value = null;
   addingDefault.value = false;
+  linkPick.value = null;
   selectedLink.value = null;
   legendOpen.value = false;
   if (e.button === 1 || spaceHeld.value) { viewport.startPan(e); return; }
@@ -897,6 +949,9 @@ function placeOrJump(rec: RecordRow): 'placed' | 'jumped' {
  */
 const DROP_GAP = 16, DROP_PER_COLUMN = 8;
 function placeMany(records: RecordRow[], clientX: number, clientY: number, options: MutateOptions = {}) {
+  // ONE record that is already here (a pill dragged from the tray, say): jump to its
+  // card rather than do nothing — a drop that silently does nothing reads as a failure.
+  if (records.length === 1 && cardRects.value.has(records[0].id)) { placeOrJump(records[0]); return; }
   const at = viewport.clientToWorld(clientX, clientY);
   const fresh = records.filter((r) => !cardRects.value.has(r.id));
   store.adopt(fresh);
@@ -1101,6 +1156,8 @@ onUnmounted(() => {
 }
 .defaults-table { background: var(--bg-app); border: 1px solid var(--border-main); color: inherit; border-radius: 4px; padding: 4px 6px; font: inherit; }
 
+.link-pick { position: fixed; z-index: 70; width: 340px; padding: 8px; background: var(--controls-bg); border: 1px solid var(--accent); border-radius: 6px; box-shadow: var(--card-shadow-drag); }
+.link-pick-head { margin: 0 0 6px; font-size: 12px; color: var(--text-secondary); }
 .ctx-head { padding: 4px 10px 0; font-weight: 600; font-size: 12px; }
 .ctx-sub { padding: 0 10px 4px; color: var(--text-muted); font-size: 11px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
