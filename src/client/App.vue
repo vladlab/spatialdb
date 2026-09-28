@@ -447,7 +447,10 @@ onMounted(async () => {
   if (!isDesktop()) return;
   const a = await handshake();
   if (a && !a.ffprobe) notice('ffprobe was not found on this machine — files will be added without probe data', 'warn');
-  unlistenDrops = await listenFileDrops(onFilesDropped);
+  // A failed subscription must be VISIBLE: otherwise a drop simply does nothing and
+  // nobody knows whether the shell, the capability, or the compositor is at fault.
+  try { unlistenDrops = await listenFileDrops(onFilesDropped); }
+  catch (e) { notice(`desktop: could not subscribe to file drops — ${String(e)}`, 'error'); }
 });
 onUnmounted(() => unlistenDrops?.());
 

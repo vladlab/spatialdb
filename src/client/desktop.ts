@@ -61,6 +61,10 @@ export async function listenFileDrops(onDrop: (paths: string[], clientX: number,
   if (!t) return () => {};
   const css = (p: { x: number; y: number }) => ({ x: p.x / devicePixelRatio, y: p.y / devicePixelRatio });
   return t.webview.getCurrentWebview().onDragDropEvent(({ payload }) => {
+    // Left on deliberately until the drop path is confirmed on Wayland and macOS:
+    // the devtools console (right-click → Inspect Element in a debug build) shows
+    // whether events arrive and at what coordinates.
+    console.debug('[desktop] drag-drop', payload.type, 'position' in payload ? payload.position : '', 'paths' in payload ? payload.paths : '');
     if (payload.type === 'enter') { const p = css(payload.position); Object.assign(fileDrag, { active: true, x: p.x, y: p.y, count: payload.paths.length }); }
     else if (payload.type === 'over') { const p = css(payload.position); fileDrag.x = p.x; fileDrag.y = p.y; }
     else if (payload.type === 'leave') { fileDrag.active = false; }
