@@ -403,14 +403,14 @@ async function main() {
   const header = (name: string) => w.findAll('.gridview thead th').find((t) => t.text().includes(name))!;
   check('before any sort there is no saved view', (await pool.query(`select 1 from views`)).rowCount === 0);
   await cell(0, 0).trigger('mousedown');            // select reel_10, currently row 0
-  await header('Name').trigger('click');
+  await header('Name').find('.th-sort').trigger('click');
   check('one click sorts ascending, NATURALLY (reel_2 before reel_10)',
     await until(() => names().join() === 'reel_1,reel_2,reel_10'), names().join());
   check('the selection followed its RECORD to the new position (reel_10 is now last)', selAt() === '2,0', selAt());
   check('and the header shows the direction', header('Name').text().includes('▲'), header('Name').text());
-  await header('Name').trigger('click');
+  await header('Name').find('.th-sort').trigger('click');
   check('a second click sorts descending', await until(() => names().join() === 'reel_10,reel_2,reel_1'), names().join());
-  await header('Frames').trigger('click');
+  await header('Frames').find('.th-sort').trigger('click');
   check('sorting by a column with a blank keeps the blank LAST',
     await until(() => names().join() === 'reel_2,reel_10,reel_1'), names().join());
 
@@ -471,8 +471,8 @@ async function main() {
   check('and leaves the key alone — that is where the values live', renamed[0]?.key === 'frame_rate', JSON.stringify(renamed));
   check('the header popover has NO move buttons — column order is the view\'s, not the schema\'s',
     !gridPop().find('button.prev').exists() && !gridPop().find('button.next').exists());
-  check('opening a menu or clicking inside it never SORTED the column (the th is a sort button)',
-    !th('FPS').find('.mark').exists());
+  check('opening a menu or clicking inside it never SORTED the column',
+    !th('FPS').find('.th-sort.on').exists());
   await gridPop().trigger('keydown', { key: 'Escape' });
 
   console.log('\nU8a. Column order and widths belong to the VIEW');
@@ -505,10 +505,10 @@ async function main() {
   check('while dragging, the lifted header dims and the target shows a drop mark',
     th('FPS').classes('dragging') && (th(lastName).classes('drop-after') || th(lastName).classes('drop-before')), th(lastName).classes().join());
   win.dispatchEvent(new PEh('pointerup', { bubbles: true, clientX: 300, clientY: 10 }));
-  await th('FPS').trigger('click');   // the click a browser fires after the release
+  await th('FPS').trigger('click');   // the click a browser fires after the release — the header is not a sort button any more
   check('dropping it moves the column to the far end (schema position untouched)',
     await until(() => ths()[ths().length - 1] === 'FPS' || ths()[ths().length - 2] === 'FPS'), ths().join());
-  check('…and the release did NOT sort the column', !th('FPS').find('.mark').exists());
+  check('…and the release did NOT sort the column', !th('FPS').find('.th-sort.on').exists());
   const posFps = (await pool.query(`select position from fields where key = 'frame_rate'`)).rows[0]?.position;
   check('(schema position still what it was)', posFps === positionsBefore.find((r) => r.key === 'frame_rate')?.position, String(posFps));
 
@@ -519,7 +519,9 @@ async function main() {
   const fpsId = (await pool.query(`select id from fields where key = 'frame_rate'`)).rows[0].id;
   const widths = await untilDb(`select config from views where id = '${filesId}'`, (r) => r[0]?.config?.widths?.[fpsId] !== undefined);
   check('dragging the handle saves a width for the column on the view', typeof widths[0]?.config.widths[fpsId] === 'number', JSON.stringify(widths[0]?.config.widths));
-  check('…which the cells then carry as an exact width', /width/.test(w.find(`.gridview thead th[data-field="${fpsId}"]`).attributes('style') ?? ''));
+  check('…which the header and the cells then carry as an exact width', /width/.test(w.find(`.gridview thead th[data-field="${fpsId}"]`).attributes('style') ?? '') && w.findAll('.gridview tr.row td.sized').length > 0);
+  await th('FPS').find('.th-resize').trigger('click');
+  check('the click after a resize does NOT sort', !th('FPS').find('.th-sort.on').exists());
   await th('FPS').find('.th-resize').trigger('dblclick');
   check('double-clicking the handle returns it to auto', await untilDb(`select config from views where id = '${filesId}'`, (r) => r[0]?.config?.widths?.[fpsId] === undefined).then((r) => r[0]?.config?.widths?.[fpsId] === undefined));
 
@@ -1441,7 +1443,7 @@ async function main() {
     listedViews().length === 1 && listedViews()[0].name === 'Grid' && listedViews()[0].on && !named('Grid').find('.view-act').exists(), JSON.stringify(listedViews()));
   // A sort made on the built-in Grid STARTS a view; the Grid stays plain.
   (vm().element as HTMLDetailsElement).open = false;
-  await w.findAll('.gridview thead th').find((t) => t.find('.th-name').exists() && t.find('.th-name').text() === 'Name')!.trigger('click');   // click a header: sort
+  await w.findAll('.gridview thead th').find((t) => t.find('.th-name').exists() && t.find('.th-name').text() === 'Name')!.find('.th-sort').trigger('click');   // the header's ⇅: sort
   const started = await untilDb(`select name, config from views where table_id = '${filesId}'`, (r) => r.length === 1);
   check('sorting on the Grid SAVES to the Grid (its row appears, with the TABLE\'s id, so every client knows it), and you stay in it',
     started[0].name === 'Grid' && started[0].config.sort.length === 1 && (await pool.query(`select id from views where table_id = $1`, [filesId])).rows[0].id === filesId

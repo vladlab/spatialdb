@@ -24,13 +24,20 @@ of it visible to `test/ui.ts`:
    border as its edge. The `#` column is a fixed 56 px — the primary's `left` offset;
    if a row number ever needs more than five digits, both numbers move together.
    Group headers were already sticky-left; check they still are with the pins.
+   (Sept 29, second pass: hover on a pinned cell no longer shows the cells underneath —
+   every row-state colour is translucent and is now layered on the app background.)
 2. **Resize.** The handle is a 9 px strip on a header's right edge (lights up accent
    on hover, `col-resize` cursor). Drag it; the column follows live and the width is
    saved on release — to the VIEW, for everyone, and NOT as an undo step (Ctrl+Z
    after a resize should undo your last edit). Double-click the handle = auto width.
    A resized column is exact; an unresized one still auto-sizes within 120–420 px.
+   (Second pass: the first drag no longer jumps — the saved width is the column's
+   border-box width, the same number the handle measures.)
    Does the header text clip sensibly on a narrow column? (It is `nowrap`; a very
    narrow column may keep the header's width — say if that looks wrong.)
+2b. **Sort is the ⇅.** A header is no longer a sort button: a faint ⇅ appears on hover
+   at its right; click it (shift adds a sort). Once sorted it shows ▲/▼ and stays
+   visible. This is what stopped a resize from ending in a sort of the column beside it.
 3. **Reorder.** Drag a header ≥4 px: it dims, and an accent bar on another header
    shows the side it lands on. A short press still sorts. The primary cannot be picked
    up and nothing lands left of it. The same order is in the **fields** menu with ↑↓,

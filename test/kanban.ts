@@ -121,7 +121,7 @@ async function main() {
     const rowOf = (name: string) => w.findAll('.gridview tr.row').find((r: any) => r.findAll('td')[1].text().trim() === name)!;
     check('picking it returns to the plain table — a board no longer hides the grid (the schema editor) forever', !!rowOf('a.mov') && !board().exists());
     check('the two "+ new…" entries are drawn the same way', viewMenu().find('.new-view').classes().join() === 'new-view' && viewMenu().find('.new-board').classes().includes('new-view'));
-    await w.findAll('.gridview thead th').find((t: any) => t.find('.th-name').exists() && t.find('.th-name').text() === 'Name')!.trigger('click');
+    await w.findAll('.gridview thead th').find((t: any) => t.find('.th-name').exists() && t.find('.th-name').text() === 'Name')!.find('.th-sort').trigger('click');
     check('sorting the Grid saves to the Grid (id = the table\'s) and does not make yet another view', (await untilDb(`select id, name from views where table_id = '${tFiles}' and id = '${tFiles}'`, (r) => r.length === 1))[0].name === 'Grid'
       && await until(() => viewMenu().find('.view-name').text() === 'Grid'));
     const workCell = (name: string) => rowOf(name).findAll('td')[3];

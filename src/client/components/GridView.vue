@@ -9,6 +9,7 @@
   SELECT, THEN EDIT — Airtable's model, because arrow keys cannot both move
   between cells and move a caret inside one:
 
+    ⇅ in a header           sorts (shift adds a sort); the header itself is the drag handle
     click / arrows / Tab    move the SELECTION (a ring on the cell; no input exists)
     Enter, F2, double-click start EDITING the selected cell (mounts a CellEditor)
     typing a character      starts editing AND replaces the value with it
@@ -248,13 +249,18 @@
           <tr>
             <th class="num pin">#</th>
             <th v-for="f in shown" :key="f.id" :ref="(el) => setHeaderEl(f.id, el)" :data-field="f.id"
-                :title="f.id === primaryId ? 'Primary field — pinned. Click to sort · shift-click to add a sort' : 'Click to sort · shift-click to add a sort · drag to move the column'"
-                class="sortable" :class="{ pin: f.id === primaryId, dragging: drag?.id === f.id, 'drop-before': drag?.over === f.id && drag.side === 'before', 'drop-after': drag?.over === f.id && drag.side === 'after' }"
+                :title="f.id === primaryId ? 'Primary field — pinned' : 'Drag to move the column'"
+                class="col" :class="{ pin: f.id === primaryId, sorted: !!sortMark(f.id), dragging: drag?.id === f.id, 'drop-before': drag?.over === f.id && drag.side === 'before', 'drop-after': drag?.over === f.id && drag.side === 'after' }"
                 :style="colStyle(f.id)"
-                @pointerdown="onHeaderDown(f, $event)" @click="headerSort(f, $event)">
+                @pointerdown="onHeaderDown(f, $event)">
               <span v-if="f.id === primaryId" class="star" title="Primary field: records in this table are named by it">★</span>
               <span class="th-name">{{ f.name }}</span>
-              <span v-if="sortMark(f.id)" class="mark">{{ sortMark(f.id) }}</span>
+              <!-- SORTING IS THE ARROW, not the header. The header is also the drag handle
+                   and the resize handle's neighbour; a click that landed anywhere on it used
+                   to sort, which is how a resize ended in a sort. Faint ⇅ on hover; the
+                   direction (and rank, in a multi-sort) once sorted. -->
+              <button class="th-sort" :class="{ on: sortMark(f.id) }" :title="sortMark(f.id) ? 'Sorted — click to change · shift-click to keep the other sorts' : 'Sort by this column · shift-click to add a sort'"
+                      @pointerdown.stop @click.stop="headerSort(f, $event)">{{ sortMark(f.id) || '⇅' }}</button>
               <button v-if="!SYSTEM_FIELD_TYPES.has(f.type)" class="th-menu" title="Field settings" @pointerdown.stop @click.stop="menuFor = menuFor === f.id ? '' : f.id">⚙</button>
               <!-- The SAME controls as the schema tab's rows — see schemaActions.ts. -->
               <Popover v-if="menuFor === f.id" :anchor="headerEls.get(f.id)" @close="menuFor = ''">
@@ -304,9 +310,10 @@
               <button class="expand" tabindex="-1" title="Open record (Space)" @pointerdown.stop @mousedown.prevent @click="$emit('open-record', r.id)">⤢</button>
             </td>
             <td v-for="f in shown" :key="f.id"
-                :class="{ sel: isSel(r.id, f.id), editing: isSel(r.id, f.id) && editing, pin: f.id === primaryId }"
+                :class="{ sel: isSel(r.id, f.id), editing: isSel(r.id, f.id) && editing, pin: f.id === primaryId, sized: colWidth(f.id) !== undefined }"
+                :style="colStyle(f.id)"
                 @mousedown="onCellDown(r.id, f, $event)" @dblclick="startEdit(r.id, f)">
-              <div class="cell" :class="{ sized: colWidth(f.id) !== undefined }" :style="colStyle(f.id)">
+              <div class="cell">
                 <!-- LINK: rows in `links`, so edited here rather than in CellEditor. -->
                 <template v-if="f.type === 'link'">
                   <!-- CLICK A PILL to open the linked record (× removes the link). The whole
@@ -517,7 +524,9 @@ function moveTo(fieldId: string, to: number) {
   if (next.join() !== columns.value.map((c) => c.id).join()) save({ order: next });
 }
 
-/** A width being dragged right now — shown at once, saved on release. */
+/** A width being dragged right now — shown at once, saved on release. A width is the
+ *  COLUMN's: th and td are border-box, so the number saved is the number measured
+ *  (the first drag used to grow the column by its padding — a visible jump). */
 const liveWidths = reactive(new Map<string, number>());
 const colWidth = (id: string): number | undefined => liveWidths.get(id) ?? config.value.widths?.[id];
 const colStyle = (id: string) => { const w = colWidth(id); return w === undefined ? undefined : { width: w + 'px', minWidth: w + 'px', maxWidth: w + 'px' }; };
@@ -532,7 +541,7 @@ function setWidth(id: string, w: number | undefined) {
 function onResizeDown(id: string, e: PointerEvent) {
   if (e.button !== 0) return;
   const th = (e.currentTarget as HTMLElement).closest('th');
-  const startW = colWidth(id) ?? th?.getBoundingClientRect().width ?? 160;
+  const startW = th?.getBoundingClientRect().width ?? colWidth(id) ?? 160;
   const startX = e.clientX;
   const onMove = (ev: PointerEvent) => { liveWidths.set(id, Math.max(MIN_COL_W, Math.min(MAX_COL_W, startW + ev.clientX - startX))); };
   const onUp = () => {
@@ -550,7 +559,6 @@ function onResizeDown(id: string, e: PointerEvent) {
    window reports it as `target`), and which side of it from where in it the pointer
    is. The primary cannot be picked up, and nothing lands before it. */
 const drag = ref<{ id: string; over: string; side: 'before' | 'after'; moved: boolean } | null>(null);
-let suppressSort = false;
 function onHeaderDown(f: FieldRow, e: PointerEvent) {
   if (e.button !== 0 || f.id === primaryId.value) return;
   const startX = e.clientX, startY = e.clientY;
@@ -573,8 +581,6 @@ function onHeaderDown(f: FieldRow, e: PointerEvent) {
     const d = drag.value;
     drag.value = null;
     if (!d) return;
-    suppressSort = true;                        // the click that follows this release is not a sort
-    setTimeout(() => { suppressSort = false; }, 0);
     if (d.over === d.id) return;
     const ids = columns.value.map((c) => c.id);
     const from = ids.indexOf(d.id);
@@ -655,9 +661,8 @@ function addSort() {
 function patchSort(i: number, p: Partial<ViewConfig['sort'][number]>) {
   save({ sort: config.value.sort.map((s, j) => (j === i ? { ...s, ...p } : s)) });
 }
-/** Header click: none → asc → desc → none. Shift keeps the other sorts. */
+/** The header's ⇅: none → asc → desc → none. Shift keeps the other sorts. */
 function headerSort(f: FieldRow, e: MouseEvent) {
-  if (suppressSort) return;                     // the release of a column drag
   const cur = config.value.sort.find((s) => s.fieldId === f.id);
   const rest = e.shiftKey ? config.value.sort.filter((s) => s.fieldId !== f.id) : [];
   const next = !cur ? [{ fieldId: f.id, dir: 'asc' as const }]
@@ -1230,9 +1235,18 @@ watch(() => props.tableId, () => { activeId.value = ''; search.value = ''; });
   color: var(--text-muted); font-size: 11px; text-transform: uppercase;
   height: 28px; white-space: nowrap; user-select: none;
 }
-.grid th.sortable { cursor: pointer; }
-.grid th.sortable:hover { color: var(--text-primary); }
-.mark { color: var(--accent); margin-left: 4px; }
+.grid th.col { cursor: grab; box-sizing: border-box; }
+.grid th.col:hover { color: var(--text-primary); }
+.grid th.col.pin { cursor: default; }
+.grid td.sized { box-sizing: border-box; }
+.grid td.sized .cell { min-width: 0; max-width: none; }
+.th-sort {
+  background: none; border: none; color: var(--text-faint); cursor: pointer;
+  font: inherit; font-size: 11px; padding: 0 2px; margin-left: 4px; visibility: hidden;
+}
+th:hover .th-sort, .th-sort.on { visibility: visible; }
+.th-sort.on { color: var(--accent); }
+.th-sort:hover { color: var(--accent); }
 .star { color: var(--warning); margin-right: 2px; }
 .th-menu, .th-add {
   background: none; border: none; color: var(--text-faint); cursor: pointer;
@@ -1252,7 +1266,9 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .grid th.pin, .grid td.pin { position: sticky; left: 0; z-index: 5; background: var(--bg-app); }
 .grid th.pin { z-index: 12; }
 .grid th.pin:not(.num), .grid td.pin:not(.num) { left: 56px; }
-.row:hover td.pin { background: var(--bg-surface-hover); }
+/* Every row-state colour is translucent; on a pinned cell it must sit on the app
+   background, or the cells scrolled underneath show through. */
+.row:hover td.pin { background: linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--bg-app); }
 .row.rowsel td.pin { background: linear-gradient(rgba(66, 165, 245, 0.14), rgba(66, 165, 245, 0.14)), var(--bg-app); }
 .row.fresh td.pin { background: linear-gradient(rgba(66, 165, 245, 0.05), rgba(66, 165, 245, 0.05)), var(--bg-app); }
 .grid td.pin:not(.num) { border-right: 2px solid var(--border-main); }
@@ -1334,6 +1350,7 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
    fixed row height. An inset outline cannot be clipped by anything. */
 .grid td.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
 .grid td.sel.editing { outline-color: var(--success); background: var(--bg-app); }
+.grid td.sized .cell :deep(.over) { width: 100%; }
 .scroller:focus { outline: none; }
 .scroller:not(:focus-within) td.sel { outline-color: var(--text-faint); }
 .cell { position: relative; }
