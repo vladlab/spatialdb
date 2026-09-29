@@ -114,8 +114,16 @@ In the order most likely to be wrong:
 4. **Drop position on a canvas**: the card should land under the pointer. If it
    lands scaled away from it, the devicePixelRatio correction in `desktop.ts` is
    wrong for your display (the viznotes lesson, unverifiable headlessly).
-5. **A folder of EXRs, an IMF folder, six mono WAVs**: one record each, with the right
+5. **Audio layout on a tagged master** (Sept 29): track names come from the moov's
+   `trak/udta/name` atoms (`src-tauri/src/tools/qt.rs`) because ffprobe does not
+   expose them; channel labels come from ffprobe's `channel_layout`, including the
+   per-track custom form (`1 channels (DL)` → `Lt`) that `chan` atoms produce.
+   Verified against a MOV tagged with `qt_chan_tag_inplace.py`. NOTE the 7.1
+   spelling: this reads `Ls Rs Lrs Rrs` (the script's, CoreAudio's); the
+   `audio_layout` 7.1 preset in `shapes.ts` says `Lss Rss Lsr Rsr`. The compare
+   engine matches labels literally — pick one house spelling on `main`.
+6. **A folder of EXRs, an IMF folder, six mono WAVs**: one record each, with the right
    kind and manifest. `classify.rs` was written against the file naming I expect;
    your real plates will find the gaps.
-6. Then the things nobody has looked at: the setup page's look, the drop overlay, the
+7. Then the things nobody has looked at: the setup page's look, the drop overlay, the
    notices strip, the `probing…` marker in the record panel.

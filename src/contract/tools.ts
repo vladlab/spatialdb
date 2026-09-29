@@ -179,7 +179,7 @@ const FFPROBE: Analyzer = {
     { key: 'audio_codec',        name: 'Audio codec',     type: 'text',   note: '"pcm_s24le", "aac"' },
     { key: 'audio_stream_count', name: 'Audio streams',   type: 'number' },
     { key: 'audio_channels',     name: 'Audio channels',  type: 'number', note: 'total, across streams' },
-    { key: 'audio_layout',       name: 'Audio layout',    type: 'structured:audio_layout', note: 'one track per stream; channels labelled from the stream layout when known, else ch1…' },
+    { key: 'audio_layout',       name: 'Audio layout',    type: 'structured:audio_layout', note: 'one track per stream, named from the MOV track-name atom (qt.rs) or the title tag, else A1…; channels labelled from the stream layout — named ("5.1") or per-track chan atoms ("1 channels (DL)" → Lt) — else ch1…' },
     { key: 'sample_rate',        name: 'Sample rate',     type: 'number' },
     { key: 'audio_bit_depth',    name: 'Audio bit depth', type: 'number' },
   ],

@@ -62,14 +62,18 @@ pub fn probe(unit: &Unit) -> Result<Probed, String> {
         video(&mut o, s, format, unit.kind == "sequence");
     }
     let audio_streams: Vec<&Value> = streams(&v).into_iter().filter(|s| s["codec_type"] == "audio").collect();
+    // Track names live in the moov, where ffprobe does not look (qt.rs).
+    let qt_names = if matches!(unit.extension.as_str(), "mov" | "mp4" | "m4v" | "m4a") { super::qt::audio_track_names(std::path::Path::new(target)) } else { vec![] };
     if let Some(first) = audio_streams.first() {
         audio_basics(&mut o, first, &v);
         o.insert("audio_stream_count".into(), json!(audio_streams.len()));
         let mut total = 0u64; let mut tracks = Vec::new();
         for (i, s) in audio_streams.iter().enumerate() {
             let n = s["channels"].as_u64().unwrap_or(0); total += n;
-            let title = s["tags"]["title"].as_str().or(s["tags"]["handler_name"].as_str()).unwrap_or("").trim().to_string();
-            let name = if title.is_empty() || title.starts_with("Core Media") || title.starts_with("SoundHandler") { format!("A{}", i + 1) } else { title };
+            let title = s["tags"]["title"].as_str().unwrap_or("").trim().to_string();
+            let name = qt_names.get(i).cloned().flatten()
+                .or(if title.is_empty() { None } else { Some(title) })
+                .unwrap_or_else(|| format!("A{}", i + 1));
             let mut t = json!({ "name": name, "channels": channel_labels(s["channel_layout"].as_str().unwrap_or(""), n) });
             if let Some(lang) = s["tags"]["language"].as_str() { if lang != "und" && lang.len() <= 35 { t["language"] = json!(lang); } }
             tracks.push(t);
@@ -167,24 +171,56 @@ fn timecode(secs: f64, rate: f64) -> String {
     format!("{:02}:{:02}:{:02}:{:02}", s / 3600, (s / 60) % 60, s % 60, f)
 }
 
-/// ffmpeg's layout names → the labels a vendor writes. Unknown → ch1…chN.
+/// ffmpeg's channel layout → the labels a vendor writes, channel by channel.
+/// Two forms arrive: a NAMED layout ("stereo", "5.1", "7.1") or a CUSTOM one
+/// ("1 channels (DL)", "2 channels (FL+FR)") — the latter is what a MOV tagged
+/// with per-track `chan` atoms (qt_chan_tag_inplace.py) reports for each mono
+/// track. Both are expanded to ffmpeg's channel names and mapped through one
+/// table; a layout with neither form, or a count that does not match, → ch1…chN.
 fn channel_labels(layout: &str, n: u64) -> Vec<String> {
-    let known: Option<&[&str]> = match layout {
-        "mono" => Some(&["M"]),
-        "stereo" => Some(&["L", "R"]),
-        "2.1" => Some(&["L", "R", "LFE"]),
-        "3.0" => Some(&["L", "R", "C"]),
-        "4.0" => Some(&["L", "R", "C", "Cs"]),
-        "quad" => Some(&["L", "R", "Ls", "Rs"]),
-        "5.0" | "5.0(side)" => Some(&["L", "R", "C", "Ls", "Rs"]),
-        "5.1" | "5.1(side)" => Some(&["L", "R", "C", "LFE", "Ls", "Rs"]),
-        "6.1" => Some(&["L", "R", "C", "LFE", "Ls", "Rs", "Cs"]),
-        "7.1" => Some(&["L", "R", "C", "LFE", "Lss", "Rss", "Lsr", "Rsr"]),
-        "7.1(wide)" | "7.1(wide-side)" => Some(&["L", "R", "C", "LFE", "Ls", "Rs", "Lc", "Rc"]),
-        _ => None,
+    let av: Option<Vec<&str>> = if let Some(inner) = layout.strip_suffix(')').and_then(|s| s.split_once(" channels (")).map(|(_, i)| i) {
+        Some(inner.split('+').collect())
+    } else {
+        match layout {
+            "mono" => Some(vec!["FC"]),
+            "stereo" => Some(vec!["FL", "FR"]),
+            "2.1" => Some(vec!["FL", "FR", "LFE"]),
+            "3.0" => Some(vec!["FL", "FR", "FC"]),
+            "3.0(back)" => Some(vec!["FL", "FR", "BC"]),
+            "4.0" => Some(vec!["FL", "FR", "FC", "BC"]),
+            "quad" => Some(vec!["FL", "FR", "BL", "BR"]),
+            "quad(side)" => Some(vec!["FL", "FR", "SL", "SR"]),
+            "5.0" => Some(vec!["FL", "FR", "FC", "BL", "BR"]),
+            "5.0(side)" => Some(vec!["FL", "FR", "FC", "SL", "SR"]),
+            "5.1" => Some(vec!["FL", "FR", "FC", "LFE", "BL", "BR"]),
+            "5.1(side)" => Some(vec!["FL", "FR", "FC", "LFE", "SL", "SR"]),
+            "6.0" => Some(vec!["FL", "FR", "FC", "BC", "SL", "SR"]),
+            "6.1" => Some(vec!["FL", "FR", "FC", "LFE", "BC", "SL", "SR"]),
+            "7.0" => Some(vec!["FL", "FR", "FC", "BL", "BR", "SL", "SR"]),
+            "7.1" => Some(vec!["FL", "FR", "FC", "LFE", "BL", "BR", "SL", "SR"]),
+            "7.1(wide)" => Some(vec!["FL", "FR", "FC", "LFE", "BL", "BR", "FLC", "FRC"]),
+            "7.1(wide-side)" => Some(vec!["FL", "FR", "FC", "LFE", "FLC", "FRC", "SL", "SR"]),
+            "downmix" => Some(vec!["DL", "DR"]),
+            _ => None,
+        }
     };
-    match known {
-        Some(k) if k.len() as u64 == n => k.iter().map(|s| s.to_string()).collect(),
+    match av {
+        Some(ch) if ch.len() as u64 == n => {
+            // In a 5.1 the back pair IS the surround pair (Ls/Rs); only when a layout
+            // has BOTH back and side pairs (7.1) is the back pair the rear surround.
+            let has_side = ch.iter().any(|c| *c == "SL" || *c == "SR");
+            let one = n == 1;
+            ch.iter().map(|c| match *c {
+                "FL" => "L", "FR" => "R", "FC" => if one { "M" } else { "C" }, "LFE" | "LFE2" => "LFE",
+                "SL" => "Ls", "SR" => "Rs",
+                "BL" => if has_side { "Lrs" } else { "Ls" }, "BR" => if has_side { "Rrs" } else { "Rs" },
+                "BC" => "Cs", "FLC" => "Lc", "FRC" => "Rc",
+                "DL" => "Lt", "DR" => "Rt",                       // CoreAudio LeftTotal / RightTotal
+                "WL" => "Lw", "WR" => "Rw", "TFL" => "Ltf", "TFR" => "Rtf", "TFC" => "Ctf",
+                "TBL" => "Ltr", "TBR" => "Rtr", "TBC" => "Ctr", "TC" => "Tc", "TSL" => "Ltm", "TSR" => "Rtm",
+                other => other,
+            }.to_string()).collect()
+        }
         _ => (1..=n.max(1)).map(|i| format!("ch{i}")).collect(),
     }
 }
@@ -211,6 +247,15 @@ mod tests {
     }
     #[test] fn labels() {
         assert_eq!(channel_labels("5.1", 6), vec!["L", "R", "C", "LFE", "Ls", "Rs"]);
+        assert_eq!(channel_labels("5.1(side)", 6), vec!["L", "R", "C", "LFE", "Ls", "Rs"]);
+        assert_eq!(channel_labels("7.1", 8), vec!["L", "R", "C", "LFE", "Lrs", "Rrs", "Ls", "Rs"]);
+        assert_eq!(channel_labels("mono", 1), vec!["M"]);
         assert_eq!(channel_labels("stereo", 6), vec!["ch1", "ch2", "ch3", "ch4", "ch5", "ch6"]);
+        // per-track `chan` atoms, as ffprobe reports them
+        assert_eq!(channel_labels("1 channels (DL)", 1), vec!["Lt"]);
+        assert_eq!(channel_labels("1 channels (FC)", 1), vec!["M"]);
+        assert_eq!(channel_labels("1 channels (LFE)", 1), vec!["LFE"]);
+        assert_eq!(channel_labels("2 channels (FL+FR)", 2), vec!["L", "R"]);
+        assert_eq!(channel_labels("", 2), vec!["ch1", "ch2"]);
     }
 }

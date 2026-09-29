@@ -3,4 +3,5 @@
 pub mod classify;
 pub mod hash;
 pub mod probe;
+pub mod qt;
 pub mod reveal;
