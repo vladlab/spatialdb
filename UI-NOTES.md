@@ -226,6 +226,7 @@ real browser — if one is off, it goes in the table above.
 
 | Note | What it was |
 |---|---|
+| A reload, or coming back with the browser's Back, landed on Home. | Not the router: during hydration the pickers watcher set `tableId`, the URL mirror fired with the section still null, and wrote `#/` over the real address a tick before it was read. The mirror now never writes a HOME route before boot. Also: a bare address (no hash — the desktop window) opens where you last were. `test/route.ts` — the first cold start on a deep link. |
 | Tray hard to parse; tan header kept white text | Fields and the comparison strip in recessed wells; contrast-based text flip. The value boxes inside the well keep their old tone — judge whether they want a step lighter |
 | Arrows from field rows; hover-dimming flicker; one-line link rows; light headers with light text | Arrows from the card edge; modes always/focus/off with selection-based dimming; vertical link lists; luminance-flipped header text — none of it seen rendered |
 | An open record closed when going to a canvas or another section | Persists across all navigation (only closes if the board being opened IS that record) |

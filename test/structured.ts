@@ -76,11 +76,11 @@ async function main() {
     check('they have no ⚙ — nothing about them is editable', !w.findAll('.gridview thead th').find((t: any) => t.find('.th-name').exists() && t.find('.th-name').text() === 'Created')!.find('.th-menu').exists());
     await cellOf('ep101.mov', 'Created').trigger('mousedown'); await cellOf('ep101.mov', 'Created').trigger('dblclick');
     check('…and a double-click does not open an editor', !w.find('.gridview td.editing').exists());
-    await w.findAll('.gridview thead th').find((t: any) => t.find('.th-name').exists() && t.find('.th-name').text() === 'Created')!.trigger('click');
+    await w.findAll('.gridview thead th').find((t: any) => t.find('.th-name').exists() && t.find('.th-name').text() === 'Created')!.find('.th-sort').trigger('click');
     const sortedBy = await untilDb(`select id, config from views where table_id = '${tFiles}' and id = '${tFiles}'`, (r) => r[0]?.config.sort?.length === 1);
     check('sorting by Created saves to the view like any field (its id is derived from the table\'s, so it is stable)', sortedBy[0].config.sort[0].fieldId.endsWith('00000000c7ea') && sortedBy[0].config.sort[0].fieldId.startsWith(tFiles.slice(0, 24)));
-    await w.findAll('.gridview thead th').find((t: any) => t.find('.th-name').exists() && t.find('.th-name').text() === 'Created')!.trigger('click');
-    await w.findAll('.gridview thead th').find((t: any) => t.find('.th-name').exists() && t.find('.th-name').text() === 'Created')!.trigger('click');   // asc → desc → off
+    await w.findAll('.gridview thead th').find((t: any) => t.find('.th-name').exists() && t.find('.th-name').text() === 'Created')!.find('.th-sort').trigger('click');
+    await w.findAll('.gridview thead th').find((t: any) => t.find('.th-name').exists() && t.find('.th-name').text() === 'Created')!.find('.th-sort').trigger('click');   // asc → desc → off
     await w.findAll('.gridview button.ghost').find((b: any) => /add record/.test(b.text()))!.trigger('click');
     const mine = await untilDb(`select id from records where table_id = '${tFiles}' and not (data ? 'name')`, (r) => r.length === 1);
     const newRow = () => w.findAll('.gridview tr.row').find((r: any) => r.findAll('td')[1].text().trim() === '')!;

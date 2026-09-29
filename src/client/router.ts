@@ -75,3 +75,26 @@ export function parseRoute(hash: string): Route {
 
 export const sameRoute = (a: Route, b: Route) =>
   a.section === b.section && a.view === b.view && a.target === b.target && a.record === b.record && a.scope === b.scope;
+
+/* ── where you were ─────────────────────────────────────────────────────────
+   The last address, kept in this browser (localStorage — per origin, so the desktop
+   client's window remembers per server). Only consulted when the app opens with NO
+   hash at all: a reload keeps its own, and "#/" typed or clicked means Home. */
+
+const LAST_KEY = 'spatialdb.lastRoute';
+
+export function rememberRoute(hash: string): void {
+  try { if (hash) localStorage.setItem(LAST_KEY, hash); } catch { /* storage unavailable */ }
+}
+export function lastRoute(): string {
+  try { return localStorage.getItem(LAST_KEY) ?? ''; } catch { return ''; }
+}
+/**
+ * The hash to open on: the address bar's if it has one, else the remembered one if
+ * it parses to somewhere (a stale or foreign address is not followed), else Home.
+ */
+export function startHash(hash: string, remembered: string): string {
+  if (hash && hash !== '#') return hash;
+  if (remembered && parseRoute(remembered).section !== null) return remembered;
+  return hash || '#/';
+}

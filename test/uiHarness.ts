@@ -106,7 +106,12 @@ export function navigator(w: any, until: (p: () => boolean, ms?: number) => Prom
 }
 export type Nav = ReturnType<typeof navigator>;
 
-export async function mountApp(port: number, startHash = '', env: Record<string, string> = {}): Promise<Ui> {
+/**
+ * `seed` runs after the server is up and BEFORE the app mounts — for a test that
+ * opens the app on a deep link to something that must already exist (a cold start,
+ * which is what a reload is).
+ */
+export async function mountApp(port: number, startHash = '', env: Record<string, string> = {}, seed?: (post: Ui['post']) => Promise<void>): Promise<Ui> {
   const API = `http://localhost:${port}`;
   const assets = mkdtempSync(join(tmpdir(), 'spatialdb-uih-assets-'));
   process.env.SPATIALDB_ASSETS_DIR = assets;
@@ -163,6 +168,7 @@ export async function mountApp(port: number, startHash = '', env: Record<string,
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ clientId: randomUUID(), mutations: mutations.map((mutation) => ({ id: randomUUID(), mutation })) }) });
 
+  if (seed) await seed(post);
   const w = mount(App, { attachTo: win.document.body as unknown as Element });
   const nav = navigator(w, until);
   return {

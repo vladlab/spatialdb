@@ -151,7 +151,7 @@ import { dragGhost } from './recordDrag';
 import { createStore } from './store';
 import { boardsOf, isBoardsTable, isReportsTable, reportsOf, tablesOfSection } from './state';
 import { useDerived } from './derived';
-import { formatRoute, parseRoute, sameRoute, type Route, type ViewName } from './router';
+import { formatRoute, lastRoute, parseRoute, rememberRoute, sameRoute, startHash, type Route, type ViewName } from './router';
 import HomePage from './components/HomePage.vue';
 import SectionSettings from './components/SectionSettings.vue';
 import CanvasView from './components/CanvasView.vue';
@@ -485,8 +485,17 @@ watch(canvases, (cs) => {
    The refs above stay the working state; the URL mirrors them, both ways:
    refs → hash (so reload, back/forward and bookmarks work, and a record can be
    linked to), hash → refs (when the user navigates). `applying` stops the mirror
-   reflecting in itself. */
+   reflecting in itself.
+
+   `booted` is false until `enter()` has applied the address the app opened on. Before
+   that, a HOME route is never written back: hydrating set `tableId` (the
+   pickers-point-at-something watcher), the mirror fired with `sectionKey` still
+   null, and `#/` went over the real address a tick before `enter()` read it — every
+   reload landed on Home. A non-Home change before boot IS written: that is you
+   clicking a section on the Home page while the data is still loading, and
+   `enter()` then reads the address you chose. */
 let applying = false;
+let booted = false;
 const currentRoute = (): Route => ({
   section: sectionKey.value,
   view: view.value,
@@ -519,10 +528,12 @@ function goSection(key: string) {
 }
 watch([sectionKey, view, tableId, canvasId, reportId, openRecordId, scopeApi.scope], () => {
   if (applying) return;
+  if (!booted && currentRoute().section === null) return;
   const hash = formatRoute(currentRoute(), section.value?.name);
   if (location.hash !== hash && !sameRoute(parseRoute(location.hash), currentRoute())) location.hash = hash;
+  rememberRoute(location.hash);
 });
-const onHashChange = () => { const r = parseRoute(location.hash); if (!sameRoute(r, currentRoute())) applyRoute(r); };
+const onHashChange = () => { rememberRoute(location.hash); const r = parseRoute(location.hash); if (!sameRoute(r, currentRoute())) applyRoute(r); };
 
 /** Signed in (just now, or already): load everything and open the stream. */
 async function enter() {
@@ -534,7 +545,13 @@ async function enter() {
     return;
   }
   store.start();
-  applyRoute(parseRoute(location.hash));
+  // A bare address — no hash at all: the desktop window, or the URL typed by hand —
+  // opens where you last were. A reload keeps its hash and is unaffected.
+  const start = startHash(location.hash, lastRoute());
+  if (start !== location.hash) location.hash = start;
+  rememberRoute(start);
+  applyRoute(parseRoute(start));
+  booted = true;
   if (!canvases.value.some((c) => c.id === canvasId.value)) canvasId.value = canvases.value[0]?.id ?? '';
   if (!tables.value.some((t) => t.id === tableId.value)) tableId.value = tables.value[0]?.id ?? '';
 }
