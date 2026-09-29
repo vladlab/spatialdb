@@ -29,6 +29,21 @@
       </p>
       <p class="info">{{ nFields }} field{{ nFields === 1 ? '' : 's' }} — edit them from the grid's column headers (⚙ on a column, + to add one).</p>
 
+      <!-- THE SCHEMA'S ORDER. Not any view's column order — that is arranged in the
+           grid and saved per view. This one is the DEFAULT (what the record tray, canvas
+           cards, the link picker and a never-arranged view show) and it DEFINES the
+           primary: the first plain-valued field names the table's records
+           (contract/labels.ts). That is why it lives here, deliberately, and not on a
+           column header where a drag could rename every record. -->
+      <details v-if="ownFields.length" class="order">
+        <summary>Field order <span class="hint">— the default for new views, cards and the record panel; the first plain-valued field (★) names records</span></summary>
+        <div v-for="(f, i) in ownFields" :key="f.id" class="order-line" :data-field="f.id">
+          <span class="order-name"><span v-if="actions.isPrimary(f.id)" class="star" title="Primary field">★</span>{{ f.name }} <span class="hint mono">{{ f.type }}</span></span>
+          <button class="mv prev" :disabled="i === 0" title="Move up" @click="actions.moveField(f.id, -1)">↑</button>
+          <button class="mv next" :disabled="i === ownFields.length - 1" title="Move down" @click="actions.moveField(f.id, 1)">↓</button>
+        </div>
+      </details>
+
       <!-- A CONVENIENCE, not a rule: the fields a Files table conventionally has for
            "delivered unit" records (contract/shapes.ts). Adds only what is missing, by
            key, so it is safe on a Files table that already exists — and to run twice. -->
@@ -51,6 +66,7 @@ import type { Store } from '../store';
 import { fieldsOf } from '../state';
 import { useSchemaActions } from '../schemaActions';
 import ToolSettings from './ToolSettings.vue';
+import { SYSTEM_FIELD_TYPES } from '../../contract/systemFields';
 
 const props = defineProps<{ store: Store; tableId: string }>();
 const emit = defineEmits<{ close: [] }>();
@@ -59,7 +75,8 @@ const nameInput = ref<HTMLInputElement>();
 
 const val = (e: Event) => (e.target as HTMLInputElement).value;
 const table = computed(() => props.store.state.tables.get(props.tableId));
-const nFields = computed(() => fieldsOf(props.store.state, props.tableId).length);
+const ownFields = computed(() => fieldsOf(props.store.state, props.tableId).filter((f) => !SYSTEM_FIELD_TYPES.has(f.type)));
+const nFields = computed(() => ownFields.value.length);
 const upd = (patch: { icon?: string; color?: string; singularName?: string }) =>
   props.store.mutate({ type: 'table.update', id: props.tableId, ...patch });
 
@@ -78,6 +95,15 @@ onMounted(() => void nextTick(() => nameInput.value?.focus()));
 .ts-backdrop { position: fixed; inset: 0; z-index: 150; background: rgba(0, 0, 0, 0.4); display: flex; justify-content: center; align-items: flex-start; padding-top: 10vh; }
 .ts { width: min(560px, 92vw); max-height: 85vh; overflow-y: auto; background: var(--bg-app); border: 1px solid var(--border-main); border-radius: 8px; padding: 16px 18px; box-shadow: var(--card-shadow-drag); font-size: 13px; }
 header { display: flex; align-items: center; margin-bottom: 10px; }
+.order { margin: 8px 0; border: 1px solid var(--border-main); border-radius: 6px; padding: 6px 10px; }
+.order > summary { cursor: pointer; color: var(--text-secondary); }
+.order-line { display: flex; align-items: center; gap: 6px; padding: 3px 0 3px 12px; }
+.order-name { flex: 1; }
+.star { color: var(--warning); margin-right: 4px; }
+.mono { font-family: var(--font-mono, monospace); font-size: 11px; }
+.mv { background: none; border: 1px solid transparent; border-radius: 3px; color: var(--text-muted); cursor: pointer; padding: 0 5px; font: inherit; }
+.mv:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.mv:disabled { opacity: 0.3; cursor: default; }
 h2 { margin: 0; font-size: 15px; flex: 1; }
 .x { background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; }
 .line { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; }

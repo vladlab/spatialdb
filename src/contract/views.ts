@@ -35,6 +35,10 @@ import { shapeOf, summarise } from './shapes.js';
 
 const uuid = z.guid();
 
+/** Column width bounds, px. Narrower than 40 hides the value; wider than 2000 is a mistake. */
+export const MIN_COL_W = 40;
+export const MAX_COL_W = 2000;
+
 /**
  * Entries name fields by ID, never by key or name. A rename must not break a
  * view, and a key is only unique within a table while an id is unique, full
@@ -96,6 +100,19 @@ export const ViewConfig = z.strictObject({
    * what.
    */
   kanban: z.strictObject({ fieldId: uuid }).optional(),
+  /**
+   * COLUMN ORDER, per view — like `hidden`, and for the same reason: two views of one
+   * table are two ways of looking at it. Ids not listed follow, in schema order, so a
+   * field added later appears at the end; ids that no longer exist are skipped. The
+   * PRIMARY field is never moved by this: it is always the first column (see
+   * `orderFields`). Schema `position` stays the DEFAULT order — the tray, cards and
+   * the picker read it — and is what DEFINES the primary (contract/labels.ts), which
+   * is exactly why a column drag must not write it: dragging a text column to the far
+   * left would rename every record in the table.
+   */
+  order: z.array(uuid).max(500).optional(),
+  /** Column widths in px, by field id. Absent = auto (sized by content). */
+  widths: z.record(uuid, z.number().int().min(MIN_COL_W).max(MAX_COL_W)).optional(),
 });
 export type ViewConfig = z.infer<typeof ViewConfig>;
 
@@ -302,6 +319,48 @@ export function applyView<R extends ViewRecord>(
       .map((x) => x.r);
   }
   return out;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ *  Column order
+ * ──────────────────────────────────────────────────────────────────────────*/
+
+/**
+ * The table's fields (given in SCHEMA order) as the view's columns: the primary
+ * first, then the fields named in `order` in that sequence, then everything the
+ * view has never arranged, in schema order. Pure, and it never drops a field —
+ * hiding is `hidden`'s job. Fields it returns are the same objects it was given.
+ */
+export function orderFields<F extends { id: string }>(
+  fields: readonly F[], order: readonly string[] | undefined, primaryId?: string,
+): F[] {
+  const byId = new Map(fields.map((f) => [f.id, f]));
+  const out: F[] = [];
+  const seen = new Set<string>();
+  const take = (id: string) => { const f = byId.get(id); if (f && !seen.has(id)) { seen.add(id); out.push(f); } };
+  if (primaryId) take(primaryId);
+  for (const id of order ?? []) take(id);
+  for (const f of fields) take(f.id);
+  return out;
+}
+
+/**
+ * The `order` to save after moving `fieldId` to index `to` among `columns` (the
+ * list `orderFields` returned). Returns every id, in the new arrangement, so
+ * hidden fields keep their place too. The primary cannot be moved and nothing
+ * can be moved before it; such a move returns the order unchanged.
+ */
+export function moveColumn(
+  columns: readonly { id: string }[], fieldId: string, to: number, primaryId?: string,
+): string[] {
+  const ids = columns.map((c) => c.id);
+  const from = ids.indexOf(fieldId);
+  const floor = primaryId && ids[0] === primaryId ? 1 : 0;
+  const dest = Math.max(floor, Math.min(ids.length - 1, to));
+  if (from === -1 || from < floor || dest === from) return ids;
+  ids.splice(from, 1);
+  ids.splice(dest, 0, fieldId);
+  return ids;
 }
 
 /**

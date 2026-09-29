@@ -50,6 +50,16 @@
     before you can type in it — it is blank, so it does not match.
   - The quick-search box is NOT part of the view. It is "find that file", not
     "this view shows QC failures", and it is not saved or shared.
+  - COLUMN ORDER AND WIDTHS ARE THE VIEW'S (`order`, `widths` in contract/views.ts),
+    like `hidden` — never the schema's. Field `position` DEFINES the primary field
+    (contract/labels.ts), so a column drag writing it would rename every record; the
+    schema order is edited in Table settings instead, and is what a view that has
+    never been arranged shows. Drag a header to reorder (a short press still sorts);
+    drag its right edge to resize. Widths are saved without an undo step: Ctrl+Z after
+    a resize should still undo your last EDIT, not the column.
+  - THE `#` COLUMN AND THE PRIMARY FIELD ARE PINNED — sticky on the left — so a row can
+    always be identified and opened (⤢) however far right you scroll. The primary
+    cannot be moved, and cannot be hidden: it is how a row says what it is.
 -->
 <template>
   <section ref="scrollerRoot" class="gridview">
@@ -191,12 +201,21 @@
         <summary :class="{ active: hiddenCount }">
           fields<template v-if="hiddenCount"> · {{ hiddenCount }} hidden</template>
         </summary>
-        <div class="pop">
-          <label v-for="f in allFields" :key="f.id" class="line check">
-            <input type="checkbox" :checked="!config.hidden.includes(f.id)"
-                   @change="toggleHidden(f.id)" />
-            {{ f.name }}
-          </label>
+        <div class="pop fields-pop">
+          <!-- In COLUMN order, with the column's own ↑↓ — this list is also where the
+               order is arranged without a mouse drag. The primary is fixed first. -->
+          <div v-for="(f, i) in columns" :key="f.id" class="line check field-line" :data-field="f.id">
+            <label class="field-tick" :title="f.id === primaryId ? 'The primary field is always shown' : ''">
+              <input type="checkbox" :checked="isShown(f.id)" :disabled="f.id === primaryId" @change="toggleHidden(f.id)" />
+              <span v-if="f.id === primaryId" class="star">★</span>{{ f.name }}
+            </label>
+            <span class="spacer" />
+            <template v-if="f.id !== primaryId">
+              <button class="mv prev" :disabled="i <= (primaryId ? 1 : 0)" title="Move left" @click="moveTo(f.id, i - 1)">↑</button>
+              <button class="mv next" :disabled="i === columns.length - 1" title="Move right" @click="moveTo(f.id, i + 1)">↓</button>
+            </template>
+          </div>
+          <p class="hint-line">Order and widths are saved to this view. The default order — and which field is primary — is set in the table's ⚙ settings.</p>
         </div>
       </details>
 
@@ -227,21 +246,24 @@
       <table class="grid">
         <thead>
           <tr>
-            <th class="num">#</th>
-            <th v-for="f in shown" :key="f.id" :ref="(el) => setHeaderEl(f.id, el)"
-                :title="'Click to sort · shift-click to add a sort'"
-                class="sortable" @click="headerSort(f, $event)">
-              <span v-if="schema.isPrimary(f.id)" class="star" title="Primary field: records in this table are named by it">★</span>
+            <th class="num pin">#</th>
+            <th v-for="f in shown" :key="f.id" :ref="(el) => setHeaderEl(f.id, el)" :data-field="f.id"
+                :title="f.id === primaryId ? 'Primary field — pinned. Click to sort · shift-click to add a sort' : 'Click to sort · shift-click to add a sort · drag to move the column'"
+                class="sortable" :class="{ pin: f.id === primaryId, dragging: drag?.id === f.id, 'drop-before': drag?.over === f.id && drag.side === 'before', 'drop-after': drag?.over === f.id && drag.side === 'after' }"
+                :style="colStyle(f.id)"
+                @pointerdown="onHeaderDown(f, $event)" @click="headerSort(f, $event)">
+              <span v-if="f.id === primaryId" class="star" title="Primary field: records in this table are named by it">★</span>
               <span class="th-name">{{ f.name }}</span>
               <span v-if="sortMark(f.id)" class="mark">{{ sortMark(f.id) }}</span>
-              <button v-if="!SYSTEM_FIELD_TYPES.has(f.type)" class="th-menu" title="Field settings" @click.stop="menuFor = menuFor === f.id ? '' : f.id">⚙</button>
+              <button v-if="!SYSTEM_FIELD_TYPES.has(f.type)" class="th-menu" title="Field settings" @pointerdown.stop @click.stop="menuFor = menuFor === f.id ? '' : f.id">⚙</button>
               <!-- The SAME controls as the schema tab's rows — see schemaActions.ts. -->
               <Popover v-if="menuFor === f.id" :anchor="headerEls.get(f.id)" @close="menuFor = ''">
-                <FieldSettings layout="stack" :store="store" :actions="schema" :field="f"
-                               :index="allFields.findIndex((x) => x.id === f.id)" :count="allFields.length"
-                               @deleted="menuFor = ''" />
-                <button class="ghost hide" @click="toggleHidden(f.id); menuFor = ''">hide in this view</button>
+                <FieldSettings layout="stack" :store="store" :actions="schema" :field="f" @deleted="menuFor = ''" />
+                <button class="ghost hide" :disabled="f.id === primaryId" :title="f.id === primaryId ? 'The primary field is always shown' : ''" @click="toggleHidden(f.id); menuFor = ''">hide in this view</button>
               </Popover>
+              <!-- The RESIZE handle: the column's right edge. Its press is its own — no sort, no drag. -->
+              <span class="th-resize" title="Drag to resize · double-click for auto width"
+                    @pointerdown.stop.prevent="onResizeDown(f.id, $event)" @click.stop @dblclick.stop="setWidth(f.id, undefined)" />
             </th>
             <th class="add-field" :ref="(el) => setHeaderEl('+', el)" title="Add a field">
               <button class="th-add" @click.stop="menuFor = menuFor === '+' ? '' : '+'">+</button>
@@ -276,15 +298,15 @@
             <!-- The row's HANDLE: click to select the row, drag to carry the selection
                  somewhere (a canvas). The ⤢ keeps to the right edge so it never sits
                  under a press meant for the handle. -->
-            <td class="num" title="Click to select this row"
+            <td class="num pin" title="Click to select this row"
                 @pointerdown="onRowHandleDown(r.id, rowIndex.get(r.id) ?? 0, $event)">
               <span class="n">{{ (rowIndex.get(r.id) ?? 0) + 1 }}</span>
               <button class="expand" tabindex="-1" title="Open record (Space)" @pointerdown.stop @mousedown.prevent @click="$emit('open-record', r.id)">⤢</button>
             </td>
             <td v-for="f in shown" :key="f.id"
-                :class="{ sel: isSel(r.id, f.id), editing: isSel(r.id, f.id) && editing }"
+                :class="{ sel: isSel(r.id, f.id), editing: isSel(r.id, f.id) && editing, pin: f.id === primaryId }"
                 @mousedown="onCellDown(r.id, f, $event)" @dblclick="startEdit(r.id, f)">
-              <div class="cell">
+              <div class="cell" :class="{ sized: colWidth(f.id) !== undefined }" :style="colStyle(f.id)">
                 <!-- LINK: rows in `links`, so edited here rather than in CellEditor. -->
                 <template v-if="f.type === 'link'">
                   <!-- CLICK A PILL to open the linked record (× removes the link). The whole
@@ -385,7 +407,9 @@ import type { Store } from '../store';
 import { fieldsOf, recordsOf, viewsOf, type FieldRow } from '../state';
 import {
   applyView, quickSearch, opsFor, ViewConfig, EMPTY_VIEW, type FilterOp,
+  orderFields, moveColumn, MIN_COL_W, MAX_COL_W,
 } from '../../contract/views';
+import { LABEL_TYPES } from '../../contract/labels';
 import CellEditor from './CellEditor.vue';
 import LinkPicker from './LinkPicker.vue';
 import Popover from './Popover.vue';
@@ -476,19 +500,102 @@ function summarise(raw: unknown): string {
   return bits.join(' · ') || 'everything, unsorted';
 }
 
-const shown = computed(() => allFields.value.filter((f) => !config.value.hidden.includes(f.id)));
+/* ── columns: order, widths, pinning ──────────────────────────────────────
+   contract/views.ts `orderFields` / `moveColumn`. `columns` is EVERY field in this
+   view's order (hidden ones keep their place); `shown` drops the hidden ones —
+   except the primary, which a view may not hide (a config written before that rule
+   is simply overridden). */
+const primaryId = computed(() => allFields.value.find((f) => LABEL_TYPES.has(f.type))?.id);
+const columns = computed(() => orderFields(allFields.value, config.value.order, primaryId.value));
+const isShown = (id: string) => id === primaryId.value || !config.value.hidden.includes(id);
+const shown = computed(() => columns.value.filter((f) => isShown(f.id)));
 const hiddenCount = computed(() => allFields.value.length - shown.value.length);
+
+/** Move a column to index `to` among `columns`, saved to the view. The primary stays put. */
+function moveTo(fieldId: string, to: number) {
+  const next = moveColumn(columns.value, fieldId, to, primaryId.value);
+  if (next.join() !== columns.value.map((c) => c.id).join()) save({ order: next });
+}
+
+/** A width being dragged right now — shown at once, saved on release. */
+const liveWidths = reactive(new Map<string, number>());
+const colWidth = (id: string): number | undefined => liveWidths.get(id) ?? config.value.widths?.[id];
+const colStyle = (id: string) => { const w = colWidth(id); return w === undefined ? undefined : { width: w + 'px', minWidth: w + 'px', maxWidth: w + 'px' }; };
+/** Saved WITHOUT an undo step — see the header comment. `undefined` returns the column to auto width. */
+function setWidth(id: string, w: number | undefined) {
+  liveWidths.delete(id);
+  const widths = { ...(config.value.widths ?? {}) };
+  if (w === undefined) delete widths[id]; else widths[id] = Math.round(Math.max(MIN_COL_W, Math.min(MAX_COL_W, w)));
+  if ((widths[id] ?? null) === (config.value.widths?.[id] ?? null)) return;
+  save({ widths }, { undoable: false });
+}
+function onResizeDown(id: string, e: PointerEvent) {
+  if (e.button !== 0) return;
+  const th = (e.currentTarget as HTMLElement).closest('th');
+  const startW = colWidth(id) ?? th?.getBoundingClientRect().width ?? 160;
+  const startX = e.clientX;
+  const onMove = (ev: PointerEvent) => { liveWidths.set(id, Math.max(MIN_COL_W, Math.min(MAX_COL_W, startW + ev.clientX - startX))); };
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp);
+    const w = liveWidths.get(id);
+    if (w !== undefined) setWidth(id, w);
+  };
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+}
+
+/* Reordering by DRAGGING A HEADER. A header is also the sort button, so the press
+   only becomes a drag once the pointer has moved a few px; a plain click still
+   sorts. The drop target is the header under the pointer (`pointermove` on the
+   window reports it as `target`), and which side of it from where in it the pointer
+   is. The primary cannot be picked up, and nothing lands before it. */
+const drag = ref<{ id: string; over: string; side: 'before' | 'after'; moved: boolean } | null>(null);
+let suppressSort = false;
+function onHeaderDown(f: FieldRow, e: PointerEvent) {
+  if (e.button !== 0 || f.id === primaryId.value) return;
+  const startX = e.clientX, startY = e.clientY;
+  let started = false;
+  const onMove = (ev: PointerEvent) => {
+    if (!started) {
+      if (Math.abs(ev.clientX - startX) < 4 && Math.abs(ev.clientY - startY) < 4) return;
+      started = true;
+      drag.value = { id: f.id, over: f.id, side: 'after', moved: true };
+    }
+    const th = (ev.target as Element | null)?.closest?.('th[data-field]') as HTMLElement | null;
+    const over = th?.dataset.field;
+    if (!over || over === f.id || !drag.value) return;
+    const r = th!.getBoundingClientRect();
+    const side = over === primaryId.value ? 'after' : ev.clientX < r.left + r.width / 2 ? 'before' : 'after';
+    drag.value = { ...drag.value, over, side };
+  };
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp);
+    const d = drag.value;
+    drag.value = null;
+    if (!d) return;
+    suppressSort = true;                        // the click that follows this release is not a sort
+    setTimeout(() => { suppressSort = false; }, 0);
+    if (d.over === d.id) return;
+    const ids = columns.value.map((c) => c.id);
+    const from = ids.indexOf(d.id);
+    let to = ids.indexOf(d.over) + (d.side === 'after' ? 1 : 0);
+    if (from < to) to--;                        // its own slot closes when it is lifted out
+    moveTo(d.id, to);
+  };
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+}
 const sortable = computed(() => allFields.value);
 const filterable = computed(() => allFields.value.filter((f) => opsFor(f.type).length));
 
 /** Write the config. The built-in Grid's row is created the first time it is needed. */
-function save(patch: Partial<ViewConfig>) {
+function save(patch: Partial<ViewConfig>, options: { undoable?: boolean } = {}) {
   const next = { ...config.value, ...patch };
   if (active.value) {
-    store.mutate({ type: 'view.update', id: active.value.id, config: next });
+    store.mutate({ type: 'view.update', id: active.value.id, config: next }, options);
   } else {
-    store.mutate({ type: 'view.create', id: props.tableId, tableId: props.tableId, name: 'Grid', config: next });
-    store.mutate({ type: 'view.update', id: props.tableId, position: -1 });     // first, always
+    store.mutate({ type: 'view.create', id: props.tableId, tableId: props.tableId, name: 'Grid', config: next }, options);
+    store.mutate({ type: 'view.update', id: props.tableId, position: -1 }, options);     // first, always
     activeId.value = props.tableId;
   }
 }
@@ -550,6 +657,7 @@ function patchSort(i: number, p: Partial<ViewConfig['sort'][number]>) {
 }
 /** Header click: none → asc → desc → none. Shift keeps the other sorts. */
 function headerSort(f: FieldRow, e: MouseEvent) {
+  if (suppressSort) return;                     // the release of a column drag
   const cur = config.value.sort.find((s) => s.fieldId === f.id);
   const rest = e.shiftKey ? config.value.sort.filter((s) => s.fieldId !== f.id) : [];
   const next = !cur ? [{ fieldId: f.id, dir: 'asc' as const }]
@@ -603,6 +711,7 @@ function patchFilterValue(i: number, raw: string) {
   patchFilter(i, { value: raw });
 }
 function toggleHidden(fieldId: string) {
+  if (fieldId === primaryId.value) return;      // never hidden — see the header comment
   const h = config.value.hidden;
   save({ hidden: h.includes(fieldId) ? h.filter((x) => x !== fieldId) : [...h, fieldId] });
 }
@@ -723,7 +832,7 @@ const kanbanable = computed(() => allFields.value.filter(canMakeColumns));
 // A board whose field can no longer make columns (its "single" tick removed) falls back to the grid.
 const kanban = computed(() => (config.value.kanban && kanbanable.value.some((f) => f.id === config.value.kanban!.fieldId) ? config.value.kanban : undefined));
 const kanbanField = computed(() => (kanban.value ? store.state.fields.get(kanban.value.fieldId) : undefined));
-const primaryField = computed(() => shown.value.find((f) => f.position === Math.min(...allFields.value.map((x) => x.position))) ?? shown.value[0]);
+const primaryField = computed(() => shown.value.find((f) => f.id === primaryId.value) ?? shown.value[0]);
 /** "+" in a column: a record that starts out IN that column. */
 function createInColumn(v: GroupValue) {
   const f = kanbanField.value;
@@ -1136,13 +1245,38 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .th-menu:hover, .th-add:hover { color: var(--accent); }
 .th-add { font-size: 14px; color: var(--text-muted); }
 .add-field { width: 1%; }
+/* PINNED columns: `#` and the primary. The `#` column has a FIXED width, because it
+   is the primary's `left` offset (NUM_W below and in .num). A pinned th is sticky in
+   BOTH axes; the scrolled-past cells slide under it, so it needs an opaque background
+   and to sit above the unpinned ones (and the header row above all rows). */
+.grid th.pin, .grid td.pin { position: sticky; left: 0; z-index: 5; background: var(--bg-app); }
+.grid th.pin { z-index: 12; }
+.grid th.pin:not(.num), .grid td.pin:not(.num) { left: 56px; }
+.row:hover td.pin { background: var(--bg-surface-hover); }
+.row.rowsel td.pin { background: linear-gradient(rgba(66, 165, 245, 0.14), rgba(66, 165, 245, 0.14)), var(--bg-app); }
+.row.fresh td.pin { background: linear-gradient(rgba(66, 165, 245, 0.05), rgba(66, 165, 245, 0.05)), var(--bg-app); }
+.grid td.pin:not(.num) { border-right: 2px solid var(--border-main); }
+.grid th.pin:not(.num) { border-right: 2px solid var(--border-main); }
+/* Reordering: the lifted header dims; an accent bar marks where it will land. */
+.grid th.dragging { opacity: 0.4; }
+.grid th.drop-before { box-shadow: inset 3px 0 0 var(--accent); }
+.grid th.drop-after { box-shadow: inset -3px 0 0 var(--accent); }
+/* The resize handle: an invisible strip on the header's right edge, wide enough to
+   grab, that lights up on hover. Only the th is relative, so the strip stays inside it. */
+.th-resize { position: absolute; top: 0; bottom: 0; right: -4px; width: 9px; cursor: col-resize; z-index: 1; }
+.th-resize:hover, .th-resize:active { background: var(--accent); opacity: 0.6; }
+.fields-pop .field-line { gap: 6px; }
+.fields-pop .field-tick { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.fields-pop .mv { background: none; border: 1px solid transparent; border-radius: 3px; color: var(--text-muted); cursor: pointer; padding: 0 4px; font: inherit; font-size: 11px; }
+.fields-pop .mv:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.fields-pop .mv:disabled { opacity: 0.3; cursor: default; }
 .hide { margin-top: 8px; width: 100%; }
 /* The ⤢ sits ON TOP of the row number rather than replacing it in the flow.
    Swapping `display` between a number and a wider, taller glyph re-measured the
    cell on every hover: the column twitched and the row grew a pixel, which in a
    windowed grid (fixed ROW_H) also nudged everything below it. Absolute + a
    fixed-width cell means hovering changes paint, never layout. */
-.num { position: relative; min-width: 46px; box-sizing: border-box; cursor: grab; user-select: none; padding-right: 18px !important; }
+.num { position: sticky; width: 56px; min-width: 56px; max-width: 56px; box-sizing: border-box; cursor: grab; user-select: none; padding-right: 18px !important; }
 .num:active { cursor: grabbing; }
 .num .expand {
   position: absolute; top: 0; bottom: 0; right: 0; width: 18px; display: flex; align-items: center; justify-content: center;
@@ -1190,7 +1324,7 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .scope-note { font-size: 11px; color: var(--accent); border: 1px solid var(--accent); border-radius: 3px; padding: 0 6px; white-space: nowrap; }
 .scope-note.unscoped { color: var(--warning); border-color: var(--warning); }
 .row:hover .num .expand { visibility: visible; }
-.num { width: 1%; color: var(--text-faint); font-size: 11px; text-align: right !important; }
+.num { color: var(--text-faint); font-size: 11px; text-align: right !important; }
 .act { width: 1%; white-space: nowrap; }
 .open-board { background: none; border: 1px solid var(--border-main); color: var(--accent); border-radius: 3px; padding: 0 6px; margin-right: 4px; cursor: pointer; font: inherit; font-size: 11px; }
 
@@ -1206,6 +1340,7 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .shown { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 1; }
 .shown.under { visibility: hidden; }          /* still sizing the column; see template */
 .cell :deep(.over) { position: absolute; inset: 0; }
+.cell.sized { box-sizing: border-box; }
 .value { overflow: hidden; text-overflow: ellipsis; }
 .value.num { margin-left: auto; font-variant-numeric: tabular-nums; }
 .looked-up { color: var(--text-secondary); font-style: italic; }
@@ -1215,7 +1350,9 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .chip.back { font-style: italic; color: var(--text-secondary); }
 .grid td { cursor: default; }
 
-/* FIXED HEIGHT — the window maths depends on it. 29px + 1px border = ROW_H. */
+/* FIXED HEIGHT — the window maths depends on it. 29px + 1px border = ROW_H.
+   Width: auto within 120–420px until the column is resized; then exact (inline
+   style, .sized), so the value is what gives the column its width either way. */
 .cell {
   height: 29px; min-width: 120px; max-width: 420px;
   display: flex; align-items: center; gap: 2px;

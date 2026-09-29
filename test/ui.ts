@@ -469,18 +469,64 @@ async function main() {
   check('renaming updates the header', await until(() => ths().includes('FPS')), ths().join());
   const renamed = await untilDb(`select key from fields where name = 'FPS'`, (r) => r.length === 1);
   check('and leaves the key alone — that is where the values live', renamed[0]?.key === 'frame_rate', JSON.stringify(renamed));
-  const orderBefore = ths();
-  await gridPop().find('button.prev').trigger('click');
-  check('"move left" reorders the columns',
-    await until(() => ths().indexOf('FPS') === orderBefore.indexOf('FPS') - 1), ths().join());
+  check('the header popover has NO move buttons — column order is the view\'s, not the schema\'s',
+    !gridPop().find('button.prev').exists() && !gridPop().find('button.next').exists());
   check('opening a menu or clicking inside it never SORTED the column (the th is a sort button)',
     !th('FPS').find('.mark').exists());
+  await gridPop().trigger('keydown', { key: 'Escape' });
+
+  console.log('\nU8a. Column order and widths belong to the VIEW');
+  const orderBefore = ths();
+  const positionsBefore = (await pool.query(`select key, position from fields where table_id = $1 order by key`, [filesId])).rows;
+  const fieldsMenu = () => w.findAll('.gridview details.menu').find((d) => /^fields/.test(d.find('summary').text()))!;
+  await fieldsMenu().find('summary').trigger('click');
+  const fpsLine = () => fieldsMenu().findAll('.field-line').find((l) => /FPS/.test(l.text()))!;
+  await fpsLine().find('button.prev').trigger('click');
+  check('↑ in the fields menu moves the column left',
+    await until(() => ths().indexOf('FPS') === orderBefore.indexOf('FPS') - 1), ths().join());
+  const savedOrder = await untilDb(`select config from views where id = '${filesId}'`, (r) => Array.isArray(r[0]?.config?.order));
+  check('…saved as `order` on the built-in Grid view', savedOrder[0]?.config.order.length === ths().length, JSON.stringify(savedOrder[0]?.config));
+  await sleep(400);
+  const positionsAfter = (await pool.query(`select key, position from fields where table_id = $1 order by key`, [filesId])).rows;
+  check('…and the SCHEMA positions did not move — a column drag must never change which field is primary',
+    JSON.stringify(positionsAfter) === JSON.stringify(positionsBefore), JSON.stringify(positionsAfter));
+  check('the primary is first, starred, pinned, and its tick in the fields menu is disabled',
+    ths()[0] === 'Name' && th('Name').classes('pin') && w.find('.gridview thead th.num').classes('pin')
+    && fieldsMenu().findAll('.field-line').find((l) => /Name/.test(l.text()))!.find('input').attributes('disabled') !== undefined);
+  check('the primary has no move buttons of its own', !fieldsMenu().findAll('.field-line').find((l) => /Name/.test(l.text()))!.find('button.prev').exists());
+  await fieldsMenu().find('summary').trigger('click');
+
+  // A REAL header drag: down on FPS, move onto the LAST header (past the threshold), up.
+  const PEh = (win as any).PointerEvent ?? (win as any).MouseEvent;
+  const lastName = ths()[ths().length - 1];
+  await th('FPS').trigger('pointerdown', { button: 0, clientX: 10, clientY: 10 });
+  th(lastName).element.dispatchEvent(new PEh('pointermove', { bubbles: true, clientX: 300, clientY: 10 }));
+  await sleep(20);
+  check('while dragging, the lifted header dims and the target shows a drop mark',
+    th('FPS').classes('dragging') && (th(lastName).classes('drop-after') || th(lastName).classes('drop-before')), th(lastName).classes().join());
+  win.dispatchEvent(new PEh('pointerup', { bubbles: true, clientX: 300, clientY: 10 }));
+  await th('FPS').trigger('click');   // the click a browser fires after the release
+  check('dropping it moves the column to the far end (schema position untouched)',
+    await until(() => ths()[ths().length - 1] === 'FPS' || ths()[ths().length - 2] === 'FPS'), ths().join());
+  check('…and the release did NOT sort the column', !th('FPS').find('.mark').exists());
+  const posFps = (await pool.query(`select position from fields where key = 'frame_rate'`)).rows[0]?.position;
+  check('(schema position still what it was)', posFps === positionsBefore.find((r) => r.key === 'frame_rate')?.position, String(posFps));
+
+  // Resize: press the handle, move, release → a width on the view, NOT an undo step.
+  await th('FPS').find('.th-resize').trigger('pointerdown', { button: 0, clientX: 100, clientY: 10 });
+  win.dispatchEvent(new PEh('pointermove', { bubbles: true, clientX: 160, clientY: 10 }));
+  win.dispatchEvent(new PEh('pointerup', { bubbles: true, clientX: 160, clientY: 10 }));
+  const fpsId = (await pool.query(`select id from fields where key = 'frame_rate'`)).rows[0].id;
+  const widths = await untilDb(`select config from views where id = '${filesId}'`, (r) => r[0]?.config?.widths?.[fpsId] !== undefined);
+  check('dragging the handle saves a width for the column on the view', typeof widths[0]?.config.widths[fpsId] === 'number', JSON.stringify(widths[0]?.config.widths));
+  check('…which the cells then carry as an exact width', /width/.test(w.find(`.gridview thead th[data-field="${fpsId}"]`).attributes('style') ?? ''));
+  await th('FPS').find('.th-resize').trigger('dblclick');
+  check('double-clicking the handle returns it to auto', await untilDb(`select config from views where id = '${filesId}'`, (r) => r[0]?.config?.widths?.[fpsId] === undefined).then((r) => r[0]?.config?.widths?.[fpsId] === undefined));
 
   console.log('\nU8b. The primary field names the record');
   check('the first plain-valued field is starred, and only that one',
     th('Name').find('.star').exists() && w.findAll('.gridview thead .star').length === 1);
   // Gamma is linked from reel_10. Its table (Shows) is named by "Name"; make "Code" primary instead.
-  await gridPop().trigger('keydown', { key: 'Escape' });
   await nav.openTable(shows);
   await until(() => ths().includes('Code'));
   await th('Code').find('.th-menu').trigger('click');

@@ -16,7 +16,7 @@
 import pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import { bootServer, type ServerHandle } from './harness.js';
-import { applyView, quickSearch, ViewConfig, type ViewField, ancestorsOf, canMakeColumns, groupRows, kanbanColumns, type GroupHeader } from '../src/contract/views.js';
+import { applyView, quickSearch, ViewConfig, type ViewField, ancestorsOf, canMakeColumns, groupRows, kanbanColumns, moveColumn, orderFields, type GroupHeader } from '../src/contract/views.js';
 import { lookupConfigError, lookupText, lookupValues } from '../src/contract/lookups.js';
 import { backlinkConfigError, backlinkRecords } from '../src/contract/backlinks.js';
 import { fuzzyRank, fuzzyScore, parsePaletteQuery, rankChoices } from '../src/client/fuzzy.js';
@@ -321,6 +321,28 @@ function pure() {
   check('a group field that no longer exists is skipped, not an error', shape(groupRows(gRecs, gFields, [randomUUID()])) === 'a b c d e');
   check('a view saved BEFORE grouping existed still parses, and means "not grouped"', ViewConfig.safeParse({ sort: [], filters: [], hidden: [] }).success
     && (ViewConfig.parse({}).groupBy ?? []).length === 0 && ViewConfig.safeParse({ groupBy: [randomUUID(), randomUUID(), randomUUID()] }).success === false);
+
+  console.log('\nG1m. Column order (contract/views.ts: orderFields, moveColumn)');
+  {
+    const [P, A, B, C] = ['p', 'a', 'b', 'c'].map((id) => ({ id }));
+    const schema = [A, P, B, C];                                       // schema order; P is the primary but not first
+    const ids = (fs: { id: string }[]) => fs.map((f) => f.id).join('');
+    check('no order: schema order, with the primary pulled first', ids(orderFields(schema, undefined, 'p')) === 'pabc');
+    check('no primary (a table with no plain-valued field): schema order as is', ids(orderFields(schema, undefined)) === 'apbc');
+    check('an order is followed; fields it does not name follow in schema order', ids(orderFields(schema, ['c'], 'p')) === 'pcab');
+    check('the primary stays first even when the order puts it elsewhere', ids(orderFields(schema, ['c', 'p', 'b'], 'p')) === 'pcba');
+    check('ids of deleted fields and duplicates are skipped, nothing is dropped', ids(orderFields(schema, ['zz', 'c', 'c'], 'p')) === 'pcab');
+    const cols = orderFields(schema, undefined, 'p');                // p a b c
+    check('moveColumn returns every id in the new arrangement', moveColumn(cols, 'c', 1, 'p').join('') === 'pcab');
+    check('…and can move toward the end', moveColumn(cols, 'a', 3, 'p').join('') === 'pbca');
+    check('nothing can be moved BEFORE the primary — index 0 lands at 1', moveColumn(cols, 'c', 0, 'p').join('') === 'pcab');
+    check('the primary itself cannot be moved', moveColumn(cols, 'p', 2, 'p').join('') === 'pabc');
+    check('a move to where it already is changes nothing', moveColumn(cols, 'b', 2, 'p').join('') === 'pabc');
+    const cfg = ViewConfig.safeParse({ sort: [], filters: [], hidden: [], order: [randomUUID()], widths: { [randomUUID()]: 160 } });
+    check('order and widths are part of a saved view', cfg.success);
+    check('a width outside 40–2000 px is refused', !ViewConfig.safeParse({ sort: [], filters: [], hidden: [], widths: { [randomUUID()]: 5 } }).success);
+    check('a view saved before columns could be arranged still parses (both keys optional)', ViewConfig.safeParse({ sort: [], filters: [], hidden: [] }).success);
+  }
 
   console.log('\nG1j. Structured fields (contract/shapes.ts)');
   check('a field must name a KNOWN shape — a typo is an error, not "generic JSON"',

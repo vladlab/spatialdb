@@ -9,6 +9,9 @@
     is "convert into a NEW field", leaving the original until you delete it.
   - CHANGING THE KEY. Same reason: every record stores its value under it.
   Both are shown, read-only, so you can see what you have.
+  - MOVING THE FIELD. Column order belongs to the VIEW (drag a header, or the
+    "fields" menu); the schema's own order — which also decides the primary — is
+    arranged in Table settings. "make primary" stays: it is a schema act by name.
 -->
 <template>
   <div class="field-settings" :class="layout">
@@ -86,10 +89,6 @@
       <button v-else-if="actions.canBePrimary(field)" class="make-primary"
               title="Name this table's records by this field. Moves it first."
               @click="actions.makePrimary(field.id)">make primary</button>
-      <button class="move prev" :disabled="index === 0" :title="layout === 'row' ? 'Move up' : 'Move left'"
-              @click="actions.moveField(field.id, -1)">{{ layout === 'row' ? '↑' : '←' }}</button>
-      <button class="move next" :disabled="index === count - 1" :title="layout === 'row' ? 'Move down' : 'Move right'"
-              @click="actions.moveField(field.id, 1)">{{ layout === 'row' ? '↓' : '→' }}</button>
       <button class="danger delete" @click="onDelete">delete</button>
     </span>
   </div>
@@ -107,8 +106,6 @@ import { arrowStyleOf } from '../../contract/arrows';
 
 const props = defineProps<{
   store: Store; actions: SchemaActions; field: FieldRow;
-  /** Position among the table's fields, for disabling the end-stops. */
-  index: number; count: number;
   layout?: 'row' | 'stack';
 }>();
 const emit = defineEmits<{ deleted: [] }>();

@@ -16,6 +16,29 @@ sandbox has no browser and `test/ui.ts` cannot see layout or paint.
 
 ## When you come back — a checking order
 
+**Grid columns (Sept 29)** — pinned, resizable, reorderable; all of it layout, none
+of it visible to `test/ui.ts`:
+1. **Pinning.** Widen a table past the window and scroll right: `#` and the ★ primary
+   column must stay put, with the other cells sliding UNDER them (opaque; check on a
+   hovered row, a selected row, and a fresh blue row). The primary has a 2px right
+   border as its edge. The `#` column is a fixed 56 px — the primary's `left` offset;
+   if a row number ever needs more than five digits, both numbers move together.
+   Group headers were already sticky-left; check they still are with the pins.
+2. **Resize.** The handle is a 9 px strip on a header's right edge (lights up accent
+   on hover, `col-resize` cursor). Drag it; the column follows live and the width is
+   saved on release — to the VIEW, for everyone, and NOT as an undo step (Ctrl+Z
+   after a resize should undo your last edit). Double-click the handle = auto width.
+   A resized column is exact; an unresized one still auto-sizes within 120–420 px.
+   Does the header text clip sensibly on a narrow column? (It is `nowrap`; a very
+   narrow column may keep the header's width — say if that looks wrong.)
+3. **Reorder.** Drag a header ≥4 px: it dims, and an accent bar on another header
+   shows the side it lands on. A short press still sorts. The primary cannot be picked
+   up and nothing lands left of it. The same order is in the **fields** menu with ↑↓,
+   and the menu says where the DEFAULT order lives.
+4. **Table settings → Field order** (folded) is the schema's own order: ↑↓ there move
+   `position` — this is what the tray, cards, the picker and a never-arranged view
+   show, and what decides the ★. The ⚙ header popover no longer has ← →.
+
 **The desktop client (Sept 27)** has a checking order of its own at the end of
 `DESKTOP.md`; nobody has opened its window yet. Also unseen in the web app: the
 **Desktop tools** section at the bottom of Table settings (`ToolSettings.vue` — a

@@ -45,7 +45,7 @@
       </div>
 
       <FieldSettings v-for="(f, i) in fieldsOf(t.id)" :key="f.id" class="field-row" layout="row"
-                     :store="store" :actions="actions" :field="f" :index="i" :count="fieldsOf(t.id).length" />
+                     :store="store" :actions="actions" :field="f" />
       <p v-if="!fieldsOf(t.id).length" class="muted">No fields yet. The first plain-valued field names the table's records.</p>
 
       <FieldForm class="new-field" layout="row" :store="store" :actions="actions" :table-id="t.id" />
