@@ -1,4 +1,3 @@
 {
-  "$comment": "Merged in with `cargo tauri build --config tauri.bundle-ffprobe.conf.json` to put an ffprobe INSIDE the app (see binaries/README.md). Not in tauri.conf.json because the build fails when the binary is missing, and most builds (Linux dev) should not need one.",
   "bundle": { "externalBin": ["binaries/ffprobe"] }
 }

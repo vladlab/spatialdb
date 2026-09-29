@@ -24,5 +24,10 @@ against Homebrew's libraries and will not run on a Mac without them
 
 Only ffprobe is used; the app never runs ffmpeg itself.
 
+`tauri.bundle-ffprobe.conf.json` holds only the `externalBin` line, with no
+explanatory key: Tauri validates the merged config strictly and refuses anything
+not in its schema (a `$comment` broke the first Mac build, Sept 29). It is not in
+`tauri.conf.json` because the build fails when the binary is missing.
+
 The binaries are not committed (see .gitignore): they are large, per-platform, and
 their licence depends on how they were built.
