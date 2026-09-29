@@ -69,10 +69,15 @@ fn config_file(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 /// `SPATIALDB_URL` wins (a NixOS module can set it for every workstation); else the
-/// file the setup page wrote; else none — and the setup page is shown.
+/// file the setup page wrote; else a default BAKED IN at build time
+/// (`SPATIALDB_DEFAULT_URL=https://… cargo tauri build`), so a build handed to
+/// colleagues opens straight onto the house server — a GUI app on macOS sees no
+/// shell environment, so the env var is no help there; else none, and the setup
+/// page is shown.
 fn configured_server(app: &AppHandle) -> Option<url::Url> {
     let raw = std::env::var("SPATIALDB_URL").ok()
-        .or_else(|| config_file(app).ok().and_then(|f| fs::read_to_string(f).ok()))?;
+        .or_else(|| config_file(app).ok().and_then(|f| fs::read_to_string(f).ok()))
+        .or_else(|| option_env!("SPATIALDB_DEFAULT_URL").map(str::to_string))?;
     parse_server(raw.trim()).ok()
 }
 
@@ -137,6 +142,8 @@ pub struct Available {
     /// of the program it runs — `None` when that program is not on this machine.
     /// Built-in analyzers report the app's own version.
     pub analyzers: std::collections::BTreeMap<&'static str, Option<String>>,
+    /// Where the ffprobe in use lives, "(bundled)" when it came with the app.
+    pub ffprobe_path: Option<String>,
     pub platform: &'static str,
 }
 
@@ -146,11 +153,13 @@ fn tools_available() -> Available {
     let own = Some(env!("CARGO_PKG_VERSION").to_string());
     let mut analyzers = std::collections::BTreeMap::new();
     for a in ["filesystem", "sequence", "imf", "hash-xxh3", "hash-sha256"] { analyzers.insert(a, own.clone()); }
-    analyzers.insert("ffprobe", tools::probe::version("ffprobe"));
+    let ffprobe = tools::probe::ffprobe_path();
+    analyzers.insert("ffprobe", ffprobe.as_deref().and_then(tools::probe::version));
     Available {
         version: env!("CARGO_PKG_VERSION").to_string(),
         tools: vec!["file_drop", "reveal"],
         analyzers,
+        ffprobe_path: ffprobe.map(|p| format!("{}{}", p.display(), if tools::probe::ffprobe_is_bundled() { " (bundled)" } else { "" })),
         platform: std::env::consts::OS,
     }
 }

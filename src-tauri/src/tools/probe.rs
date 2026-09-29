@@ -11,12 +11,46 @@
 use super::classify::Unit;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
-use std::process::Command;
+use std::{path::{Path, PathBuf}, process::Command, sync::OnceLock};
 
 #[derive(Serialize)]
 pub struct Probed { pub outputs: Map<String, Value> }
 
-pub fn version(bin: &str) -> Option<String> {
+/// WHICH ffprobe, decided once. In order:
+///   1. `SPATIALDB_FFPROBE` — an explicit path, for a machine with an odd install;
+///   2. a copy BUNDLED next to the app's executable (Tauri's `externalBin` puts it in
+///      `spatialdb.app/Contents/MacOS/`; see src-tauri/binaries/README.md);
+///   3. `PATH`;
+///   4. the usual install places, because an app launched from the macOS Finder
+///      (or a desktop launcher) does NOT inherit the shell's PATH — Homebrew's
+///      /opt/homebrew/bin is invisible to it, and "ffprobe not found" would be a lie.
+/// None when there is no ffprobe at all; the handshake reports that.
+pub fn ffprobe_path() -> Option<PathBuf> {
+    static FOUND: OnceLock<Option<PathBuf>> = OnceLock::new();
+    FOUND.get_or_init(|| {
+        let exe = if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" };
+        let is_file = |p: &Path| p.is_file();
+        if let Some(p) = std::env::var_os("SPATIALDB_FFPROBE").map(PathBuf::from) { if is_file(&p) { return Some(p); } }
+        if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
+            let p = dir.join(exe); if is_file(&p) { return Some(p); }
+        }
+        if let Some(path) = std::env::var_os("PATH") {
+            for dir in std::env::split_paths(&path) { let p = dir.join(exe); if is_file(&p) { return Some(p); } }
+        }
+        for dir in ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin", "/run/current-system/sw/bin", "/usr/bin"] {
+            let p = Path::new(dir).join(exe); if is_file(&p) { return Some(p); }
+        }
+        None
+    }).clone()
+}
+
+/// Whether the ffprobe in use is the one bundled with the app (for the handshake).
+pub fn ffprobe_is_bundled() -> bool {
+    let dir = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf));
+    matches!((ffprobe_path(), dir), (Some(p), Some(d)) if p.parent() == Some(d.as_path()))
+}
+
+pub fn version(bin: &Path) -> Option<String> {
     let out = Command::new(bin).arg("-version").output().ok()?;
     if !out.status.success() { return None; }
     let first = String::from_utf8_lossy(&out.stdout).lines().next()?.to_string();
@@ -24,7 +58,8 @@ pub fn version(bin: &str) -> Option<String> {
 }
 
 fn run_ffprobe(path: &str) -> Result<Value, String> {
-    let out = Command::new("ffprobe")
+    let bin = ffprobe_path().ok_or("ffprobe was not found on this machine (not bundled, not on PATH, not in /opt/homebrew/bin or /usr/local/bin)")?;
+    let out = Command::new(bin)
         .args(["-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-i"])
         .arg(path)
         .output()
@@ -38,7 +73,7 @@ fn run_ffprobe(path: &str) -> Result<Value, String> {
 pub fn probe(unit: &Unit) -> Result<Probed, String> {
     let mut o = Map::new();
     // Provenance first: which ffprobe wrote everything below.
-    if let Some(v) = version("ffprobe") { o.insert("ffprobe.version".into(), json!(v)); }
+    if let Some(v) = ffprobe_path().as_deref().and_then(version) { o.insert("ffprobe.version".into(), json!(v)); }
     if unit.kind == "channel_set" {
         let mut tracks = Vec::new();
         for (m, member) in unit.members.iter().enumerate() {

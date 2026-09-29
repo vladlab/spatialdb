@@ -33,7 +33,7 @@
   const { invoke } = window.__TAURI__.core;
   const $ = (id) => document.getElementById(id);
   invoke('tools_available').then((a) => {
-    $('host').textContent = `desktop ${a.version} · ${a.platform} · ffprobe ${a.analyzers.ffprobe ?? 'NOT FOUND'}`;
+    $('host').textContent = `desktop ${a.version} · ${a.platform} · ffprobe ${a.analyzers.ffprobe ? a.analyzers.ffprobe + ' — ' + a.ffprobe_path : 'NOT FOUND'}`;
   }).catch(() => {});
   invoke('server_url').then((u) => { if (u) $('url').value = u; }).catch(() => {});
   async function go() {

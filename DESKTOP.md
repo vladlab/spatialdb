@@ -84,11 +84,64 @@ npm run desktop:build       # cargo tauri build → src-tauri/target/release/bun
 - **Fedora / Rocky**: the AppImage (or the `.rpm`) from `cargo tauri build`. viznotes'
   `build-appimage.sh` is the reference for a portable AppImage that does NOT bundle
   the GL stack — copy it across when this gets that far.
-- **macOS**: `cargo tauri build` on a Mac produces the `.app`/`.dmg`; unsigned, so
-  Gatekeeper needs a right-click → Open the first time.
+- **macOS**: see "Building a Mac app" below.
 - **Icons**: `src-tauri/icons/` holds placeholders. `npx @tauri-apps/cli icon
   some-1024px.png` generates the full set (including `.icns`/`.ico` for macOS/Windows,
   which `tauri.conf.json` does not list yet).
+
+## Building a Mac app (for colleagues)
+
+UNVERIFIED on a real Mac as of Sept 29 — nothing here has run on macOS yet. It must
+be built ON a Mac; Tauri does not cross-compile macOS bundles from Linux.
+
+**Once per Mac:**
+
+```bash
+xcode-select --install                                  # Apple's compilers and linker
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup target add aarch64-apple-darwin x86_64-apple-darwin   # the second only for Intel Macs
+cargo install tauri-cli --version "^2" --locked         # provides `cargo tauri`
+```
+
+**Each build**, from the repo:
+
+```bash
+cd src-tauri
+# Apple Silicon only (almost every Mac bought since 2021):
+SPATIALDB_DEFAULT_URL=https://spatialdb.example.com \
+  cargo tauri build --target aarch64-apple-darwin --config tauri.bundle-ffprobe.conf.json
+# …or one app for Apple Silicon AND Intel:
+#   cargo tauri build --target universal-apple-darwin --config tauri.bundle-ffprobe.conf.json
+```
+
+- `SPATIALDB_DEFAULT_URL` bakes the house server into the build, so a colleague's
+  first launch goes straight to the login page. Leave it out and they get the
+  one-field setup page instead. A Mac GUI app never sees `SPATIALDB_URL`.
+- `--config tauri.bundle-ffprobe.conf.json` puts ffprobe inside the app; it needs
+  the binary in `src-tauri/binaries/` first (`binaries/README.md`). Leave the flag
+  out to rely on each Mac's own ffprobe (Homebrew's is found even from the Finder).
+- Output: `target/<target>/release/bundle/macos/spatialdb.app` and
+  `…/bundle/dmg/spatialdb_0.1.0_<arch>.dmg`. Share the `.dmg`.
+- `tauri.conf.json` ad-hoc signs the app (`"signingIdentity": "-"`): enough for
+  Apple Silicon to run it, NOT enough for Gatekeeper to trust it (see below).
+- Icons are placeholders: `cargo tauri icon a-1024px.png` makes the full set.
+
+**On a colleague's Mac** — an unsigned app from a download, chat or email is
+quarantined, and macOS says it "cannot be opened" or "is damaged":
+
+- Copied from the house NAS over SMB it usually carries no quarantine and opens.
+- Otherwise, once: try to open it, then System Settings → Privacy & Security →
+  "Open Anyway" (macOS 15 removed the old right-click → Open shortcut), or in
+  Terminal: `xattr -dr com.apple.quarantine /Applications/spatialdb.app`.
+- If the server uses Caddy's internal CA, its root certificate goes into Keychain
+  Access → System, set to "Always Trust"; a Let's Encrypt certificate needs nothing.
+- The setup page's footer shows which ffprobe the app found and whether it is the
+  bundled one.
+
+To remove all of that friction: an Apple Developer account (paid, yearly) gives a
+Developer ID certificate, and `cargo tauri build` can sign and notarize with it
+(Tauri's "macOS code signing" guide). Worth it once more than a handful of people
+use the app.
 
 ## Updating
 
