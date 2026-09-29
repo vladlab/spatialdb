@@ -60,6 +60,11 @@ SPATIALDB_URL=https://spatialdb.example.com npm run desktop:dev   # skip the set
 cd src-tauri && cargo run
 ```
 
+The app sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` itself on Linux (a blank window
+with "Failed to create GBM buffer" in the terminal is that renderer failing; seen on
+Fedora); export it as `0` to opt back in on a GPU where it works. If the window is
+still blank, `WEBKIT_DISABLE_COMPOSITING_MODE=1` falls back further.
+
 First run: the setup page asks for the server address and saves it to the app's
 config directory (`~/.config/spatialdb/server` on Linux). `SPATIALDB_URL` in the
 environment wins over the file, which is how a NixOS module can point every
@@ -118,10 +123,9 @@ In the order most likely to be wrong:
    `trak/udta/name` atoms (`src-tauri/src/tools/qt.rs`) because ffprobe does not
    expose them; channel labels come from ffprobe's `channel_layout`, including the
    per-track custom form (`1 channels (DL)` → `Lt`) that `chan` atoms produce.
-   Verified against a MOV tagged with `qt_chan_tag_inplace.py`. NOTE the 7.1
-   spelling: this reads `Ls Rs Lrs Rrs` (the script's, CoreAudio's); the
-   `audio_layout` 7.1 preset in `shapes.ts` says `Lss Rss Lsr Rsr`. The compare
-   engine matches labels literally — pick one house spelling on `main`.
+   Verified against a MOV tagged with `qt_chan_tag_inplace.py`. The house 7.1
+   spelling is `L R C LFE Ls Rs Lrs Rrs` (side, then rear) — the script's,
+   CoreAudio's, and since Sept 29 the `audio_layout` preset's too.
 6. **Six mono WAVs dropped together** (Sept 29): the record was created, the
    ffprobe step refused — the channel set's path is the FOLDER, which nobody dropped.
    `analyze` now accepts a unit whose members were all dropped (`check_unit`), and a

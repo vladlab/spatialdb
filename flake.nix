@@ -48,9 +48,8 @@
             # /etc/ssl/certs/ca-certificates.crt includes security.pki.certificateFiles,
             # so a Caddy-internal-CA root added there is trusted here too.
             export SSL_CERT_FILE="''${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}"
-            # WebKitGTK on Wayland/Sway: the DMA-BUF renderer is unreliable in some setups —
-            # the vcompare_imf/viznotes workaround. Remove if the window renders fine.
-            export WEBKIT_DISABLE_DMABUF_RENDERER=1
+            # (The app itself defaults WEBKIT_DISABLE_DMABUF_RENDERER=1 on Linux — src-tauri/src/main.rs —
+            #  so nothing is needed here; export it as 0 to opt back in on a GPU where DMA-BUF works.)
             echo ""
             echo "  spatialdb DESKTOP shell   (npm run desktop:dev | desktop:build | desktop:check)"
             echo "  SPATIALDB_URL=https://… overrides the configured server for this run."

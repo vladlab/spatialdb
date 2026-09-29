@@ -85,7 +85,7 @@ export const LAYOUT_PRESETS: Array<{ id: string; label: string; channels: string
   { id: 'mono', label: 'Mono', channels: ['M'] },
   { id: '2.0', label: 'Stereo (2.0)', channels: ['L', 'R'] },
   { id: '5.1', label: '5.1', channels: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'] },
-  { id: '7.1', label: '7.1', channels: ['L', 'R', 'C', 'LFE', 'Lss', 'Rss', 'Lsr', 'Rsr'] },
+  { id: '7.1', label: '7.1', channels: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs', 'Lrs', 'Rrs'] },   // house spelling (Sept 29): Ls/Rs side, Lrs/Rrs rear — what the desktop's ffprobe mapping and qt_chan_tag_inplace.py write
 ];
 
 /* ── the registry ─────────────────────────────────────────────────────────── */
