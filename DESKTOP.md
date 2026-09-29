@@ -122,8 +122,13 @@ In the order most likely to be wrong:
    spelling: this reads `Ls Rs Lrs Rrs` (the script's, CoreAudio's); the
    `audio_layout` 7.1 preset in `shapes.ts` says `Lss Rss Lsr Rsr`. The compare
    engine matches labels literally — pick one house spelling on `main`.
-6. **A folder of EXRs, an IMF folder, six mono WAVs**: one record each, with the right
+6. **Six mono WAVs dropped together** (Sept 29): the record was created, the
+   ffprobe step refused — the channel set's path is the FOLDER, which nobody dropped.
+   `analyze` now accepts a unit whose members were all dropped (`check_unit`), and a
+   dropped frame grants its sequence's other frames. Members are listed in channel
+   order (L R C LFE Ls Rs), one track per file, so a 5.1 spec compares sensibly.
+7. **A folder of EXRs, an IMF folder**: one record each, with the right
    kind and manifest. `classify.rs` was written against the file naming I expect;
    your real plates will find the gaps.
-7. Then the things nobody has looked at: the setup page's look, the drop overlay, the
+8. Then the things nobody has looked at: the setup page's look, the drop overlay, the
    notices strip, the `probing…` marker in the record panel.

@@ -49,6 +49,15 @@ impl Allowed {
         if v.iter().any(|root| c == *root || c.starts_with(root)) { Ok(c) }
         else { Err(format!("{path} was not dropped onto this window, so the desktop app will not read it")) }
     }
+    /// A UNIT is readable when its own path is, or when every member is: six
+    /// dropped mono WAVs become one channel set whose `path` is their FOLDER, which
+    /// nobody dropped; the members were. (The first 5.1 mix dropped, Sept 29, had
+    /// its record created and its ffprobe step refused for exactly this.)
+    fn check_unit(&self, unit: &tools::classify::Unit) -> Result<(), String> {
+        if self.check(&unit.path).is_ok() { return Ok(()); }
+        if !unit.members.is_empty() && unit.members.iter().all(|m| self.check(m).is_ok()) { return Ok(()); }
+        Err(format!("{} was not dropped onto this window, so the desktop app will not read it", unit.path))
+    }
 }
 
 /* ── which server ─────────────────────────────────────────────────────────── */
@@ -165,7 +174,12 @@ fn set_server(app: AppHandle, url: String) -> Result<(), String> {
 #[tauri::command]
 fn classify(allowed: State<Allowed>, paths: Vec<String>) -> Result<Vec<tools::classify::Unit>, String> {
     let roots = paths.iter().map(|p| allowed.check(p)).collect::<Result<Vec<_>, _>>()?;
-    Ok(tools::classify::classify(&roots))
+    let units = tools::classify::classify(&roots);
+    // What a drop IMPLIES is readable too: the other frames of a sequence when one
+    // frame was dropped (nobody catalogues a frame). Members only — never a folder,
+    // which would open its unrelated files.
+    for u in &units { if u.kind == "sequence" { allowed.add(&u.members.iter().map(PathBuf::from).collect::<Vec<_>>()); } }
+    Ok(units)
 }
 
 /// Stage 3: run ONE analyzer of the table's recipe on one unit. The analyzer is
@@ -174,7 +188,7 @@ fn classify(allowed: State<Allowed>, paths: Vec<String>) -> Result<Vec<tools::cl
 /// of a large file takes minutes — and the page never waits on it.
 #[tauri::command]
 async fn analyze(allowed: State<'_, Allowed>, unit: tools::classify::Unit, analyzer: String) -> Result<tools::probe::Probed, String> {
-    allowed.check(&unit.path)?;
+    allowed.check_unit(&unit)?;
     tauri::async_runtime::spawn_blocking(move || match analyzer.as_str() {
         "ffprobe" => tools::probe::probe(&unit),
         "hash-xxh3" | "hash-sha256" => {
@@ -209,4 +223,49 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running spatialdb desktop");
+}
+
+#[cfg(test)]
+mod allowlist {
+    use super::*;
+    /// Six dropped mono WAVs → ONE channel-set unit whose path is their folder.
+    /// The folder was never dropped; the members were. Reproduces the 5.1 mix
+    /// whose ffprobe step was refused (Sept 29).
+    #[test] fn a_channel_set_is_readable_when_its_members_were_dropped() {
+        let dir = std::env::temp_dir().join(format!("spdb-allow-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut dropped = Vec::new();
+        for ch in ["L", "R", "C", "lfe", "Ls", "Rs"] {
+            let p = dir.join(format!("mix_{ch}.wav"));
+            std::fs::write(&p, b"RIFF").unwrap();
+            dropped.push(p);
+        }
+        std::fs::write(dir.join("unrelated.txt"), b"x").unwrap();   // in the same folder, NOT dropped
+        let allowed = Allowed::default();
+        allowed.add(&dropped);
+        let units = tools::classify::classify(&dropped);
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[0].kind, "channel_set");
+        assert_eq!(units[0].path, dir.to_string_lossy());
+        assert!(allowed.check(&units[0].path).is_err(), "the folder itself was not dropped");
+        assert!(allowed.check_unit(&units[0]).is_ok(), "…but every member was, so the unit is readable");
+        assert!(allowed.check(&dir.join("unrelated.txt").to_string_lossy()).is_err(), "the folder's other files stay off limits");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+    #[test] fn a_dropped_frame_implies_its_sequence() {
+        let dir = std::env::temp_dir().join(format!("spdb-seq-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for n in 1001..=1004 { std::fs::write(dir.join(format!("plate.{n}.exr")), b"v/1").unwrap(); }
+        let one = dir.join("plate.1002.exr");
+        let allowed = Allowed::default();
+        allowed.add(&[one.clone()]);
+        let units = tools::classify::classify(&[one]);
+        assert_eq!(units[0].kind, "sequence");
+        assert!(allowed.check_unit(&units[0]).is_err(), "before classify's grant: three of four frames were never dropped");
+        // What the `classify` command does after classifying:
+        allowed.add(&units[0].members.iter().map(PathBuf::from).collect::<Vec<_>>());
+        assert!(allowed.check_unit(&units[0]).is_ok());
+        assert!(allowed.check(&dir.to_string_lossy()).is_err(), "the folder is still not a root");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

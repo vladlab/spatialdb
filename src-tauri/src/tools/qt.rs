@@ -140,3 +140,27 @@ mod real_file {
         eprintln!("{}", serde_json::to_string_pretty(layout).unwrap());
     }
 }
+
+#[cfg(test)]
+mod real_channel_set {
+    #[test] fn six_mono_wavs_end_to_end() {
+        let dir = std::path::Path::new("/tmp/tagtest/mix");
+        if !dir.exists() { return; }
+        let files: Vec<_> = ["L", "R", "C", "LFE", "Ls", "Rs"].iter().map(|c| dir.join(format!("mix_{c}.wav"))).collect();
+        let units = crate::tools::classify::classify(&files);
+        assert_eq!(units.len(), 1, "{units:?}");
+        let u = &units[0];
+        assert_eq!(u.kind, "channel_set");
+        let probed = crate::tools::probe::probe(u).unwrap();
+        let tracks = probed.outputs["audio_layout"]["tracks"].as_array().unwrap();
+        let labels: Vec<&str> = tracks.iter().map(|t| t["channels"][0].as_str().unwrap()).collect();
+        assert_eq!(labels, vec!["L", "R", "C", "LFE", "Ls", "Rs"], "members in CHANNEL order, whatever the file names sort to");
+        let manifest = &u.manifest["members"];
+        assert_eq!(manifest[3]["path"], "mix_LFE.wav");
+        assert_eq!(probed.outputs["audio_channels"], 6);
+        assert_eq!(probed.outputs["audio_codec"], "pcm_s24le");
+        assert_eq!(probed.outputs["audio_bit_depth"], 24);
+        assert_eq!(probed.outputs["sample_rate"], 44100);
+        eprintln!("{}", serde_json::to_string(&probed.outputs["audio_layout"]).unwrap());
+    }
+}

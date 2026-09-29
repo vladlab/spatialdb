@@ -49,7 +49,16 @@ const AUDIO: &[&str] = &["wav", "bwf", "aif", "aiff", "flac", "mp3", "aac", "ac3
 const IMAGE: &[&str] = &["exr", "dpx", "tif", "tiff", "png", "jpg", "jpeg", "cin", "j2c", "jp2", "psd", "heic", "bmp", "gif", "webp", "dng", "cr2", "arw"];
 const DOCUMENT: &[&str] = &["pdf", "txt", "md", "xml", "csv", "edl", "aaf", "fcpxml", "otio", "doc", "docx", "xls", "xlsx", "json", "cube", "ale", "srt", "scc", "stl", "itt", "ttml", "dfxp"];
 const FRAME_EXT: &[&str] = &["exr", "dpx", "tif", "tiff", "png", "jpg", "jpeg", "cin", "j2c", "jp2", "ari", "dng", "cr2", "arw"];
-const CHANNELS: &[&str] = &["L", "R", "C", "LFE", "Lfe", "lfe", "Ls", "Rs", "Lss", "Rss", "Lsr", "Rsr", "Lrs", "Rrs", "Lb", "Rb", "Lc", "Rc", "Lw", "Rw", "Lt", "Rt", "Lh", "Rh", "M", "S", "Cs", "Ltf", "Rtf", "Ltr", "Rtr", "Ltm", "Rtm", "Tc"];
+/// Channel suffixes a stem set uses, in CANONICAL ORDER — the order a channel
+/// set's members are listed, so that six files L/R/C/LFE/Ls/Rs come out as a 5.1
+/// spec lists them, whatever the file names sort to. (The compare engine checks
+/// the flattened channel order first.) LFE spelling variants collapse to "LFE".
+const CHANNELS: &[&str] = &["L", "R", "C", "LFE", "Ls", "Rs", "Lss", "Rss", "Lsr", "Rsr", "Lrs", "Rrs", "Lb", "Rb", "Lc", "Rc", "Cs", "Lw", "Rw", "Lt", "Rt", "Lh", "Rh", "Ltf", "Rtf", "Ltr", "Rtr", "Ltm", "Rtm", "Tc", "M", "S"];
+fn canonical_channel(ch: &str) -> Option<&'static str> {
+    if ch.eq_ignore_ascii_case("lfe") { return Some("LFE"); }
+    CHANNELS.iter().copied().find(|c| *c == ch)
+}
+fn channel_rank(ch: &str) -> usize { CHANNELS.iter().position(|c| *c == ch).unwrap_or(usize::MAX) }
 
 const MAX_UNITS: usize = 500;
 const MAX_DEPTH: usize = 3;
@@ -216,11 +225,15 @@ fn channel_of(p: &Path) -> Option<(String, String)> {
     let stem = p.file_stem()?.to_str()?;
     let i = stem.rfind(['_', '.', '-', ' '])?;
     let (base, ch) = (&stem[..i], &stem[i + 1..]);
-    if base.is_empty() || !CHANNELS.contains(&ch) { return None; }
-    Some((base.to_string(), ch.to_string()))
+    if base.is_empty() { return None; }
+    Some((base.to_string(), canonical_channel(ch)?.to_string()))
 }
 
 fn channel_set(dir: &Path, stem: &str, members: &[PathBuf]) -> Option<Unit> {
+    // Members in channel order, not file-name order.
+    let mut members: Vec<PathBuf> = members.to_vec();
+    members.sort_by_key(|m| channel_of(m).map(|(_, ch)| channel_rank(&ch)).unwrap_or(usize::MAX));
+    let members = &members;
     let mut total = 0; let mut newest = String::new(); let mut list = Vec::new();
     for m in members {
         let meta = fs::metadata(m).ok()?;

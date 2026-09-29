@@ -56,7 +56,10 @@ pub fn probe(unit: &Unit) -> Result<Probed, String> {
     let Some(target) = &unit.probe_target else { return Ok(Probed { outputs: o }) };
     let v = run_ffprobe(target)?;
     let format = &v["format"];
-    if let Some(name) = format["format_name"].as_str() { o.insert("container".into(), json!(name.split(',').next().unwrap_or(name))); }
+    // As ffprobe says it, WHOLE: "mov,mp4,m4a,3gp,3g2,mj2" for the QuickTime family.
+    // Trimming to "mov" claimed something the demuxer never said; the extension
+    // output is the honest way to tell a .mov from a .mp4.
+    if let Some(name) = format["format_name"].as_str() { o.insert("container".into(), json!(name)); }
 
     if let Some(s) = first_stream(&v, "video") {
         video(&mut o, s, format, unit.kind == "sequence");
@@ -114,10 +117,15 @@ fn video(o: &mut Map<String, Value>, s: &Value, format: &Value, is_sequence: boo
         if let Some(x) = s[tag].as_str() { if x != "unknown" { o.insert(key.into(), json!(x)); } }
     }
     if let Some(r) = s["color_range"].as_str() { if r == "tv" || r == "pc" { o.insert("color_range".into(), json!(r)); } }
+    // Field dominance by which field is DISPLAYED first: tt/bt → top, bb/tb → bottom
+    // (ffprobe's two letters are coded-first then displayed-first).
     if let Some(f) = s["field_order"].as_str() {
-        if f != "unknown" { o.insert("scan".into(), json!(if f == "progressive" { "progressive" } else { "interlaced" })); }
+        let scan = match f { "progressive" => Some("progressive"), "tt" | "bt" => Some("interlaced (TFF)"), "bb" | "tb" => Some("interlaced (BFF)"), "unknown" => None, _ => Some("interlaced") };
+        if let Some(sc) = scan { o.insert("scan".into(), json!(sc)); }
     }
-    if let Some(b) = num(&s["bit_rate"]).or_else(|| num(&format["bit_rate"])) { o.insert("video_bitrate".into(), json!(b as u64)); }
+    // The STREAM's own rate only. Falling back to the file's rate (audio included)
+    // was a number that looked right and was not; blank is honest.
+    if let Some(b) = num(&s["bit_rate"]) { o.insert("video_bitrate".into(), json!(b as u64)); }
     if is_sequence { return; }   // rate and duration are not a property of one frame
     let rate = s["r_frame_rate"].as_str().and_then(ratio).filter(|r| *r > 0.0)
         .or_else(|| s["avg_frame_rate"].as_str().and_then(ratio).filter(|r| *r > 0.0));
@@ -244,6 +252,22 @@ mod tests {
         assert_eq!(timecode(1.0, 24.0), "00:00:01:00");
         assert_eq!(timecode(3661.5, 24.0), "01:01:01:12");
         assert_eq!(timecode(10.0, 23.976), "00:00:10:00");   // 239.76 → 240 frames, counted at nominal 24
+    }
+    #[test] fn scan() {
+        let field = |f: &str| { let mut o = Map::new(); video(&mut o, &json!({ "field_order": f }), &json!({}), false); o.get("scan").and_then(|v| v.as_str()).map(str::to_string) };
+        assert_eq!(field("progressive").as_deref(), Some("progressive"));
+        assert_eq!(field("tt").as_deref(), Some("interlaced (TFF)"));
+        assert_eq!(field("bt").as_deref(), Some("interlaced (TFF)"));
+        assert_eq!(field("bb").as_deref(), Some("interlaced (BFF)"));
+        assert_eq!(field("tb").as_deref(), Some("interlaced (BFF)"));
+        assert_eq!(field("unknown"), None);
+    }
+    #[test] fn bitrate_is_the_streams_own_or_nothing() {
+        let mut o = Map::new();
+        video(&mut o, &json!({}), &json!({ "bit_rate": "123456" }), false);
+        assert!(!o.contains_key("video_bitrate"));
+        video(&mut o, &json!({ "bit_rate": "220000000" }), &json!({}), false);
+        assert_eq!(o["video_bitrate"], 220000000u64);
     }
     #[test] fn labels() {
         assert_eq!(channel_labels("5.1", 6), vec!["L", "R", "C", "LFE", "Ls", "Rs"]);
