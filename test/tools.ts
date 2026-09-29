@@ -365,9 +365,10 @@ async function main() {
     const cellOf = (row: number, col: number) => w.findAll('.gridview tbody tr')[row].findAll('td')[col + 1];
     await cellOf(0, 1).trigger('mousedown');
     await cellOf(0, 1).trigger('dblclick');
-    check('editing the cell offers the vocabulary as choices', await until(() => w.find('.gridview .popover select, .gridview td select, .gridview .cell-editor select').exists() || w.findAll('.gridview option').length > 5) && w.findAll('.gridview option').map((o: any) => o.text()).includes('ProRes 4444 XQ'), w.findAll('.gridview option').map((o: any) => o.text()).slice(0, 5).join());
-    await w.find('.gridview .editor select').setValue('DNxHR HQX');
-    await w.find('.gridview .editor select').trigger('keydown', { key: 'Enter' });
+    check('editing the cell offers the vocabulary as choices — in the searching picker', await until(() => w.find('.gridview td.editing .cp').exists())
+      && w.findAll('.gridview td.editing .cp-item').some((li: any) => li.text() === 'DNxHR HQX'), w.find('.gridview td.editing').text());
+    await w.find('.gridview td.editing .cp-input').setValue('dnxhr hqx');
+    await w.find('.gridview td.editing .cp-input').trigger('keydown', { key: 'Enter' });
     const stored = await ui.untilDb(`select data from records where table_id = '${tCat}'`, (x) => x[0]?.data?.codec === 'DNxHR HQX');
     check('picking one stores the canonical name', stored[0].data.codec === 'DNxHR HQX');
     check('no error banner', !w.find('.banner.error').exists());

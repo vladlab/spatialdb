@@ -19,7 +19,7 @@ import { bootServer, type ServerHandle } from './harness.js';
 import { applyView, quickSearch, ViewConfig, type ViewField, ancestorsOf, canMakeColumns, groupRows, kanbanColumns, type GroupHeader } from '../src/contract/views.js';
 import { lookupConfigError, lookupText, lookupValues } from '../src/contract/lookups.js';
 import { backlinkConfigError, backlinkRecords } from '../src/contract/backlinks.js';
-import { fuzzyRank, fuzzyScore, parsePaletteQuery } from '../src/client/fuzzy.js';
+import { fuzzyRank, fuzzyScore, parsePaletteQuery, rankChoices } from '../src/client/fuzzy.js';
 import {
   AudioLayout, FILES_STANDARD_FIELDS, addPreset, diffLayouts, flattenChannels, formatBytes, formatNumberField, mergeTracks, moveTrack,
   shapeOptionError, splitTrack, structuredError, summarise, type AudioLayout as Layout,
@@ -456,6 +456,15 @@ function pure() {
   check('…a select value that is not one of the field\'s choices is skipped, and says so', /not one of its choices/.test(seedValues([{ from: U.t1, to: U.t2, rule: 'equals' }], byId, { id: 'F', data: {} }, { id: 'D', data: { status: 'zzz' } }, lf).skipped.join()));
 
   }
+  console.log('\nG1o. Ranking a select\'s choices (client/fuzzy.ts: rankChoices)');
+  const codecs = ['ProRes 422', 'ProRes 422 HQ', 'ProRes 4444', 'ProRes 4444 XQ', 'DNxHR HQX', 'H.264', 'HEVC'];
+  check('nothing typed: the choices in their own order', rankChoices('', codecs).join() === codecs.join());
+  check('exact beats prefix beats substring', rankChoices('prores 422', codecs).slice(0, 2).join() === 'ProRes 422,ProRes 422 HQ');
+  check('several terms, any order, all must appear', rankChoices('hq 422', codecs).join() === 'ProRes 422 HQ');
+  check('a SUBSEQUENCE finds it: "prs4" → the ProRes entries (a 4 is in 422 too), "dnx" → DNxHR; "dn" → done before doing (tighter)', rankChoices('prs4', codecs).every((c) => c.startsWith('ProRes')) && rankChoices('prs4', codecs).includes('ProRes 4444')
+    && rankChoices('dnx', codecs).join() === 'DNxHR HQX' && rankChoices('dn', ['todo', 'doing', 'done']).join() === 'done,doing', rankChoices('prs4', codecs).join());
+  check('case does not matter; non-matches are dropped', rankChoices('HEVC', codecs).join() === 'HEVC' && rankChoices('zzz', codecs).length === 0);
+
   console.log('\nG1c. applyView — cost at the size whole-table loading commits us to');
   const big = Array.from({ length: 50_000 }, (_, i) =>
     rec(String(i), { name: `shot_${(i * 7919) % 50_000}_v${i % 12}`, frames: (i * 31) % 5000, status: ['todo', 'doing', 'done'][i % 3] }));

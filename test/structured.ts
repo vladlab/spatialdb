@@ -90,6 +90,28 @@ async function main() {
     await post([{ type: 'record.delete', id: mine[0].id }]);
     await until(() => !newRow());
 
+    console.log('\nT1d. The select picker in the TRAY, and a multi-select');
+    const fTags = randomUUID();
+    await post([{ type: 'field.create', id: fTags, tableId: tFiles, name: 'Tags', key: 'tags', fieldType: 'multi_select', options: { choices: ['alpha', 'beta', 'gamma', 'delta'] } }, pos(fTags, 5)]);
+    await until(() => ths().includes('Tags'));
+    await openRecord('ep101.mov');
+    const tagsField = () => pField('Tags');
+    await tagsField().find('.rp-value').trigger('click');
+    await until(() => tagsField().classes('editing') || tagsField().find('.cp').exists());
+    check('a multi-select in the tray opens the same picker (over the choices not yet picked)', tagsField().find('.cp').exists()
+      && tagsField().findAll('.cp-item').map((i: any) => i.text()).join() === 'alpha,beta,gamma,delta', tagsField().text());
+    await tagsField().find('.cp-input').setValue('gam');
+    await tagsField().find('.cp-input').trigger('keydown', { key: 'Enter' });
+    check('typing + Enter TICKS a choice, writes it, and the picker stays open minus that choice',
+      (await untilDb(`select data->'tags' t from records where id = '${file1}'`, (r) => JSON.stringify(r[0].t) === '["gamma"]')).length === 1
+      && await until(() => tagsField().findAll('.chip').some((c: any) => c.text().includes('gamma')))
+      && tagsField().find('.cp').exists() && !tagsField().findAll('.cp-item').some((i: any) => i.text() === 'gamma'), tagsField().text());
+    await tagsField().find('.cp-input').setValue('a');
+    check('"a" fuzzily matches alpha, beta, delta (in that order: prefix first, then substring)', tagsField().findAll('.cp-item').map((i: any) => i.text()).join() === 'alpha,beta,delta', tagsField().findAll('.cp-item').map((i: any) => i.text()).join());
+    await tagsField().find('.cp-input').trigger('keydown', { key: 'Escape' });
+    check('Escape closes it; what was ticked stays', await until(() => !tagsField().find('.cp').exists()) && tagsField().findAll('.chip').length === 1);
+    await w.find('.record-panel .rp-close').trigger('click');
+
     console.log('\nT2. Creating a structured field');
     await w.find('.gridview .th-add').trigger('click');
     const form = () => w.find('.gridview .popover');

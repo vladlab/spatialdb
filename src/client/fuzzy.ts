@@ -51,3 +51,45 @@ export function parsePaletteQuery<T>(
   }
   return { tables: [], text: input.trim(), scoped: false };
 }
+
+/**
+ * Ranking CHOICES against what was typed — for the select picker. Every candidate
+ * that matches gets a score; higher is better; non-matches are dropped:
+ *
+ *   exact (case-insensitive)      1000
+ *   starts with the query          800 − length
+ *   every term is a substring      600 − position of the first
+ *   subsequence ("prs4" ⊂ "ProRes 4444")   200 − gap count
+ *
+ * Ties: a TIGHTER match first (the typed letters closer together — "dn" is done
+ * before doing), then the shorter choice, then the list's own order (a select's
+ * choices are ordered by hand). Small on purpose: choices are a few dozen strings
+ * already in memory; the link picker has its own server-side search.
+ */
+export function rankChoices(query: string, choices: readonly string[]): string[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [...choices];
+  const terms = q.split(/\s+/).filter(Boolean);
+  const scored: Array<{ c: string; s: number; span: number; i: number }> = [];
+  choices.forEach((c, i) => {
+    const l = c.toLowerCase();
+    let s = -1, span = 0;
+    if (l === q) s = 1000;
+    else if (l.startsWith(q)) s = 800 - l.length;
+    else if (terms.every((t) => l.includes(t))) s = 600 - l.indexOf(terms[0]);
+    else {
+      const chars = q.replace(/\s+/g, '');
+      let pos = 0, gaps = 0, first = -1, last = -1;
+      for (const ch of chars) {
+        const at = l.indexOf(ch, pos);
+        if (at < 0) { pos = -1; break; }
+        if (first < 0) first = at;
+        if (last >= 0 && at > last + 1) gaps++;
+        last = at; pos = at + 1;
+      }
+      if (pos >= 0 && chars.length >= 2) { s = 200 - gaps; span = last - first; }
+    }
+    if (s >= 0) scored.push({ c, s, span, i });
+  });
+  return scored.sort((a, b) => b.s - a.s || a.span - b.span || a.c.length - b.c.length || a.i - b.i).map((x) => x.c);
+}

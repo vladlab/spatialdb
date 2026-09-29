@@ -1002,6 +1002,17 @@ red-checked. Also: the layout editor now writes nothing when nothing changed (a 
 re-typed as it was) — a no-op mutation is a log row, a broadcast and an undo step
 that visibly does nothing.
 
+### The select picker (Sept 29)
+
+- **2. Select and multi-select cells edit in a SEARCHING picker** (`ChoicePicker.vue`),
+  not a native `<select>` — which cannot be typed into, closes when a screenshot is
+  taken, and would not scale to a hundred codecs. Type to filter (`rankChoices` in
+  `client/fuzzy.ts`: exact > prefix > substring > subsequence, tighter matches first —
+  "dn" is done before doing), ↑↓, Enter picks, Escape cancels, Tab picks the highlight
+  and moves on. One place (`CellEditor`) serves the grid and the tray. A stored value no
+  longer among the choices stays selectable so an untouched Enter does not blank it.
+  A multi-select picks and stays open, minus what is ticked.
+
 ### System fields, and the tray as wells (Sept 29)
 
 - **1. Created / Created by** — see API.md. Decided as VIRTUAL rather than rows in

@@ -43,25 +43,20 @@
     <textarea v-if="field.type === 'long_text'" ref="el" v-model="draft" :rows="multiline ? 8 : 1"
               :class="{ invalid, multi: multiline }" :title="invalid || undefined" @blur="onBlur" />
 
-    <select v-else-if="field.type === 'select'" ref="el" v-model="draft"
-            :class="{ invalid }" :title="invalid || undefined" @blur="onBlur">
-      <option value=""></option>
-      <option v-for="c in choices" :key="c" :value="c">{{ c }}</option>
-      <!-- A stored value that is no longer among the choices (they were edited
-           after it was set) must still be SHOWN, or opening the editor and
-           pressing Enter would silently blank it. -->
-      <option v-if="draft && !choices.includes(draft)" :value="draft">{{ draft }} (not a choice)</option>
-    </select>
+    <!-- SELECT: a searching picker, not a native dropdown (ChoicePicker.vue). A stored
+         value that is no longer among the choices stays as the draft, so Enter on an
+         untouched editor does not silently blank it. Picking writes at once and leaves. -->
+    <ChoicePicker v-else-if="field.type === 'select'" ref="el" :choices="choicesWithDraft" :current="draft" :seed="seed"
+                  placeholder="type to search choices…" :class="{ invalid }" :title="invalid || undefined"
+                  @pick="(v) => { draft = v; if (commit()) finish('none'); }" @escape="cancelEdit()" @blur="onBlur" />
 
     <template v-else-if="field.type === 'multi_select'">
       <span v-for="c in picked" :key="c" class="chip">
         {{ c }}<button class="chip-x" tabindex="-1" :title="`Remove ${c}`" @mousedown.prevent @click="toggle(c)">×</button>
       </span>
-      <select ref="el" class="chip-add" :value="''" @blur="onBlur"
-              @change="toggle(($event.target as HTMLSelectElement).value)">
-        <option value="">+</option>
-        <option v-for="c in remaining" :key="c" :value="c">{{ c }}</option>
-      </select>
+      <!-- The same picker over the REMAINING choices; each pick writes and stays open. -->
+      <ChoicePicker ref="el" class="chip-add" :choices="remaining" :seed="seed" placeholder="+ add…"
+                    @pick="(v) => { if (v) { toggle(v); (el as any)?.clear?.(); } }" @escape="cancelEdit()" @blur="onBlur" />
     </template>
 
     <input v-else-if="field.type === 'date'" ref="el" v-model="draft" type="date"
@@ -77,6 +72,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue';
 import { choicesOf as contractChoices } from '../../contract/values';
+import ChoicePicker from './ChoicePicker.vue';
 import { validateValue, type FieldShape } from '../../contract/values';
 
 export type EditExit = 'down' | 'right' | 'left' | 'none';
@@ -100,7 +96,7 @@ const emit = defineEmits<{
   cancel: [];
 }>();
 
-const el = ref<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>();
+const el = ref<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | InstanceType<typeof ChoicePicker>>();
 const invalid = ref<string | null>(null);
 const shape = computed(() => props.field as FieldShape);
 
@@ -108,6 +104,8 @@ const str = (v: unknown) => (v === undefined || v === null ? '' : String(v));
 const draft = ref(props.seed ?? str(props.value));
 
 const choices = computed(() => contractChoices(props.field.options) ?? []);
+/** The choices, plus the stored value if it is no longer one of them (shown so it is not lost). */
+const choicesWithDraft = computed(() => (draft.value && !choices.value.includes(draft.value) ? [...choices.value, draft.value] : choices.value));
 const picked = computed(() =>
   Array.isArray(props.value) ? (props.value as unknown[]).filter((x): x is string => typeof x === 'string') : []);
 const remaining = computed(() => choices.value.filter((c) => !picked.value.includes(c)));
@@ -125,7 +123,7 @@ onMounted(async () => {
   node.focus();
   // Started by Enter: select everything, so typing replaces and arrows refine.
   // Started by typing: the seed is already in; caret goes after it.
-  if ('select' in node && !props.seed) node.select();
+  if ('select' in node && !props.seed && typeof node.select === 'function') node.select();
 });
 
 /** Write the draft if it is valid and different. False = invalid, stay open. */
@@ -133,7 +131,7 @@ function commit(): boolean {
   if (props.field.type === 'multi_select') return true;   // already written, tick by tick
 
   const node = el.value as HTMLInputElement | undefined;
-  if (node?.validity?.badInput) {
+  if (node && 'validity' in node && node.validity?.badInput) {
     // A half-typed date. The browser says value === '' — that is NOT "clear".
     invalid.value = `'${props.field.key}' is not a complete date`;
     return false;
@@ -159,6 +157,13 @@ function finish(exit: EditExit) {
   if (!commit()) return;          // invalid: red ring, editor stays, focus stays
   finished = true;
   emit('done', exit);
+}
+
+/** Escape: nothing is written; the grid keeps the selection. */
+function cancelEdit() {
+  if (finished) return;
+  finished = true;
+  emit('cancel');
 }
 
 function onKey(e: KeyboardEvent) {

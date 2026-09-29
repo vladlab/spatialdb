@@ -228,7 +228,13 @@ async function main() {
     editor().exists() && (editor().element as HTMLInputElement).value === '2');
   await typeAnd('240', 'Tab');
   await key('Enter');
-  check('Enter on a select opens it', editor().exists() && editor().element.tagName === 'SELECT');
+  check('Enter on a select opens the searching PICKER (not a native dropdown), listing every choice', editor().exists() && w.find('.gridview td.editing .cp').exists()
+    && w.findAll('.gridview td.editing .cp-item').map((i) => i.text().replace('✓', '')).join() === 'todo,doing,done', w.find('.gridview td.editing').text());
+  await editor().setValue('dn');
+  check('typing filters FUZZILY ("dn" finds "done"; "doing" too, ranked after)', w.findAll('.gridview td.editing .cp-item').map((i) => i.text()).join() === 'done,doing', w.findAll('.gridview td.editing .cp-item').map((i) => i.text()).join());
+  await editor().trigger('keydown', { key: 'ArrowDown' });
+  check('↓ moves the highlight', w.findAll('.gridview td.editing .cp-item')[1].classes('hi'));
+  await editor().trigger('keydown', { key: 'ArrowUp' });
   // Layout is invisible here, so assert the MECHANISM of the width fix: the value
   // stays in the DOM (hidden) under the editor, still sizing the column.
   check('the displayed value stays in place under the editor, holding the column width',
