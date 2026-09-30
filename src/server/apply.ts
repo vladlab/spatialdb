@@ -22,7 +22,7 @@
  *  about what to do with the rows already in the database.
  */
 
-import type { PoolClient } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import {
   DESTRUCTIVE_MUTATIONS, Mutation, MutationRequest, SCHEMA_MUTATIONS,
   type CapturedRows,
@@ -40,7 +40,7 @@ import { shapeOptionError } from '../contract/shapes.js';
 import { reportDefError } from '../contract/reports.js';
 import { toolsProblem } from '../contract/tools.js';
 import { vocabularyOptionError } from '../contract/vocab.js';
-import { junctionOf, junctionProblem } from '../contract/junction.js';
+import { junctionColumnTarget, junctionOf, junctionProblem } from '../contract/junction.js';
 import { captureFor, JUNCTION_ROWS_OF, type Capture } from './capture.js';
 
 export class MutationError extends Error {
@@ -152,12 +152,26 @@ async function ensureBoardState(db: PoolClient, id: string) {
 
 /** `options.arrow`, if present, must be a style the canvas can draw — contract/arrows.ts. */
 /** `options.compare` on a link: every pair names a field on the right side with a legal rule. */
-async function assertCompareValid(db: PoolClient, tableId: string, options: Record<string, unknown> | undefined) {
+async function assertCompareValid(db: PoolClient, tableId: string, fieldType: string, options: Record<string, unknown> | undefined) {
   if (!options || options.compare === undefined) return;
-  const target = String(options.target_table_id ?? '');
+  let target = String(options.target_table_id ?? '');
+  if (fieldType === 'backlink') {
+    // A JUNCTION column compares against the other end's table (sql/016); no other backlink compares.
+    const t = await compareTargetOfBacklink(db, options);
+    if (!t) throw new MutationError('compare: only a link, or the column of a junction, can compare');
+    target = t;
+  } else if (fieldType !== 'link') throw new MutationError('compare: only a link, or the column of a junction, can compare');
   const fields = (await db.query(`select id, key, name, type, table_id, options from fields where table_id = $1 or table_id = $2`, [tableId, target])).rows;
-  const err = compareConfigError({ table_id: tableId, options }, fields);
+  const err = compareConfigError({ table_id: tableId, options }, fields, target);
   if (err) throw new MutationError(err);
+}
+
+/** The table a junction column's comparisons are against, or null when the backlink is no junction column. */
+export async function compareTargetOfBacklink(db: PoolClient | Pool, options: Record<string, unknown> | null | undefined): Promise<string | null> {
+  const fields = (await db.query(`select id, table_id, type, options from fields`)).rows;
+  const junctions = (await db.query(`select kind, junction from tables where kind = 'junction'`)).rows;
+  const byId = new Map(fields.map((f) => [f.id, f]));
+  return junctionColumnTarget({ type: 'backlink', options }, (id) => byId.get(id), junctions);
 }
 
 /** `tables.tools` — the mapping must name this table's own fields, of types that accept each output (contract/tools.ts). */
@@ -396,7 +410,7 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
       if (SYSTEM_FIELD_TYPES.has(m.fieldType)) throw new MutationError(`'${m.fieldType}' is a system field type — every table has it already`);
       if (isSystemKey(m.key)) throw new MutationError(`a field key may not start with '_' (reserved for system fields)`);
       assertArrowStyleValid(m.options);
-      if (m.fieldType === 'link') await assertCompareValid(db, m.tableId, m.options);
+      await assertCompareValid(db, m.tableId, m.fieldType, m.options);
       if (m.fieldType === 'structured') { const err = shapeOptionError(m.options); if (err) throw new MutationError(err); }
       if (m.fieldType === 'select' || m.fieldType === 'multi_select') { const err = vocabularyOptionError(m.options); if (err) throw new MutationError(err); }
       await assertMembershipValid(db, m.tableId, m.fieldType, m.options, m.id);
@@ -423,7 +437,7 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
         if (cur.rowCount) await assertMembershipValid(db, cur.rows[0].table_id, cur.rows[0].type, m.options, m.id);
         if (cur.rows[0]?.type === 'lookup') await assertLookupConfigValid(db, cur.rows[0].table_id, m.options);
         if (cur.rows[0]?.type === 'backlink') await assertBacklinkConfigValid(db, cur.rows[0].table_id, m.options);
-        if (cur.rows[0]?.type === 'link') await assertCompareValid(db, cur.rows[0].table_id, m.options);
+        if (cur.rowCount) await assertCompareValid(db, cur.rows[0].table_id, cur.rows[0].type, m.options);
         if (cur.rows[0]?.type === 'select' || cur.rows[0]?.type === 'multi_select') { const err = vocabularyOptionError(m.options); if (err) throw new MutationError(err); }
         if (cur.rows[0]?.type === 'structured') {
           const err = shapeOptionError(m.options);

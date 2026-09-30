@@ -16,7 +16,7 @@ import { cors } from 'hono/cors';
 import pg from 'pg';
 import { MutationRequest } from '../contract/mutations.js';
 import { StreamEvent, toMutationEvent } from '../contract/events.js';
-import { applyBatch, MutationError, type Actor } from './apply.js';
+import { applyBatch, compareTargetOfBacklink, MutationError, type Actor } from './apply.js';
 import type { Context } from 'hono';
 import {
   AUTH_DISABLED, authenticate, createSession, crossOrigin, destroySession, hashPassword, loginBlockedFor,
@@ -489,10 +489,11 @@ app.post('/api/qc/audio-layout-diff', async (c) => {
 app.post('/api/compare', async (c) => {
   const body = await c.req.json().catch(() => ({})) as { linkFieldId?: string; ownerId?: string; targetId?: string };
   if (![body.linkFieldId, body.ownerId, body.targetId].every((x) => typeof x === 'string')) return c.json({ error: 'linkFieldId, ownerId and targetId are required' }, 400);
-  const link = (await pool.query(`select * from fields where id = $1 and type = 'link'`, [body.linkFieldId])).rows[0];
+  const link = (await pool.query(`select * from fields where id = $1 and type in ('link', 'backlink')`, [body.linkFieldId])).rows[0];
   const pairs = link ? compareOf(link)?.pairs : undefined;
   if (!link || !pairs) return c.json({ error: 'not a comparing link field' }, 400);
-  const target = String(link.options?.target_table_id ?? '');
+  // A JUNCTION column (sql/016) compares against the other end's table.
+  const target = link.type === 'backlink' ? (await compareTargetOfBacklink(pool, link.options)) ?? '' : String(link.options?.target_table_id ?? '');
   const fields = (await pool.query(`select * from fields where table_id = $1 or table_id = $2`, [link.table_id, target])).rows;
   const [owner, tgt] = (await Promise.all([body.ownerId, body.targetId].map((id) => pool.query(`select id, table_id, data from records where id = $1`, [id])))).map((r) => r.rows[0]);
   if (!owner || owner.table_id !== link.table_id) return c.json({ error: 'ownerId is not a record of the link\'s table' }, 400);

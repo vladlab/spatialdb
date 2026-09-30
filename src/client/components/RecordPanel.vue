@@ -210,7 +210,7 @@ const comparisons = computed(() => derived.comparisonsOf(props.recordId).flatMap
   return { link: c.link, target, targetLabel: derived.labelOfId(target), result, diffs: result?.results.filter((r) => r.status === 'differ' || r.status === 'missing').length ?? 0 };
 })));
 // The target's table must be loaded for its values (and label) to be here.
-watch(() => derived.comparisonsOf(props.recordId).map((c) => String(c.link.options?.target_table_id ?? '')), (ids) => { for (const t of new Set(ids)) if (t) void store.loadTable(t); }, { immediate: true });
+watch(() => derived.comparisonsOf(props.recordId).map((c) => derived.compareTargetTable(c.link) ?? ''), (ids) => { for (const t of new Set(ids)) if (t) void store.loadTable(t); }, { immediate: true });
 const verdicts = computed(() => derived.fieldVerdicts(props.recordId));
 const sideBySide = ref<{ linkId: string; target: string } | null>(null);
 watch(() => props.recordId, () => { sideBySide.value = null; });

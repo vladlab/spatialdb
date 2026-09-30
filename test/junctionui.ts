@@ -16,8 +16,11 @@ function check(label: string, ok: boolean, detail = '') {
 }
 
 async function main() {
-  const ui = await mountApp(Number(process.env.TEST_PORT ?? 8821));
+  const PORT = Number(process.env.TEST_PORT ?? 8821);
+  const ui = await mountApp(PORT);
   const { w, win, pool, until, untilDb, post, nav } = ui;
+  const nodeFetchCompare = (linkFieldId: string, ownerId: string, targetId: string) =>
+    fetch(`http://localhost:${PORT}/api/compare`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ linkFieldId, ownerId, targetId }) });
   try {
     const tWorks = randomUUID(), tFiles = randomUUID(), tDeliv = randomUUID();
     const fWName = randomUUID(), fName = randomUUID(), fWork = randomUUID(), fDName = randomUUID(), fDWorks = randomUUID();
@@ -215,6 +218,39 @@ async function main() {
     await w.find('.ctx .remove-link').trigger('click');
     check('confirmed: the pair row is deleted and the arrow gone', (await untilDb(`select count(*)::int n from records where table_id = '${tJ}'`, (r) => r[0].n === 0, 4000))[0].n === 0 && await until(() => !arrow().exists()));
     check('both cards stay', cards().length === 3);
+
+    console.log('\nJ6. The comparison engine runs through the junction column');
+    const fFileCodec = randomUUID(), fDelCodec = randomUUID();
+    const colFiles = cols.find((c: any) => c.table_id === tFiles)!;
+    const colFilesRow = (await pool.query(`select id from fields where table_id = $1 and type = 'backlink'`, [tFiles])).rows[0];
+    await post([
+      { type: 'field.create', id: fFileCodec, tableId: tFiles, name: 'Codec', key: 'codec', fieldType: 'text' },
+      { type: 'field.create', id: fDelCodec, tableId: tDeliv, name: 'Codec', key: 'codec', fieldType: 'text' },
+      { type: 'record.update', id: a, set: { codec: 'ProRes 422 HQ' }, unset: [] },
+      { type: 'record.update', id: texted, set: { codec: 'ProRes 4444' }, unset: [] },
+      { type: 'field.update', id: colFilesRow.id, options: { source_field_id: cfg.a, compare: { pairs: [{ from: fFileCodec, to: fDelCodec, rule: 'equals' }] } } },
+    ]);
+    void colFiles;
+    const r4 = randomUUID();
+    await post([
+      { type: 'record.create', id: r4, tableId: tJ, data: { status: 'Uploaded' } },
+      { type: 'link.add', id: randomUUID(), fieldId: cfg.a, fromRecord: r4, toRecord: a },
+      { type: 'link.add', id: randomUUID(), fieldId: cfg.b, fromRecord: r4, toRecord: texted },
+    ]);
+    win.location.hash = `#/all/table/${tFiles}`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange'));
+    await until(() => w.findAll('.gridview tr.row').length === 1, 8000);
+    const codecCell = () => rowOf('a.mov').findAll('td').find((td: any) => td.text().includes('ProRes 422 HQ'))!;
+    check('the file\'s Codec cell gets a ⚠: it differs from the deliverable it is paired with',
+      await until(() => !!codecCell() && codecCell().find('.cell-verdict').exists() && !codecCell().find('.cell-verdict').classes('ok'), 8000)
+        && /Delivery → Texted Master/.test(codecCell().find('.cell-verdict').attributes('title') ?? ''), codecCell()?.find('.cell-verdict').attributes('title'));
+    await post([{ type: 'record.update', id: a, set: { codec: 'ProRes 4444' }, unset: [] }]);
+    const codecCell2 = () => rowOf('a.mov').findAll('td').find((td: any) => td.text().includes('ProRes 4444'))!;
+    check('fixed, it turns ✓', await until(() => !!codecCell2() && codecCell2().find('.cell-verdict').classes('ok'), 8000));
+    await post([{ type: 'record.delete', id: r4 }]);
+    check('no pair, no verdict', await until(() => !codecCell2().find('.cell-verdict').exists(), 8000));
+    // The API agrees, through the column.
+    const api = await (await nodeFetchCompare(colFilesRow.id, a, texted)).json();
+    check('/api/compare accepts the junction column and reports the pair', api.same === true && api.results?.length === 1, JSON.stringify(api).slice(0, 200));
     await sleep(100);
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);

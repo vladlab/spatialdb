@@ -63,11 +63,13 @@ export const compareOf = (f: { options?: Record<string, unknown> | null }): Comp
  */
 export function compareConfigError(
   link: { table_id: string; options?: Record<string, unknown> | null }, fields: Iterable<FieldLike>,
+  /** The expected side's table. A link's is its target; a JUNCTION column's (sql/016) is the other end's table, which the caller resolves. */
+  targetTable?: string,
 ): string | null {
   if (link.options?.compare === undefined) return null;
   const r = CompareConfig.safeParse(link.options.compare);
   if (!r.success) { const i = r.error.issues[0]; return `compare: ${i.path.join('.')}${i.path.length ? ': ' : ''}${i.message}`; }
-  const target = String(link.options?.target_table_id ?? '');
+  const target = targetTable ?? String(link.options?.target_table_id ?? '');
   const byId = new Map<string, FieldLike>(); for (const f of fields) byId.set(f.id, f);
   for (const p of r.data.pairs) {
     const from = byId.get(p.from), to = byId.get(p.to);

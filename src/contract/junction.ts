@@ -155,3 +155,28 @@ export function junctionLabel(status: string, a: string, b: string, from?: 'a' |
   if (from === 'b') return `${verb}← ${a}`;
   return `${status ? `${status}: ` : ''}${a} → ${b}`;
 }
+
+/**
+ * The table at the OTHER end of a junction column — the backlink on Files that mirrors
+ * the junction's `a`: Deliverables. This is what a comparison through that column
+ * compares against (contract/compare.ts): pairs of Files fields (found) and
+ * Deliverables fields (expected), evaluated per pair row. Null for any other field.
+ */
+export function junctionColumnTarget(
+  field: { type: string; options?: Record<string, unknown> | null },
+  getField: (id: string) => JunctionFieldLike | undefined,
+  junctions: Iterable<{ kind?: string | null; junction?: unknown }>,
+): string | null {
+  if (field.type !== 'backlink') return null;
+  const src = field.options?.source_field_id;
+  if (typeof src !== 'string') return null;
+  for (const t of junctions) {
+    const cfg = junctionOf(t);
+    if (!cfg) continue;
+    const side = src === cfg.a ? 'a' : src === cfg.b ? 'b' : null;
+    if (!side) continue;
+    const far = getField(side === 'a' ? cfg.b : cfg.a)?.options?.target_table_id;
+    return typeof far === 'string' ? far : null;
+  }
+  return null;
+}

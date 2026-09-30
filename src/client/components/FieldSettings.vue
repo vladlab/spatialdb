@@ -69,12 +69,12 @@
     <!-- LINK fields: a COMPARING link (COMPARE-BRIEF.md): the target is what is expected,
          this table's record what was found; pairs of fields say what is checked. Ticking
          pre-fills same-name pairs. -->
-    <label v-if="field.type === 'link'" class="compare-tick"
+    <label v-if="field.type === 'link' || compareTarget" class="compare-tick"
            :title="`Tick to compare a ${tableName} record's fields against the ${targetName} record it links to. Differences show as ⚠ beside the field.`">
       <input type="checkbox" :checked="field.options?.compare !== undefined" @change="toggleCompare(($event.target as HTMLInputElement).checked)" />
       compare
     </label>
-    <ComparePairs v-if="field.type === 'link' && field.options?.compare !== undefined" :store="store" :field="field" />
+    <ComparePairs v-if="(field.type === 'link' || compareTarget) && field.options?.compare !== undefined" :store="store" :field="field" />
     <!-- LINK fields: is this the link through which records BELONG to something? -->
     <label v-if="field.type === 'link'" class="membership"
            :title="`Tick if a record of this table BELONGS to the ${targetName} record it links to — e.g. a file belongs to a project. A section scoped by ${targetName} then narrows this table to one of them, and new records made there are linked automatically. One such field per table.`">
@@ -100,6 +100,7 @@ import type { Store } from '../store';
 import { fieldsOf, type FieldRow } from '../state';
 import { suggestPairs } from '../../contract/compare';
 import ComparePairs from './ComparePairs.vue';
+import { useDerived } from '../derived';
 import { choicesOf, ownChoices, type SchemaActions } from '../schemaActions';
 import { VOCABULARIES, VOCABULARY_IDS } from '../../contract/vocab';
 import { arrowStyleOf } from '../../contract/arrows';
@@ -109,23 +110,26 @@ const props = defineProps<{
   layout?: 'row' | 'stack';
 }>();
 const emit = defineEmits<{ deleted: [] }>();
+const derived = useDerived(props.store);
 async function onDelete() { if (await props.actions.deleteField(props.field.id)) emit('deleted'); }
 
 const arrow = computed(() => arrowStyleOf(props.field));
 const backlink = computed(() => props.actions.describeBacklink(props.field));
 const lookup = computed(() => props.actions.describeLookup(props.field));
 const tableName = computed(() => props.store.state.tables.get(props.field.table_id)?.name ?? '');
+/** A JUNCTION column (sql/016) compares too — against the other end's table. Null for any other backlink. */
+const compareTarget = computed(() => (props.field.type === 'backlink' ? derived.compareTargetTable(props.field) : null));
 function toggleCompare(on: boolean) {
   const { compare: _old, ...rest } = props.field.options ?? {};
   void _old;
   if (!on) { props.store.mutate({ type: 'field.update', id: props.field.id, options: rest }); return; }
   const own = fieldsOf(props.store.state, props.field.table_id);
-  const pairs = suggestPairs(own.filter((f) => f.id !== props.field.id), fieldsOf(props.store.state, String(props.field.options?.target_table_id ?? '')), [own[0]?.id ?? '']);
+  const pairs = suggestPairs(own.filter((f) => f.id !== props.field.id), fieldsOf(props.store.state, derived.compareTargetTable(props.field) ?? ''), [own[0]?.id ?? '']);
   props.store.mutate({ type: 'field.update', id: props.field.id, options: { ...rest, compare: { pairs } } });
 }
 
 const targetName = computed(() => {
-  const id = props.field.options?.target_table_id as string | undefined;
+  const id = (props.field.options?.target_table_id as string | undefined) ?? compareTarget.value ?? undefined;
   return (id && props.store.state.tables.get(id)?.name) || '(missing table)';
 });
 

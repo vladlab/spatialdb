@@ -179,6 +179,24 @@ async function main() {
   check('deliverables and junction rows back', await count(`select count(*)::int n from records where table_id in ($1,$2)`, [tDeliv, tJ]) === 5);
   check('the junction\'s links back', await count(`select count(*)::int n from links where from_record in ($1,$2)`, [row1, row2]) === 4);
 
+  console.log('\n3b. A junction column can COMPARE (contract/compare.ts) — against the other end\'s table');
+  const fFileCodec = randomUUID(), fDelCodec = randomUUID();
+  await send([
+    { type: 'field.create', id: fFileCodec, tableId: tFiles, name: 'Codec', key: 'codec', fieldType: 'text', options: {}, required: false },
+    { type: 'field.create', id: fDelCodec, tableId: tDeliv, name: 'Codec', key: 'codec', fieldType: 'text', options: {}, required: false },
+  ]);
+  await one({ type: 'field.update', id: blFiles, options: { source_field_id: jFile, compare: { pairs: [{ from: fFileCodec, to: fDelCodec, rule: 'equals' }] } } });
+  check('pairs of Files fields ↔ Deliverables fields are accepted on the Delivery column',
+    (await db.query(`select options->'compare'->'pairs' p from fields where id = $1`, [blFiles])).rows[0].p?.length === 1);
+  await rejects('a pair whose "to" is not on the other end\'s table', [{ type: 'field.update', id: blFiles, options: { source_field_id: jFile, compare: { pairs: [{ from: fFileCodec, to: fFileName, rule: 'equals' }] } } }], 'target table');
+  {
+    const plain = randomUUID();
+    await rejects('an ordinary backlink cannot compare', [
+      { type: 'field.create', id: plain, tableId: tWorks, name: 'Files', key: 'files', fieldType: 'backlink', options: { source_field_id: fFileWork, compare: { pairs: [] } }, required: false },
+    ], 'only a link, or the column of a junction');
+  }
+  await one({ type: 'field.update', id: blFiles, options: { source_field_id: jFile } });
+
   console.log('\n4. Endpoints are not deletable; the junction table is');
   await rejects('deleting an endpoint field', [{ type: 'field.delete', id: jFile }], 'endpoint of the junction');
   await one({ type: 'field.delete', id: jNotes });

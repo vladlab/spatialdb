@@ -469,11 +469,19 @@ table (what is EXPECTED), `rule` legal for the two types (`rulesFor`):
 | link ↔ link (same target) | `sameRecord`, `sameSet` |
 | audio_layout ↔ audio_layout | `layout` |
 
+A **junction column** (sql/016 — the "Delivery" backlink on Files) can carry the
+same `compare` config: `from` a field of Files, `to` a field of the OTHER end's
+table (Deliverables), evaluated once per pair row the file is in. An ordinary
+backlink cannot compare. Both kinds of edge feed one engine: a table may have
+comparing links (Deliverable → Spec) and comparing junction columns (File → its
+deliverables) side by side, and the ✓/⚠ beside a field merges every verdict.
+
 Results are DERIVED, never stored (`compareRecords`): per pair `match` / `differ` /
 `missing` (owner empty, target not) / `unspecified` (target empty — skipped, not
 failed). `same` is true when nothing is `differ` or `missing`.
 **`POST /api/compare`** `{ linkFieldId, ownerId, targetId }` → the same result;
-400 if the link is not comparing or a record is from the wrong table.
+`linkFieldId` may be a comparing link or a comparing junction column; 400 if the
+field is not comparing or a record is from the wrong table.
 Seeding (`seedValues`) is the pair list run backwards: the client writes
 `record.update` + `link.add`s in one batch. See `COMPARE-BRIEF.md`.
 

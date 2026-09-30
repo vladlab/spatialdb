@@ -44,10 +44,12 @@ import { computed } from 'vue';
 import type { Store } from '../store';
 import { fieldsOf, type FieldRow } from '../state';
 import { RULE_LABELS, compareOf, rulesFor, suggestPairs, type ComparePair, type Rule } from '../../contract/compare';
+import { useDerived } from '../derived';
 
 const props = defineProps<{ store: Store; field: FieldRow }>();
 const cfg = computed(() => compareOf(props.field) ?? { pairs: [] });
-const targetId = computed(() => String(props.field.options?.target_table_id ?? ''));
+const derived = useDerived(props.store);
+const targetId = computed(() => derived.compareTargetTable(props.field) ?? '');
 const ownerTable = computed(() => props.store.state.tables.get(props.field.table_id)?.name ?? '');
 const targetTable = computed(() => props.store.state.tables.get(targetId.value)?.name ?? '');
 const ownerFields = computed(() => fieldsOf(props.store.state, props.field.table_id).filter((f) => f.id !== props.field.id));

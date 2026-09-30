@@ -20,7 +20,7 @@ import { primaryKeys, type FieldRow } from './state';
 import { labelFrom } from '../contract/labels';
 import { lookupOptionsOf, lookupText, lookupValues } from '../contract/lookups';
 import { backlinkRecords, backlinkSourceOf } from '../contract/backlinks';
-import { endpointOfBacklink, junctionLabel, junctionOf, otherEnd, type JunctionConfig } from '../contract/junction';
+import { endpointOfBacklink, junctionColumnTarget, junctionLabel, junctionOf, otherEnd, type JunctionConfig } from '../contract/junction';
 
 const NONE: string[] = [];
 
@@ -179,15 +179,33 @@ export function useDerived(store: Store) {
 
   /* ── comparison (contract/compare.ts) — derived, never stored ────────────── */
 
-  /** The comparing links of a record's table, with the records it links to through each. */
+  /**
+   * The table a comparing field compares against: a link's target, or for a JUNCTION
+   * column (sql/016) the other end's table. Null for a field that cannot compare.
+   */
+  function compareTargetTable(f: FieldRow): string | null {
+    if (f.type === 'link') return String(f.options?.target_table_id ?? '') || null;
+    return junctionColumnTarget(f, getField, store.state.tables.values());
+  }
+  /** The records `recordId` compares against through `f`: what it links to, or the other end of each of its pairs. */
+  function compareTargets(recordId: string, f: FieldRow): string[] {
+    if (f.type === 'link') return linksFrom(recordId, f.id);
+    const j = junctionOfBacklink(f);
+    if (!j) return [];
+    return (backlinkOf(recordId, f) ?? []).flatMap((row) => { const o = junctionRow(row)?.[otherEnd(j.side)]; return o ? [o] : []; });
+  }
+  /**
+   * The comparing fields of a record's table — comparing links AND junction columns —
+   * with the records it compares against through each. One engine, two kinds of edge.
+   */
   function comparisonsOf(recordId: string): Array<{ link: FieldRow; pairs: ComparePair[]; targets: string[] }> {
     const rec = store.state.records.get(recordId);
     if (!rec) return [];
     const out: Array<{ link: FieldRow; pairs: ComparePair[]; targets: string[] }> = [];
     for (const f of store.state.fields.values()) {
-      if (f.table_id !== rec.table_id || f.type !== 'link') continue;
+      if (f.table_id !== rec.table_id || (f.type !== 'link' && f.type !== 'backlink')) continue;
       const cfg = compareOf(f);
-      if (cfg && cfg.pairs.length) out.push({ link: f, pairs: cfg.pairs, targets: linksFrom(recordId, f.id) });
+      if (cfg && cfg.pairs.length) out.push({ link: f, pairs: cfg.pairs, targets: compareTargets(recordId, f) });
     }
     return out;
   }
@@ -244,6 +262,6 @@ export function useDerived(store: Store) {
     return out;
   }
 
-  return { labelKeys, linksFrom, linkedTo, labelOfId, plainLabelOfId, lookupOf, backlinkOf, textOf, tablesNeededBy, referencedBy, comparisonsOf, compare, differencesOf, fieldVerdicts,
+  return { labelKeys, linksFrom, linkedTo, labelOfId, plainLabelOfId, lookupOf, backlinkOf, textOf, tablesNeededBy, referencedBy, comparisonsOf, compare, differencesOf, fieldVerdicts, compareTargetTable, compareTargets,
     junctionCfg, junctionRow, junctionOfBacklink, junctionChip, junctionRowFor };
 }
