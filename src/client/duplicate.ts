@@ -52,7 +52,9 @@ function duplicateOne(store: Store, rec: RecordRow): string {
   for (const f of fields) {
     if (NOT_COPIED.has(f.type)) continue;
     const v = rec.data[f.key];
-    if (v !== undefined && v !== null) data[f.key] = structuredClone(v);
+    // JSON, not structuredClone: store values are Vue proxies, and structuredClone
+    // throws on a proxy — which is every structured / multi-select / rich value.
+    if (v !== undefined && v !== null) data[f.key] = JSON.parse(JSON.stringify(v));
   }
   // " (copy)" on the primary, when it is text (a number or date primary is left alone).
   const pk = primaryKeyOf(fields);

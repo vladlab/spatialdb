@@ -71,7 +71,8 @@ export function clipOf(store: Store, recordId: string, field: FieldRow, labelOf:
   const value = field.type === 'link'
     ? [...store.state.links.values()].filter((l) => l.from_record === recordId && l.field_id === field.id).map((l) => l.to_record)
     : rec.data[field.key];
-  const clip: Omit<CellClip, 'text'> = { type: field.type, value: structuredClone(value ?? null), targetTable: field.type === 'link' ? String(field.options?.target_table_id ?? '') : undefined };
+  // JSON, not structuredClone: store values are Vue proxies, which structuredClone refuses.
+  const clip: Omit<CellClip, 'text'> = { type: field.type, value: JSON.parse(JSON.stringify(value ?? null)), targetTable: field.type === 'link' ? String(field.options?.target_table_id ?? '') : undefined };
   return { ...clip, text: textOf(clip, labelOf) };
 }
 

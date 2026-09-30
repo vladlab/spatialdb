@@ -18,7 +18,7 @@ async function main() {
   try {
     const tWorks = randomUUID(), tFiles = randomUUID(), tSpecs = randomUUID();
     const fWName = randomUUID(), fName = randomUUID(), fCodec = randomUUID(), fRating = randomUUID(), fStatus = randomUUID(), fWork = randomUUID();
-    const fSName = randomUUID(), fSStatus = randomUUID(), fSWork = randomUUID();
+    const fSName = randomUUID(), fSStatus = randomUUID(), fSWork = randomUUID(), fTags = randomUUID(), fAudio = randomUUID();
     const ep1 = randomUUID(), ep2 = randomUUID(), a = randomUUID(), b = randomUUID(), spec = randomUUID();
     const pos = (id: string, position: number) => ({ type: 'field.update', id, position });
     const r = await post([
@@ -31,11 +31,14 @@ async function main() {
       { type: 'field.create', id: fRating, tableId: tFiles, name: 'Rating', key: 'rating', fieldType: 'number' }, pos(fRating, 2),
       { type: 'field.create', id: fStatus, tableId: tFiles, name: 'Status', key: 'status', fieldType: 'select', options: { choices: ['draft', 'final'] } }, pos(fStatus, 3),
       { type: 'field.create', id: fWork, tableId: tFiles, name: 'Work', key: 'work', fieldType: 'link', options: { target_table_id: tWorks } }, pos(fWork, 4),
+      // Object and array values: what structuredClone choked on (they are Vue proxies in the store).
+      { type: 'field.create', id: fTags, tableId: tFiles, name: 'Tags', key: 'tags', fieldType: 'multi_select', options: { choices: ['hdr', 'sdr'] } }, pos(fTags, 6),
+      { type: 'field.create', id: fAudio, tableId: tFiles, name: 'Audio Layout', key: 'audio', fieldType: 'structured', options: { shape: 'audio_layout' } }, pos(fAudio, 7),
       { type: 'field.create', id: fSName, tableId: tSpecs, name: 'Name', key: 'name', fieldType: 'text' }, pos(fSName, 0),
       { type: 'field.create', id: fSStatus, tableId: tSpecs, name: 'Status', key: 'status', fieldType: 'select', options: { choices: ['draft'] } }, pos(fSStatus, 1),
       { type: 'field.create', id: fSWork, tableId: tSpecs, name: 'Work', key: 'work', fieldType: 'link', options: { target_table_id: tWorks, single: true } }, pos(fSWork, 2),
       { type: 'record.create', id: ep1, tableId: tWorks, data: { name: 'Ep 101' } }, { type: 'record.create', id: ep2, tableId: tWorks, data: { name: 'Ep 102' } },
-      { type: 'record.create', id: a, tableId: tFiles, data: { name: 'a.mov', codec: 'ProRes 4444', rating: 5, status: 'final' } },
+      { type: 'record.create', id: a, tableId: tFiles, data: { name: 'a.mov', codec: 'ProRes 4444', rating: 5, status: 'final', tags: ['hdr', 'sdr'], audio: { tracks: [{ name: 'Stereo', channels: ['L', 'R'] }] } } },
       { type: 'record.create', id: b, tableId: tFiles, data: { name: 'b.mov' } },
       { type: 'record.create', id: spec, tableId: tSpecs, data: { name: 'Broadcast' } },
       { type: 'link.add', id: randomUUID(), fieldId: fWork, fromRecord: a, toRecord: ep1 },
@@ -62,7 +65,8 @@ async function main() {
     check('a new record, named "a.mov (copy)"', copies.length === 1);
     const copy = copies[0];
     const orig = (await pool.query(`select data, created_by, created_at from records where id = $1`, [a])).rows[0];
-    check('its values are the original\'s', copy.data.codec === 'ProRes 4444' && copy.data.rating === 5 && copy.data.status === 'final', JSON.stringify(copy.data));
+    check('its values are the original\'s — including the multi-select and the structured value', copy.data.codec === 'ProRes 4444' && copy.data.rating === 5 && copy.data.status === 'final'
+      && JSON.stringify(copy.data.tags) === '["hdr","sdr"]' && JSON.stringify(copy.data.audio) === JSON.stringify(orig.data.audio), JSON.stringify(copy.data));
     check('created now, not when the original was', new Date(copy.created_at) > new Date(orig.created_at) && !!copy.created_by);
     const links = (await pool.query(`select to_record from links where from_record = $1 and field_id = $2 order by to_record`, [copy.id, fWork])).rows.map((x: any) => x.to_record);
     check('its links are the original\'s (both episodes)', links.sort().join() === [ep1, ep2].sort().join(), links.join());
