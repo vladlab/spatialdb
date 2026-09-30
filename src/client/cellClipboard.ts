@@ -13,9 +13,12 @@
  *                                        REPLACES the target's links, a "single"
  *                                        target takes the first; targets since
  *                                        deleted are skipped
+ *      structured ↔ structured           only of the same SHAPE (audio layout to
+ *                                        audio layout)
+ *      rich_text, attachment             copied whole, by reference to the same
+ *                                        assets — no re-upload
  *
- *  Anything else — lookup, backlink, a junction column, attachment, structured —
- *  is not a paste target, and a refused paste says why (a notice), never a
+ *  Anything else — lookup, backlink, a junction column — is not a paste target, and a refused paste says why (a notice), never a
  *  half-paste. The value itself is never changed on the way: a select choice is
  *  not added to the target's vocabulary, a name is not resolved to a link.
  *
@@ -34,11 +37,14 @@
 import type { Store } from './store';
 import type { FieldRow } from './state';
 import { choicesOf } from '../contract/values';
+import { shapeOf, summarise } from '../contract/shapes';
+import { richTextToPlain } from '../contract/richtext';
 
 export interface CellClip {
-  /** The source field's type, and what it pointed at (links). */
+  /** The source field's type, and what it pointed at (links) or was shaped as (structured). */
   type: string;
   targetTable?: string;
+  shape?: string | null;
   /** The value as stored — for a link, the linked record ids. */
   value: unknown;
   /** What went to the system clipboard. */
@@ -48,12 +54,15 @@ export interface CellClip {
 let held: CellClip | null = null;
 
 const TEXTUAL = new Set(['text', 'long_text', 'file_path']);
-const PASTABLE = new Set([...TEXTUAL, 'number', 'date', 'checkbox', 'select', 'multi_select', 'link']);
+const PASTABLE = new Set([...TEXTUAL, 'number', 'date', 'checkbox', 'select', 'multi_select', 'link', 'structured', 'rich_text', 'attachment']);
 
 /** Text for the outside world — the cell as it reads. */
 function textOf(clip: Omit<CellClip, 'text'>, labelOf: (id: string) => string): string {
   const v = clip.value;
   if (clip.type === 'link') return (v as string[]).map(labelOf).join(', ');
+  if (clip.type === 'structured') return v === null ? '' : summarise((clip.shape as never) ?? null, v);
+  if (clip.type === 'rich_text') return richTextToPlain(v);
+  if (clip.type === 'attachment') return Array.isArray(v) ? `${v.length} file${v.length === 1 ? '' : 's'}` : '';
   if (Array.isArray(v)) return v.map(String).join(', ');
   if (v === undefined || v === null) return '';
   if (typeof v === 'boolean') return v ? 'true' : 'false';
@@ -72,7 +81,11 @@ export function clipOf(store: Store, recordId: string, field: FieldRow, labelOf:
     ? [...store.state.links.values()].filter((l) => l.from_record === recordId && l.field_id === field.id).map((l) => l.to_record)
     : rec.data[field.key];
   // JSON, not structuredClone: store values are Vue proxies, which structuredClone refuses.
-  const clip: Omit<CellClip, 'text'> = { type: field.type, value: JSON.parse(JSON.stringify(value ?? null)), targetTable: field.type === 'link' ? String(field.options?.target_table_id ?? '') : undefined };
+  const clip: Omit<CellClip, 'text'> = {
+    type: field.type, value: JSON.parse(JSON.stringify(value ?? null)),
+    targetTable: field.type === 'link' ? String(field.options?.target_table_id ?? '') : undefined,
+    shape: field.type === 'structured' ? shapeOf(field) : undefined,
+  };
   return { ...clip, text: textOf(clip, labelOf) };
 }
 
@@ -144,6 +157,13 @@ export function pasteCell(store: Store, recordId: string, field: FieldRow, clip:
     const choices = new Set(choicesOf(field.options) ?? []);
     const missing = v.filter((c) => !choices.has(c));
     return missing.length ? `${field.name} has no choice "${missing[0]}"` : set(store, rec.id, field.key, v.length ? v : null);
+  }
+  if (group === 'structured') {
+    // Same SHAPE or nothing: an audio layout is not a manifest. The value is validated
+    // by the server as any write is; a copied value was valid where it came from.
+    const shape = shapeOf(field);
+    if (c.shape !== shape) return `${field.name} is a ${shape ?? 'structured'} field, the copied value is ${c.shape ?? 'unshaped'}`;
+    return set(store, rec.id, field.key, c.value);
   }
   if (group === 'link') {
     const target = String(field.options?.target_table_id ?? '');

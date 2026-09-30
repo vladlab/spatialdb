@@ -117,6 +117,21 @@ async function main() {
     await sleep(200);
     check('select → select is refused when the target has no such choice', (await pool.query(`select data->>'status' s from records where id = $1`, [spec])).rows[0].s === null && /not one of Status/.test(w.find('.desk-notices').text()), w.find('.desk-notices').text());
 
+    // A STRUCTURED value: audio layout → audio layout copies; → text is refused.
+    win.location.hash = `#/all/table/${tFiles}`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange'));
+    await until(() => w.findAll('.gridview tr.row').length === 4, 8000);
+    await cell('a.mov', 'Audio Layout').trigger('mousedown');
+    await copyKey();
+    check('an audio layout copies (its text is the layout summary)', sysClip.length > 0 && !/cannot be copied/.test(w.find('.desk-notices').text()), sysClip);
+    await cell('b.mov', 'Audio Layout').trigger('mousedown');
+    await pasteKey();
+    await untilDb(`select data->'audio' a from records where id = '${b}'`, (x) => !!x[0]?.a?.tracks, 8000);
+    check('…and pastes into another audio layout', (await pool.query(`select data->'audio'->'tracks'->0->>'name' n from records where id = $1`, [b])).rows[0].n === 'Stereo');
+    await cell('b.mov', 'Codec').trigger('mousedown');
+    await pasteKey();
+    await sleep(200);
+    check('…not into a text cell', /structured value cannot be pasted/.test(w.find('.desk-notices').text()), w.find('.desk-notices').text());
+
     // Plain text from OUTSIDE (a spreadsheet): into a text cell, yes; into a select, no.
     win.location.hash = `#/all/table/${tFiles}`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange'));
     await until(() => w.findAll('.gridview tr.row').length === 4, 8000);
@@ -171,9 +186,10 @@ async function main() {
     await nav.scope(duke);
     await nav.openTable(tFiles);
     check('scoped: only a.mov shows', await until(() => w.findAll('.gridview tr.row').length === 1 && !!rowOf('a.mov'), 8000), String(w.findAll('.gridview tr.row').length));
+    const since = (await pool.query(`select now() t`)).rows[0].t;
     await cell('a.mov', 'Codec').trigger('mousedown');
     await key('d', { ctrlKey: true });
-    const scoped = await untilDb(`select r.id, (select count(*)::int from links where from_record = r.id and field_id = '${fProj}') p from records r where r.table_id = '${tFiles}' and r.data->>'name' = 'a.mov (copy)' and r.created_at > now() - interval '5 seconds'`, (x) => x.length === 1, 8000);
+    const scoped = await untilDb(`select r.id, (select count(*)::int from links where from_record = r.id and field_id = '${fProj}') p from records r where r.table_id = '${tFiles}' and r.data->>'name' = 'a.mov (copy)' and r.created_at > '${new Date(since).toISOString()}'`, (x) => x.length === 1, 8000);
     check('the copy exists, a member of the project like the original', scoped.length === 1 && scoped[0].p === 1, JSON.stringify(scoped));
     check('and shows in the scoped grid, selected', await until(() => w.findAll('.gridview tr.row').length === 2, 8000) && w.findAll('.gridview tr.row').some((x: any) => x.classes('rowsel') && x.text().includes('a.mov (copy)')), w.find('.errors').exists() ? w.find('.errors').text() : String(w.findAll('.gridview tr.row').length));
     await sleep(100);
