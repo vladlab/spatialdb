@@ -26,6 +26,7 @@
       <h2 class="rp-title" :class="{ empty: !title }">{{ title || 'untitled' }}</h2>
       <button v-if="table?.kind === 'canvas'" class="rp-open-board" title="This record is a canvas — open it" @click="$emit('open-board', recordId)">▦ open board</button>
       <button v-if="table?.kind === 'report'" class="rp-open-board rp-open-report" title="This record is a report — open it" @click="$emit('open-report', recordId)">▤ open report</button>
+      <button v-if="table?.kind !== 'junction'" class="rp-dup" title="Duplicate this record (its values and links; created now, by you)" @click="duplicate">⧉ duplicate</button>
       <button class="rp-close" title="Close (Esc)" @click="$emit('close')">×</button>
     </header>
 
@@ -70,7 +71,7 @@
 
         <div v-else :ref="(el) => setValueEl(f.id, el)" class="rp-value" :class="{ readonly: READONLY(f) }"
              :tabindex="READONLY(f) ? -1 : 0"
-             @click="startEdit(f)" @keydown.enter.prevent.stop="startEdit(f)">
+             @click="startEdit(f)" @keydown.enter.prevent.stop="startEdit(f)" @keydown="onValueKey(f, $event)">
           <!-- LINK -->
           <template v-if="f.type === 'link'">
             <!-- DRAG a pill onto a canvas to place that record there (or jump to it, if it is
@@ -183,6 +184,8 @@ import { invoke, isDesktop, jobs, notice } from '../desktop';
 import LinkPicker from './LinkPicker.vue';
 import JunctionEditor from './JunctionEditor.vue';
 import RecordPill from './RecordPill.vue';
+import { duplicateRecords } from '../duplicate';
+import { copyCell, pasteCell, readClip } from '../cellClipboard';
 import AttachmentField from './AttachmentField.vue';
 import StructuredField from './StructuredField.vue';
 import { formatNumberField } from '../../contract/shapes';
@@ -222,6 +225,19 @@ watch(() => derived.comparisonsOf(props.recordId).map((c) => derived.compareTarg
 const verdicts = computed(() => derived.fieldVerdicts(props.recordId));
 const sideBySide = ref<{ linkId: string; target: string } | null>(null);
 watch(() => props.recordId, () => { sideBySide.value = null; });
+
+/** ⧉: the copy opens in this tray in the original's place. */
+function duplicate() {
+  const [id] = duplicateRecords(store, [props.recordId]);
+  if (id) emit('open', id); else notice('Nothing to duplicate here', 'warn');
+}
+/** Ctrl+C / Ctrl+V on a focused field (cellClipboard.ts), while it is not being edited. */
+function onValueKey(f: FieldRow, e: KeyboardEvent) {
+  if (!(e.ctrlKey || e.metaKey) || editingId.value === f.id) return;
+  const k = e.key.toLowerCase();
+  if (k === 'c') { e.preventDefault(); void copyCell(store, props.recordId, f, labelOfId).then((c) => { if (!c) notice(`${f.name} cannot be copied`, 'warn'); }); }
+  else if (k === 'v') { e.preventDefault(); void readClip().then((clip) => { if (!clip) return; const err = pasteCell(store, props.recordId, f, clip); if (err) notice(`Not pasted: ${err}`, 'warn'); }); }
+}
 
 /** A pill: drag it onto a canvas. A still press does nothing — the ⤢ opens. */
 function dragPill(recordId: string, e: PointerEvent) {
@@ -385,9 +401,11 @@ watch(() => props.recordId, () => {
 .rp-table { grid-column: 1; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
 .rp-title { grid-column: 1; margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rp-title.empty { color: var(--text-faint); font-weight: 400; font-style: italic; }
-.rp-head { grid-template-columns: 1fr auto auto !important; }
+.rp-head { grid-template-columns: 1fr auto auto auto !important; }
 .rp-open-board { grid-row: 1 / span 2; background: none; border: 1px solid var(--border-main); color: var(--accent); border-radius: 4px; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12px; }
-.rp-close { grid-column: 3; grid-row: 1 / span 2; background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; }
+.rp-dup { grid-row: 1 / span 2; justify-self: end; background: none; border: 1px solid var(--border-main); border-radius: 4px; color: var(--text-secondary); cursor: pointer; font: inherit; font-size: 11px; padding: 1px 7px; }
+.rp-dup:hover { color: var(--text-primary); border-color: var(--text-muted); }
+.rp-close { grid-column: 4; grid-row: 1 / span 2; background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; }
 .rp-close:hover { color: var(--text-primary); }
 
 .rp-body { flex: 1; overflow-y: auto; padding: 8px 10px; }

@@ -308,6 +308,7 @@
                 @pointerdown="onRowHandleDown(r.id, rowIndex.get(r.id) ?? 0, $event)">
               <span class="n">{{ (rowIndex.get(r.id) ?? 0) + 1 }}</span>
               <button class="expand" tabindex="-1" title="Open record (Space)" @pointerdown.stop @mousedown.prevent @click="$emit('open-record', r.id)">⤢</button>
+              <button v-if="!isJunction" class="dup" tabindex="-1" title="Duplicate this row (Ctrl+D duplicates the selected rows)" @pointerdown.stop @mousedown.prevent @click="duplicateRows([r.id])">⧉</button>
             </td>
             <td v-for="f in shown" :key="f.id"
                 :class="{ sel: isSel(r.id, f.id), editing: isSel(r.id, f.id) && editing, pin: f.id === primaryId, sized: colWidth(f.id) !== undefined }"
@@ -454,6 +455,9 @@ import { addLink as addLinkVia } from '../links';
 import { SYSTEM_FIELD_TYPES, formatCreated } from '../../contract/systemFields';
 import KanbanView from './KanbanView.vue';   // (`summarise` here is the VIEW's summary)
 import { beginRecordDrag } from '../recordDrag';
+import { duplicateRecords } from '../duplicate';
+import { copyCell, pasteCell, readClip } from '../cellClipboard';
+import { notice } from '../desktop';
 
 const props = defineProps<{
   store: Store; tableId: string;
@@ -486,6 +490,7 @@ const fmtN = (n: number) => n.toLocaleString();
 /* ── table, fields, views ─────────────────────────────────────────────────*/
 
 const allFields = computed(() => fieldsOf(store.state, props.tableId));
+const isJunction = computed(() => store.state.tables.get(props.tableId)?.kind === 'junction');
 const isBoards = computed(() => store.state.tables.get(props.tableId)?.kind === 'canvas');
 const isReports = computed(() => store.state.tables.get(props.tableId)?.kind === 'report');
 const fieldById = computed(() => new Map(allFields.value.map((f) => [f.id, f])));
@@ -836,6 +841,21 @@ function unsetValue(id: string, key: string) {
 }
 function remove(id: string) { store.mutate({ type: 'record.delete', id }); }
 
+/**
+ * Duplicate rows (duplicate.ts) and JUMP to the first copy: it lands wherever the
+ * view's sort puts it, so the selection and the scroll follow it there.
+ */
+function duplicateRows(ids: string[]) {
+  const made = duplicateRecords(store, ids);
+  if (!made.length) { notice('Nothing to duplicate here', 'warn'); return; }
+  void nextTick(() => {
+    const ri = rowIndex.value.get(made[0]!);
+    const col = sel.value?.field ?? shown.value[0]?.id;
+    if (ri !== undefined && col) { select(made[0]!, col); reveal(ri); }   // select() clears the row selection…
+    for (const id of made) rowSel.add(id);                                 // …so the copies are marked after
+  });
+}
+
 async function create(context: { data?: Record<string, unknown>; links?: Array<{ fieldId: string; toRecord: string }> } = {}) {
   const id = crypto.randomUUID();
   fresh.add(id);
@@ -1085,6 +1105,24 @@ function onGridKey(e: KeyboardEvent) {
     return;
   }
   if (e.key === 'Escape' && rowSel.size) { rowSel.clear(); return; }
+  // Ctrl+D duplicates the selected rows (or the selected cell's row); Ctrl+C / Ctrl+V
+  // copy and paste the selected CELL (cellClipboard.ts).
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+    const ids = rowSel.size ? rows.value.filter((r) => rowSel.has(r.id)).map((r) => r.id) : sel.value ? [sel.value.rec] : [];
+    if (ids.length) { e.preventDefault(); duplicateRows(ids); }
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && sel.value) {
+    const f = fieldById.value.get(sel.value.field);
+    if (f) { e.preventDefault(); void copyCell(store, sel.value.rec, f, labelFor).then((c) => { if (!c) notice(`${f.name} cannot be copied`, 'warn'); }); }
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && sel.value) {
+    const f = fieldById.value.get(sel.value.field);
+    const rec = sel.value.rec;
+    if (f) { e.preventDefault(); void readClip().then((clip) => { if (!clip) return; const err = pasteCell(store, rec, f, clip); if (err) notice(`Not pasted: ${err}`, 'warn'); }); }
+    return;
+  }
   const s = sel.value;
   if (!s) {
     // Nothing selected yet: any arrow picks the first cell, so the keyboard works
@@ -1303,7 +1341,7 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
    and to sit above the unpinned ones (and the header row above all rows). */
 .grid th.pin, .grid td.pin { position: sticky; left: 0; z-index: 5; background: var(--bg-app); }
 .grid th.pin { z-index: 12; }
-.grid th.pin:not(.num), .grid td.pin:not(.num) { left: 56px; }
+.grid th.pin:not(.num), .grid td.pin:not(.num) { left: 68px; }
 /* Every row-state colour is translucent; on a pinned cell it must sit on the app
    background, or the cells scrolled underneath show through. */
 .row:hover td.pin { background: linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--bg-app); }
@@ -1330,13 +1368,15 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
    cell on every hover: the column twitched and the row grew a pixel, which in a
    windowed grid (fixed ROW_H) also nudged everything below it. Absolute + a
    fixed-width cell means hovering changes paint, never layout. */
-.num { position: sticky; width: 56px; min-width: 56px; max-width: 56px; box-sizing: border-box; cursor: grab; user-select: none; padding-right: 18px !important; }
+.num { position: sticky; width: 68px; min-width: 68px; max-width: 68px; box-sizing: border-box; cursor: grab; user-select: none; padding-right: 34px !important; }
 .num:active { cursor: grabbing; }
-.num .expand {
+.num .expand, .num .dup {
   position: absolute; top: 0; bottom: 0; right: 0; width: 18px; display: flex; align-items: center; justify-content: center;
   visibility: hidden; background: none; border: none; color: var(--accent);
   cursor: pointer; padding: 0; font: inherit; line-height: 1;
 }
+.num .dup { right: 17px; color: var(--text-muted); font-size: 11px; }
+.num .dup:hover { color: var(--accent); }
 .row.rowsel td { background: rgba(66, 165, 245, 0.14); }
 .row.rowsel .num { color: var(--accent); }
 /* The view control is the first thing in the bar and reads as a LABEL + NAME, not
@@ -1377,7 +1417,7 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .group-add:hover { color: var(--accent); border-color: var(--accent); }
 .scope-note { font-size: 11px; color: var(--accent); border: 1px solid var(--accent); border-radius: 3px; padding: 0 6px; white-space: nowrap; }
 .scope-note.unscoped { color: var(--warning); border-color: var(--warning); }
-.row:hover .num .expand { visibility: visible; }
+.row:hover .num .expand, .row:hover .num .dup { visibility: visible; }
 .num { color: var(--text-faint); font-size: 11px; text-align: right !important; }
 .act { width: 1%; white-space: nowrap; }
 .open-board { background: none; border: 1px solid var(--border-main); color: var(--accent); border-radius: 3px; padding: 0 6px; margin-right: 4px; cursor: pointer; font: inherit; font-size: 11px; }

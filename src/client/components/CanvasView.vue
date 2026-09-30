@@ -195,6 +195,7 @@
         <button v-if="isDefault(menu.recordId!)" class="unset-default" @click="menuDo((m) => removeDefault(m.recordId!))">Stop linking new records here to this</button>
         <button v-else-if="canBeDefault(menu.recordId!)" class="set-default" @click="menuDo((m) => addDefault(store.state.records.get(m.recordId!)!.table_id, m.recordId!))">Link new records here to this</button>
         <hr />
+        <button v-if="!isJunctionRecord(menu.recordId!)" class="duplicate-record" @click="menuDo((m) => duplicateHere(m.recordId!))">Duplicate record</button>
         <button @click="menuDo((m) => unplace(m.recordId!))">Remove from canvas</button>
         <button class="danger" @click="menuDo((m) => deleteRecord(m.recordId!))">Delete record…</button>
       </template>
@@ -234,6 +235,7 @@ import { useDerived } from '../derived';
 import { defaultLinkField } from '../../contract/canvasConfig';
 import LinkPicker from './LinkPicker.vue';
 import JunctionEditor from './JunctionEditor.vue';
+import { duplicateRecords } from '../duplicate';
 import { addLink } from '../links';
 import { canvasDefaultsOff } from '../prefs';
 import { confirmDialog } from '../dialogs';
@@ -437,6 +439,17 @@ function onDragLinked({ recordId, e }: { recordId: string; e: PointerEvent }) {
   // A press that moves places (or jumps to) the record; a still one does nothing — the pill's ⤢ opens.
   if (!rec) return;
   beginRecordDrag(() => [rec], e, () => derived.labelOfId(recordId));
+}
+const isJunctionRecord = (id: string) => store.state.tables.get(store.state.records.get(id)?.table_id ?? '')?.kind === 'junction';
+/** Duplicate a placed record and place the copy just beside the original, selected. */
+function duplicateHere(recordId: string) {
+  const [id] = duplicateRecords(store, [recordId]);
+  const rect = cardRects.value.get(recordId);
+  const rec = id ? store.state.records.get(id) : undefined;
+  if (!rec || !rect) return;
+  const c = viewport.worldToClient(rect.x + 24, rect.y + 24);
+  placeMany([rec], c.x, c.y);
+  selected.clear(); selected.add(id!);
 }
 /** A pair's ✎ on a card: the pair editor, on that row, anchored at the card. */
 function onEditPair({ recordId, fieldId, row }: { recordId: string; fieldId: string; row: string }) {
