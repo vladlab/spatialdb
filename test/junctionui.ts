@@ -142,6 +142,79 @@ async function main() {
     check('deleting the file took the pair on the server', true);
     await until(() => w.findAll('.gridview tr.row').length === 1, 8000);
     check('and the client dropped the junction row with it', await until(() => !w.findAll('.chip.junc').length) && !w.find('.errors').exists());
+
+    console.log('\nJ5. On the canvas: a pair is dragged out of a port, drawn as an arrow, and worked from it');
+    // a.mov and Texted Master on a board. Texted Master's card must show its Delivery
+    // row (the port); it is the deliverables table's third field, within the default five.
+    await nav.newCanvas('Board');
+    const board = (await untilDb(`select id from records where data->>'name' = 'Board'`, (r) => r.length === 1))[0].id as string;
+    await post([
+      { type: 'placement.add', id: randomUUID(), canvasId: board, recordId: a, x: 40, y: 40, w: null, h: null, z: 1 },
+      { type: 'placement.add', id: randomUUID(), canvasId: board, recordId: texted, x: 600, y: 40, w: null, h: null, z: 2 },
+      { type: 'placement.add', id: randomUUID(), canvasId: board, recordId: trailer, x: 600, y: 400, w: null, h: null, z: 3 },
+    ]);
+    await nav.openCanvas(board);
+    const cards = () => w.findAll('.canvas-container .card');
+    const cardBy = (t: string) => cards().find((c: any) => c.find('.card-label').text() === t)!;
+    check('the cards are up', await until(() => cards().length === 3, 8000));
+    const portRow = (t: string) => cardBy(t).findAll('.card-field').find((r: any) => r.find('.card-key').text() === 'Delivery')!;
+    check('a.mov\'s Delivery row is a PORT, like a link row', await until(() => !!portRow('a.mov') && portRow('a.mov').find('.port-handle').exists()));
+    const PE = (win as any).PointerEvent ?? (win as any).MouseEvent;
+    const winEv = (type: string, init: Record<string, unknown>) => win.dispatchEvent(new PE(type, { bubbles: true, ...init }));
+    const toClient = (wx: number, wy: number) => {
+      const m = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)\s*scale\(([\d.]+)\)/.exec(w.find('.canvas-world').attributes('style') ?? '')!;
+      return { clientX: wx * Number(m[3]) + Number(m[1]), clientY: wy * Number(m[3]) + Number(m[2]) };
+    };
+    await portRow('a.mov').find('.port-handle').trigger('pointerdown', { button: 0, ...toClient(300, 80) });
+    winEv('pointermove', toClient(630, 60));
+    check('dragging from it draws the rubber line; the deliverable cards light up, the file does not',
+      await until(() => w.find('.arrow-layer .rubber').exists() && cardBy('Texted Master').classes('link-over')) && cardBy('Trailer').classes('link-ok') && !cardBy('a.mov').classes('link-ok'));
+    winEv('pointerup', toClient(630, 60));
+    check('dropped on Texted Master: the pair editor opens, other end already chosen, asking for the status',
+      await until(() => w.find('.junction-anchor .je').exists()) && !w.find('.je .picker').exists() && w.find('.je .head').text().includes('Texted Master') && w.find('.je .act.primary').exists(), w.find('.je').exists() ? w.find('.je').text() : 'no editor');
+    check('nothing written until Add', (await pool.query(`select count(*)::int n from records where table_id = '${tJ}'`)).rows[0].n === 0);
+    await w.findAll('.je .st').find((b: any) => b.text() === 'Uploaded').trigger('click');
+    await w.find('.je .act.primary').trigger('click');
+    const pair = await untilDb(`select r.id, r.data->>'status' s, (select count(*)::int from links where from_record = r.id) n from records r where r.table_id = '${tJ}'`, (r) => r.length === 1 && r[0].n === 2, 8000);
+    check('the pair exists — status Uploaded, both links, one batch', pair[0]?.s === 'Uploaded');
+    const arrow = () => w.find(`.arrow-layer .arrow[data-key="${tJ}|${a}|${texted}"]`);
+    check('and is drawn as an arrow a.mov → Texted Master, keyed by the junction', await until(() => arrow().exists()));
+    await w.find('.je .act:not(.primary):not(.danger)').trigger('click');   // Done
+    await until(() => !w.find('.je').exists());
+    await w.find('.arrows-legend').trigger('click');
+    check('the legend names it', await until(() => /Delivery \(pairs\)/.test(w.find('.legend').text())), w.find('.legend').exists() ? w.find('.legend').text() : 'no legend');
+    await w.find('.arrows-legend').trigger('click');
+
+    await arrow().find('.arrow-hit').trigger('pointerdown', { button: 0 });
+    check('selected, the arrow is labelled with its STATUS, not a field name', await until(() => w.find('.arrow-layer .arrow-label text').exists() && w.find('.arrow-layer .arrow-label text').text() === 'Uploaded'), w.find('.arrow-layer .arrow-label').exists() ? w.find('.arrow-layer .arrow-label text').text() : 'no label');
+    await arrow().find('.arrow-hit').trigger('contextmenu', { clientX: 300, clientY: 200 });
+    check('right-click: the pair\'s menu — its statuses, open, delete', await until(() => w.find('.ctx .junction-status').exists()) && w.find('.ctx .open-junction').exists() && /Delete this pair/.test(w.find('.ctx .remove-link').text()));
+    await w.findAll('.ctx .junction-status').find((b: any) => b.text() === 'Accepted').trigger('click');
+    await untilDb(`select data->>'status' s from records where id = '${pair[0].id}'`, (r) => r[0]?.s === 'Accepted', 4000);
+    await arrow().find('.arrow-hit').trigger('pointerdown', { button: 0 });
+    check('status changed from the menu; the label follows', await until(() => w.find('.arrow-layer .arrow-label text').text() === 'Accepted'));
+
+    // Same pair again from the port: lands on the existing row.
+    await portRow('a.mov').find('.port-handle').trigger('pointerdown', { button: 0, ...toClient(300, 80) });
+    winEv('pointermove', toClient(630, 60));
+    check('the pair already exists: Texted Master no longer lights up', await until(() => w.find('.rubber').exists()) && !cardBy('Texted Master').classes('link-over') && cardBy('Trailer').classes('link-ok'));
+    winEv('pointerup', toClient(630, 60));
+    await sleep(100);
+    check('dropping there does nothing', !w.find('.je').exists() && (await pool.query(`select count(*)::int n from records where table_id = '${tJ}'`)).rows[0].n === 1);
+
+    // Delete from the arrow: asks, then the ROW goes.
+    await arrow().find('.arrow-hit').trigger('pointerdown', { button: 0 });
+    nav.dialogs.cancelNext = true;
+    const seen0 = nav.dialogs.seen.length;
+    await w.find('.canvas-container').trigger('keydown', { key: 'Delete' });
+    check('Delete with the arrow selected ASKS', await until(() => nav.dialogs.seen.length > seen0) && /Delete this Delivery/.test(nav.dialogs.seen.slice(-1)[0]));
+    await sleep(250);
+    check('Cancel keeps it', (await pool.query(`select count(*)::int n from records where table_id = '${tJ}'`)).rows[0].n === 1);
+    await arrow().find('.arrow-hit').trigger('contextmenu', { clientX: 300, clientY: 200 });
+    await until(() => w.find('.ctx .remove-link').exists());
+    await w.find('.ctx .remove-link').trigger('click');
+    check('confirmed: the pair row is deleted and the arrow gone', (await untilDb(`select count(*)::int n from records where table_id = '${tJ}'`, (r) => r[0].n === 0, 4000))[0].n === 0 && await until(() => !arrow().exists()));
+    check('both cards stay', cards().length === 3);
     await sleep(100);
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);

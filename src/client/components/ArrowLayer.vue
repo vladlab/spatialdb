@@ -75,7 +75,7 @@ export interface CardPorts {
 
 const props = defineProps<{
   transform: { x: number; y: number; scale: number };
-  links: Array<{ field_id: string; from_record: string; to_record: string }>;
+  links: Array<{ field_id: string; from_record: string; to_record: string; label?: string }>;
   rects: Map<string, Rect>;
   styles?: Map<string, ArrowStyle>;
   /** The selected cards: arrows touching none of them dim (focus mode). Null/empty = no dimming. */
@@ -129,10 +129,15 @@ const arrows = computed(() => {
   return out;
 });
 
-export interface ArrowLink { field_id: string; from_record: string; to_record: string }
+/**
+ * A link, or a JUNCTION ROW drawn as one (sql/016): `field_id` is then the junction
+ * TABLE's id (what the style, legend and hide-list key on), `junction` the row, and
+ * `label` what the selected arrow says — its status, not a field name.
+ */
+export interface ArrowLink { field_id: string; from_record: string; to_record: string; junction?: string; label?: string }
 const selectedArrow = computed(() => {
   const a = props.selectedKey ? arrows.value.find((x) => x.key === props.selectedKey) : undefined;
-  return a ? { mid: a.mid, label: props.fieldNames?.get(a.fieldId) ?? 'link' } : null;
+  return a ? { mid: a.mid, label: a.link.label ?? props.fieldNames?.get(a.fieldId) ?? 'link' } : null;
 });
 const labelW = computed(() => Math.max(40, (selectedArrow.value?.label.length ?? 0) * 6.6 + 18));
 </script>

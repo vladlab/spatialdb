@@ -769,6 +769,15 @@ deliverable may belong to every episode — and a pair the starting record links
 nothing through is skipped. Agreeing records are offered alone, with "show all" a
 tick away. A filter, never a constraint; nothing about it is enforced on write.
 
+**On the canvas.** A junction column's row on a card is a port like a link row:
+drag from it onto a card of the other table and the pair editor opens with that
+end chosen, asking for the status; drop on empty canvas and it opens with its
+picker, placing the chosen record at the drop. Each pair whose two ends are both on
+the canvas is drawn as an arrow A → B keyed by the junction TABLE (its colour, the
+legend as "Delivery (pairs)", the hide list), labelled when selected with the row's
+status. Right-click: change the status, open the row, delete the pair (asks;
+undoable). There is no "unlink" — the arrow is the row.
+
 Labels: the label contract names a junction row by its primary field (the status),
 which the client overrides with the composed form `Uploaded: reel_10.mov → Texted
 Master`; the server's far labels stay plain.

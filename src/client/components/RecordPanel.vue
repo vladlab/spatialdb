@@ -103,7 +103,7 @@
               <span v-if="editingId !== f.id" class="placeholder">add {{ derived.backlinkOf(recordId, f)?.length ? 'another' : 'a' }} {{ junctionName(f) }}…</span>
               <JunctionEditor v-if="editingId === f.id" :store="store" :table="junctionOf(f)!.table" :cfg="junctionOf(f)!.cfg"
                               :side="junctionOf(f)!.side" :from="recordId" :row-id="junctionRow" :anchor="valueEls.get(f.id)"
-                              @done="onDone('none')" @open="(id) => { onDone('none'); $emit('open', id); }" />
+                              @done="onDone('none')" @open="(id: string) => { onDone('none'); $emit('open', id); }" />
             </template>
             <template v-else>
               <button v-for="from in derived.backlinkOf(recordId, f) ?? []" :key="from" class="chip back"

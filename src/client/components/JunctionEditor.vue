@@ -74,9 +74,11 @@ const props = defineProps<{
   from: string;
   /** An existing row to edit; absent when adding a pair. */
   rowId?: string;
+  /** The other end, already chosen (a canvas drop): skips the picker, straight to the status. */
+  picked?: string;
   anchor?: HTMLElement | null;
 }>();
-const emit = defineEmits<{ done: []; open: [rowId: string] }>();
+const emit = defineEmits<{ done: []; open: [rowId: string]; created: [rowId: string, other: string] }>();
 
 const derived = useDerived(props.store);
 const rowId = ref(props.rowId);
@@ -90,6 +92,11 @@ const choices = computed(() => choicesOf(statusField.value?.options) ?? []);
 
 /** The other end: from the row when editing, else what was picked. */
 const picked = ref<string>();
+if (props.picked && !props.rowId) {
+  // Handed the other end: land on the existing pair if there is one, else it is the pick.
+  const existing = derived.junctionRowFor(props.cfg, props.side, props.from, props.picked);
+  if (existing) rowId.value = existing; else picked.value = props.picked;
+}
 const other = computed(() => (rowId.value ? derived.junctionRow(rowId.value)?.[otherEnd(props.side)] : picked.value));
 const fromLabel = computed(() => derived.plainLabelOfId(props.from));
 const otherLabel = computed(() => (other.value ? derived.plainLabelOfId(other.value) : ''));
@@ -134,8 +141,10 @@ function create() {
   props.store.mutate({ type: 'record.create', id, tableId: props.table, data });
   props.store.mutate({ type: 'link.add', id: crypto.randomUUID(), fieldId: mine.value, fromRecord: id, toRecord: props.from });
   props.store.mutate({ type: 'link.add', id: crypto.randomUUID(), fieldId: theirs.value, fromRecord: id, toRecord: picked.value });
+  const other = picked.value;
   rowId.value = id;
   picked.value = undefined;
+  emit('created', id, other);
 }
 
 function remove() {

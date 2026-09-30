@@ -86,6 +86,15 @@
       <LinkPicker inline allow-create :store="store" :target-table-id="linkPick.targetTable" :linked="derived.linksFrom(linkPick.fromRecord, linkPick.fieldId)"
                   @add="linkPickChoose" @create="linkPickCreate" @done="linkPick = null" />
     </div>
+    <!-- A JUNCTION drag (sql/016) let go: on a card of the other table, the pair's status
+         is picked here and the row made; on empty canvas, the other end is picked first
+         (the same editor, with its picker) and placed where the drop was. The div is only
+         the popover's anchor: an invisible point at the drop. -->
+    <div v-if="junctionPick" ref="junctionAnchor" class="junction-anchor" :style="{ left: junctionPick.client.x + 'px', top: junctionPick.client.y + 'px' }" @pointerdown.stop @keydown.stop>
+      <JunctionEditor :store="store" :table="junctionPick.table" :cfg="junctionPick.cfg" :side="junctionPick.side" :from="junctionPick.fromRecord"
+                      :picked="junctionPick.picked" :row-id="junctionPick.rowId" :anchor="junctionAnchor"
+                      @created="junctionPickCreated" @open="(id) => { junctionPick = null; emit('open-record', id); }" @done="junctionPick = null" />
+    </div>
   <div
     ref="containerRef"
     class="canvas-container"
@@ -157,7 +166,20 @@
       <!-- AN ARROW. Removing a link from the canvas is deliberately three steps — select,
            right-click, confirm — because an arrow is a thin thing to hit by accident and
            what goes is DATA, not a drawing. (It is undoable all the same.) -->
-      <template v-if="menu.kind === 'link' && menu.link">
+      <template v-if="menu.kind === 'link' && menu.link && menu.link.junction">
+        <!-- A JUNCTION ROW's arrow: its status is changed right here; the pair is deleted, not unlinked. -->
+        <div class="ctx-head">{{ store.state.tables.get(menu.link.field_id)?.singular_name || store.state.tables.get(menu.link.field_id)?.name || 'pair' }}</div>
+        <div class="ctx-sub">{{ derived.labelOfId(menu.link.from_record) }} → {{ derived.labelOfId(menu.link.to_record) }}</div>
+        <template v-if="junctionStatusChoices(menu.link.field_id).length">
+          <hr />
+          <button v-for="c in junctionStatusChoices(menu.link.field_id)" :key="c" class="junction-status" :class="{ on: derived.junctionRow(menu.link.junction)?.status === c }"
+                  @click="menuDo((m) => setJunctionStatus(m.link!.junction!, c))">{{ c }}</button>
+        </template>
+        <hr />
+        <button class="open-junction" @click="menuDo((m) => emit('open-record', m.link!.junction!))">Open this pair ⤢</button>
+        <button class="danger remove-link" @click="menuDo((m) => removeLink(m.link!))">Delete this pair…</button>
+      </template>
+      <template v-else-if="menu.kind === 'link' && menu.link">
         <div class="ctx-head">{{ linkFieldNames.get(menu.link.field_id) ?? 'link' }}</div>
         <div class="ctx-sub">{{ derived.labelOfId(menu.link.from_record) }} → {{ derived.labelOfId(menu.link.to_record) }}</div>
         <hr />
@@ -211,6 +233,7 @@ import { labelFrom } from '../../contract/labels';
 import { useDerived } from '../derived';
 import { defaultLinkField } from '../../contract/canvasConfig';
 import LinkPicker from './LinkPicker.vue';
+import JunctionEditor from './JunctionEditor.vue';
 import { addLink } from '../links';
 import { canvasDefaultsOff } from '../prefs';
 import { confirmDialog } from '../dialogs';
@@ -221,6 +244,8 @@ import { formatCreated } from '../../contract/systemFields';
 import { beginRecordDrag, registerDropTarget } from '../recordDrag';
 import { arrowStyleOf, type ArrowStyle } from '../../contract/arrows';
 import { backlinkSourceOf } from '../../contract/backlinks';
+import { junctionOf, otherEnd, type JunctionConfig } from '../../contract/junction';
+import { choicesOf } from '../../contract/values';
 import type { ArrowLink, CardPorts } from './ArrowLayer.vue';
 import { linkKey } from '../state';
 import { bezierPath, type Point } from '../canvas/geometry';
@@ -268,11 +293,19 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
     const { texts, broken } = derived.textOf(rec.id, f);
     // A port row wears its relationship's colour (a backlink wears the colour of
     // the link field it mirrors — they are the two ends of the same arrows).
-    const styleField = f.type === 'link' ? f.id : f.type === 'backlink' ? backlinkSourceOf(f) : null;
+    // A JUNCTION's column (sql/016) is a port too — arrows and drags key on the
+    // junction TABLE — and what it names, and what can be dragged off it, is the
+    // other end of each pair, not the pair rows themselves.
+    const j = f.type === 'backlink' ? derived.junctionOfBacklink(f) : null;
+    const styleField = f.type === 'link' ? f.id : j ? j.table : f.type === 'backlink' ? backlinkSourceOf(f) : null;
     const color = styleField ? arrowStyles.value.get(styleField)?.color : undefined;
+    const ids = f.type === 'lookup' ? undefined
+      : f.type === 'link' ? derived.linksFrom(rec.id, f.id)
+      : j ? (derived.backlinkOf(rec.id, f) ?? []).flatMap((row) => { const o = derived.junctionRow(row)?.[otherEnd(j.side)]; return o ? [o] : []; })
+      : derived.backlinkOf(rec.id, f) ?? [];
     return broken ? { id: f.id, name: f.name, broken: true, text: `broken ${f.type}` }
       : { id: f.id, name: f.name, derived: true, text: texts.join(', '), lines: texts.length > 1 ? texts : undefined,
-          ids: f.type === 'lookup' ? undefined : (f.type === 'link' ? derived.linksFrom(rec.id, f.id) : derived.backlinkOf(rec.id, f) ?? []), color, link: f.type === 'link' };
+          ids, color, link: f.type === 'link' || !!j };
   }
   if (f.type === 'rich_text') return { id: f.id, name: f.name, text: richTextToPlain(rec.data[f.key]).split('\n', 1)[0] };
   // A structured value is a one-line SUMMARY on a card ("4 tracks / 12 ch (5.1, 2.0…)"):
@@ -359,6 +392,7 @@ const portRowsByTable = computed(() => {
     const entry = { out: [] as Array<[string, number]>, in: [] as Array<[string, number]> };
     rowFields(tableId).forEach((f, i) => {      // ROW fields: indices must match what the card draws
       if (f.type === 'link') entry.out.push([f.id, i]);
+      else if (f.type === 'backlink' && derived.junctionOfBacklink(f)) entry.out.push([f.id, i]);   // a pair starts here too
       const src = f.type === 'backlink' ? backlinkSourceOf(f) : null;
       if (src) entry.in.push([src, i]);
     });
@@ -386,6 +420,8 @@ const cardPorts = computed(() => {
 const arrowStyles = computed(() => {
   const m = new Map<string, ArrowStyle>();
   for (const f of store.state.fields.values()) if (f.type === 'link') m.set(f.id, arrowStyleOf(f));
+  // A junction's arrows wear its TABLE's colour, keyed by the table id (sql/016).
+  for (const t of store.state.tables.values()) if (junctionOf(t)) m.set(t.id, { color: t.color || undefined } as ArrowStyle);
   return m;
 });
 
@@ -515,7 +551,8 @@ const keyOfLink = (l: ArrowLink) => `${l.field_id}|${l.from_record}|${l.to_recor
 const selectedLinkKey = computed(() => {
   const l = selectedLink.value;
   // A peer (or our own Remove) may have deleted it: a selection must not outlive its link.
-  return l && store.state.links.has(linkKey(l.field_id, l.from_record, l.to_record)) ? keyOfLink(l) : null;
+  const alive = l && (l.junction ? store.state.records.has(l.junction) : store.state.links.has(linkKey(l.field_id, l.from_record, l.to_record)));
+  return l && alive ? keyOfLink(l) : null;
 });
 const linkFieldNames = computed(() => {
   const m = new Map<string, string>();
@@ -536,6 +573,17 @@ function onLinkMenu(l: ArrowLink, e: MouseEvent) {
   menu.value = { kind: 'link', x: e.clientX - r.left, y: e.clientY - r.top, wx: w.x, wy: w.y, link: l };
 }
 async function removeLink(l: ArrowLink) {
+  if (l.junction) {
+    // A pair is DELETED, never unlinked (sql/016): the row, with its status and notes, goes — undoable.
+    const t = store.state.tables.get(l.field_id);
+    if (!await confirmDialog({
+      title: `Delete this ${t?.singular_name || t?.name || 'pair'}?`, danger: true, okText: 'Delete pair',
+      body: `${derived.labelOfId(l.from_record)} → ${derived.labelOfId(l.to_record)}\n\nBoth records stay; the pair between them — its status and notes — goes. It can be undone (Ctrl+Z, or from History).`,
+    })) return;
+    store.mutate({ type: 'record.delete', id: l.junction });
+    selectedLink.value = null;
+    return;
+  }
   const field = linkFieldNames.value.get(l.field_id) ?? 'link';
   if (!await confirmDialog({
     title: `Remove this “${field}” link?`, danger: true, okText: 'Remove link',
@@ -546,13 +594,18 @@ async function removeLink(l: ArrowLink) {
 }
 
 /* Dragging a new link out of a port. */
-interface LinkDrag { fromRecord: string; fieldId: string; targetTable: string; from: Point; to: Point; over: string | null }
+interface LinkDrag {
+  fromRecord: string; fieldId: string; targetTable: string; from: Point; to: Point; over: string | null;
+  /** Set when the port is a junction column: the drag makes a PAIR, not a link (sql/016). */
+  junction?: { table: string; cfg: JunctionConfig; side: 'a' | 'b' };
+}
 const linkDrag = ref<LinkDrag | null>(null);
 
-/** Could `recordId` take the link being dragged? Right table, not itself, not already linked. */
+/** Could `recordId` take the link being dragged? Right table, not itself, not already linked (or paired). */
 function canTakeLink(d: LinkDrag, recordId: string, tableId: string) {
-  return tableId === d.targetTable && recordId !== d.fromRecord
-    && !store.state.links.has(linkKey(d.fieldId, d.fromRecord, recordId));
+  if (tableId !== d.targetTable || recordId === d.fromRecord) return false;
+  if (d.junction) return !derived.junctionRowFor(d.junction.cfg, d.junction.side, d.fromRecord, recordId);
+  return !store.state.links.has(linkKey(d.fieldId, d.fromRecord, recordId));
 }
 function linkTargetState(recordId: string, tableId: string): 'ok' | 'over' | null {
   const d = linkDrag.value;
@@ -571,13 +624,17 @@ function cardAt(p: Point): { recordId: string; tableId: string } | null {
 
 function startLinkDrag({ recordId, fieldId, e }: { recordId: string; fieldId: string; e: PointerEvent }) {
   const field = store.state.fields.get(fieldId);
-  const targetTable = field?.type === 'link' ? String(field.options?.target_table_id ?? '') : '';
+  // A junction column's port: the target is the OTHER endpoint's table.
+  const j = field?.type === 'backlink' ? derived.junctionOfBacklink(field) : null;
+  const junction = j ? { table: j.table, cfg: j.cfg, side: j.side } : undefined;
+  const targetTable = field?.type === 'link' ? String(field.options?.target_table_id ?? '')
+    : j ? String(store.state.fields.get(j.side === 'a' ? j.cfg.b : j.cfg.a)?.options?.target_table_id ?? '') : '';
   const rect = cardRects.value.get(recordId);
   const portY = cardPorts.value.get(recordId)?.out.get(fieldId);
   if (!targetTable || !rect || portY === undefined) return;
   selected.clear(); selectedLink.value = null; menu.value = null;
   const from = { x: rect.x + rect.w, y: rect.y + portY };
-  linkDrag.value = { fromRecord: recordId, fieldId, targetTable, from, to: viewport.clientToWorld(e.clientX, e.clientY), over: null };
+  linkDrag.value = { fromRecord: recordId, fieldId, targetTable, from, to: viewport.clientToWorld(e.clientX, e.clientY), over: null, junction };
 
   const lastClient = { x: e.clientX, y: e.clientY };
   const move = (ev: PointerEvent) => {
@@ -596,6 +653,12 @@ function startLinkDrag({ recordId, fieldId, e }: { recordId: string; fieldId: st
     // type a name for a new one (created, linked, placed). The wrong table, itself, a
     // record already linked: nothing.
     if (!d) return;
+    if (d.junction) {
+      // A pair: on a card, pick its status here and make it; on empty canvas, pick the
+      // other end first. Either way the JunctionEditor writes the row — one batch.
+      if (d.over || !cardAt(d.to)) junctionPick.value = { ...d.junction, fromRecord: d.fromRecord, picked: d.over ?? undefined, client: { ...lastClient }, world: d.to };
+      return;
+    }
     if (d.over) { addLink(store, d.fieldId, d.fromRecord, d.over); return; }
     if (!cardAt(d.to)) linkPick.value = { fieldId: d.fieldId, fromRecord: d.fromRecord, targetTable: d.targetTable, client: { ...lastClient }, world: d.to };
   };
@@ -619,7 +682,47 @@ const rubber = computed(() => {
   const rect = cardRects.value.get(d.fromRecord)!;
   const start = goingRight ? d.from : { x: rect.x, y: d.from.y };
   return { path: bezierPath(start, goingRight ? 'right' : 'left', d.to, goingRight ? 'left' : 'right', 0),
-    valid: d.over !== null, color: arrowStyles.value.get(d.fieldId)?.color };
+    valid: d.over !== null, color: arrowStyles.value.get(d.junction?.table ?? d.fieldId)?.color };
+});
+
+/* ── a junction drag let go (sql/016) ─────────────────────────────────────── */
+const junctionPick = ref<{ table: string; cfg: JunctionConfig; side: 'a' | 'b'; fromRecord: string; picked?: string; rowId?: string;
+  client: { x: number; y: number }; world: { x: number; y: number } } | null>(null);
+const junctionAnchor = ref<HTMLElement | null>(null);
+/** The row is made: if its other end was chosen from the picker (empty-canvas drop), place it at the drop. */
+function junctionPickCreated(_rowId: string, other: string) {
+  const p = junctionPick.value; if (!p) return;
+  if (!p.picked && !cardRects.value.has(other)) {
+    const rec = store.state.records.get(other);
+    if (rec) placeMany([rec], p.client.x, p.client.y);
+  }
+}
+const junctionStatusChoices = (junctionTable: string) => {
+  const cfg = junctionOf(store.state.tables.get(junctionTable));
+  return cfg?.status ? choicesOf(store.state.fields.get(cfg.status)?.options) ?? [] : [];
+};
+function setJunctionStatus(rowId: string, status: string) {
+  const row = store.state.records.get(rowId);
+  const cfg = row ? junctionOf(store.state.tables.get(row.table_id)) : null;
+  const key = cfg?.status ? store.state.fields.get(cfg.status)?.key : undefined;
+  if (!key) return;
+  store.mutate({ type: 'record.update', id: rowId, set: { [key]: status }, unset: [] });
+}
+
+/** Every junction row whose two ends are both on this canvas, as an arrow A → B keyed by the junction table (ArrowLayer.vue). */
+const junctionArrows = computed<ArrowLink[]>(() => {
+  const out: ArrowLink[] = [];
+  for (const t of store.state.tables.values()) {
+    const cfg = junctionOf(t);
+    if (!cfg) continue;
+    for (const r of store.state.records.values()) {
+      if (r.table_id !== t.id) continue;
+      const j = derived.junctionRow(r.id);
+      if (!j?.a || !j.b || !cardRects.value.has(j.a) || !cardRects.value.has(j.b)) continue;
+      out.push({ field_id: t.id, from_record: j.a, to_record: j.b, junction: r.id, label: j.status || (t.singular_name || t.name) });
+    }
+  }
+  return out;
 });
 
 /* ── which relational arrows are drawn ────────────────────────────────────
@@ -679,14 +782,18 @@ function toggleFieldArrows(fieldId: string) {
 }
 const legendOpen = ref(false);
 
-const linksOnCanvas = computed(() => [...store.state.links.values()].filter(
-  (l) => cardRects.value.has(l.from_record) && cardRects.value.has(l.to_record)));
+const linksOnCanvas = computed<ArrowLink[]>(() => [
+  ...[...store.state.links.values()].filter((l) => cardRects.value.has(l.from_record) && cardRects.value.has(l.to_record)),
+  ...junctionArrows.value,
+]);
 
 /** Every relationship that HAS an arrow on this canvas, for the legend. */
 const legend = computed(() => {
   const counts = new Map<string, number>();
   for (const l of linksOnCanvas.value) counts.set(l.field_id, (counts.get(l.field_id) ?? 0) + 1);
   return [...counts].flatMap(([fieldId, n]) => {
+    const jt = store.state.tables.get(fieldId);   // a junction's arrows are keyed by its table
+    if (jt) return [{ id: fieldId, n, color: arrowStyles.value.get(fieldId)?.color, label: `${jt.name} (pairs)`, hidden: hiddenFields.value.has(fieldId) }];
     const f = store.state.fields.get(fieldId);
     if (!f) return [];
     return [{ id: fieldId, n, color: arrowStyles.value.get(fieldId)?.color,
@@ -1160,6 +1267,9 @@ onUnmounted(() => {
 
 .link-pick { position: fixed; z-index: 70; width: 340px; padding: 8px; background: var(--controls-bg); border: 1px solid var(--accent); border-radius: 6px; box-shadow: var(--card-shadow-drag); }
 .link-pick-head { margin: 0 0 6px; font-size: 12px; color: var(--text-secondary); }
+.junction-anchor { position: fixed; width: 1px; height: 1px; z-index: 70; }
+.ctx .junction-status { display: inline-block; width: auto; margin: 2px 4px; padding: 2px 8px; border: 1px solid var(--border-main); border-radius: 10px; }
+.ctx .junction-status.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .ctx-head { padding: 4px 10px 0; font-weight: 600; font-size: 12px; }
 .ctx-sub { padding: 0 10px 4px; color: var(--text-muted); font-size: 11px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

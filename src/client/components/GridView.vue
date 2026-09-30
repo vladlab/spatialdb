@@ -348,7 +348,7 @@
                      than most values, so swapping one for the other made the whole
                      column jump wider on Enter and snap back on commit. -->
                 <template v-else>
-                  <span class="shown" :class="{ under: isSel(r.id, f.id) && editing }">
+                  <span class="shown" :class="{ under: isSel(r.id, f.id) && editing && f.type !== 'backlink' }">
                     <template v-if="f.type === 'multi_select'">
                       <span v-for="c in asList(r.data[f.key])" :key="c" class="chip plain">{{ c }}</span>
                     </template>
@@ -370,9 +370,6 @@
                           <button class="chip-x" tabindex="-1" title="Delete this pair (undo restores it)" @mousedown.stop.prevent @click.stop="deleteJunctionRow(row)">×</button>
                         </span>
                         <button class="junc-add" tabindex="-1" :title="`Add a ${junctionName(f)}`" @pointerdown.stop @mousedown.stop.prevent @click.stop="editJunction(r.id, f)">+</button>
-                        <JunctionEditor v-if="isSel(r.id, f.id) && editing" :store="store" :table="junctionOf(f)!.table" :cfg="junctionOf(f)!.cfg"
-                                        :side="junctionOf(f)!.side" :from="r.id" :row-id="junctionRow" :anchor="anchorEl"
-                                        @done="stopEdit('none')" @open="(id) => { stopEdit('none'); $emit('open-record', id); }" />
                       </template>
                       <span v-for="from in derived.backlinkOf(r.id, f) ?? []" v-else :key="from" class="chip plain back openable" :title="`Open ${labelFor(from)} — the link is edited there`" @pointerdown.stop @mousedown.stop.prevent @click.stop="$emit('open-record', from)">{{ labelFor(from) }}<span class="chip-open">⤢</span></span>
                     </template>
@@ -386,8 +383,13 @@
                     <!-- The comparison's verdict on this cell — the same ✓ / ⚠ as the tray and cards. -->
                     <span v-if="verdictOf(r.id, f.id)" class="cell-verdict" :class="{ ok: verdictOf(r.id, f.id)!.ok }" :title="verdictOf(r.id, f.id)!.title">{{ verdictOf(r.id, f.id)!.ok ? '✓' : '⚠' }}</span>
                   </span>
-                  <!-- Not for a junction column: its editor is the JunctionEditor above, and a
-                       CellEditor mounting beside it would take the focus and close it. -->
+                  <!-- A junction column's editor. OUTSIDE .shown: the editing cell's .shown goes
+                       visibility:hidden (the value hides under the editor), and a popover inside it
+                       would inherit that and never appear. Not a CellEditor either: one mounting
+                       beside this would take the focus and close it. -->
+                  <JunctionEditor v-if="isSel(r.id, f.id) && editing && f.type === 'backlink' && junctionOf(f)" :store="store" :table="junctionOf(f)!.table" :cfg="junctionOf(f)!.cfg"
+                                  :side="junctionOf(f)!.side" :from="r.id" :row-id="junctionRow" :anchor="anchorEl"
+                                  @done="stopEdit('none')" @open="(id: string) => { stopEdit('none'); $emit('open-record', id); }" />
                   <CellEditor v-if="isSel(r.id, f.id) && editing && f.type !== 'backlink'" class="over" :field="f" :value="r.data[f.key]" :seed="seed"
                               @set="(k, v) => setValue(r.id, k, v)" @unset="(k) => unsetValue(r.id, k)"
                               @done="stopEdit" @cancel="stopEdit('none')" />
