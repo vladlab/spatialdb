@@ -49,6 +49,11 @@ async function main() {
     const colOf = (label: string) => ths().findIndex((t: string) => t.startsWith(label));
     const cell = (name: string, label: string) => rowOf(name)!.findAll('td')[colOf(label)]!;
     const key = (k: string, opts: Record<string, unknown> = {}) => w.find('.gridview .scroller').trigger('keydown', { key: k, ...opts });
+    // Ctrl+C / Ctrl+V reach the app as the browser's copy / paste EVENTS; a stand-in clipboard carries the text between them.
+    let sysClip = '';
+    const clipboardData = { setData: (_t: string, v: string) => { sysClip = v; }, getData: () => sysClip };
+    const copyKey = () => w.find('.gridview .scroller').trigger('copy', { clipboardData });
+    const pasteKey = () => w.find('.gridview .scroller').trigger('paste', { clipboardData });
 
     console.log('\nD1. Ctrl+D duplicates the row and jumps to the copy');
     await cell('a.mov', 'Codec').trigger('mousedown');
@@ -69,23 +74,23 @@ async function main() {
 
     console.log('\nD2. Ctrl+C / Ctrl+V between cells');
     await cell('a.mov', 'Codec').trigger('mousedown');
-    await key('c', { ctrlKey: true });
+    await copyKey();
     await sleep(50);
     await cell('b.mov', 'Codec').trigger('mousedown');
-    await key('v', { ctrlKey: true });
+    await pasteKey();
     await untilDb(`select data->>'codec' c from records where id = '${b}'`, (x) => x[0]?.c === 'ProRes 4444', 8000);
     check('text → text pastes', true);
     await cell('b.mov', 'Rating').trigger('mousedown');
-    await key('v', { ctrlKey: true });
+    await pasteKey();
     await sleep(200);
     check('text → number is refused, with a notice', (await pool.query(`select data->>'rating' r from records where id = $1`, [b])).rows[0].r === null && /Not pasted/.test(w.find('.desk-notices').text()), w.find('.desk-notices').exists() ? w.find('.desk-notices').text() : 'no notice');
     await cell('a.mov', 'Work').trigger('mousedown');
-    await key('c', { ctrlKey: true });
+    await copyKey();
     await sleep(50);
     await post([{ type: 'link.add', id: randomUUID(), fieldId: fWork, fromRecord: b, toRecord: ep2 }]);   // b already has Ep 102: paste must REPLACE, not add
     await untilDb(`select count(*)::int n from links where from_record = '${b}'`, (x) => x[0].n === 1, 4000);
     await cell('b.mov', 'Work').trigger('mousedown');
-    await key('v', { ctrlKey: true });
+    await pasteKey();
     const bl = await untilDb(`select to_record from links where from_record = '${b}' and field_id = '${fWork}'`, (x) => x.length === 2, 8000);
     check('link → link pastes both episodes (Ep 102 kept, Ep 101 added — a replace, one batch)', bl.map((x: any) => x.to_record).sort().join() === [ep1, ep2].sort().join());
 
@@ -93,20 +98,33 @@ async function main() {
     win.location.hash = `#/all/table/${tSpecs}`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange'));
     await until(() => w.findAll('.gridview tr.row').length === 1, 8000);
     await cell('Broadcast', 'Work').trigger('mousedown');
-    await key('v', { ctrlKey: true });
+    await pasteKey();
     const sl = await untilDb(`select to_record from links where from_record = '${spec}'`, (x) => x.length === 1, 8000);
     check('pasted into a SINGLE link on another table: the first one', sl.length === 1 && [ep1, ep2].includes(sl[0].to_record));
     win.location.hash = `#/all/table/${tFiles}`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange'));
     await until(() => w.findAll('.gridview tr.row').length === 4, 8000);
     await cell('a.mov', 'Status').trigger('mousedown');
-    await key('c', { ctrlKey: true });
+    await copyKey();
     await sleep(50);
     win.location.hash = `#/all/table/${tSpecs}`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange'));
     await until(() => w.findAll('.gridview tr.row').length === 1, 8000);
     await cell('Broadcast', 'Status').trigger('mousedown');
-    await key('v', { ctrlKey: true });
+    await pasteKey();
     await sleep(200);
     check('select → select is refused when the target has no such choice', (await pool.query(`select data->>'status' s from records where id = $1`, [spec])).rows[0].s === null && /not one of Status/.test(w.find('.desk-notices').text()), w.find('.desk-notices').text());
+
+    // Plain text from OUTSIDE (a spreadsheet): into a text cell, yes; into a select, no.
+    win.location.hash = `#/all/table/${tFiles}`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange'));
+    await until(() => w.findAll('.gridview tr.row').length === 4, 8000);
+    sysClip = 'DNxHR HQX';
+    await cell('b.mov', 'Codec').trigger('mousedown');
+    await pasteKey();
+    await untilDb(`select data->>'codec' c from records where id = '${b}'`, (x) => x[0]?.c === 'DNxHR HQX', 8000);
+    check('plain text from outside pastes into a text cell', true);
+    await cell('b.mov', 'Status').trigger('mousedown');
+    await pasteKey();
+    await sleep(200);
+    check('…and is refused by a select', (await pool.query(`select data->>'status' s from records where id = $1`, [b])).rows[0].s === null && /plain text cannot be pasted/.test(w.find('.desk-notices').text()), w.find('.desk-notices').text());
 
     console.log('\nD3. The tray');
     win.location.hash = `#/all/table/${tFiles}`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange'));
@@ -131,6 +149,29 @@ async function main() {
     check('the card menu offers Duplicate record', await until(() => w.find('.ctx .duplicate-record').exists()));
     await w.find('.ctx .duplicate-record').trigger('click');
     check('the copy is placed beside the original', await until(() => cards().length === 2, 8000) && cards().some((c: any) => c.find('.card-label').text() === 'b.mov (copy)'));
+
+    console.log('\nD5. In a SCOPED table (a section with a project scope)');
+    const tProj = randomUUID(), fPName = randomUUID(), fArch = randomUUID(), fProj = randomUUID(), sec = randomUUID(), duke = randomUUID();
+    const sr = await post([
+      { type: 'table.create', id: tProj, name: 'Projects', singularName: 'Project' }, { type: 'table.update', id: tProj, position: 4 },
+      { type: 'field.create', id: fPName, tableId: tProj, name: 'Name', key: 'name', fieldType: 'text' }, pos(fPName, 0),
+      { type: 'field.create', id: fArch, tableId: tProj, name: 'Archived', key: 'archived', fieldType: 'checkbox' }, pos(fArch, 1),
+      { type: 'field.create', id: fProj, tableId: tFiles, name: 'Project', key: 'project', fieldType: 'link', options: { target_table_id: tProj, membership: true } }, pos(fProj, 5),
+      { type: 'record.create', id: duke, tableId: tProj, data: { name: 'Duke' } },
+      { type: 'link.add', id: randomUUID(), fieldId: fProj, fromRecord: a, toRecord: duke },
+      { type: 'section.create', id: sec, name: 'Shows', icon: '🎬' },
+      { type: 'section.update', id: sec, tableIds: [tProj, tFiles], scopeTableId: tProj, archivedFieldId: fArch },
+    ]);
+    check('scope fixture accepted', sr.status === 200, (await sr.text()).slice(0, 200));
+    await nav.section(sec);
+    await nav.scope(duke);
+    await nav.openTable(tFiles);
+    check('scoped: only a.mov shows', await until(() => w.findAll('.gridview tr.row').length === 1 && !!rowOf('a.mov'), 8000), String(w.findAll('.gridview tr.row').length));
+    await cell('a.mov', 'Codec').trigger('mousedown');
+    await key('d', { ctrlKey: true });
+    const scoped = await untilDb(`select r.id, (select count(*)::int from links where from_record = r.id and field_id = '${fProj}') p from records r where r.table_id = '${tFiles}' and r.data->>'name' = 'a.mov (copy)' and r.created_at > now() - interval '5 seconds'`, (x) => x.length === 1, 8000);
+    check('the copy exists, a member of the project like the original', scoped.length === 1 && scoped[0].p === 1, JSON.stringify(scoped));
+    check('and shows in the scoped grid, selected', await until(() => w.findAll('.gridview tr.row').length === 2, 8000) && w.findAll('.gridview tr.row').some((x: any) => x.classes('rowsel') && x.text().includes('a.mov (copy)')), w.find('.errors').exists() ? w.find('.errors').text() : String(w.findAll('.gridview tr.row').length));
     await sleep(100);
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);

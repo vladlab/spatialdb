@@ -243,7 +243,7 @@
     <KanbanView v-if="kanban && kanbanField" :store="store" :records="matched" :field="kanbanField"
                 :card-fields="shown.filter((f) => f.id !== primaryField?.id)" :primary="primaryField"
                 @open-record="$emit('open-record', $event)" @create="createInColumn" />
-    <div v-else ref="scroller" class="scroller" tabindex="0" @scroll.passive="onScroll" @keydown="onGridKey">
+    <div v-else ref="scroller" class="scroller" tabindex="0" @scroll.passive="onScroll" @keydown="onGridKey" @copy="onCopy" @paste="onPaste">
       <table class="grid">
         <thead>
           <tr>
@@ -456,7 +456,7 @@ import { SYSTEM_FIELD_TYPES, formatCreated } from '../../contract/systemFields';
 import KanbanView from './KanbanView.vue';   // (`summarise` here is the VIEW's summary)
 import { beginRecordDrag } from '../recordDrag';
 import { duplicateRecords } from '../duplicate';
-import { copyCell, pasteCell, readClip } from '../cellClipboard';
+import { clipFromPaste, clipOf, copyCell, pasteCell } from '../cellClipboard';
 import { notice } from '../desktop';
 
 const props = defineProps<{
@@ -841,6 +841,23 @@ function unsetValue(id: string, key: string) {
 }
 function remove(id: string) { store.mutate({ type: 'record.delete', id }); }
 
+/** Ctrl+C / Ctrl+V on the selected CELL — the browser's copy/paste events on the scroller (cellClipboard.ts). */
+function onCopy(e: ClipboardEvent) {
+  if (editing.value || !sel.value) return;
+  const f = fieldById.value.get(sel.value.field);
+  if (!f) return;
+  if (!copyCell(e, clipOf(store, sel.value.rec, f, labelFor))) notice(`${f.name} cannot be copied`, 'warn');
+}
+function onPaste(e: ClipboardEvent) {
+  if (editing.value || !sel.value) return;
+  const f = fieldById.value.get(sel.value.field);
+  const clip = clipFromPaste(e);
+  if (!f || !clip) return;
+  e.preventDefault();
+  const err = pasteCell(store, sel.value.rec, f, clip);
+  if (err) notice(`Not pasted: ${err}`, 'warn');
+}
+
 /**
  * Duplicate rows (duplicate.ts) and JUMP to the first copy: it lands wherever the
  * view's sort puts it, so the selection and the scroll follow it there.
@@ -1110,17 +1127,6 @@ function onGridKey(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
     const ids = rowSel.size ? rows.value.filter((r) => rowSel.has(r.id)).map((r) => r.id) : sel.value ? [sel.value.rec] : [];
     if (ids.length) { e.preventDefault(); duplicateRows(ids); }
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && sel.value) {
-    const f = fieldById.value.get(sel.value.field);
-    if (f) { e.preventDefault(); void copyCell(store, sel.value.rec, f, labelFor).then((c) => { if (!c) notice(`${f.name} cannot be copied`, 'warn'); }); }
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && sel.value) {
-    const f = fieldById.value.get(sel.value.field);
-    const rec = sel.value.rec;
-    if (f) { e.preventDefault(); void readClip().then((clip) => { if (!clip) return; const err = pasteCell(store, rec, f, clip); if (err) notice(`Not pasted: ${err}`, 'warn'); }); }
     return;
   }
   const s = sel.value;

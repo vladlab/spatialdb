@@ -71,7 +71,7 @@
 
         <div v-else :ref="(el) => setValueEl(f.id, el)" class="rp-value" :class="{ readonly: READONLY(f) }"
              :tabindex="READONLY(f) ? -1 : 0"
-             @click="startEdit(f)" @keydown.enter.prevent.stop="startEdit(f)" @keydown="onValueKey(f, $event)">
+             @click="startEdit(f)" @keydown.enter.prevent.stop="startEdit(f)" @copy="onCopy(f, $event)" @paste="onPaste(f, $event)">
           <!-- LINK -->
           <template v-if="f.type === 'link'">
             <!-- DRAG a pill onto a canvas to place that record there (or jump to it, if it is
@@ -185,7 +185,7 @@ import LinkPicker from './LinkPicker.vue';
 import JunctionEditor from './JunctionEditor.vue';
 import RecordPill from './RecordPill.vue';
 import { duplicateRecords } from '../duplicate';
-import { copyCell, pasteCell, readClip } from '../cellClipboard';
+import { clipFromPaste, clipOf, copyCell, pasteCell } from '../cellClipboard';
 import AttachmentField from './AttachmentField.vue';
 import StructuredField from './StructuredField.vue';
 import { formatNumberField } from '../../contract/shapes';
@@ -231,12 +231,18 @@ function duplicate() {
   const [id] = duplicateRecords(store, [props.recordId]);
   if (id) emit('open', id); else notice('Nothing to duplicate here', 'warn');
 }
-/** Ctrl+C / Ctrl+V on a focused field (cellClipboard.ts), while it is not being edited. */
-function onValueKey(f: FieldRow, e: KeyboardEvent) {
-  if (!(e.ctrlKey || e.metaKey) || editingId.value === f.id) return;
-  const k = e.key.toLowerCase();
-  if (k === 'c') { e.preventDefault(); void copyCell(store, props.recordId, f, labelOfId).then((c) => { if (!c) notice(`${f.name} cannot be copied`, 'warn'); }); }
-  else if (k === 'v') { e.preventDefault(); void readClip().then((clip) => { if (!clip) return; const err = pasteCell(store, props.recordId, f, clip); if (err) notice(`Not pasted: ${err}`, 'warn'); }); }
+/** Ctrl+C / Ctrl+V on a focused field (cellClipboard.ts) — the browser's copy/paste events, while it is not being edited. */
+function onCopy(f: FieldRow, e: ClipboardEvent) {
+  if (editingId.value === f.id) return;
+  if (!copyCell(e, clipOf(store, props.recordId, f, labelOfId))) notice(`${f.name} cannot be copied`, 'warn');
+}
+function onPaste(f: FieldRow, e: ClipboardEvent) {
+  if (editingId.value === f.id) return;
+  const clip = clipFromPaste(e);
+  if (!clip) return;
+  e.preventDefault();
+  const err = pasteCell(store, props.recordId, f, clip);
+  if (err) notice(`Not pasted: ${err}`, 'warn');
 }
 
 /** A pill: drag it onto a canvas. A still press does nothing — the ⤢ opens. */

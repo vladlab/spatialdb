@@ -25,6 +25,10 @@
  *  refused). What cannot be plain text (a link's records) rides in memory
  *  alongside: on paste, if the clipboard still holds the text we wrote, the
  *  in-app value is what is pasted. Only text is read from the outside world.
+ *
+ *  Both go through the browser's `copy` / `paste` EVENTS on the focused element,
+ *  never the async clipboard API: reading it asks for permission, which Firefox
+ *  turns into a "Paste" button that pops up on every Ctrl+V.
  */
 
 import type { Store } from './store';
@@ -56,8 +60,11 @@ function textOf(clip: Omit<CellClip, 'text'>, labelOf: (id: string) => string): 
   return String(v);
 }
 
-/** Copy `recordId`'s value in `field`. Returns what was copied, or null when the field is not copyable. */
-export async function copyCell(store: Store, recordId: string, field: FieldRow, labelOf: (id: string) => string): Promise<CellClip | null> {
+/**
+ * What `recordId`'s `field` would copy, or null when the field is not copyable.
+ * Handed to `copyCell` on a `copy` event.
+ */
+export function clipOf(store: Store, recordId: string, field: FieldRow, labelOf: (id: string) => string): CellClip | null {
   if (!PASTABLE.has(field.type)) return null;
   const rec = store.state.records.get(recordId);
   if (!rec) return null;
@@ -65,17 +72,31 @@ export async function copyCell(store: Store, recordId: string, field: FieldRow, 
     ? [...store.state.links.values()].filter((l) => l.from_record === recordId && l.field_id === field.id).map((l) => l.to_record)
     : rec.data[field.key];
   const clip: Omit<CellClip, 'text'> = { type: field.type, value: structuredClone(value ?? null), targetTable: field.type === 'link' ? String(field.options?.target_table_id ?? '') : undefined };
-  const text = textOf(clip, labelOf);
-  held = { ...clip, text };
-  try { await navigator.clipboard?.writeText(text); } catch { /* no system clipboard (permissions, insecure context): in-app only */ }
-  return held;
+  return { ...clip, text: textOf(clip, labelOf) };
 }
 
-/** What a paste into `field` would use: the in-app clip if the clipboard still holds its text, else the clipboard's text. */
-export async function readClip(): Promise<CellClip | { type: 'external'; text: string } | null> {
+/**
+ * Copy, on a `copy` EVENT (Ctrl+C on the focused grid or tray field): the text goes
+ * to the system clipboard through the event — no permission, no prompt — and the
+ * whole value is held here. Returns what was copied, or null.
+ */
+export function copyCell(e: ClipboardEvent | null, clip: CellClip | null): CellClip | null {
+  if (!clip) return null;
+  held = clip;
+  if (e) { e.preventDefault(); try { e.clipboardData?.setData('text/plain', clip.text); } catch { /* no clipboardData: in-app only */ } }
+  return clip;
+}
+
+/**
+ * What a paste would use, from a `paste` EVENT's text: the in-app clip if that is
+ * still what the clipboard holds (or there is no clipboard text at all), else the
+ * outside text. Never `navigator.clipboard.readText()` — that asks the browser for
+ * permission, and Firefox answers with a "Paste" button the person has to click.
+ */
+export function clipFromPaste(e: ClipboardEvent | null): CellClip | { type: 'external'; text: string } | null {
   let text: string | null = null;
-  try { text = (await navigator.clipboard?.readText()) ?? null; } catch { text = null; }
-  if (held && (text === null || text === held.text)) return held;
+  try { text = e?.clipboardData?.getData('text/plain') ?? null; } catch { text = null; }
+  if (held && (text === null || text === '' || text === held.text)) return held;
   if (text !== null && text !== '') return { type: 'external', text };
   return held;
 }
