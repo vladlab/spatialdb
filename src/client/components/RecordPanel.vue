@@ -49,7 +49,7 @@
          what makes them read without a font change. -->
     <div class="rp-body">
       <div class="rp-well rp-fields">
-      <div v-for="f in fields" :key="f.id" class="rp-field" :class="{ editing: editingId === f.id, block: f.type === 'rich_text' }">
+      <div v-for="f in fields" :key="f.id" class="rp-field" :class="{ editing: editingId === f.id, block: f.type === 'rich_text', readonly: READONLY(f) }">
         <label class="rp-name">
           <span v-if="f.id === primaryId" class="star" title="Primary field — this record's name">★</span>{{ f.name }}
           <span v-if="verdicts.get(f.id)" class="cmp-badge" :class="{ ok: verdicts.get(f.id)!.ok }" :title="verdicts.get(f.id)!.title">{{ verdicts.get(f.id)!.ok ? '✓' : '⚠' }}</span>
@@ -434,16 +434,34 @@ watch(() => props.recordId, () => {
 .rp-field.block { padding: 10px 0; }
 /* min-height is set inline (richReserve): the editor's place, held while it loads. */
 .rp-rich { display: flex; }
-.rp-name { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
+/* THE LABEL IS A TAB ON THE BOX: one shape per field, not a heading floating over
+   a well. The tab shares the box's border and background, sits 1px INTO the box
+   (margin-bottom: -1px, above it in z) so its own background covers the box's top
+   border where they meet, and the box drops its top-left radius so the two corners
+   are one edge. Both borders start at x = 0 — no offsets, nothing to misalign.
+   The border colour of the state (focus, editing, read-only) is set on the field so
+   the tab and the box change together. */
+.rp-field { --fb: var(--border-main); --fs: solid; }
+.rp-value:focus, .rp-field:focus-within { --fb: var(--accent); }
+.rp-field.editing { --fb: var(--success); }
+.rp-field.readonly { --fs: dashed; }
+.rp-name {
+  display: inline-flex; align-items: center; position: relative; z-index: 1;
+  font-size: 11px; color: var(--text-muted); line-height: 16px;
+  padding: 1px 8px 1px 7px; margin-bottom: -1px; max-width: 100%;
+  border: 1px var(--fs) var(--fb); border-bottom: 0; border-radius: 4px 4px 0 0;
+  background: var(--controls-bg);
+}
 .star { color: var(--warning); margin-right: 3px; }
 .rp-value {
   position: relative; min-height: 28px; box-sizing: border-box; padding: 4px 8px;
   display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
-  border: 1px solid var(--border-main); border-radius: 4px; cursor: text; outline: none;
+  border: 1px var(--fs) var(--fb); border-radius: 0 4px 4px 4px; cursor: text; outline: none;
+  background: var(--controls-bg);
 }
-.rp-value:focus { border-color: var(--accent); }
-.rp-field.editing .rp-value { border-color: var(--success); }
-.rp-value.readonly { border-style: dashed; cursor: default; }
+.rp-value.readonly { cursor: default; }
+.rp-rich :deep(.rte) { border-radius: 0 6px 6px 6px; }
+.rp-field.block .rp-name { border-radius: 6px 6px 0 0; }
 .text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .text.pre { white-space: pre-wrap; overflow: visible; }
 .placeholder { color: var(--text-faint); font-style: italic; }
