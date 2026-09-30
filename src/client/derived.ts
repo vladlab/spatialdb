@@ -20,6 +20,7 @@ import { primaryKeys, type FieldRow } from './state';
 import { labelFrom } from '../contract/labels';
 import { lookupOptionsOf, lookupText, lookupValues } from '../contract/lookups';
 import { backlinkRecords, backlinkSourceOf } from '../contract/backlinks';
+import { endpointOfBacklink, junctionLabel, junctionOf, otherEnd, type JunctionConfig } from '../contract/junction';
 
 const NONE: string[] = [];
 
@@ -47,10 +48,65 @@ export function useDerived(store: Store) {
   const getField = (id: string) => store.state.fields.get(id);
   const getData = (id: string) => store.state.records.get(id)?.data;
 
-  function labelOfId(id: string): string {
+  function plainLabelOfId(id: string): string {
     const r = store.state.records.get(id);
     return r ? labelFrom(r.data, labelKeys.value.get(r.table_id), id.slice(0, 8))
       : store.farLabels.get(id) ?? id.slice(0, 8);
+  }
+  /**
+   * A record's label — for a JUNCTION row, composed from its ends: "Uploaded:
+   * reel_10.mov → Texted Master" (contract/junction.ts). The label contract names a
+   * record by its primary field, which for a junction row is the status alone —
+   * true but useless in a chip. Only the client can do better: the ends are links,
+   * and the server's far labels stay plain.
+   */
+  function labelOfId(id: string): string {
+    const j = junctionRow(id);
+    if (!j) return plainLabelOfId(id);
+    return junctionLabel(j.status, j.a ? plainLabelOfId(j.a) : '?', j.b ? plainLabelOfId(j.b) : '?');
+  }
+
+  /* ── junctions (contract/junction.ts) ─────────────────────────────────── */
+
+  /** A junction table's config, by table id, or null. */
+  const junctionCfg = (tableId: string): JunctionConfig | null => junctionOf(store.state.tables.get(tableId));
+
+  /** A junction row taken apart: its config, its two ends (ids), its status text. Null for any other record. */
+  function junctionRow(id: string): { cfg: JunctionConfig; table: string; a?: string; b?: string; status: string } | null {
+    const r = store.state.records.get(id);
+    const cfg = r ? junctionCfg(r.table_id) : null;
+    if (!r || !cfg) return null;
+    const statusKey = cfg.status ? getField(cfg.status)?.key : undefined;
+    const sv = statusKey ? r.data[statusKey] : undefined;
+    return { cfg, table: r.table_id, a: linksFrom(id, cfg.a)[0], b: linksFrom(id, cfg.b)[0], status: typeof sv === 'string' ? sv : '' };
+  }
+
+  /**
+   * A backlink field that mirrors a junction's endpoint — the "Delivery" column on
+   * Files — with which end it is: this is what makes the column writable.
+   */
+  function junctionOfBacklink(f: FieldRow): { cfg: JunctionConfig; table: string; side: 'a' | 'b' } | null {
+    const src = backlinkSourceOf(f);
+    const link = src ? getField(src) : undefined;
+    const cfg = link ? junctionCfg(link.table_id) : null;
+    if (!link || !cfg) return null;
+    const side = endpointOfBacklink(f, cfg);
+    return side ? { cfg, table: link.table_id, side } : null;
+  }
+
+  /** What a junction row reads as on ONE of its ends: "Uploaded → Texted Master". */
+  function junctionChip(rowId: string, side: 'a' | 'b'): { text: string; other?: string; status: string } {
+    const j = junctionRow(rowId);
+    if (!j) return { text: plainLabelOfId(rowId), status: '' };
+    const other = j[otherEnd(side)];
+    const a = j.a ? plainLabelOfId(j.a) : '?', b = j.b ? plainLabelOfId(j.b) : '?';
+    return { text: junctionLabel(j.status, a, b, side), other, status: j.status };
+  }
+
+  /** The junction row of this table pairing `from` (on `side`) with `other`, if there is one. */
+  function junctionRowFor(cfg: JunctionConfig, side: 'a' | 'b', from: string, other: string): string | undefined {
+    const mine = side === 'a' ? cfg.a : cfg.b, theirs = side === 'a' ? cfg.b : cfg.a;
+    return linkedTo(from, mine).find((row) => linksFrom(row, theirs).includes(other));
   }
 
   /** Lookup values as text, or null when the lookup is broken. */
@@ -69,7 +125,11 @@ export function useDerived(store: Store) {
   function textOf(recordId: string, f: FieldRow): { texts: string[]; broken: boolean } {
     if (f.type === 'link') return { texts: linksFrom(recordId, f.id).map(labelOfId), broken: false };
     if (f.type === 'lookup') { const v = lookupOf(recordId, f); return { texts: v ?? [], broken: v === null }; }
-    if (f.type === 'backlink') { const v = backlinkOf(recordId, f); return { texts: (v ?? []).map(labelOfId), broken: v === null }; }
+    if (f.type === 'backlink') {
+      const v = backlinkOf(recordId, f);
+      const j = junctionOfBacklink(f);
+      return { texts: (v ?? []).map((id) => (j ? junctionChip(id, j.side).text : labelOfId(id))), broken: v === null };
+    }
     return { texts: [], broken: false };
   }
 
@@ -89,6 +149,10 @@ export function useDerived(store: Store) {
         const src = backlinkSourceOf(f);
         const t = src ? getField(src)?.table_id : undefined;
         if (t) out.add(t);
+        // A junction's rows are labelled by their OTHER end: that table too.
+        const j = junctionOfBacklink(f);
+        const far = j ? getField(j.side === 'a' ? j.cfg.b : j.cfg.a)?.options?.target_table_id : undefined;
+        if (typeof far === 'string') out.add(far);
       }
     }
     return [...out];
@@ -180,5 +244,6 @@ export function useDerived(store: Store) {
     return out;
   }
 
-  return { labelKeys, linksFrom, linkedTo, labelOfId, lookupOf, backlinkOf, textOf, tablesNeededBy, referencedBy, comparisonsOf, compare, differencesOf, fieldVerdicts };
+  return { labelKeys, linksFrom, linkedTo, labelOfId, plainLabelOfId, lookupOf, backlinkOf, textOf, tablesNeededBy, referencedBy, comparisonsOf, compare, differencesOf, fieldVerdicts,
+    junctionCfg, junctionRow, junctionOfBacklink, junctionChip, junctionRowFor };
 }

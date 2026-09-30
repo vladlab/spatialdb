@@ -117,6 +117,9 @@ async function main() {
     const showArchived = () => w.find('.tree .show-archived');
     const names = () => w.findAll('.gridview tr.row').map((r: any) => r.findAll('td')[1].text()).sort();
     check('a scoped section grows a second level in the tree', await until(() => crumbOptions().includes('Duke'), 8000), crumbOptions().join());
+    // Boards tables live under the tree's folded "utility" group (sql/016): unfold it.
+    await until(() => w.find('.tree .show-utility').exists(), 8000);
+    await w.find('.tree .show-utility').trigger('click');
     const tagged = () => w.findAll('.tree .table-row').filter((r: any) => r.find('.tag.scoped').exists()).map((r: any) => r.find('.name').text()).sort();
     check('the tree marks which tables are SCOPED — Files and the boards table, not Specs or Projects itself',
       await until(() => tagged().length === 2) && tagged().join() === [w.findAll('.tree .table-row').map((r: any) => r.find('.name').text()).find((n: string) => n.startsWith('Boards')), 'Files'].sort().join(), tagged().join());

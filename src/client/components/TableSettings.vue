@@ -25,8 +25,10 @@
       <p class="info">
         <template v-if="table.kind === 'canvas'"><b>▦ A table of boards.</b> Every record in it is a canvas. This is set when a table is made and cannot be changed.</template>
         <template v-else-if="table.kind === 'report'"><b>▤ A table of reports.</b> Every record in it is a report: its “Report” field holds the definition. This is set when a table is made and cannot be changed.</template>
-        <template v-else>An ordinary table. (Tables of boards or of reports are chosen in the new-table dialog.)</template>
+        <template v-else-if="table.kind === 'junction'"><!-- JunctionSettings below says it all --></template>
+        <template v-else>An ordinary table. (Tables of boards, reports or junctions are chosen in the new-table dialog.)</template>
       </p>
+      <JunctionSettings v-if="table.kind === 'junction'" :store="store" :table-id="tableId" />
       <p class="info">{{ nFields }} field{{ nFields === 1 ? '' : 's' }} — edit them from the grid's column headers (⚙ on a column, + to add one).</p>
 
       <!-- THE SCHEMA'S ORDER. Not any view's column order — that is arranged in the
@@ -66,6 +68,7 @@ import type { Store } from '../store';
 import { fieldsOf } from '../state';
 import { useSchemaActions } from '../schemaActions';
 import ToolSettings from './ToolSettings.vue';
+import JunctionSettings from './JunctionSettings.vue';
 import { SYSTEM_FIELD_TYPES } from '../../contract/systemFields';
 
 const props = defineProps<{ store: Store; tableId: string }>();

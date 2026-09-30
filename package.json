@@ -9,7 +9,7 @@
     "dev:client": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit && vue-tsc --noEmit",
-    "test": "./scripts/db.sh testdb >/dev/null && export DB_URL=\"$(./scripts/db.sh testurl)\" && tsx test/e2e.ts && tsx test/store.ts && tsx test/undo.ts && tsx test/canvas.ts && tsx test/stream.ts && tsx test/grid.ts && tsx test/assets.ts && tsx test/ui.ts && tsx test/sections.ts && tsx test/scope.ts && tsx test/auth.ts && tsx test/structured.ts && tsx test/kanban.ts && tsx test/compare.ts && tsx test/reports.ts && tsx test/reportview.ts && tsx test/prod.ts && tsx test/tools.ts && tsx test/filedrop.ts && tsx test/route.ts",
+    "test": "./scripts/db.sh testdb >/dev/null && export DB_URL=\"$(./scripts/db.sh testurl)\" && tsx test/e2e.ts && tsx test/store.ts && tsx test/undo.ts && tsx test/canvas.ts && tsx test/stream.ts && tsx test/grid.ts && tsx test/assets.ts && tsx test/ui.ts && tsx test/sections.ts && tsx test/scope.ts && tsx test/auth.ts && tsx test/structured.ts && tsx test/kanban.ts && tsx test/compare.ts && tsx test/reports.ts && tsx test/reportview.ts && tsx test/prod.ts && tsx test/tools.ts && tsx test/filedrop.ts && tsx test/route.ts && tsx test/junction.ts && tsx test/junctionui.ts",
     "test:e2e": "./scripts/db.sh testdb >/dev/null && DB_URL=\"$(./scripts/db.sh testurl)\" tsx test/e2e.ts",
     "test:stream": "./scripts/db.sh testdb >/dev/null && DB_URL=\"$(./scripts/db.sh testurl)\" tsx test/stream.ts",
     "backup": "./scripts/backup.sh dump",
@@ -36,6 +36,7 @@
     "test:kanban": "./scripts/db.sh testdb >/dev/null && DB_URL=\"$(./scripts/db.sh testurl)\" tsx test/kanban.ts",
     "test:compare": "./scripts/db.sh testdb >/dev/null && DB_URL=\"$(./scripts/db.sh testurl)\" tsx test/compare.ts",
     "test:reports": "tsx test/reports.ts",
+    "test:junction": "./scripts/db.sh testdb >/dev/null && DB_URL=\"$(./scripts/db.sh testurl)\" tsx test/junction.ts && ./scripts/db.sh testdb >/dev/null && tsx test/junctionui.ts",
     "test:reportview": "./scripts/db.sh testdb >/dev/null && DB_URL=\"$(./scripts/db.sh testurl)\" tsx test/reportview.ts"
   },
   "keywords": [],

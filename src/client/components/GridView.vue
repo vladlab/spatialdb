@@ -361,6 +361,19 @@
                          the link belongs to the record that holds it. -->
                     <template v-else-if="f.type === 'backlink'">
                       <span v-if="derived.backlinkOf(r.id, f) === null" class="broken" title="This backlink is broken: the link field it mirrored was deleted.">broken backlink</span>
+                      <!-- A JUNCTION's column (sql/016): each chip is a pair with its status,
+                           "Uploaded → Texted Master". Click a chip to change its status; × deletes
+                           the pair; + (or Enter) adds one. Writable, unlike a plain backlink. -->
+                      <template v-else-if="junctionOf(f)">
+                        <span v-for="row in derived.backlinkOf(r.id, f) ?? []" :key="row" class="chip junc" :class="{ on: junctionRow === row && isSel(r.id, f.id) && editing }" :title="`Change the status of this pair, or open it`"
+                              @pointerdown.stop @mousedown.stop.prevent @click.stop="editJunction(r.id, f, row)">{{ derived.junctionChip(row, junctionOf(f)!.side).text }}
+                          <button class="chip-x" tabindex="-1" title="Delete this pair (undo restores it)" @mousedown.stop.prevent @click.stop="deleteJunctionRow(row)">×</button>
+                        </span>
+                        <button class="junc-add" tabindex="-1" :title="`Add a ${junctionName(f)}`" @pointerdown.stop @mousedown.stop.prevent @click.stop="editJunction(r.id, f)">+</button>
+                        <JunctionEditor v-if="isSel(r.id, f.id) && editing" :store="store" :table="junctionOf(f)!.table" :cfg="junctionOf(f)!.cfg"
+                                        :side="junctionOf(f)!.side" :from="r.id" :row-id="junctionRow" :anchor="anchorEl"
+                                        @done="stopEdit('none')" @open="(id) => { stopEdit('none'); $emit('open-record', id); }" />
+                      </template>
                       <span v-for="from in derived.backlinkOf(r.id, f) ?? []" v-else :key="from" class="chip plain back openable" :title="`Open ${labelFor(from)} — the link is edited there`" @pointerdown.stop @mousedown.stop.prevent @click.stop="$emit('open-record', from)">{{ labelFor(from) }}<span class="chip-open">⤢</span></span>
                     </template>
                     <!-- LOOKUP: computed, read-only. Broken (its link field or far field
@@ -373,7 +386,9 @@
                     <!-- The comparison's verdict on this cell — the same ✓ / ⚠ as the tray and cards. -->
                     <span v-if="verdictOf(r.id, f.id)" class="cell-verdict" :class="{ ok: verdictOf(r.id, f.id)!.ok }" :title="verdictOf(r.id, f.id)!.title">{{ verdictOf(r.id, f.id)!.ok ? '✓' : '⚠' }}</span>
                   </span>
-                  <CellEditor v-if="isSel(r.id, f.id) && editing" class="over" :field="f" :value="r.data[f.key]" :seed="seed"
+                  <!-- Not for a junction column: its editor is the JunctionEditor above, and a
+                       CellEditor mounting beside it would take the focus and close it. -->
+                  <CellEditor v-if="isSel(r.id, f.id) && editing && f.type !== 'backlink'" class="over" :field="f" :value="r.data[f.key]" :seed="seed"
                               @set="(k, v) => setValue(r.id, k, v)" @unset="(k) => unsetValue(r.id, k)"
                               @done="stopEdit" @cancel="stopEdit('none')" />
                 </template>
@@ -419,6 +434,7 @@ import {
 import { LABEL_TYPES } from '../../contract/labels';
 import CellEditor from './CellEditor.vue';
 import LinkPicker from './LinkPicker.vue';
+import JunctionEditor from './JunctionEditor.vue';
 import Popover from './Popover.vue';
 import FieldForm from './FieldForm.vue';
 import FieldSettings from './FieldSettings.vue';
@@ -744,6 +760,21 @@ watch(() => derived.tablesNeededBy(allFields.value).join(), (joined) => {
 }, { immediate: true });
 
 const targetOf = (f: FieldRow) => f.options?.target_table_id as string | undefined;
+
+/* ── junction columns (contract/junction.ts) ──────────────────────────────
+   A backlink that mirrors a junction's endpoint is writable: its editor is the
+   JunctionEditor, mounted for the selected cell like the link picker is. */
+const junctionOf = (f: FieldRow) => derived.junctionOfBacklink(f);
+const junctionName = (f: FieldRow) => { const j = junctionOf(f); const t = j ? store.state.tables.get(j.table) : undefined; return t?.singular_name || t?.name || 'pair'; };
+/** The existing row being edited, or undefined when adding a pair. */
+const junctionRow = ref<string>();
+function editJunction(rec: string, f: FieldRow, row?: string) {
+  select(rec, f.id);
+  junctionRow.value = row;
+  editing.value = true;
+  void nextTick(() => { anchorEl.value = scroller.value?.querySelector<HTMLElement>('td.sel') ?? null; });
+}
+function deleteJunctionRow(row: string) { store.mutate({ type: 'record.delete', id: row }); }
 const addLink = (f: FieldRow, fromRecord: string, toRecord: string) => addLinkVia(store, f.id, fromRecord, toRecord);
 function removeLink(fieldId: string, fromRecord: string, toRecord: string) {
   store.mutate({ type: 'link.remove', fieldId, fromRecord, toRecord });
@@ -977,6 +1008,7 @@ function onCellDown(rec: string, f: FieldRow, e: MouseEvent) {
 }
 
 function startEdit(rec: string, f: FieldRow, withSeed?: string) {
+  if (f.type === 'backlink' && junctionOf(f)) return editJunction(rec, f);   // add a pair
   if (f.type === 'lookup' || f.type === 'backlink' || SYSTEM_FIELD_TYPES.has(f.type)) return;
   select(rec, f.id);
   // No room for these in a row: their editor is the record panel.
@@ -1365,6 +1397,11 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .value.note { color: var(--text-secondary); }
 .chip.plain { padding: 1px 8px; }
 .chip.back { font-style: italic; color: var(--text-secondary); }
+.chip.junc { cursor: pointer; }
+.chip.junc.on { outline: 1px solid var(--accent); }
+.junc-add { background: none; border: 1px dashed var(--border-main); border-radius: 10px; color: var(--text-muted); cursor: pointer; font: inherit; line-height: 1; padding: 0 6px; visibility: hidden; }
+td:hover .junc-add, td.sel .junc-add { visibility: visible; }
+.junc-add:hover { color: var(--accent); border-color: var(--accent); }
 .grid td { cursor: default; }
 
 /* FIXED HEIGHT — the window maths depends on it. 29px + 1px border = ROW_H.

@@ -42,6 +42,7 @@
 import { SYSTEM_FIELDS, systemFieldId } from '../contract/systemFields';
 import type { Mutation } from '../contract/mutations.js';
 import { compareFields, labelFrom, primaryKeyOf } from '../contract/labels.js';
+import { junctionOf } from '../contract/junction.js';
 
 /* ────────────────────────────────────────────────────────────────────────────
  *  Row shapes — deliberately the server's read shapes, snake_case and all.
@@ -55,10 +56,12 @@ import { compareFields, labelFrom, primaryKeyOf } from '../contract/labels.js';
 export interface TableRow {
   id: string; name: string; singular_name: string;
   color: string; icon: string; position: number;
-  /** 'canvas' = a table of BOARDS: each record is a canvas (sql/010); 'report' = a table of REPORTS: each record is a report (sql/013). */
-  kind?: 'records' | 'canvas' | 'report';
+  /** 'canvas' = a table of BOARDS: each record is a canvas (sql/010); 'report' = a table of REPORTS: each record is a report (sql/013); 'junction' = a table of PAIRS connecting two tables (sql/016). */
+  kind?: 'records' | 'canvas' | 'report' | 'junction';
   /** The desktop client's tools on this table — `{ toolId: { map } }` (contract/tools.ts). */
   tools?: Record<string, unknown>;
+  /** A junction's endpoints, status and match pairs (contract/junction.ts). */
+  junction?: Record<string, unknown>;
 }
 export interface FieldRow {
   id: string; table_id: string; name: string; key: string; type: string;
@@ -152,6 +155,10 @@ export function clearState(state: State) {
 
 function dropRecord(state: State, recordId: string) {
   state.records.delete(recordId);
+  // Junction rows pairing this record with something go with it — the server's
+  // cascade (sql/016). Only the rows this client holds; a junction table it has
+  // not loaded has nothing to drop. Found BEFORE the links go below.
+  for (const id of junctionRowsOf(state, recordId)) if (state.records.has(id)) dropRecord(state, id);
   // If the record IS a board, its state, cards and annotations go with it — the
   // server's cascade (records → canvases → placements, annotations). Harmless
   // for an ordinary record: there is nothing keyed by its id to drop.
@@ -249,6 +256,7 @@ export function applyMutation(state: State, m: Mutation): void {
       if (m.icon !== undefined) t.icon = m.icon;
       if (m.position !== undefined) t.position = m.position;
       if (m.tools !== undefined) t.tools = m.tools;
+      if (m.junction !== undefined) t.junction = m.junction;
       return;
     }
     case 'table.delete':
@@ -608,6 +616,21 @@ export function ingestCanvases(
     if (!state.records.has(record.id)) state.records.set(record.id, record);
     state.canvases.set(b.id, { id: b.id, config, viewport });
   }
+}
+
+/** Tables whose records are pairs (sql/016). */
+export const isJunctionTable = (t: TableRow | undefined) => t?.kind === 'junction';
+/** Tables that are navigation utilities rather than data: boards, reports, junctions. */
+export const isUtilityTable = (t: TableRow | undefined) => t?.kind === 'canvas' || t?.kind === 'report' || t?.kind === 'junction';
+
+/** The junction rows linking TO `recordId` through an endpoint field of any junction table. */
+export function junctionRowsOf(state: State, recordId: string): string[] {
+  const endpoints = new Set<string>();
+  for (const t of state.tables.values()) { const j = junctionOf(t); if (j) { endpoints.add(j.a); endpoints.add(j.b); } }
+  if (!endpoints.size) return [];
+  const out: string[] = [];
+  for (const l of state.links.values()) if (l.to_record === recordId && endpoints.has(l.field_id)) out.push(l.from_record);
+  return out;
 }
 
 /** Tables whose records are boards. */

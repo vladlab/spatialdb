@@ -91,12 +91,14 @@ const TableCreate = z.strictObject({
   icon: z.string().default(''),
   /**
    * 'canvas' = a table of BOARDS: every record in it is a canvas (sql/010).
-   * 'report' = a table of REPORTS: every record in it is a report (sql/013). Set
+   * 'report' = a table of REPORTS: every record in it is a report (sql/013).
+   * 'junction' = a table of PAIRS: every record connects one record of table A
+   * with one of table B and carries the relationship's attributes (sql/016). Set
    * here and nowhere else — table.update deliberately cannot change it.
    */
   // optional, not defaulted: every table.create already in the log (and in callers)
   // predates it, and absent must keep meaning an ordinary table.
-  kind: z.enum(['records', 'canvas', 'report']).optional(),
+  kind: z.enum(['records', 'canvas', 'report', 'junction']).optional(),
 });
 
 const TableUpdate = z.strictObject({
@@ -115,6 +117,13 @@ const TableUpdate = z.strictObject({
    * of a type that accepts it) needs the table's fields and runs in apply.
    */
   tools: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * A junction's configuration (sql/016, rules in contract/junction.ts): the two
+   * endpoint link fields, the status select, the match pairs. Replaced WHOLE,
+   * like `tools`, and loosely typed here for the same reason; the real check
+   * needs the fields of three tables and runs in apply.
+   */
+  junction: z.record(z.string(), z.unknown()).optional(),
 });
 
 const TableDelete = z.strictObject({

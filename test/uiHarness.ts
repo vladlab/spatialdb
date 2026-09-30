@@ -87,7 +87,13 @@ export function navigator(w: any, until: (p: () => boolean, ms?: number) => Prom
     },
     section: async (key: string) => { await until(() => row(`[data-section="${key}"]`).exists()); await row(`[data-section="${key}"]`).trigger('click'); },
     scope: async (value: string) => { await until(() => row(`[data-scope="${value}"]`).exists()); await row(`[data-scope="${value}"]`).trigger('click'); },
-    openTable: async (id: string) => { await until(() => row(`[data-table="${id}"]`).exists()); await row(`[data-table="${id}"]`).trigger('click'); },
+    // A boards, reports or junction table sits under the tree's folded "utility"
+    // group (sql/016): unfold it if the row is not showing.
+    openTable: async (id: string) => {
+      await until(() => row(`[data-table="${id}"]`).exists() || row('.show-utility').exists());
+      if (!row(`[data-table="${id}"]`).exists() && row('.show-utility').exists() && !/hide/.test(row('.show-utility').text())) await row('.show-utility').trigger('click');
+      await until(() => row(`[data-table="${id}"]`).exists()); await row(`[data-table="${id}"]`).trigger('click');
+    },
     openCanvas: async (id: string) => { await until(() => row(`[data-canvas="${id}"]`).exists()); await row(`[data-canvas="${id}"]`).trigger('click'); },
     openReport: async (id: string) => { await until(() => row(`[data-report="${id}"]`).exists()); await row(`[data-report="${id}"]`).trigger('click'); },
     newReport: async (name: string) => { dialogs.text = name; await row('.new-report-btn').trigger('click'); },
@@ -100,7 +106,7 @@ export function navigator(w: any, until: (p: () => boolean, ms?: number) => Prom
     canvasNames: () => w.findAll('.tree .canvas-row .name').map((x: any) => x.text()),
     scopeNames: () => w.findAll('.tree .scope-row').map((x: any) => x.text().replace(/[▸▾]/g, '').trim()),
     /** The new-table dialog's KIND is a select now (records / canvas / report); `true` keeps meaning boards for the older suites. */
-    newTable: async (name: string, kind: boolean | 'records' | 'canvas' | 'report' = false) => { dialogs.text = name; dialogs.choice = kind === true ? 'canvas' : kind || 'records'; await row('.new-table-btn').trigger('click'); },
+    newTable: async (name: string, kind: boolean | 'records' | 'canvas' | 'report' | 'junction' = false) => { dialogs.text = name; dialogs.choice = kind === true ? 'canvas' : kind || 'records'; await row('.new-table-btn').trigger('click'); },
     newCanvas: async (name: string) => { dialogs.text = name; await row('.new-canvas-btn').trigger('click'); },
   };
 }

@@ -45,6 +45,12 @@
     <label v-if="scopeFilter" class="note scope-toggle" @mousedown.prevent>
       <input v-model="everywhere" type="checkbox" tabindex="-1" @mousedown.stop /> search all {{ scopeTableName }}, not just {{ scopeApi?.label.value }}
     </label>
+    <!-- A junction's MATCH (contract/junction.ts): candidates that agree with the
+         starting record come first and alone — a filter with a way out, never a
+         constraint. When nothing agrees the toggle is moot and everything shows. -->
+    <label v-if="match && anyMatch" class="note scope-toggle" @mousedown.prevent>
+      <input v-model="showAll" type="checkbox" tabindex="-1" @mousedown.stop /> show all {{ targetName }}, not just {{ match.label }}
+    </label>
     <div v-if="loading" class="note">loading {{ targetName }}… {{ loadedRows.toLocaleString() }} rows — results are partial</div>
     <ul class="list">
       <li v-for="(c, i) in visible" :key="c.id" :class="{ hi: i === hi }"
@@ -89,6 +95,8 @@ const props = defineProps<{
   allowCreate?: boolean;
   /** Set when the edit was started by typing: becomes the first search character. */
   seed?: string;
+  /** Prefer candidates passing `test` (shown alone until "show all"); `label` names what they agree on. */
+  match?: { test: (id: string) => boolean; label: string };
 }>();
 const emit = defineEmits<{
   add: [toRecord: string];
@@ -105,6 +113,7 @@ const scopeApi = inject(SCOPE, null);
 const scopeFilter = computed(() => (scopeApi && scopeApi.scope.value.kind !== 'all' ? scopeApi.filterFor(props.targetTableId) : null));
 const scopeTableName = computed(() => props.store.state.tables.get(scopeApi?.scopeTableId.value ?? '')?.name ?? 'projects');
 const everywhere = ref(false);
+const showAll = ref(false);
 
 const input = ref<HTMLInputElement>();
 const query = ref(props.seed ?? '');
@@ -124,11 +133,16 @@ function label(id: string) {
 }
 
 /** Label, the rest of the record as a hint, and one lowercase string to search. */
-const candidates = computed(() => {
+const inScope = computed(() => {
   const taken = new Set(props.linked);
   const within = everywhere.value ? null : scopeFilter.value;
-  return recordsOf(props.store.state, props.targetTableId)
-    .filter((r) => !taken.has(r.id) && (!within || within(r)))
+  return recordsOf(props.store.state, props.targetTableId).filter((r) => !taken.has(r.id) && (!within || within(r)));
+});
+const anyMatch = computed(() => !!props.match && inScope.value.some((r) => props.match!.test(r.id)));
+const candidates = computed(() => {
+  const m = props.match;
+  return inScope.value
+    .filter((r) => !m || showAll.value || !anyMatch.value || m.test(r.id))
     .map((r) => {
       const name = labelFrom(r.data, labelKeys.value.get(r.table_id), r.id.slice(0, 8));
       const rest = Object.values(r.data)

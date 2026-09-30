@@ -254,6 +254,9 @@ async function main() {
     const rep = await untilDb(`select t.id, t.kind, (select json_agg(json_build_object('key', key, 'type', type, 'shape', options->>'shape') order by position) from fields where table_id = t.id) fs from tables t where name = 'Reports'`, (r) => r.length === 1 && r[0].fs?.length === 2);
     const tRep = rep[0].id;
     check('the new-table dialog makes a table of REPORTS: kind report, with a Name and a structured "report" field', rep[0].kind === 'report' && JSON.stringify(rep[0].fs) === JSON.stringify([{ key: 'name', type: 'text', shape: null }, { key: 'report', type: 'structured', shape: 'report' }]), JSON.stringify(rep[0]));
+    // Reports tables live under the tree's folded "utility" group (sql/016): unfold it.
+    await until(() => w.find('.tree .show-utility').exists());
+    if (!w.find('.tree').text().includes('reports')) await w.find('.tree .show-utility').trigger('click');
     await until(() => w.find('.tree').text().includes('reports'));
     check('the tree tags it "reports", as it tags boards', w.findAll('.tree .tag').some((t: any) => t.text() === 'reports'));
     const refused = async (data: Record<string, unknown>) => { const r = await post([{ type: 'record.create', id: randomUUID(), tableId: tRep, data }]); return `${r.status} ${await r.text()}`; };

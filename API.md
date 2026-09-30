@@ -724,6 +724,55 @@ already holds; sortable and filterable by the linking records' labels; resolves 
 "broken" if the source field is deleted, and heals if that delete is undone.
 Not a paired second link field: that would be two copies of one fact.
 
+### Junctions: a relationship that has attributes
+
+A table of kind `junction` (`sql/016`, **`src/contract/junction.ts`**, `test/junction.ts`,
+`test/junctionui.ts`). Each record is one PAIR — this file, that deliverable — and
+carries what the pair carries: a status, notes, any fields added. "Satisfied" is
+never stored; it is "any row Accepted", a report's question.
+
+```jsonc
+{ "type": "table.create", "kind": "junction", ... }
+// tables.junction — written by table.update { junction }, replaced WHOLE, admin-only
+{ "a": "<link field on this table, single>",      // endpoint A
+  "b": "<link field on this table, single>",      // endpoint B
+  "status": "<select field on this table>",       // optional: the row's verb — its choices
+  "match": [["<link on A's table>", "<link on B's table>"]] }   // optional, see below
+```
+
+Rules the server keeps (none fit a check constraint):
+
+- **A row is whole or it is not.** At the end of every batch, each junction row the
+  batch created or re-linked must link exactly ONE record through `a` and one
+  through `b`. So a row is `record.create` + two `link.add` in one request (any
+  order), or a 400 and nothing committed; `link.remove` on an endpoint is refused —
+  taking a pair apart is `record.delete`, which undo restores whole.
+- **One row per pair.** A second row linking the same two records is refused.
+- **Rows die with their endpoints.** `record.delete` of a file (or `table.delete`
+  of Files) deletes the junction rows that pair it with anything — captured, so
+  undo brings back the file AND its pairs, links included. The client mirrors this
+  in `applyMutation` for rows it holds.
+- An endpoint link field cannot be deleted; delete the junction table.
+
+**How pairs are made.** The endpoint tables get an ordinary `backlink` field each
+(`source_field_id` = the junction's `a` / `b`); the app creates them with the
+junction and treats a backlink that mirrors a junction endpoint as WRITABLE: the
+"Delivery" column on Files shows chips `Uploaded → Texted Master` (from the other
+end: `Uploaded ← reel_10.mov`), "+" opens the pair editor, a chip's × deletes the
+row. The other end is picked FIRST, so picking a deliverable this file already
+pairs with edits that row instead of hitting the one-per-pair rule.
+
+**`match`** narrows the picker: pairs of link fields, one per side, that SHOULD
+agree (a file's Work, a deliverable's Works). A candidate agrees when every pair
+shares at least one linked record — intersection, not equality, because a
+deliverable may belong to every episode — and a pair the starting record links
+nothing through is skipped. Agreeing records are offered alone, with "show all" a
+tick away. A filter, never a constraint; nothing about it is enforced on write.
+
+Labels: the label contract names a junction row by its primary field (the status),
+which the client overrides with the composed form `Uploaded: reel_10.mov → Texted
+Master`; the server's far labels stay plain.
+
 ### Search
 
 `GET /api/search?q=<text>&tables=<id,id>&limit=<n≤100>` →

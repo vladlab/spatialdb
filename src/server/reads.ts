@@ -25,7 +25,7 @@ import { ALL, inScope, type Scope } from '../contract/scope.js';
 export async function loadSchema(db: PoolClient) {
   // Sequential, not Promise.all: a single PoolClient cannot run concurrent
   // queries — pg serialises them and warns, and it errors outright in pg@9.
-  const tables = await db.query(`select id, name, singular_name, color, icon, position, kind, tools
+  const tables = await db.query(`select id, name, singular_name, color, icon, position, kind, tools, junction
                                    from tables order by position, name`);
   const fields = await db.query(`select id, table_id, name, key, type, options, position, required
                                    from fields order by table_id, position`);

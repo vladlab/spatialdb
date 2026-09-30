@@ -149,7 +149,7 @@ import { SCOPE, useScope } from './scope';
 import { formatScope, parseScope } from '../contract/scope';
 import { dragGhost } from './recordDrag';
 import { createStore } from './store';
-import { boardsOf, isBoardsTable, isReportsTable, reportsOf, tablesOfSection } from './state';
+import { boardsOf, isBoardsTable, isReportsTable, isUtilityTable, reportsOf, tablesOfSection, tablesSorted } from './state';
 import { useDerived } from './derived';
 import { formatRoute, lastRoute, parseRoute, rememberRoute, sameRoute, startHash, type Route, type ViewName } from './router';
 import HomePage from './components/HomePage.vue';
@@ -259,12 +259,31 @@ async function newTable() {
       { value: 'records', label: 'Ordinary table' },
       { value: 'canvas', label: 'A table of boards — every record is a canvas' },
       { value: 'report', label: 'A table of reports — every record is a report' },
+      { value: 'junction', label: 'A junction — every record pairs a record of one table with one of another' },
     ] },
   });
+  if (!r) return;
+  // A junction connects two tables (sql/016): ask which, then wire it all up —
+  // still one synchronous run once the asking is over, so one Ctrl+Z.
+  if (r.choice === 'junction') {
+    const options = tablesSorted(store.state).filter((t) => !isUtilityTable(t)).map((t) => ({ value: t.id, label: t.name }));
+    if (options.length < 1) return;
+    const a = await askFull({ title: `${r.value.trim() || 'Junction'} — first table`, noText: true, okText: 'Next',
+      select: { label: 'Pairs are made FROM this table (its rows get the column)', options, initial: options[0]!.value } });
+    if (!a) return;
+    const b = await askFull({ title: `${r.value.trim() || 'Junction'} — second table`, noText: true, okText: 'Create',
+      select: { label: 'and point AT this table (it gets a column too)', options, initial: (options[1] ?? options[0])!.value } });
+    if (!b) return;
+    const id = schema.createJunction(r.value, a.choice, b.choice);
+    if (!id) return;
+    fileTable(id);
+    openTable(id);
+    return;
+  }
   // Ask FIRST, mutate after: everything below is one synchronous run, so the
   // table, its first field and its filing under the section are one Ctrl+Z.
-  const kind = r?.choice === 'canvas' || r?.choice === 'report' ? r.choice : 'records';
-  const id = r ? schema.createTable(r.value, kind) : null;
+  const kind = r.choice === 'canvas' || r.choice === 'report' ? r.choice : 'records';
+  const id = schema.createTable(r.value, kind);
   if (!id) return;
   fileTable(id);
   openTable(id);

@@ -75,6 +75,42 @@ async function grabBoards(rows: CapturedRows, db: PoolClient, which: string, par
   await grab(rows, db, 'canvas_annotations', `select * from canvas_annotations where canvas_id ${which}`, params);
 }
 
+/** Every link field that is an endpoint (`a` or `b`) of some junction table. */
+const ENDPOINT_FIELDS = `
+  select f.id from fields f join tables t on t.id = f.table_id
+   where t.kind = 'junction' and (t.junction->>'a' = f.id::text or t.junction->>'b' = f.id::text)`;
+
+/**
+ * The junction rows hanging off the records matching `which` (a SQL predicate on
+ * links.to_record): those that link TO them through an endpoint field. They die
+ * with their endpoint — sql/016; capture.ts uses the identical query so undo
+ * brings back exactly these.
+ */
+export const JUNCTION_ROWS_OF = (which: string) => `
+  select distinct l.from_record as id from links l
+   where l.field_id in (${ENDPOINT_FIELDS}) and l.to_record ${which}`;
+
+/**
+ * Everything that dies with the JUNCTION ROWS hanging off some records (sql/016):
+ * the rows themselves, their links (both ends), their placements. `which` is a SQL
+ * predicate on links.to_record — the same one apply.ts deletes by. Rows may already
+ * be in the capture (a junction row placed on a board being deleted with its
+ * table), so links and placements are de-duplicated by id.
+ */
+async function grabJunctionRows(rows: CapturedRows, db: PoolClient, which: string, params: unknown[]) {
+  const sub = JUNCTION_ROWS_OF(which);
+  const { rows: recs } = await db.query(`select * from records where id in (${sub})`, params);
+  if (!recs.length) return;
+  const seenR = new Set(rows.records.map((r) => (r as { id: string }).id));
+  for (const r of recs) if (!seenR.has(r.id)) rows.records.push(r);
+  const seenL = new Set(rows.links.map((l) => (l as { id: string }).id));
+  const { rows: ls } = await db.query(`select * from links where from_record in (${sub}) or to_record in (${sub})`, params);
+  for (const l of ls) if (!seenL.has(l.id)) rows.links.push(l);
+  const seenP = new Set(rows.placements.map((p) => (p as { id: string }).id));
+  const { rows: ps } = await db.query(`select * from placements where record_id in (${sub})`, params);
+  for (const p of ps) if (!seenP.has(p.id)) rows.placements.push(p);
+}
+
 async function grab(
   rows: CapturedRows,
   db: PoolClient,
@@ -102,6 +138,8 @@ export async function captureFor(db: PoolClient, m: Mutation): Promise<Capture |
       // If this record IS a board (sql/010), deleting it cascades into the board's
       // state and, through that, every card and annotation ON it.
       await grabBoards(rows, db, `= $1`, [m.id]);
+      // Junction rows pairing this record with something go with it (sql/016).
+      await grabJunctionRows(rows, db, `= $1`, [m.id]);
       break;
     }
 
@@ -150,6 +188,8 @@ export async function captureFor(db: PoolClient, m: Mutation): Promise<Capture |
         [m.id]);
       // A table of BOARDS takes every board's state and contents with it.
       await grabBoards(rows, db, `in (select id from records where table_id = $1)`, [m.id]);
+      // Junction rows pairing this table's records with anything (sql/016).
+      await grabJunctionRows(rows, db, `in (select id from records where table_id = $1)`, [m.id]);
       break;
     }
 

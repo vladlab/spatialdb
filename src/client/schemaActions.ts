@@ -25,6 +25,7 @@ import { choicesOf as contractChoices } from '../contract/values';
 import { vocabularyOptionError } from '../contract/vocab';
 import { REQUIRED, analyzerOf, defaultRecipe, fieldAccepts, toolsProblem, type Output, type TablesTools } from '../contract/tools';
 import { fieldsOf, recordsOf, tablesSorted, type FieldRow } from './state';
+import { junctionOf, junctionProblem, type JunctionConfig } from '../contract/junction';
 import type { Store } from './store';
 import { confirmDialog } from './dialogs';
 
@@ -137,6 +138,46 @@ export function useSchemaActions(store: Store) {
     return id;
   }
 
+  /**
+   * A JUNCTION between two tables (sql/016, contract/junction.ts), fully wired in
+   * one synchronous run — one batch, one Ctrl+Z:
+   *   the table (kind 'junction'), its two "single" endpoint links named after the
+   *   tables they point at, a Status select with NO choices (the vocabulary is the
+   *   owner's to type, not ours to guess), a Notes field, the config — and a
+   *   backlink column on EACH endpoint table, named after the junction, which is
+   *   where pairs get made. Returns the new table's id, or null.
+   */
+  function createJunction(rawName: string, tableA: string, tableB: string): string | null {
+    const name = rawName.trim();
+    const A = store.state.tables.get(tableA), B = store.state.tables.get(tableB);
+    if (!name || !A || !B) return null;
+    const id = crypto.randomUUID();
+    const pos = Math.max(0, ...tablesSorted(store.state).map((t) => t.position ?? 0)) + 1;
+    store.mutate({ type: 'table.create', id, name, singularName: '', color: '', icon: '', kind: 'junction' });
+    // Two endpoints on the same table get distinct keys even when A === B.
+    const keyA = deriveKey(A.singular_name || A.name) || 'a';
+    let keyB = deriveKey(B.singular_name || B.name) || 'b';
+    if (keyB === keyA) keyB = `${keyB}_2`;
+    const a = crypto.randomUUID(), b = crypto.randomUUID(), status = crypto.randomUUID();
+    store.mutate({ type: 'field.create', id: status, tableId: id, name: 'Status', key: 'status', fieldType: 'select', options: { choices: [] }, required: false });
+    store.mutate({ type: 'field.create', id: a, tableId: id, name: A.singular_name || A.name, key: keyA, fieldType: 'link', options: { target_table_id: tableA, single: true }, required: false });
+    store.mutate({ type: 'field.create', id: b, tableId: id, name: B.singular_name || B.name, key: keyB, fieldType: 'link', options: { target_table_id: tableB, single: true }, required: false });
+    store.mutate({ type: 'field.create', id: crypto.randomUUID(), tableId: id, name: 'Notes', key: 'notes', fieldType: 'long_text', options: {}, required: false });
+    store.mutate({ type: 'table.update', id, position: pos, junction: { a, b, status } });
+    // The columns on the endpoint tables: a backlink each, at the junction's `a` / `b`.
+    const columnKey = (tableId: string) => {
+      const have = new Set(fields(tableId).map((f) => f.key));
+      const base = deriveKey(name) || 'pairs';
+      let k = base; for (let i = 2; have.has(k); i++) k = `${base}_${i}`;
+      return k;
+    };
+    store.mutate({ type: 'field.create', id: crypto.randomUUID(), tableId: tableA, name, key: columnKey(tableA), fieldType: 'backlink', options: { source_field_id: a }, required: false });
+    // Same table on both ends (a file derived from a file): one column per end, told apart by name.
+    const nameB = tableA === tableB ? `${name} (other end)` : name;
+    store.mutate({ type: 'field.create', id: crypto.randomUUID(), tableId: tableB, name: nameB, key: columnKey(tableB), fieldType: 'backlink', options: { source_field_id: b }, required: false });
+    return id;
+  }
+
   function renameTable(id: string, rawName: string) {
     const name = rawName.trim();
     if (name && name !== store.state.tables.get(id)?.name) store.mutate({ type: 'table.update', id, name });
@@ -147,9 +188,18 @@ export function useSchemaActions(store: Store) {
     if (!t) return false;
     const n = recordsOf(store.state, id).length;
     const boards = t.kind === 'canvas' ? ' Every record in it is a canvas — the boards and everything placed on them go too.'
-      : t.kind === 'report' ? ' Every record in it is a report — their definitions and any snapshots attached to them go too.' : '';
+      : t.kind === 'report' ? ' Every record in it is a report — their definitions and any snapshots attached to them go too.'
+      : t.kind === 'junction' ? ' Every record in it is a pair — the columns it put on the two tables it connects go too.' : '';
     if (!await confirmDialog({ title: `Delete the table “${t.name}”?`, danger: true, okText: 'Delete table',
       body: `It and its ${n} loaded record(s) will be deleted.${boards}\nEverything is captured, and can be restored from History.` })) return false;
+    // A junction's columns on its endpoint tables would be left "broken backlink":
+    // take them in the same run, so the delete is one Ctrl+Z either way.
+    const j = junctionOf(t);
+    if (j) {
+      for (const f of store.state.fields.values()) {
+        if (f.type === 'backlink' && (f.options?.source_field_id === j.a || f.options?.source_field_id === j.b)) store.mutate({ type: 'field.delete', id: f.id });
+      }
+    }
     store.mutate({ type: 'table.delete', id });
     return true;
   }
@@ -224,6 +274,14 @@ export function useSchemaActions(store: Store) {
    * is queued, with the same rule the server runs — a bad recipe must never reach
    * the log. Returns the problem, or null.
    */
+  /** A junction's config, replaced whole — validated here as the server does (contract/junction.ts). */
+  function setJunction(tableId: string, junction: JunctionConfig): string | null {
+    const err = junctionProblem(tableId, junction, store.state.fields.values());
+    if (err) return err;
+    store.mutate({ type: 'table.update', id: tableId, junction });
+    return null;
+  }
+
   function setTools(tableId: string, tools: TablesTools): string | null {
     const err = toolsProblem(tools, fields(tableId));
     if (err) return err;
@@ -422,7 +480,7 @@ export function useSchemaActions(store: Store) {
   }
 
   return {
-    createTable, renameTable, deleteTable,
+    createTable, createJunction, renameTable, deleteTable, setJunction,
     draftError, createField, renameField, setChoices, moveField, makePrimary, isPrimary,
     canBePrimary, deleteField,
     setArrowStyle, setMembership, setSingle, addStandardFilesFields, setVocabulary, setTools, enableFileDrop, disableFileDrop, addToolFields, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,

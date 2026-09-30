@@ -40,7 +40,8 @@ import { shapeOptionError } from '../contract/shapes.js';
 import { reportDefError } from '../contract/reports.js';
 import { toolsProblem } from '../contract/tools.js';
 import { vocabularyOptionError } from '../contract/vocab.js';
-import { captureFor, type Capture } from './capture.js';
+import { junctionOf, junctionProblem } from '../contract/junction.js';
+import { captureFor, JUNCTION_ROWS_OF, type Capture } from './capture.js';
 
 export class MutationError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -164,6 +165,55 @@ async function assertToolsValid(db: PoolClient, tableId: string, tools: Record<s
   const fields = (await db.query(`select id, type, options from fields where table_id = $1`, [tableId])).rows;
   const err = toolsProblem(tools, fields);
   if (err) throw new MutationError(err);
+}
+
+/**
+ * `tables.junction` — only on a table of kind 'junction'; the endpoints, status and
+ * match pairs must be real fields in the right places (contract/junction.ts).
+ * Every field is fetched: the match pairs live on the two endpoint tables, whose
+ * ids are only known once the config parses, and the schema is small.
+ */
+async function assertJunctionValid(db: PoolClient, tableId: string, junction: Record<string, unknown>) {
+  const t = await db.query(`select kind from tables where id = $1`, [tableId]);
+  if (!t.rowCount) throw new MutationError('table does not exist');
+  if (t.rows[0].kind !== 'junction') throw new MutationError(`only a table of kind 'junction' has a junction config`);
+  const fields = (await db.query(`select id, table_id, type, options from fields`)).rows;
+  const err = junctionProblem(tableId, junction, fields);
+  if (err) throw new MutationError(`junction: ${err}`);
+}
+
+/**
+ * What a batch must leave true of every junction row it touched (sql/016):
+ * exactly one link through each endpoint, and no other row of the same table
+ * making the same pair. Checked at the END of the batch, so "create the row and
+ * its two links" is legal in any order within one request, and a row can never
+ * exist half-connected across a commit.
+ */
+async function assertJunctionRowsWhole(db: PoolClient, recordIds: Iterable<string>) {
+  const ids = [...new Set(recordIds)];
+  if (!ids.length) return;
+  const { rows } = await db.query(
+    `select r.id, t.kind, t.junction, t.name from records r join tables t on t.id = r.table_id
+      where r.id = any($1::uuid[]) and t.kind = 'junction'`, [ids]);
+  for (const r of rows) {
+    const cfg = junctionOf(r);
+    if (!cfg) continue;   // not configured yet (table.create ran, table.update has not): nothing to hold it to
+    const ends = await db.query(
+      `select (select array_agg(to_record) from links where field_id = $2 and from_record = $1) as a,
+              (select array_agg(to_record) from links where field_id = $3 and from_record = $1) as b`,
+      [r.id, cfg.a, cfg.b]);
+    const a: string[] = ends.rows[0].a ?? [], b: string[] = ends.rows[0].b ?? [];
+    if (a.length !== 1 || b.length !== 1) {
+      throw new MutationError(
+        `a row of '${r.name}' must link exactly one record through each endpoint (has ${a.length} and ${b.length}) — ` +
+        `create it with both links in one batch, and delete the row rather than unlinking an end`);
+    }
+    const dupe = await db.query(
+      `select 1 from links la join links lb on lb.from_record = la.from_record
+        where la.field_id = $1 and la.to_record = $2 and lb.field_id = $3 and lb.to_record = $4 and la.from_record <> $5`,
+      [cfg.a, a[0], cfg.b, b[0], r.id]);
+    if (dupe.rowCount) throw new MutationError(`'${r.name}' already has a row for that pair — edit it instead of making another`);
+  }
 }
 
 function assertArrowStyleValid(options: Record<string, unknown> | undefined) {
@@ -318,6 +368,7 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
 
     case 'table.update':
       if (m.tools !== undefined) await assertToolsValid(db, m.id, m.tools);
+      if (m.junction !== undefined) await assertJunctionValid(db, m.id, m.junction);
       await db.query(
         `update tables set
            name          = coalesce($2, name),
@@ -325,14 +376,19 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
            color         = coalesce($4, color),
            icon          = coalesce($5, icon),
            position      = coalesce($6, position),
-           tools         = coalesce($7::jsonb, tools)
+           tools         = coalesce($7::jsonb, tools),
+           junction      = coalesce($8::jsonb, junction)
          where id = $1`,
         [m.id, m.name ?? null, m.singularName ?? null, m.color ?? null, m.icon ?? null,
-         m.position ?? null, m.tools === undefined ? null : JSON.stringify(m.tools)],
+         m.position ?? null, m.tools === undefined ? null : JSON.stringify(m.tools),
+         m.junction === undefined ? null : JSON.stringify(m.junction)],
       );
       return;
 
     case 'table.delete':
+      // Junction rows hanging off this table's records go with them (sql/016) —
+      // captured by captureFor with the same query.
+      await db.query(`delete from records where id in (${JUNCTION_ROWS_OF('in (select id from records where table_id = $1)')})`, [m.id]);
       await db.query(`delete from tables where id = $1`, [m.id]);
       return;
 
@@ -392,7 +448,11 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
       );
       return;
 
-    case 'field.delete':
+    case 'field.delete': {
+      // An endpoint of a junction is what makes its rows pairs: without it every
+      // row is half-connected. The junction TABLE can go; its endpoint cannot.
+      const endpoint = await db.query(`select name from tables where kind = 'junction' and (junction->>'a' = $1 or junction->>'b' = $1)`, [m.id]);
+      if (endpoint.rowCount) throw new MutationError(`that field is an endpoint of the junction '${endpoint.rows[0].name}' — delete the junction table instead`);
       // Strip the field's key from every record of its table BEFORE deleting
       // the field. Leaving the key was the worse option: the value survived but
       // became unwritable (assertFieldKeysExist rejects a key with no field),
@@ -408,6 +468,7 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
         [m.id, actor.id]);
       await db.query(`delete from fields where id = $1`, [m.id]);
       return;
+    }
 
     /* ── records ── */
     case 'record.create':
@@ -446,7 +507,10 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
     }
 
     case 'record.delete':
-      // Cascades to links and placements by FK.
+      // Junction rows that pair this record with something go first (sql/016):
+      // a junction row without one of its ends is not a thing. captureFor mirrors
+      // this with the same query. Then the FK cascades take links and placements.
+      await db.query(`delete from records where id in (${JUNCTION_ROWS_OF('= $1')})`, [m.id]);
       await db.query(`delete from records where id = $1`, [m.id]);
       return;
 
@@ -852,6 +916,8 @@ export async function applyBatch(
   const skipped: string[] = [];
   const events: MutationEvent[] = [];
   let seq = 0;
+  /** Records that may be junction rows and were created or re-linked here — checked whole at the end. */
+  const touched: string[] = [];
 
   await db.query('begin');
   try {
@@ -870,6 +936,9 @@ export async function applyBatch(
       }
 
       await applyOne(db, entry.mutation, actor);
+      const mm = entry.mutation;
+      if (mm.type === 'record.create') touched.push(mm.id);
+      else if (mm.type === 'link.add' || mm.type === 'link.remove') touched.push(mm.fromRecord);
 
       const { rows } = await db.query(
         `insert into mutations (id, actor_id, client_id, type, payload, undo, via)
@@ -894,6 +963,10 @@ export async function applyBatch(
       const { rows } = await db.query(`select coalesce(max(seq), 0) as head from mutations`);
       seq = Number(rows[0].head);
     }
+
+    // The one invariant that spans mutations: a junction row is whole, or the
+    // batch that touched it does not commit (sql/016).
+    await assertJunctionRowsWhole(db, touched);
 
     await db.query('commit');
   } catch (err) {

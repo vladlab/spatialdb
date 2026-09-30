@@ -95,9 +95,21 @@
                chip opens the record that holds the link. -->
           <template v-else-if="f.type === 'backlink'">
             <span v-if="derived.backlinkOf(recordId, f) === null" class="broken">broken backlink</span>
-            <button v-for="from in derived.backlinkOf(recordId, f) ?? []" v-else :key="from" class="chip back"
-                    title="Open that record" @click.stop="$emit('open', from)">{{ labelOfId(from) }}</button>
-            <span v-if="derived.backlinkOf(recordId, f)?.length === 0" class="placeholder">nothing links here</span>
+            <!-- A JUNCTION's column (sql/016): writable. Chips are pairs with their status;
+                 click one to change it, × deletes the pair, the box itself adds one. -->
+            <template v-else-if="junctionOf(f)">
+              <span v-for="row in derived.backlinkOf(recordId, f) ?? []" :key="row" class="chip junc" title="Change the status of this pair, or open it"
+                    @click.stop="editJunction(f, row)">{{ derived.junctionChip(row, junctionOf(f)!.side).text }}<button class="chip-x" tabindex="-1" title="Delete this pair (undo restores it)" @click.stop="store.mutate({ type: 'record.delete', id: row })">×</button></span>
+              <span v-if="editingId !== f.id" class="placeholder">add {{ derived.backlinkOf(recordId, f)?.length ? 'another' : 'a' }} {{ junctionName(f) }}…</span>
+              <JunctionEditor v-if="editingId === f.id" :store="store" :table="junctionOf(f)!.table" :cfg="junctionOf(f)!.cfg"
+                              :side="junctionOf(f)!.side" :from="recordId" :row-id="junctionRow" :anchor="valueEls.get(f.id)"
+                              @done="onDone('none')" @open="(id) => { onDone('none'); $emit('open', id); }" />
+            </template>
+            <template v-else>
+              <button v-for="from in derived.backlinkOf(recordId, f) ?? []" :key="from" class="chip back"
+                      title="Open that record" @click.stop="$emit('open', from)">{{ labelOfId(from) }}</button>
+              <span v-if="derived.backlinkOf(recordId, f)?.length === 0" class="placeholder">nothing links here</span>
+            </template>
           </template>
 
           <!-- ATTACHMENT: always live; every add/remove is written at once. -->
@@ -162,6 +174,7 @@ import { confirmDialog } from '../dialogs';
 import CellEditor, { type EditExit } from './CellEditor.vue';
 import { invoke, isDesktop, jobs, notice } from '../desktop';
 import LinkPicker from './LinkPicker.vue';
+import JunctionEditor from './JunctionEditor.vue';
 import AttachmentField from './AttachmentField.vue';
 import StructuredField from './StructuredField.vue';
 import { formatNumberField } from '../../contract/shapes';
@@ -269,7 +282,12 @@ const linksFrom = (fieldId: string) => derived.linksFrom(props.recordId, fieldId
 const lookupOf = (f: FieldRow) => derived.lookupOf(props.recordId, f);
 const targetOf = (f: FieldRow) => f.options?.target_table_id as string | undefined;
 const referencedBy = computed(() => derived.referencedBy(props.recordId));
-const READONLY = (f: FieldRow) => f.type === 'lookup' || f.type === 'backlink' || SYSTEM_FIELD_TYPES.has(f.type);
+/** A backlink mirroring a junction's endpoint is WRITABLE (contract/junction.ts) — the one backlink that is. */
+const junctionOf = (f: FieldRow) => derived.junctionOfBacklink(f);
+const junctionName = (f: FieldRow) => { const j = junctionOf(f); const t = j ? store.state.tables.get(j.table) : undefined; return t?.singular_name || t?.name || 'pair'; };
+const junctionRow = ref<string>();
+function editJunction(f: FieldRow, row?: string) { junctionRow.value = row; editingId.value = f.id; }
+const READONLY = (f: FieldRow) => f.type === 'lookup' || (f.type === 'backlink' && !junctionOf(f)) || SYSTEM_FIELD_TYPES.has(f.type);
 
 /* ── editing ──────────────────────────────────────────────────────────── */
 
@@ -283,6 +301,7 @@ const EDITABLE = (f: FieldRow) => !READONLY(f) && !['checkbox', 'attachment', 'r
 
 function startEdit(f: FieldRow) {
   if (!EDITABLE(f) || editingId.value === f.id) return;
+  if (f.type === 'backlink') junctionRow.value = undefined;   // the box itself: add a pair
   editingId.value = f.id;
 }
 
@@ -408,6 +427,8 @@ watch(() => props.recordId, () => {
   padding: 1px 8px;
 }
 .chip.back:hover { border-color: var(--accent); color: var(--text-primary); }
+.chip.junc { cursor: pointer; }
+.chip.junc:hover { border-color: var(--accent); }
 .rp-refs { margin-top: 14px; padding: 0 2px; }
 .rp-refs h3 { margin: 0 0 6px; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
 .rp-ref { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 3px 0; }

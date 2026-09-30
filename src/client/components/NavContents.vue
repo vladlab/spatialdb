@@ -13,18 +13,36 @@
       <span>Tables</span>
       <button class="add new-table-btn" title="New table" @click="$emit('new-table')">+</button>
     </div>
-    <div v-for="t in tables" :key="t.id" class="row leaf table-row" :class="{ on: view === 'table' && t.id === tableId }"
+    <div v-for="t in dataTables" :key="t.id" class="row leaf table-row" :class="{ on: view === 'table' && t.id === tableId }"
          :data-table="t.id" @click="$emit('open-table', t.id)">
       <span class="swatch" :style="{ background: t.color || 'var(--border-main)' }" />
       <span class="name">{{ t.icon ? t.icon + ' ' : '' }}{{ t.name }}</span>
-      <!-- Same quiet tag language for both facts about a table. "scoped" is in the
-           accent colour because it is the one that changes what you SEE. -->
+      <!-- "scoped" is in the accent colour because it is the one that changes what you SEE. -->
       <span v-if="scopedTableIds?.has(t.id)" class="tag scoped" title="Its rows belong to a project: inside one, this table shows only that project's">scoped</span>
-      <span v-if="t.kind === 'canvas'" class="tag" title="A table of boards: each record is a canvas">boards</span>
-      <span v-if="t.kind === 'report'" class="tag" title="A table of reports: each record is a report">reports</span>
       <button class="act" title="Table settings" @click.stop="$emit('table-settings', t.id)">⚙</button>
     </div>
-    <p v-if="!tables.length" class="empty">none yet</p>
+    <p v-if="!dataTables.length" class="empty">none yet</p>
+
+    <!-- UTILITY tables — boards, reports, junctions: tables that exist to serve the
+         data tables, not to be browsed. Folded by default, like archived projects:
+         a colleague looking for "Files" should not have to read past "Delivery". -->
+    <template v-if="utilityTables.length">
+      <button class="row quiet show-utility" @click="showUtility = !showUtility">
+        {{ showUtility ? 'hide utility tables' : `show ${utilityTables.length} utility table${utilityTables.length === 1 ? '' : 's'}` }}
+      </button>
+      <template v-if="showUtility">
+        <div v-for="t in utilityTables" :key="t.id" class="row leaf table-row utility" :class="{ on: view === 'table' && t.id === tableId }"
+             :data-table="t.id" @click="$emit('open-table', t.id)">
+          <span class="swatch" :style="{ background: t.color || 'var(--border-main)' }" />
+          <span class="name">{{ t.icon ? t.icon + ' ' : '' }}{{ t.name }}</span>
+          <span v-if="scopedTableIds?.has(t.id)" class="tag scoped" title="Its rows belong to a project: inside one, this table shows only that project's">scoped</span>
+          <span v-if="t.kind === 'canvas'" class="tag" title="A table of boards: each record is a canvas">boards</span>
+          <span v-if="t.kind === 'report'" class="tag" title="A table of reports: each record is a report">reports</span>
+          <span v-if="t.kind === 'junction'" class="tag" title="A junction: each record pairs a record of one table with one of another">junction</span>
+          <button class="act" title="Table settings" @click.stop="$emit('table-settings', t.id)">⚙</button>
+        </div>
+      </template>
+    </template>
 
     <div class="sub">
       <span>Canvases</span>
@@ -52,9 +70,10 @@
 </template>
 
 <script setup lang="ts">
-import type { TableRow } from '../state';
+import { computed, ref } from 'vue';
+import { isUtilityTable, type TableRow } from '../state';
 
-defineProps<{
+const props = defineProps<{
   tables: TableRow[];
   canvases: Array<{ id: string; name: string; cards?: number }>;
   reports: Array<{ id: string; name: string }>;
@@ -65,6 +84,12 @@ defineEmits<{
   'open-table': [id: string]; 'open-canvas': [id: string]; 'open-report': [id: string];
   'table-settings': [id: string]; 'new-table': []; 'new-canvas': []; 'new-report': [];
 }>();
+
+const dataTables = computed(() => props.tables.filter((t) => !isUtilityTable(t)));
+const utilityTables = computed(() => props.tables.filter((t) => isUtilityTable(t)));
+// Session-local, like "show archived": folded again on the next load. The tables
+// are still reachable — the settings dialog, the palette, a link's target.
+const showUtility = ref(false);
 </script>
 
 <style scoped>
@@ -87,5 +112,8 @@ defineEmits<{
 .act { visibility: hidden; background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0 2px; font: inherit; font-size: 12px; }
 .row:hover .act { visibility: visible; }
 .act:hover { color: var(--accent); }
+.row.quiet { color: var(--text-faint); font-size: 11px; font-style: italic; background: none; border: none; font-family: inherit; width: 100%; text-align: left; }
+.row.quiet:hover { color: var(--text-secondary); }
+.row.utility .name { color: var(--text-muted); }
 .empty { margin: 0; padding: 2px 8px 2px 28px; color: var(--text-faint); font-size: 11px; font-style: italic; }
 </style>
