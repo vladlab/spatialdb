@@ -19,7 +19,7 @@ import { LOOKUP_TARGET_TYPES, lookupConfigError, lookupOptionsOf } from '../cont
 import { backlinkConfigError, backlinkSourceOf } from '../contract/backlinks';
 import { arrowStyleOf, type ArrowStyle } from '../contract/arrows';
 import { isMembership } from '../contract/scope';
-import { FILES_STANDARD_FIELDS, shapeOptionError } from '../contract/shapes';
+import { shapeOptionError } from '../contract/shapes';
 import { SYSTEM_FIELD_TYPES } from '../contract/systemFields';
 import { choicesOf as contractChoices } from '../contract/values';
 import { vocabularyOptionError } from '../contract/vocab';
@@ -246,27 +246,6 @@ export function useSchemaActions(store: Store) {
     return { id };
   }
 
-  /**
-   * Add whichever of the conventional Files fields this table does not have yet
-   * (matched by KEY, so it is safe to run twice, and on a Files table that already
-   * exists). A convenience, not a rule — see FILES_STANDARD_FIELDS. One undo step.
-   * Returns the names it added.
-   */
-  function addStandardFilesFields(tableId: string): string[] {
-    const have = new Set(fields(tableId).map((f) => f.key));
-    let pos = Math.max(0, ...fields(tableId).map((f) => f.position));
-    const added: string[] = [];
-    for (const spec of FILES_STANDARD_FIELDS) {
-      if (have.has(spec.key)) continue;
-      const id = crypto.randomUUID();
-      const options = { ...(spec.options ?? {}), ...(spec.self ? { target_table_id: tableId } : {}) };
-      store.mutate({ type: 'field.create', id, tableId, name: spec.name, key: spec.key, fieldType: spec.type as FieldType, options, required: false });
-      store.mutate({ type: 'field.update', id, position: ++pos });
-      added.push(spec.name);
-    }
-    return added;
-  }
-
   /* ── the desktop client's tools on a table (contract/tools.ts) ──────────── */
 
   /**
@@ -441,6 +420,15 @@ export function useSchemaActions(store: Store) {
     });
   }
 
+  /** The whole order at once (a drag in Table settings): every changed position, one batch. */
+  function reorderFields(tableId: string, ids: string[]) {
+    const by = new Map(fields(tableId).map((f) => [f.id, f]));
+    const ordered = ids.map((id) => by.get(id)).filter((f): f is FieldRow => !!f);
+    // System fields (created_at …) are not in the list: they keep to the end, in their order.
+    for (const f of fields(tableId)) if (!ids.includes(f.id)) ordered.push(f);
+    reorder(ordered);
+  }
+
   function moveField(id: string, dir: -1 | 1) {
     const f = store.state.fields.get(id);
     if (!f) return;
@@ -481,9 +469,9 @@ export function useSchemaActions(store: Store) {
 
   return {
     createTable, createJunction, renameTable, deleteTable, setJunction,
-    draftError, createField, renameField, setChoices, moveField, makePrimary, isPrimary,
+    draftError, createField, renameField, setChoices, moveField, reorderFields, makePrimary, isPrimary,
     canBePrimary, deleteField,
-    setArrowStyle, setMembership, setSingle, addStandardFilesFields, setVocabulary, setTools, enableFileDrop, disableFileDrop, addToolFields, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
+    setArrowStyle, setMembership, setSingle, setVocabulary, setTools, enableFileDrop, disableFileDrop, addToolFields, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
   };
 }
 export type SchemaActions = ReturnType<typeof useSchemaActions>;

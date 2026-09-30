@@ -278,24 +278,7 @@ export function diffLayouts(a: AudioLayout, b: AudioLayout): LayoutDiff {
   return out;
 }
 
-/* ── the Files convention (a convenience, not a rule) ─────────────────────── */
+/* ── manifests ────────────────────────────────────────────────────────────── */
 
 export const MANIFEST_KINDS = ['file', 'bundle', 'sequence', 'channel_set'] as const;
 
-/**
- * The fields a Files table conventionally has for delivered-unit records. NOT
- * hard-wired anywhere: the desktop drop tool will map its outputs onto whatever
- * fields the owner chooses. This list only feeds "Add standard Files fields" in
- * Table settings, which adds the ones a table does not already have (by key).
- */
-export const FILES_STANDARD_FIELDS: Array<{ key: string; name: string; type: string; options?: Record<string, unknown>; self?: boolean }> = [
-  { key: 'kind', name: 'Kind', type: 'select', options: { choices: [...MANIFEST_KINDS] } },
-  { key: 'path', name: 'Path', type: 'file_path' },
-  { key: 'manifest', name: 'Manifest', type: 'structured', options: { shape: 'manifest' } },
-  { key: 'file_count', name: 'File count', type: 'number' },
-  { key: 'total_size', name: 'Total size', type: 'number', options: { format: 'bytes' } },
-  { key: 'hash', name: 'Hash', type: 'text' },
-  { key: 'audio_layout', name: 'Audio layout', type: 'structured', options: { shape: 'audio_layout' } },
-  // A member promoted to its own record points at the unit it came from.
-  { key: 'parent', name: 'Parent', type: 'link', self: true },
-];

@@ -21,10 +21,9 @@ import { lookupConfigError, lookupText, lookupValues } from '../src/contract/loo
 import { backlinkConfigError, backlinkRecords } from '../src/contract/backlinks.js';
 import { fuzzyRank, fuzzyScore, parsePaletteQuery, rankChoices } from '../src/client/fuzzy.js';
 import {
-  AudioLayout, FILES_STANDARD_FIELDS, addPreset, diffLayouts, flattenChannels, formatBytes, formatNumberField, mergeTracks, moveTrack,
+  AudioLayout, addPreset, diffLayouts, flattenChannels, formatBytes, formatNumberField, mergeTracks, moveTrack,
   shapeOptionError, splitTrack, structuredError, summarise, type AudioLayout as Layout,
 } from '../src/contract/shapes.js';
-import { FIELD_TYPES } from '../src/contract/mutations.js';
 import { compareConfigError, compareRecords, rulesFor, seedValues, suggestPairs, type ComparePair } from '../src/contract/compare.js';
 import { assetIdsIn, attachmentError, isEmptyRichText, richTextError, richTextToPlain } from '../src/contract/richtext.js';
 import { compareFields, labelFrom, primaryKeyOf } from '../src/contract/labels.js';
@@ -404,9 +403,6 @@ function pure() {
   const nameDiff = diffLayouts(spec, renamed);
   check('matching structure, different labels: NAME and LANGUAGE are reported per track', nameDiff.issues.map((x) => `${x.kind}:${x.track}`).join() === 'name:2,language:2', JSON.stringify(nameDiff.issues));
   check('channel labels compare case-insensitively ("lfe" is LFE)', diffLayouts(spec, { tracks: spec.tracks.map((t) => ({ ...t, channels: t.channels.map((c) => c.toLowerCase()) })) }).same);
-
-  check('the Files convention names real field types, and its link is to the table itself', FILES_STANDARD_FIELDS.every((f) => (FIELD_TYPES as readonly string[]).includes(f.type))
-    && FILES_STANDARD_FIELDS.filter((f) => f.self).map((f) => f.key).join() === 'parent' && FILES_STANDARD_FIELDS.find((f) => f.key === 'path')?.type === 'file_path');
 
   console.log('\nG1m. Kanban columns (contract/views.ts: kanbanColumns)');
   const kSel: ViewField = { id: randomUUID(), key: 'status', type: 'select', options: { choices: ['todo', 'doing', 'done'] } };

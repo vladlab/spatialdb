@@ -1,7 +1,7 @@
 /**
  * Structured fields in the app: creating one, the grid summary, the audio layout
  * editor (presets, split, merge, copy/paste), compare-with-a-linked-record, the
- * manifest view, the JSON escape hatch, and "Add standard Files fields".
+ * manifest view and the JSON escape hatch.
  * The shapes themselves — validation, summaries, the diff — are in test/grid.ts.
  */
 import { randomUUID } from 'node:crypto';
@@ -224,29 +224,6 @@ async function main() {
     await mf().find('.save-json').trigger('click');
     check('a valid one is saved, and renders as a frame range with its gap', await until(() => /frames 1001–1100/.test(mf().text()) && /missing: 1050–1051/.test(mf().text())), mf().text());
     await w.find('.record-panel .rp-close').trigger('click');
-
-    console.log('\nT6. "Add standard Files fields"');
-    await nav.tableSettings(tFiles);
-    await until(() => w.find('.ts .add-files-fields').exists());
-    const fieldsBefore = Number((await pool.query(`select count(*)::int n from fields where table_id = $1`, [tFiles])).rows[0].n);
-    await w.find('.ts .add-files-fields').trigger('click');
-    const after = await untilDb(`select key, type, options from fields where table_id = '${tFiles}' order by position`, (r) => r.length === fieldsBefore + 5);
-    const byKey = Object.fromEntries(after.map((f: any) => [f.key, f]));
-    check('it adds only what is MISSING (manifest, audio_layout and total_size were already there)', after.length === fieldsBefore + 5
-      && ['kind', 'path', 'file_count', 'hash', 'parent'].every((k) => byKey[k]), after.map((f: any) => f.key).join());
-    check('with the right types: path is a file_path, kind a select of the four manifest kinds, parent a link to this same table',
-      byKey.path?.type === 'file_path' && byKey.kind?.options.choices.join() === 'file,bundle,sequence,channel_set' && byKey.parent?.type === 'link' && byKey.parent.options.target_table_id === tFiles);
-    await w.find('.ts .add-files-fields').trigger('click');
-    await sleep(300);
-    check('run again, it adds nothing and says so', /already has all/.test(w.find('.ts .std').text())
-      && Number((await pool.query(`select count(*)::int n from fields where table_id = $1`, [tFiles])).rows[0].n) === fieldsBefore + 5, w.find('.ts .std').text());
-    await w.find('.ts .x').trigger('click');
-    win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
-    check('all five are ONE Ctrl+Z — the fields are REMOVED (creating schema had no inverse at all before this)', (await untilDb(`select count(*)::int n from fields where table_id = '${tFiles}'`, (r) => Number(r[0].n) === fieldsBefore))[0].n == fieldsBefore);
-    const order = (await pool.query(`select key from fields where table_id = $1 order by position, key`, [tFiles])).rows.map((r: any) => r.key);
-    check('…and the fields that were there keep their order — Name is still first, still the primary field', order[0] === 'name', order.join());
-    win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'z', ctrlKey: true, shiftKey: true, bubbles: true }));
-    check('Redo brings all five back', (await untilDb(`select count(*)::int n from fields where table_id = '${tFiles}'`, (r) => Number(r[0].n) === fieldsBefore + 5, 8000))[0].n == fieldsBefore + 5);
 
     console.log('\nT9. A table of reports (sql/013, REPORTS-BRIEF.md §4)');
     const bogus = await post([{ type: 'table.create', id: randomUUID(), name: 'Nope', kind: 'ledger' }]);

@@ -1490,7 +1490,7 @@ async function main() {
   await ts().find('input[type="color"]').trigger('change');
   const tcol = await untilDb(`select name, color from tables where id = '${filesId}'`, (r) => r[0].color === '#3366ff');
   check('colour (in the database since the first migration, never editable) is set here', tcol[0].color === '#3366ff' && tcol[0].name === 'Media files', JSON.stringify(tcol[0]));
-  check('it says what kind of table it is, and where fields are edited', /ordinary table/.test(ts().text()) && /column headers/.test(ts().text()));
+  check('it says what kind of table it is, and lists the fields as an editor', /ordinary table/.test(ts().text()) && ts().find('.schema .fadd').exists());
   await ts().find('.name-in').setValue('Files');
   await ts().find('.name-in').trigger('change');
   await ts().find('.x').trigger('click');
