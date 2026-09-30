@@ -390,6 +390,20 @@ async function main() {
   const linkRows = await untilDb(`select to_record from links where field_id = '${linkField}'`, (r) => r.length === 1);
   check('the server ends with exactly the one link', linkRows.length === 1 && linkRows[0].to_record === showIds[2],
     JSON.stringify(linkRows));
+  // A cell shows a few pills, then "+N": six links must not pass for three.
+  {
+    const rec = (await pool.query(`select from_record from links where field_id = $1`, [linkField])).rows[0].from_record;
+    const extra = ['Delta', 'Epsilon', 'Zeta', 'Eta', 'Theta'].map((name) => ({ id: randomUUID(), name }));
+    const post = (mutations: unknown[]) => fetch(`${API}/api/mutate`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId: randomUUID(), mutations: mutations.map((mutation) => ({ id: randomUUID(), mutation })) }) });
+    await post([...extra.map((e) => ({ type: 'record.create', id: e.id, tableId: shows, data: { name: e.name } })),
+      ...extra.map((e) => ({ type: 'link.add', id: randomUUID(), fieldId: linkField, fromRecord: rec, toRecord: e.id }))]);
+    check('with more links than a cell shows, a +N says how many are hidden (3 pills + 3)', await until(() => cell(0, LINK).find('.more').exists(), 8000)
+      && cell(0, LINK).find('.more').text() === '+3' && cell(0, LINK).findAll('.pill').length === 3, cell(0, LINK).text());
+    // Unlink rather than delete: a later section restores "the delete" from History.
+    await post(extra.map((e) => ({ type: 'link.remove', fieldId: linkField, fromRecord: rec, toRecord: e.id })));
+    await until(() => !cell(0, LINK).find('.more').exists(), 8000);
+  }
 
   await key('b');
   check('typing on a link cell opens the picker already searching',

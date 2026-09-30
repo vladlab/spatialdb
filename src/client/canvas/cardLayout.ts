@@ -58,11 +58,16 @@ export function cardHeight(rows: number, collapsed: boolean, rich = 0): number {
 
 /**
  * A user-set height (dragged with the resize handle) wins when the card is
- * open. A FOLDED card ignores it: folding exists to get a card out of the way,
- * and a folded card that kept its 400px height would defeat that.
+ * open — but never below what the ROWS need: a card sized by hand last month
+ * does not get to overlap the three deliverables added today. Rich blocks are
+ * the flexible part (they share what is left), so the floor counts rows only.
+ * A FOLDED card ignores the height: folding exists to get a card out of the
+ * way, and a folded card that kept its 400px height would defeat that.
  */
 export function effectiveHeight(h: number | null, rows: number, collapsed: boolean, rich = 0): number {
-  return collapsed ? cardHeight(rows, true) : (h ?? cardHeight(rows, false, rich));
+  if (collapsed) return cardHeight(rows, true);
+  if (h === null) return cardHeight(rows, false, rich);
+  return Math.max(h, cardHeight(rows, false, 0));
 }
 
 /**

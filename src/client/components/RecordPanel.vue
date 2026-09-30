@@ -77,7 +77,7 @@
             <!-- DRAG a pill onto a canvas to place that record there (or jump to it, if it is
                  already placed). A plain click still opens it. client/recordDrag.ts tells the two
                  apart by movement. -->
-            <span class="pills">
+            <span class="pills column">
               <RecordPill v-for="to in linksFrom(f.id)" :key="to" :text="labelOfId(to)" title="Drag onto a canvas to place it · ⤢ opens it"
                           removable drag @down="dragPill(to, $event)" @open="$emit('open', to)" @remove="removeLink(f.id, to)" />
             </span>
@@ -98,7 +98,7 @@
             <!-- A JUNCTION's column (sql/016): writable. Chips are pairs with their status;
                  click one to change it, × deletes the pair, the box itself adds one. -->
             <template v-else-if="junctionOf(f)">
-              <span class="pills">
+              <span class="pills column">
                 <RecordPill v-for="row in derived.backlinkOf(recordId, f) ?? []" :key="row" junction :text="derived.junctionChip(row, junctionOf(f)!.side).text"
                             :on="editingId === f.id && junctionRow === row" title="A pair: ✎ changes its status, ⤢ opens it"
                             removable remove-title="Delete this pair (undo restores it)"
@@ -110,7 +110,7 @@
                               @done="onDone('none')" @open="(id: string) => { onDone('none'); $emit('open', id); }" />
             </template>
             <template v-else>
-              <span class="pills">
+              <span class="pills column">
                 <RecordPill v-for="from in derived.backlinkOf(recordId, f) ?? []" :key="from" back :text="labelOfId(from)"
                             title="Drag onto a canvas to place it · ⤢ opens it" drag @down="dragPill(from, $event)" @open="$emit('open', from)" />
               </span>
@@ -460,6 +460,11 @@ watch(() => props.recordId, () => {
   background: var(--controls-bg);
 }
 .rp-value.readonly { cursor: default; }
+/* Links one per LINE in the tray: the vertical room is there, and a long deliverable
+   name is readable only when it has the whole line. (The "referenced by" list below
+   the fields stays a flow — short names, many of them.) */
+.rp-value .pills.column { width: 100%; }
+.rp-value .pills.column .pill { justify-content: flex-start; }
 .rp-rich :deep(.rte) { border-radius: 0 6px 6px 6px; }
 .rp-field.block .rp-name { border-radius: 6px 6px 0 0; }
 .text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

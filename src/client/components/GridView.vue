@@ -321,9 +321,13 @@
                        pill is the target: a hover-only glyph was too small to hit, and a miss
                        selected the cell instead. It stops the press so the cell does not
                        also select or start editing. -->
+                  <!-- At most a few pills, then "+N": a cell is one line, and a run of
+                       eight deliverables must not pass for three. The +N opens the record. -->
                   <span class="pills">
-                    <RecordPill v-for="to in linksFrom(r.id, f.id)" :key="to" :text="labelFor(to)" :title="`Open ${labelFor(to)}`" removable
+                    <RecordPill v-for="to in linksFrom(r.id, f.id).slice(0, CELL_MAX_PILLS)" :key="to" :text="labelFor(to)" :title="`Open ${labelFor(to)}`" removable
                                 @open="$emit('open-record', to)" @remove="removeLink(f.id, r.id, to)" />
+                    <button v-if="linksFrom(r.id, f.id).length > CELL_MAX_PILLS" class="more" :title="`${linksFrom(r.id, f.id).length} linked — open the record to see them all`"
+                            @pointerdown.stop @mousedown.stop.prevent @click.stop="$emit('open-record', r.id)">+{{ linksFrom(r.id, f.id).length - CELL_MAX_PILLS }}</button>
                   </span>
                   <!-- Mounted for the ONE cell being edited; see LinkPicker.vue. -->
                   <LinkPicker v-if="isSel(r.id, f.id) && editing && targetOf(f)"
@@ -365,16 +369,20 @@
                            the pair; + (or Enter) adds one. Writable, unlike a plain backlink. -->
                       <template v-else-if="junctionOf(f)">
                         <span class="pills">
-                          <RecordPill v-for="row in derived.backlinkOf(r.id, f) ?? []" :key="row" junction :text="derived.junctionChip(row, junctionOf(f)!.side).text"
+                          <RecordPill v-for="row in (derived.backlinkOf(r.id, f) ?? []).slice(0, CELL_MAX_PILLS)" :key="row" junction :text="derived.junctionChip(row, junctionOf(f)!.side).text"
                                       :on="junctionRow === row && isSel(r.id, f.id) && editing" title="A pair: ✎ changes its status, ⤢ opens it"
                                       removable remove-title="Delete this pair (undo restores it)"
                                       @edit="editJunction(r.id, f, row)" @open="$emit('open-record', row)" @remove="deleteJunctionRow(row)" />
+                          <button v-if="(derived.backlinkOf(r.id, f) ?? []).length > CELL_MAX_PILLS" class="more" :title="`${(derived.backlinkOf(r.id, f) ?? []).length} pairs — open the record to see them all`"
+                                  @pointerdown.stop @mousedown.stop.prevent @click.stop="$emit('open-record', r.id)">+{{ (derived.backlinkOf(r.id, f) ?? []).length - CELL_MAX_PILLS }}</button>
                         </span>
                         <button class="junc-add" tabindex="-1" :title="`Add a ${junctionName(f)}`" @pointerdown.stop @mousedown.stop.prevent @click.stop="editJunction(r.id, f)">+</button>
                       </template>
                       <span v-else class="pills">
-                        <RecordPill v-for="from in derived.backlinkOf(r.id, f) ?? []" :key="from" back :text="labelFor(from)" :title="`Open ${labelFor(from)} — the link is edited there`"
+                        <RecordPill v-for="from in (derived.backlinkOf(r.id, f) ?? []).slice(0, CELL_MAX_PILLS)" :key="from" back :text="labelFor(from)" :title="`Open ${labelFor(from)} — the link is edited there`"
                                     @open="$emit('open-record', from)" />
+                        <button v-if="(derived.backlinkOf(r.id, f) ?? []).length > CELL_MAX_PILLS" class="more" :title="`${(derived.backlinkOf(r.id, f) ?? []).length} link here — open the record to see them all`"
+                                @pointerdown.stop @mousedown.stop.prevent @click.stop="$emit('open-record', r.id)">+{{ (derived.backlinkOf(r.id, f) ?? []).length - CELL_MAX_PILLS }}</button>
                       </span>
                     </template>
                     <!-- LOOKUP: computed, read-only. Broken (its link field or far field
@@ -771,6 +779,8 @@ watch(() => derived.tablesNeededBy(allFields.value).join(), (joined) => {
 }, { immediate: true });
 
 const targetOf = (f: FieldRow) => f.options?.target_table_id as string | undefined;
+/** Pills a one-line cell shows before "+N". */
+const CELL_MAX_PILLS = 3;
 
 /* ── junction columns (contract/junction.ts) ──────────────────────────────
    A backlink that mirrors a junction's endpoint is writable: its editor is the
@@ -1448,6 +1458,16 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .broken { color: var(--danger); font-size: 11px; }
 .value.note { color: var(--text-secondary); }
 .chip.plain { padding: 1px 8px; }
+/* In a cell the pills do not wrap: they SHRINK (each keeps its ellipsis) so the +N
+   at the end is always in view — the one thing the cell must not hide. */
+.cell .pills { flex-wrap: nowrap; overflow: hidden; min-width: 0; max-width: 100%; }
+.cell .pills .pill { flex: 0 1 auto; }
+.cell .pills .pill-text { max-width: 220px; }
+.pills .more {
+  flex: none; background: var(--controls-bg); border: 1px solid var(--accent); color: var(--accent); border-radius: 10px;
+  font: inherit; font-size: 10px; font-weight: 600; line-height: 16px; padding: 0 6px; cursor: pointer;
+}
+.pills .more:hover { background: var(--accent); color: #fff; }
 .junc-add { background: none; border: 1px dashed var(--border-main); border-radius: 10px; color: var(--text-muted); cursor: pointer; font: inherit; line-height: 1; padding: 0 6px; visibility: hidden; }
 td:hover .junc-add, td.sel .junc-add { visibility: visible; }
 .junc-add:hover { color: var(--accent); border-color: var(--accent); }

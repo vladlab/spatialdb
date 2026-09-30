@@ -412,6 +412,7 @@ async function partB() {
     cardHeight(9, true) === cardHeight(0, false) && cardHeight(9, true) < cardHeight(1, false));
   check('a user-set height wins while open — and is ignored while folded',
     effectiveHeight(400, 3, false) === 400 && effectiveHeight(400, 3, true) === cardHeight(3, true));
+  check('…but never below what the rows need: a hand-sized card grows when its rows do', effectiveHeight(100, 12, false) === cardHeight(12, false, 0) && effectiveHeight(100, 1, false) === 100);
 
   console.log('\nB8b2. Ports: where a row sits, by arithmetic');
   const open3 = cardHeight(3, false);
