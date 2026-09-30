@@ -2,7 +2,9 @@
  * A report, OPEN, in the app (REPORTS-BRIEF.md §2 — the first rendering): the
  * tree's Reports list, ReportView, the outline drawn by ReportOutline, its
  * addresses, and "+ report". The walk itself is test/reports.ts (pure); the kind
- * and the server's checks are test/structured.ts T9.
+ * and the server's checks are test/structured.ts T9. V6 is the same report with
+ * Files reached THROUGH A JUNCTION: accepted by the server, drawn with the pair's
+ * status beside each file, and built in the level editor (the ⇄ via, the pair block).
  */
 import { randomUUID } from 'node:crypto';
 import { mountApp } from './uiHarness.js';
@@ -161,7 +163,86 @@ async function main() {
     check('…and the open report draws it: three files, each with its deliverable beneath', await until(() => w.findAll('.reportview .ro.root > table > tbody > .ro-row').length === 3 && w.findAll('.reportview .ro-role').length === 3, 8000));
     check('after saving, the editor is clean (no unsaved changes)', ed().find('.save-report').attributes('disabled') !== undefined && !/unsaved/.test(ed().text()));
 
-    check('the grid of a reports table offers "open" on each row', await (async () => { await nav.openTable(tRep); await until(() => w.findAll('.gridview tr.row').length === 3); return w.find('.gridview .open-report').exists(); })());
+    console.log('\nV6. Through a junction: Files reached by the Delivery column, the pair beside the file');
+    const tJ = randomUUID(), jStatus = randomUUID(), jFile = randomUUID(), jDel = randomUUID(), jNotes = randomUUID(), blFiles = randomUUID(), blDeliv = randomUUID();
+    const pr1 = randomUUID(), pr2 = randomUUID(), pr3 = randomUUID(), through = randomUUID();
+    const pairRow = (id: string, file: string, status: string) => [
+      { type: 'record.create', id, tableId: tJ, data: { status } },
+      { type: 'link.add', id: randomUUID(), fieldId: jFile, fromRecord: id, toRecord: file }, { type: 'link.add', id: randomUUID(), fieldId: jDel, fromRecord: id, toRecord: prores },
+    ];
+    const filesLevel = (pair: unknown) => ({ id: 'files', via: [{ fieldId: blDeliv }], pins: [{ fieldId: fWork, levelId: 'works' }], pair, fields: [fPath], sort: [{ fieldId: fFName, dir: 'desc' }], children: [] });
+    const throughDef = (pair: unknown, delivPair?: unknown) => ({ v: 1, root: { id: 'works', table: tWorks, sort: [{ fieldId: fWName, dir: 'asc' }],
+      rollups: [{ id: 'satisfied', label: 'satisfied', op: 'countWhere', over: 'delivs', where: { rollup: 'accepted', op: 'gt', value: 0 } }],
+      children: [{ id: 'delivs', via: [{ fieldId: fBid }, { fieldId: fAdded }], ...(delivPair ? { pair: delivPair } : {}), sort: [{ fieldId: fDName, dir: 'asc' }],
+        rollups: [{ id: 'files', label: 'files', op: 'count', over: 'files' }, { id: 'accepted', label: 'accepted', op: 'countWhere', over: 'files', where: [{ fieldId: jStatus, op: 'eq', value: 'Accepted' }] }],
+        children: [filesLevel(pair)] }] } });
+    const jSetup = await post([
+      // The junction, wired the way schemaActions.createJunction does it (test/junction.ts).
+      { type: 'table.create', id: tJ, name: 'Delivery', singularName: 'Delivery', kind: 'junction' },
+      { type: 'field.create', id: jStatus, tableId: tJ, name: 'Status', key: 'status', fieldType: 'select', options: { choices: ['Uploaded', 'Rejected', 'Accepted'] } }, pos(jStatus, 0),
+      { type: 'field.create', id: jFile, tableId: tJ, name: 'File', key: 'file', fieldType: 'link', options: { target_table_id: tFiles, single: true } }, pos(jFile, 1),
+      { type: 'field.create', id: jDel, tableId: tJ, name: 'Deliverable', key: 'deliverable', fieldType: 'link', options: { target_table_id: tDel, single: true } }, pos(jDel, 2),
+      { type: 'field.create', id: jNotes, tableId: tJ, name: 'Notes', key: 'notes', fieldType: 'long_text' }, pos(jNotes, 3),
+      { type: 'table.update', id: tJ, junction: { a: jFile, b: jDel, status: jStatus } },
+      { type: 'field.create', id: blFiles, tableId: tFiles, name: 'Delivery', key: 'delivery', fieldType: 'backlink', options: { source_field_id: jFile } },
+      { type: 'field.create', id: blDeliv, tableId: tDel, name: 'Delivery', key: 'delivery', fieldType: 'backlink', options: { source_field_id: jDel } },
+      ...pairRow(pr1, v1, 'Rejected'), ...pairRow(pr2, v2, 'Accepted'), ...pairRow(pr3, other, 'Uploaded'),
+      { type: 'record.create', id: through, tableId: tRep, data: { name: 'Delivered', report: throughDef({ fields: [jStatus] }) } },
+    ]);
+    check('the server accepts a via that is a junction column, pair fields, and a rollup testing the pair', jSetup.status === 200, (await jSetup.text()).slice(0, 300));
+    const refused = await post([{ type: 'record.update', id: through, set: { report: throughDef({ fields: [jStatus] }, { fields: [jStatus] }) } }]);
+    check('…and refuses pair fields on a level reached by a plain link', refused.status === 400 && /go through one junction/.test(await refused.text()));
+
+    await nav.openReport(through);
+    await until(() => w.find('.reportview .rv-title').text() === 'Delivered' && w.findAll('.reportview .ro-row').length >= 4, 8000);
+    const rowOf = (id: string) => w.findAll('.reportview .ro-row').find((r: any) => r.attributes('data-record') === id);
+    const under = (row: any) => { const el = row.element.nextElementSibling as HTMLElement; return w.findAll('.reportview .ro-row').filter((r: any) => el.contains(r.element)); };
+    const proresOf = (work: string) => under(rowOf(work)).find((r: any) => r.attributes('data-record') === prores)!;
+    const e1Files = () => under(proresOf(ep1));
+    check('no warning: the definition is valid on the client too', !w.find('.reportview .rv-warning').exists(), w.find('.reportview .rv-warning').exists() ? w.find('.reportview .rv-warning').text() : '');
+    check('Ep 101 › ProRes › its two files — ONE level, no pair rows in between, Ep 102\'s file pinned out', await until(() => e1Files().map(labelOf).join('|') === 'ep101_prores_v2.mov|ep101_prores_v1.mov', 6000), e1Files().map((r: any) => r.text()).join('|'));
+    const filesTable = e1Files()[0].element.closest('table') as HTMLElement;
+    check('the Files section\'s header: File, the PAIR\'s Status, then the file\'s own Path', [...filesTable.querySelectorAll(':scope > thead th')].map((t) => t.textContent!.trim()).join('|') === 'File|Status|Path');
+    check('each file shows its pair\'s status beside it', e1Files().map((r: any) => r.find('.c-pair').text()).join() === 'Accepted,Rejected');
+    check('the rollups read the pair: ProRes on 101 has 2 files, 1 accepted; 101 has 1 satisfied, 102 none', proresOf(ep1).findAll('.c-rollup').map((c: any) => c.text()).join() === '2,1'
+      && rowOf(ep1)!.findAll('.c-rollup')[0].text() === '1' && rowOf(ep2)!.findAll('.c-rollup')[0].text() === '0');
+    const accept = await post([{ type: 'record.update', id: pr3, set: { status: 'Accepted' } }]);
+    check('a peer accepts Ep 102\'s file (the pair row\'s status)…', accept.status === 200);
+    check('…and the report follows: 102 is satisfied, its file says Accepted', await until(() => rowOf(ep2)!.findAll('.c-rollup')[0].text() === '1' && under(proresOf(ep2))[0]?.find('.c-pair').text() === 'Accepted', 6000));
+
+    await w.find('.reportview .rv-def').trigger('click');
+    await until(() => w.find('.record-panel .rp-title').text() === 'Delivered' && ed().findAll('.rl').length === 3);
+    const filesEd = () => ed().findAll('.rl')[2];
+    const throughVia = () => filesEd().find(`.rl-via[data-via="${blDeliv}"]`);
+    check('the editor offers the junction column as a via — "Delivery ⇄ Files · through Delivery" — and it is the one ticked',
+      throughVia().exists() && throughVia().classes('through') && throughVia().find('.rl-via-name').text() === 'Delivery' && /⇄ Files · through Delivery/.test(throughVia().text())
+      && (throughVia().find('input[type="checkbox"]').element as HTMLInputElement).checked, filesEd().findAll('.rl-via').map((x: any) => x.text()).join('|'));
+    check('…beside the endpoint link, which still leads to the pair rows themselves', filesEd().findAll('.rl-via').some((x: any) => x.find('.rl-via-name').text() === 'Delivery.Deliverable' && /← Delivery/.test(x.text())));
+    check('the level is still pinned to the Work through Files.Work', filesEd().findAll('.rl-block').find((b: any) => b.find('.rl-label').text() === 'pinned to')!.findAll('input:checked').length === 1);
+    const pairBlock = () => filesEd().find('.rl-pair');
+    check('a "pair" block lists the junction\'s OWN fields (not its two endpoint links), Status ticked',
+      pairBlock().exists() && pairBlock().findAll('.pair-field').map((x: any) => x.text().trim()).join().startsWith('Status,Notes') && !/File|Deliverable/.test(pairBlock().findAll('.pair-field').map((x: any) => x.text()).join())
+      && pairBlock().findAll('.pair-field input:checked').length === 1, pairBlock().exists() ? pairBlock().text() : '(no pair block)');
+    check('the deliverables level — reached by plain links — has no pair block', !ed().findAll('.rl')[1].find(':scope > .rl-pair').exists());
+    const delivRollups = () => ed().findAll('.rl')[1].findAll(':scope > .rl-block').find((b: any) => b.find('.rl-label').text() === 'rollups')!;
+    check('a rollup over that level offers the pair\'s fields, named by the junction', delivRollups().findAll('.rl-where select')[1].findAll('option').some((o: any) => o.text() === 'Delivery › Status'));
+    await pairBlock().find('.add-pair-filter').trigger('click');
+    await until(() => pairBlock().find('.pair-filter').exists());
+    const pf = () => pairBlock().find('.pair-filter');
+    check('"+ pair filter" starts on the junction\'s status with its choices', (pf().findAll('select')[0].element as HTMLSelectElement).value === jStatus
+      && pf().findAll('select')[2].findAll('option').map((o: any) => o.text()).join() === ',Uploaded,Rejected,Accepted');
+    await pf().findAll('select')[2].setValue('Rejected');
+    await ed().find('.save-report').trigger('click');
+    const savedPair = await ui.untilDb(`select data->'report'->'root'->'children'->0->'children'->0->'pair' p from records where id = '${through}'`, (r) => r[0]?.p?.filters?.length === 1, 8000);
+    check('save writes the pair: its fields and the filter', savedPair[0].p.fields.join() === jStatus && savedPair[0].p.filters[0].fieldId === jStatus && savedPair[0].p.filters[0].op === 'eq' && savedPair[0].p.filters[0].value === 'Rejected', JSON.stringify(savedPair[0].p));
+    check('…and the outline keeps only the files whose pair passes: 101\'s rejected v1; 102\'s section is empty but drawn',
+      await until(() => e1Files().map(labelOf).join() === 'ep101_prores_v1.mov' && under(proresOf(ep2)).length === 0 && /— nothing —/.test((proresOf(ep2).element.nextElementSibling as HTMLElement).textContent ?? ''), 6000), e1Files().map((r: any) => r.text()).join('|'));
+    await throughVia().find('input[type="checkbox"]').setValue(false);
+    check('unticking the junction via takes the pair block (and its picks) with it; revert brings them back', await until(() => !filesEd().find('.rl-pair').exists())
+      && await (async () => { await ed().find('.revert-report').trigger('click'); return until(() => ed().findAll('.rl').length === 3 && filesEd().find('.rl-pair .pair-filter').exists()); })());
+    await w.find('.record-panel .rp-close').trigger('click');
+
+    check('the grid of a reports table offers "open" on each row', await (async () => { await nav.openTable(tRep); await until(() => w.findAll('.gridview tr.row').length === 4); return w.find('.gridview .open-report').exists(); })());
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);
     await ui.close();

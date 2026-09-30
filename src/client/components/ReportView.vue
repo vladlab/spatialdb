@@ -35,7 +35,7 @@ import type { Store } from '../store';
 import { reportFieldOf, type RecordRow } from '../state';
 import { useDerived } from '../derived';
 import { SCOPE } from '../scope';
-import { ReportDef, reportDefError, resolveVia, runReport, type Descent, type ReportContext, type ReportField, type RootLevel } from '../../contract/reports';
+import { ReportDef, reportDefError, reportSchema, resolveVia, runReport, type Descent, type ReportContext, type ReportField, type RootLevel } from '../../contract/reports';
 import ReportOutline from './ReportOutline.vue';
 
 const props = defineProps<{ store: Store; reportId: string }>();
@@ -82,7 +82,11 @@ const warning = computed(() => (def.value ? reportDefError(def.value, fields.val
 const fields = computed(() => [...store.state.fields.values()] as ReportField[]);
 const fieldMap = computed(() => store.state.fields as Map<string, { id: string; name: string }>);
 
-/** The tables the walk lands in — each must be loaded, like a lookup's far table. */
+/**
+ * The tables the walk lands in — each must be loaded, like a lookup's far table —
+ * and the JUNCTION tables it goes through: their pair rows are what the walk follows.
+ */
+const schema = computed(() => reportSchema(fields.value, store.state.tables.values()));
 const tablesNeeded = computed(() => {
   const out = new Set<string>();
   if (!def.value) return out;
@@ -90,7 +94,12 @@ const tablesNeeded = computed(() => {
     out.add(tableId);
     for (const c of l.children) {
       let landing = '';
-      for (const v of c.via) { const d = resolveVia(tableId, v, store.state.fields.get(v.fieldId) as ReportField | undefined); if (typeof d !== 'string') { landing = d.table; break; } }
+      for (const v of c.via) {
+        const d = resolveVia(tableId, v, schema.value);
+        if (typeof d === 'string') continue;
+        landing ||= d.table;
+        if (d.dir === 'junction') out.add(d.junction);
+      }
       if (landing) walk(c, landing);
     }
   };

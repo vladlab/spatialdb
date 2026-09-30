@@ -10,6 +10,11 @@
   draws itself for each child level, indented, so the tree of levels is the tree of
   components.
 
+  A level reached THROUGH A JUNCTION (its via is a junction column — "Delivery ⇄
+  Files") gets one more block, `pair`: the junction's own fields, to show beside
+  each record and to filter on, and its rollup-able fields are offered to the
+  parent's rollups. Nothing about it is typed either.
+
   The level's table is not stored on a descent (the walk derives it from `via`), so
   it is passed in as `table` — and is '' until a via is picked, at which point the
   choice of further vias narrows to links landing in the same table.
@@ -36,10 +41,10 @@
     <div v-if="depth > 0" class="rl-block">
       <span class="rl-label">via</span>
       <div class="rl-rows">
-        <label v-for="c in viaChoices" :key="c.fieldId" class="rl-via" :class="{ off: c.disabled }" :title="c.disabled ? 'lands in a different table than the links already chosen' : c.title">
+        <label v-for="c in viaChoices" :key="c.fieldId" class="rl-via" :class="{ off: c.disabled, through: c.dir === 'junction' }" :data-via="c.fieldId" :title="c.disabled ? 'lands in a different table than the links already chosen' : c.title">
           <input type="checkbox" :checked="viaIndex(c.fieldId) >= 0" :disabled="c.disabled" @change="toggleVia(c.fieldId, ($event.target as HTMLInputElement).checked)" />
           <span class="rl-via-name">{{ c.label }}</span>
-          <span class="rl-via-dir">{{ c.dir === 'forward' ? '→' : '←' }} {{ c.tableName }}</span>
+          <span class="rl-via-dir">{{ c.dir === 'forward' ? '→' : c.dir === 'junction' ? '⇄' : '←' }} {{ c.tableName }}<template v-if="c.dir === 'junction'"> · through {{ c.through }}</template></span>
           <input v-if="viaIndex(c.fieldId) >= 0" class="rl-role" :value="d.via[viaIndex(c.fieldId)].role ?? ''" placeholder="role" title="Shown on every record reached through this link: 'bid', 'added'" @change="setRole(c.fieldId, val($event))" />
         </label>
         <p v-if="!viaChoices.length" class="rl-note">no link fields connect to {{ parentTableName }} — add one to a table first</p>
@@ -56,6 +61,40 @@
           <span class="rl-via-dir">through {{ p.fieldName }}</span>
         </label>
         <p v-if="!pinChoices.length" class="rl-note">no link joins {{ tableName }} to a level above the parent</p>
+      </div>
+    </div>
+
+    <!-- PAIR: reached through a junction, the level can show and filter the pair row's own fields. -->
+    <div v-if="depth > 0 && pairTable" class="rl-block rl-pair">
+      <span class="rl-label" :title="`${pairTableName}: the row joining each ${singular} to the ${parentSingular} above — its own fields`">pair</span>
+      <div class="rl-rows">
+        <div class="rl-pairfields">
+          <span class="rl-note">{{ pairTableName }}:</span>
+          <label v-for="f in pairFields" :key="f.id" class="rl-field pair-field">
+            <input type="checkbox" :checked="!!d.pair?.fields.includes(f.id)" @change="togglePairField(f.id, ($event.target as HTMLInputElement).checked)" /> {{ f.name }}
+          </label>
+        </div>
+        <div v-for="(f, i) in d.pair?.filters ?? []" :key="i" class="rl-line pair-filter">
+          <select :value="f.fieldId" @change="changeFilterField(i, val($event), d.pair!.filters)">
+            <option v-for="fl in pairFilterable" :key="fl.id" :value="fl.id">{{ fl.name }}</option>
+          </select>
+          <select :value="f.op" @change="patchFilter(i, { op: val($event) as FilterOp }, d.pair!.filters)">
+            <option v-for="op in opsOf(f.fieldId)" :key="op" :value="op">{{ OP_LABEL[op] }}</option>
+          </select>
+          <template v-if="f.op !== 'empty' && f.op !== 'notEmpty'">
+            <select v-if="choicesOf(f.fieldId).length" :value="String(f.value ?? '')" @change="patchFilterValue(i, val($event), d.pair!.filters)">
+              <option value=""></option>
+              <option v-for="c in choicesOf(f.fieldId)" :key="c" :value="c">{{ c }}</option>
+            </select>
+            <select v-else-if="typeOf(f.fieldId) === 'checkbox'" :value="String(f.value === true)" @change="patchFilter(i, { value: val($event) === 'true' }, d.pair!.filters)">
+              <option value="true">ticked</option>
+              <option value="false">not ticked</option>
+            </select>
+            <input v-else :type="typeOf(f.fieldId) === 'number' ? 'number' : typeOf(f.fieldId) === 'date' ? 'date' : 'text'" :value="f.value ?? ''" placeholder="value…" @change="patchFilterValue(i, val($event), d.pair!.filters)" />
+          </template>
+          <button class="rl-x" @click="removePairFilter(i)">×</button>
+        </div>
+        <button v-if="pairFilterable.length" class="rl-add add-pair-filter" :title="`Keep only the ${tableName} whose ${pairTableName} row matches — e.g. Status is Accepted`" @click="addPairFilter">+ pair filter</button>
       </div>
     </div>
 
@@ -127,7 +166,7 @@
               </select>
               <select v-if="r.op !== 'count' && r.op !== 'countWhere'" :value="r.fieldId ?? ''" @change="r.fieldId = val($event); changed()">
                 <option value="" disabled>field…</option>
-                <option v-for="fl in rollupFields(r)" :key="fl.id" :value="fl.id">{{ fl.name }}</option>
+                <option v-for="fl in rollupFields(r)" :key="fl.id" :value="fl.id">{{ fl.label }}</option>
               </select>
               <select :value="r.over" @change="setRollupOver(r, val($event))" title="which child level">
                 <option v-for="c in level.children" :key="c.id" :value="c.id">over {{ childTableName(c) }}</option>
@@ -142,7 +181,7 @@
               <template v-if="Array.isArray(r.where)">
                 <template v-if="r.where.length">
                   <select :value="r.where[0].fieldId" @change="r.where[0] = { fieldId: val($event), op: opsForId(val($event))[0] }; changed()">
-                    <option v-for="fl in childFilterable(r)" :key="fl.id" :value="fl.id">{{ fl.name }}</option>
+                    <option v-for="fl in childFilterable(r)" :key="fl.id" :value="fl.id">{{ fl.label }}</option>
                   </select>
                   <select :value="r.where[0].op" @change="r.where[0].op = val($event) as FilterOp; changed()">
                     <option v-for="op in opsForId(r.where[0].fieldId)" :key="op" :value="op">{{ OP_LABEL[op] }}</option>
@@ -191,7 +230,8 @@ import { choicesOf as contractChoices } from '../../contract/values';
 import type { Store } from '../store';
 import { fieldsOf, type FieldRow } from '../state';
 import { opsFor, type FilterOp } from '../../contract/views';
-import { MAX_DEPTH, ROLLUP_LABELS, ROLLUP_OPS, resolveVia, type Descent, type ReportField, type Rollup, type RollupOp, type RootLevel } from '../../contract/reports';
+import { MAX_DEPTH, ROLLUP_LABELS, ROLLUP_OPS, pairTableOf, reportSchema, resolveVia, type Descent, type ReportField, type Rollup, type RollupOp, type RootLevel } from '../../contract/reports';
+import { junctionOf } from '../../contract/junction';
 
 const props = defineProps<{
   store: Store;
@@ -215,6 +255,9 @@ const d = computed(() => props.level as Descent);
 const tableName = computed(() => store.state.tables.get(props.table)?.name ?? '');
 const singular = computed(() => store.state.tables.get(props.table)?.singular_name || tableName.value || 'record');
 const parentTableName = computed(() => store.state.tables.get(props.parentTable)?.name ?? 'the parent');
+const parentSingular = computed(() => store.state.tables.get(props.parentTable)?.singular_name || parentTableName.value);
+/** The schema as the contract asks it — which fields are junction columns is decided there, not here. */
+const schema = computed(() => reportSchema(store.state.fields.values() as Iterable<ReportField>, store.state.tables.values()));
 const tableChoices = computed(() => [...store.state.tables.values()].filter((t) => !t.kind || t.kind === 'records').sort((a, b) => a.name.localeCompare(b.name)));
 const tableFields = computed(() => (props.table ? fieldsOf(store.state, props.table) : []));
 const filterable = computed(() => tableFields.value.filter((f) => opsFor(f.type).length));
@@ -243,17 +286,23 @@ function setRootTable(id: string) {
 /* ── via ──────────────────────────────────────────────────────────────── */
 const viaChoices = computed(() => {
   if (!props.parentTable) return [];
-  const out: Array<{ fieldId: string; label: string; title: string; dir: 'forward' | 'backlink'; table: string; tableName: string; disabled: boolean }> = [];
+  const out: Array<{ fieldId: string; label: string; title: string; dir: 'forward' | 'backlink' | 'junction'; table: string; tableName: string; through: string; disabled: boolean }> = [];
   for (const f of store.state.fields.values()) {
-    if (f.type !== 'link') continue;
-    const r = resolveVia(props.parentTable, { fieldId: f.id }, f as ReportField);
+    // Link fields, either way round — and junction columns (a backlink mirroring a
+    // junction's endpoint), which go THROUGH the pair rows to the other end.
+    if (f.type !== 'link' && f.type !== 'backlink') continue;
+    const r = resolveVia(props.parentTable, { fieldId: f.id }, schema.value);
     if (typeof r === 'string') continue;
     const owner = store.state.tables.get(f.table_id)?.name ?? '?';
     const landing = store.state.tables.get(r.table)?.name ?? '?';
+    const through = r.dir === 'junction' ? store.state.tables.get(r.junction)?.name ?? '?' : '';
     out.push({
-      fieldId: f.id, dir: r.dir, table: r.table, tableName: landing,
-      label: r.dir === 'forward' ? f.name : `${owner}.${f.name}`,
-      title: r.dir === 'forward' ? `${parentTableName.value}.${f.name} → ${landing}` : `${owner}.${f.name} points at ${parentTableName.value}: follow it back to ${owner}`,
+      fieldId: f.id, dir: r.dir, table: r.table, tableName: landing, through,
+      label: r.dir === 'backlink' ? `${owner}.${f.name}` : f.name,
+      title: r.dir === 'forward' ? `${parentTableName.value}.${f.name} → ${landing}`
+        : r.dir === 'junction' ? `${parentTableName.value}.${f.name}: through the ${through} pairs, straight to ${landing} — the pair's own fields (its status) can be shown and filtered on that level`
+        : schema.value.endpoint(f.id) ? `${owner}.${f.name}: the ${owner} PAIR ROWS themselves, as a level — to reach the other end in one level, pick the ⇄ entry`
+        : `${owner}.${f.name} points at ${parentTableName.value}: follow it back to ${owner}`,
       disabled: !!props.table && r.table !== props.table && viaIndex(f.id) < 0,
     });
   }
@@ -274,6 +323,13 @@ function toggleVia(fieldId: string, on: boolean) {
     d.value.via.splice(i, 1);
     if (!d.value.via.length) { d.value.fields = []; d.value.filters = []; d.value.sort = []; d.value.rollups = []; d.value.children = []; d.value.pins = undefined; }
   }
+  // The pair follows the vias: a level no longer reached through that one junction keeps none of its pair picks.
+  if (d.value.pair) {
+    const now = pairTableOf(props.parentTable, d.value.via, schema.value);
+    d.value.pair.fields = d.value.pair.fields.filter((id) => fieldById(id)?.table_id === now);
+    d.value.pair.filters = d.value.pair.filters.filter((e) => fieldById(e.fieldId)?.table_id === now);
+    tidyPair();
+  }
   changed();
 }
 function setRole(fieldId: string, role: string) {
@@ -281,6 +337,27 @@ function setRole(fieldId: string, role: string) {
   if (role.trim()) v.role = role.trim(); else delete v.role;
   changed();
 }
+
+/* ── pair: a level reached through a junction ─────────────────────────── */
+const pairTable = computed(() => (props.depth > 0 && props.parentTable ? pairTableOf(props.parentTable, d.value.via, schema.value) ?? '' : ''));
+const pairTableName = computed(() => store.state.tables.get(pairTable.value)?.name ?? 'pair');
+/** The junction's own fields — not its two endpoint links, which ARE the parent and this record. */
+const pairFieldsOf = (tableId: string): FieldRow[] => {
+  const cfg = junctionOf(store.state.tables.get(tableId));
+  return tableId ? fieldsOf(store.state, tableId).filter((f) => f.id !== cfg?.a && f.id !== cfg?.b) : [];
+};
+const pairFields = computed(() => pairFieldsOf(pairTable.value));
+const pairFilterable = computed(() => pairFields.value.filter((f) => opsFor(f.type).length));
+const pairDraft = () => (d.value.pair ??= { fields: [], filters: [] });
+function tidyPair() { const p = d.value.pair; if (p && !p.fields.length && !p.filters.length) d.value.pair = undefined; }
+function togglePairField(id: string, on: boolean) {
+  const p = pairDraft(); const i = p.fields.indexOf(id);
+  if (on && i < 0) { p.fields.push(id); p.fields.sort((a, b) => (fieldById(a)?.position ?? 0) - (fieldById(b)?.position ?? 0)); }
+  if (!on && i >= 0) p.fields.splice(i, 1);
+  tidyPair(); changed();
+}
+function addPairFilter() { const f = pairFilterable.value[0]; pairDraft().filters.push({ fieldId: f.id, op: opsFor(f.type)[0] }); changed(); }
+function removePairFilter(i: number) { d.value.pair?.filters.splice(i, 1); tidyPair(); changed(); }
 
 /* ── pins ─────────────────────────────────────────────────────────────── */
 const pinChoices = computed(() => {
@@ -317,15 +394,17 @@ function toggleField(id: string, on: boolean) {
 }
 function removeAt(arr: unknown[], i: number) { arr.splice(i, 1); changed(); }
 function addFilter() { const f = filterable.value[0]; props.level.filters.push({ fieldId: f.id, op: opsFor(f.type)[0] }); changed(); }
-function patchFilter(i: number, p: Partial<RootLevel['filters'][number]>) { Object.assign(props.level.filters[i], p); changed(); }
-function changeFilterField(i: number, fieldId: string) { props.level.filters[i] = { fieldId, op: opsOf(fieldId)[0] }; changed(); }
+type Filters = RootLevel['filters'];
+// `list` is the level's own filters, or — for the pair block — the pair's.
+function patchFilter(i: number, p: Partial<Filters[number]>, list: Filters = props.level.filters) { Object.assign(list[i], p); changed(); }
+function changeFilterField(i: number, fieldId: string, list: Filters = props.level.filters) { list[i] = { fieldId, op: opsOf(fieldId)[0] }; changed(); }
 function coerce(fieldId: string, raw: string): string | number | undefined {
   if (raw === '') return undefined;
   if (typeOf(fieldId) === 'number') { const n = Number(raw); return Number.isFinite(n) ? n : undefined; }
   return raw;
 }
-function patchFilterValue(i: number, raw: string) {
-  const f = props.level.filters[i];
+function patchFilterValue(i: number, raw: string, list: Filters = props.level.filters) {
+  const f = list[i];
   const v = coerce(f.fieldId, raw);
   if (v === undefined) delete f.value; else f.value = v;
   changed();
@@ -333,12 +412,21 @@ function patchFilterValue(i: number, raw: string) {
 
 /* ── rollups ──────────────────────────────────────────────────────────── */
 const childTable = (c: Descent): string => {
-  for (const v of c.via) { const r = resolveVia(props.table, v, store.state.fields.get(v.fieldId) as ReportField | undefined); if (typeof r !== 'string') return r.table; }
+  for (const v of c.via) { const r = resolveVia(props.table, v, schema.value); if (typeof r !== 'string') return r.table; }
   return '';
 };
 const childTableName = (c: Descent) => store.state.tables.get(childTable(c))?.name ?? c.id;
 const childOf = (r: Rollup) => props.level.children.find((c) => c.id === r.over);
-const childFields = (r: Rollup): FieldRow[] => { const c = childOf(r); return c ? fieldsOf(store.state, childTable(c)) : []; };
+/** A rollup's fields: the child level's own, then — for a child reached through a junction — its pair's, named by the junction. */
+type Pick = { id: string; type: string; label: string };
+const childFields = (r: Rollup): Pick[] => {
+  const c = childOf(r);
+  if (!c) return [];
+  const own = fieldsOf(store.state, childTable(c)).map((f) => ({ id: f.id, type: f.type, label: f.name }));
+  const jt = pairTableOf(props.table, c.via, schema.value);
+  const jn = jt ? store.state.tables.get(jt)?.name ?? 'pair' : '';
+  return [...own, ...(jt ? pairFieldsOf(jt).map((f) => ({ id: f.id, type: f.type, label: `${jn} › ${f.name}` })) : [])];
+};
 const childFilterable = (r: Rollup) => childFields(r).filter((f) => opsFor(f.type).length);
 const childRollups = (r: Rollup) => childOf(r)?.rollups ?? [];
 const rollupFields = (r: Rollup) => childFields(r).filter((f) => r.op === 'sum' ? f.type === 'number' : r.op === 'min' || r.op === 'max' ? f.type === 'number' || f.type === 'date' : f.type !== 'attachment');
@@ -383,6 +471,8 @@ function addChild() {
 .rl-label { flex: 0 0 60px; color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; padding-top: 3px; }
 .rl-rows { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
 .rl-fields { flex-direction: row; flex-wrap: wrap; gap: 2px 10px; }
+.rl-pairfields { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
+.rl-via.through .rl-via-dir { color: var(--text-muted); }
 .rl-field, .rl-via { display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text-secondary); min-width: 0; }
 .rl-via.off { opacity: 0.4; cursor: default; }
 .rl-via-name { color: var(--text-primary); }

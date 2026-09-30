@@ -2,12 +2,14 @@
  * The reports contract (REPORTS-BRIEF.md), pure — no server, no database. The
  * fixture is the brief's worked example: Projects › Works (Deliverables (bid),
  * Deliverables (added)) › Deliverables › Files (project, work, deliverable; path,
- * size, status, delivered). Every rule the brief pins is a check here.
+ * size, status, delivered). Every rule the brief pins is a check here. R11 is the
+ * same report after Files.Deliverable became a JUNCTION ("Delivery"): the walk goes
+ * through the pair rows, and the pair's status is shown, filtered and rolled up.
  */
 import { randomUUID } from 'node:crypto';
 import {
-  reportDefError, runReport, flattenReport, flattenGrid, toCsv, EMPTY_REPORT,
-  type ReportDef, type ReportField, type ReportContext, type ReportSection, type ReportNode,
+  reportDefError, runReport, flattenReport, flattenGrid, toCsv, EMPTY_REPORT, resolveVia, reportSchema, pairTableOf,
+  type ReportDef, type ReportField, type ReportTable, type ReportContext, type ReportSection, type ReportNode,
 } from '../src/contract/reports.js';
 import type { ViewRecord } from '../src/contract/views.js';
 
@@ -20,7 +22,7 @@ function check(label: string, ok: boolean, detail = '') {
 /* ── fixture ──────────────────────────────────────────────────────────────── */
 
 const T = { projects: randomUUID(), works: randomUUID(), delivs: randomUUID(), files: randomUUID(), edits: randomUUID() };
-const tables = [
+const tables: ReportTable[] = [
   { id: T.projects, name: 'Projects' }, { id: T.works, name: 'Works' }, { id: T.delivs, name: 'Deliverables' },
   { id: T.files, name: 'Files' }, { id: T.edits, name: 'Edits' },
 ];
@@ -205,6 +207,136 @@ const g = flattenGrid(records.get(T.files)!, fields, [fPath, fSize, fStatus, fFi
 check('columns are the visible fields by name, after the record label', g.columns.join('|') === 'Record|Path|Size|Status|Work');
 check('a link cell is its labels; a number is its text; an empty select is blank', g.rows[3].join('|') === 'ep101_notes.txt|/vol/notes.txt|1||Ep 101', g.rows[3].join('|'));
 check('a hidden (unlisted) field is not a column', !g.columns.includes('Delivered'));
+
+/* ── R11: through a junction ──────────────────────────────────────────────────
+ * Files ⇄ Deliverables through "Delivery" (contract/junction.ts): each pair row
+ * links ONE file and ONE deliverable and carries a status. There is no link field
+ * between Files and Deliverables any more; the relation is the pair rows, and the
+ * "Delivery" column on each end (a backlink mirroring the junction's endpoint) is
+ * what a `via` names. Added here, after R1–R10, so those run on the schema they
+ * were written for. */
+console.log('\nR11. Through a junction: Work › Deliverables › Files, the pair beside the file');
+const tPairs = randomUUID();
+const tJunction: ReportTable = { id: tPairs, name: 'Delivery', kind: 'junction' };
+tables.push(tJunction);
+const jStatus = field('Status', tPairs, 'select', { choices: ['Uploaded', 'Rejected', 'Accepted'] });
+const jFile = field('File', tPairs, 'link', { target_table_id: T.files, single: true });
+const jDeliv = field('Deliverable', tPairs, 'link', { target_table_id: T.delivs, single: true });
+const jNotes = field('Notes', tPairs, 'text');
+tJunction.junction = { a: jFile, b: jDeliv, status: jStatus };
+const colOnFiles = field('Delivery', T.files, 'backlink', { source_field_id: jFile });
+const colOnDelivs = field('Delivery', T.delivs, 'backlink', { source_field_id: jDeliv });
+const plainBacklink = field('Bid on', T.delivs, 'backlink', { source_field_id: fBid });
+const pair = (file: string, deliv: string, status: string, notes = '') => {
+  const id = record(tPairs, `${labelOf(file)} → ${labelOf(deliv)}`, { status, notes });
+  link(jFile, id, file); link(jDeliv, id, deliv); return id;
+};
+const pV1 = pair(f1, dProres, 'Rejected', 'wrong audio layout');
+const pV2 = pair(f2, dProres, 'Accepted');
+pair(f3, dProres, 'Uploaded');
+const schema = reportSchema(fields, tables);
+
+const through = resolveVia(T.delivs, { fieldId: colOnDelivs }, schema);
+check('a junction column resolves THROUGH the pairs to the other end\'s table',
+  typeof through !== 'string' && through.dir === 'junction' && through.table === T.files && through.junction === tPairs && through.near === jDeliv && through.far === jFile, JSON.stringify(through));
+const back = resolveVia(T.files, { fieldId: colOnFiles }, schema);
+check('…and from the other end, the other way', typeof back !== 'string' && back.dir === 'junction' && back.table === T.delivs);
+const rows = resolveVia(T.delivs, { fieldId: jDeliv }, schema);
+check('the endpoint LINK still descends into the pair rows themselves', typeof rows !== 'string' && rows.dir === 'backlink' && rows.table === tPairs);
+check('an ordinary backlink is not a via — the link it mirrors is', String(resolveVia(T.delivs, { fieldId: plainBacklink }, schema)).includes('pick the link field it mirrors'));
+check('a junction column of another table does not connect', String(resolveVia(T.works, { fieldId: colOnDelivs }, schema)).includes('does not connect'));
+check('pairTableOf: one junction → it; a plain link → none', pairTableOf(T.delivs, [{ fieldId: colOnDelivs }], schema) === tPairs && pairTableOf(T.works, [{ fieldId: fBid }], schema) === null);
+
+/** The brief's report, its Files level now reached through Delivery and still pinned to the Work. */
+const delivered: ReportDef = {
+  v: 1,
+  root: {
+    id: 'works', table: T.works, fields: [], filters: [], sort: [{ fieldId: F['Works.Name'], dir: 'asc' }],
+    rollups: [
+      { id: 'expected', label: 'expected', op: 'count', over: 'delivs' },
+      { id: 'delivered', label: 'with files', op: 'countWhere', over: 'delivs', where: { rollup: 'files', op: 'gt', value: 0 } },
+      { id: 'satisfied', label: 'satisfied', op: 'countWhere', over: 'delivs', where: { rollup: 'accepted', op: 'gt', value: 0 } },
+    ],
+    children: [{
+      id: 'delivs', via: [{ fieldId: fBid, role: 'bid' }, { fieldId: fAdded, role: 'added' }],
+      fields: [], filters: [], sort: [{ fieldId: F['Deliverables.Name'], dir: 'asc' }],
+      rollups: [
+        { id: 'files', label: 'files', op: 'count', over: 'files' },
+        { id: 'accepted', label: 'accepted', op: 'countWhere', over: 'files', where: [{ fieldId: jStatus, op: 'eq', value: 'Accepted' }] },
+        { id: 'big', label: 'accepted over 11', op: 'countWhere', over: 'files', where: [{ fieldId: fSize, op: 'gt', value: 11 }, { fieldId: jStatus, op: 'eq', value: 'Accepted' }] },
+        { id: 'states', label: 'states', op: 'list', over: 'files', fieldId: jStatus },
+      ],
+      children: [{
+        id: 'files', via: [{ fieldId: colOnDelivs }], pins: [{ fieldId: fFileWork, levelId: 'works' }],
+        pair: { fields: [jStatus, jNotes], filters: [] },
+        fields: [fPath], filters: [], sort: [{ fieldId: F['Files.Name'], dir: 'desc' }], rollups: [], children: [],
+      }],
+    }],
+  },
+};
+check('the definition is acceptable', reportDefError(delivered, fields, tables) === null, reportDefError(delivered, fields, tables) ?? '');
+const jr = runReport(delivered, ctx);
+const j101 = node(jr, 'Ep 101'), j102 = node(jr, 'Ep 102');
+const jProres = node(section(j101, 'delivs')!, 'ProRes 4444 texted');
+const jFiles = section(jProres, 'files')!;
+check('Files is ONE level under the deliverable — no level of pair rows', jFiles.tableId === T.files && jFiles.pairTableId === tPairs);
+check('the pin holds: Ep 101 lists its own two files, not Ep 102\'s', jFiles.nodes.map((n) => n.record.label).join() === 'ep101_prores_v2.mov,ep101_prores_v1.mov', jFiles.nodes.map((n) => n.record.label).join());
+check('…and Ep 102, under the SAME deliverable, lists only its own', section(node(section(j102, 'delivs')!, 'ProRes 4444 texted'), 'files')!.nodes.map((n) => n.record.label).join() === 'ep102_prores_v1.mov');
+check('a node carries its pair row and the pair\'s cells', jFiles.nodes[0].pair?.id === pV2 && jFiles.nodes[0].pair?.tableId === tPairs
+  && jFiles.nodes[0].pair.cells.map((c) => c.text).join('|') === 'Accepted|' && jFiles.nodes[1].pair?.id === pV1 && jFiles.nodes[1].pair.cells.map((c) => c.text).join('|') === 'Rejected|wrong audio layout');
+check('the record\'s own cells are untouched by the pair', jFiles.nodes[0].cells.map((c) => c.text).join() === '/vol/ep101_prores_v2.mov');
+const jDcp = node(section(j101, 'delivs')!, 'DCP 2K Flat');
+check('a deliverable with no pairs is still a node, its Files section empty', !!jDcp && section(jDcp, 'files')!.nodes.length === 0 && roll(jDcp, 'files') === 0);
+check('a rollup may test the PAIR: accepted = files whose Delivery status is Accepted', roll(jProres, 'files') === 2 && roll(jProres, 'accepted') === 1);
+check('…together with the file\'s own fields', roll(jProres, 'big') === 1);
+check('…and read it: list of states', roll(jProres, 'states') === 'Accepted, Rejected', String(roll(jProres, 'states')));
+check('"satisfied" is derived: 101 has 2 expected, 1 with files, 1 satisfied', roll(j101, 'expected') === 2 && roll(j101, 'delivered') === 1 && roll(j101, 'satisfied') === 1);
+check('…and 102 has a file uploaded but nothing accepted', roll(j102, 'delivered') === 1 && roll(j102, 'satisfied') === 0);
+
+const acceptedOnly: ReportDef = JSON.parse(JSON.stringify(delivered));
+acceptedOnly.root.children[0].children[0].pair!.filters = [{ fieldId: jStatus, op: 'eq', value: 'Accepted' }];
+check('a pair filter is acceptable', reportDefError(acceptedOnly, fields, tables) === null, reportDefError(acceptedOnly, fields, tables) ?? '');
+const ar = runReport(acceptedOnly, ctx);
+const aFiles = (work: string) => section(node(section(node(ar, work), 'delivs')!, 'ProRes 4444 texted'), 'files')!;
+check('a pair filter keeps the records whose pair passes', aFiles('Ep 101').nodes.map((n) => n.record.label).join() === 'ep101_prores_v2.mov');
+check('…and a level it empties is still a section', aFiles('Ep 102').nodes.length === 0 && roll(node(ar, 'Ep 102'), 'delivered') === 0);
+
+const jflat = flattenReport(delivered, jr, ctx);
+const iFile = jflat.columns.indexOf('Files');
+check('flattened: the pair\'s columns sit beside the record, named by the junction',
+  jflat.columns.slice(iFile, iFile + 4).join('|') === 'Files|Files: Delivery Status|Files: Delivery Notes|Files: Path', jflat.columns.join('|'));
+const v1row = jflat.rows.find((r) => r[iFile] === 'ep101_prores_v1.mov')!;
+check('…and each leaf row carries its pair\'s values', v1row[iFile + 1] === 'Rejected' && v1row[iFile + 2] === 'wrong audio layout' && v1row[0] === 'Ep 101');
+
+const jbad = (mut: (d: any) => void) => { const d = JSON.parse(JSON.stringify(delivered)); mut(d); return reportDefError(d, fields, tables) ?? ''; };
+check('pair fields on a level reached by a plain link are refused', jbad((d) => { d.root.children[0].pair = { fields: [jStatus], filters: [] }; }).includes('go through one junction'));
+check('a pair field must be a field of THAT junction', jbad((d) => { d.root.children[0].children[0].pair.fields = [fPath]; }).includes('not a field of the junction'));
+check('a pair filter likewise', jbad((d) => { d.root.children[0].children[0].pair.filters = [{ fieldId: fPath, op: 'notEmpty' }]; }).includes('not a field of the junction'));
+check('a rollup over a PLAIN level cannot test a pair field', jbad((d) => { d.root.rollups.push({ id: 'x', label: 'x', op: 'countWhere', over: 'delivs', where: [{ fieldId: jStatus, op: 'eq', value: 'Accepted' }] }); }).includes('condition field'));
+check('an empty `pair` on a plain level is harmless', jbad((d) => { d.root.children[0].pair = { fields: [], filters: [] }; }) === '');
+
+// The other direction, and the pairs as a level of their own — both still reports.
+const fromFiles: ReportDef = { v: 1, root: { id: 'files', table: T.files, fields: [], filters: [], sort: [{ fieldId: F['Files.Name'], dir: 'asc' }], rollups: [],
+  children: [{ id: 'delivs', via: [{ fieldId: colOnFiles }], pair: { fields: [jStatus], filters: [] }, fields: [], filters: [], sort: [], rollups: [], children: [] }] } };
+const ff = runReport(fromFiles, ctx);
+check('from the Files end: a file › its deliverables, each with its status', reportDefError(fromFiles, fields, tables) === null
+  && section(node(ff, 'ep101_prores_v1.mov'), 'delivs')!.nodes.map((n) => `${n.record.label}:${n.pair?.cells[0].text}`).join() === 'ProRes 4444 texted:Rejected'
+  && section(node(ff, 'ep101_notes.txt'), 'delivs')!.nodes.length === 0);
+const pairsAsLevel: ReportDef = { v: 1, root: { id: 'delivs', table: T.delivs, fields: [], filters: [], sort: [], rollups: [],
+  children: [{ id: 'rows', via: [{ fieldId: jDeliv }], fields: [jStatus], filters: [], sort: [], rollups: [],
+    children: [{ id: 'files', via: [{ fieldId: jFile }], fields: [], filters: [], sort: [], rollups: [], children: [] }] }] } };
+const pl = runReport(pairsAsLevel, ctx);
+check('the pair rows as a level of their own still walk (Deliverables › Delivery › Files)', reportDefError(pairsAsLevel, fields, tables) === null
+  && section(node(pl, 'ProRes 4444 texted'), 'rows')!.nodes.length === 3 && section(node(pl, 'ProRes 4444 texted'), 'rows')!.pairTableId === undefined
+  && section(node(pl, 'ProRes 4444 texted'), 'rows')!.nodes[0].children[0].nodes[0].record.label === 'ep101_prores_v1.mov');
+
+// Read-time is lenient: a junction that stopped being one leaves an empty level, never a throw.
+const noJunction = { ...ctx, tables: tables.map((t) => ({ id: t.id, name: t.name })) };
+let gone: ReportSection | null = null;
+try { gone = runReport(delivered, noJunction); } catch { /* checked below */ }
+check('a via whose junction is gone is skipped: the level is empty, the rest of the report stands',
+  !!gone && node(gone, 'Ep 101')!.children[0].nodes.length === 2 && section(node(section(node(gone, 'Ep 101'), 'delivs')!, 'ProRes 4444 texted'), 'files')!.nodes.length === 0);
+check('…and the validator says why', (reportDefError(delivered, fields, noJunction.tables) ?? '').includes('pick the link field it mirrors'));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

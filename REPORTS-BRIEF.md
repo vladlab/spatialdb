@@ -42,6 +42,24 @@ Ep 102
   ProRes 4444 texted   [bid]     — nothing yet —
 ```
 
+**Since junctions (Sept 30 2026):** `Files.deliverable` is no longer a link — the
+relation is a junction, "Delivery", whose rows carry the status. The report is the
+same shape, its last level reached THROUGH the junction (§3a):
+
+```
+Works
+└─ via "Deliverables"              → Deliverables
+     └─ via Deliverables."Delivery" ⇄ Files (through the Delivery pairs),
+        PINNED: Files.work = the Work above;  pair: Status
+```
+
+```
+Ep 101                                        2 expected · 1 satisfied
+  ProRes 4444 texted   ep101_prores_v2.mov   Accepted
+                       ep101_prores_v1.mov   Rejected
+  DCP 2K Flat          — nothing —
+```
+
 Three things come free from the walk:
 
 - **Empty groups exist.** The walk descends from the *parent's* link, so a
@@ -109,6 +127,43 @@ Rollup = {
        | { rollup: string, op: 'gt' | 'gte' | 'lt' | 'lte' | 'eq', value: number }
 }
 ```
+
+### 3a. Through a junction
+
+```ts
+Descent = Level & {
+  via:  { fieldId, role? }[]       // a fieldId may also be a JUNCTION COLUMN on the
+                                   // parent's table: through the pair rows, to the
+                                   // other end's table
+  pins?: …
+  pair?: { fields: uuid[], filters: FilterEntry[] }   // fields of the junction table
+}
+ReportNode    += pair?: { id, tableId, cells }         // the pair row, and pair.fields read from it
+ReportSection += pairTableId?
+```
+
+- **The junction column is the `via`** — the backlink on the endpoint table that
+  mirrors the junction's `a`/`b`, which is already "the relation" to the grid, the
+  canvas and the comparison. No flag, no new field kind: the walk recognises it from
+  `tables.junction`. The level lands on the OTHER END; the pair rows are not a level.
+- **Pins are unchanged.** They apply to the landed records (Files.work = the Work
+  above), which is what made the junction-table-as-a-level walk unusable: a pair row
+  has no Work link, so every episode's pairs listed under a shared deliverable.
+- **`pair` is explicit**, like `fields`: tick the junction's Status to show it; a
+  pair filter ("Status is Accepted") drops the records no pair of which passes.
+- **Rollups may test and read pair fields** of the child they run over:
+  `accepted = countWhere files where Delivery › Status = Accepted`, and one level up
+  `satisfied = countWhere deliverables where rollup accepted > 0`.
+- **One pair per node.** A record reached by several pair rows at one level appears
+  once, carrying its first row (its first PASSING row under a pair filter).
+- **`pair` needs one junction**: every `via` of the level through the same one.
+- The junction's endpoint LINK still works as a `via` into the junction table — a
+  report about the pairs themselves — and an ordinary backlink is still not a `via`.
+- CSV: pair columns sit beside the record, named by the junction
+  ("Files: Delivery Status").
+
+Pinned in `test/reports.ts` R11 (pure) and `test/reportview.ts` V6 (server, outline,
+editor).
 
 Decisions inside the shape, each agreed:
 
@@ -196,6 +251,10 @@ is a view of the app with an address, listed under "Reports" in the tree, drawn 
 from the store (`test/reportview.ts`); step 4, the level editor in the tray
 (`ReportEditor.vue`, `ReportLevelEditor.vue`) — picks only, no ids typed, a draft saved
 once (`test/reportview.ts` V5). Owner to test the editor by hand.
+
+Sept 30, 2026: the walk goes THROUGH junctions (§3a) — contract, server check,
+outline and editor; `test/reports.ts` R11, `test/reportview.ts` V6. Steps 5 and 6
+are still to build.
 
 1. `contract/reports.ts`: `ReportDef` zod, `runReport`, the flattener, tests (pure;
    red-checked, including the worked example below). **Stop for the owner's review

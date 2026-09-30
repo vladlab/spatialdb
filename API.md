@@ -576,13 +576,32 @@ table is a report; the app makes it with a Name and a **`structured` field of sh
   `children`, where a child names the link fields it descends through (`via`, one or
   more into one table, each optionally role-labelled) and may be `pins`-ed to an
   ancestor level. Field ids everywhere, never keys, so renames never break a report.
+- **Through a junction.** Two tables joined by a junction (Files ⇄ Deliverables
+  through "Delivery") have no link field between them; the relation is the pair
+  rows. A `via` may name the **junction column** on the parent's table — the backlink
+  that mirrors the junction's endpoint, the same field the grid, the canvas and the
+  comparison use — and the walk goes through the pair rows to the OTHER END in one
+  level (`resolveVia` → `dir: 'junction'`), so `Works › Deliverables › Files` keeps
+  its shape and Files can still be pinned to the Work. Such a level may carry
+  **`pair: { fields, filters }`** — fields of the junction table (its status, its
+  notes) shown beside each record and filtered on ("only Accepted"); a rollup over
+  it may test or read them too, so "satisfied" is
+  `countWhere files where Delivery › Status = Accepted`, derived, never stored. A node
+  reached this way carries `pair: { id, tableId, cells }`; its section,
+  `pairTableId`. A record with several pair rows at one level appears once, with
+  its first row (under a pair filter, its first passing one). `pair` needs EVERY
+  `via` of the level to go through the same junction; an ordinary backlink is not
+  a `via` (name the link it mirrors). Descending into the junction TABLE by its
+  endpoint link still works, for a report about the pairs themselves.
 - **Validated twice on write.** `contract/values.ts` parses the shape (the same
   parse the record tray's JSON editor runs); then the server runs
   **`reportDefError`** against the whole schema: every table and field named must
   exist and belong to the level it is used on, every `via` must connect to the
   parent and land in one table, every pin must name an ancestor through a link
   that joins the two tables, every rollup must be over a direct child with a field
-  of the right type. Any failure is a **400** naming the level and the reason.
+  of the right type (the child's, or its pair's), every pair field must belong to
+  the one junction the level goes through. Any failure is a **400** naming the level
+  and the reason. The server reads `tables.kind` and `tables.junction` for this.
 - **Nothing else is stored.** A report is derived when opened — `runReport` in the
   contract, pure, on the client over loaded tables, scope filtering only the root
   level. Read-time is lenient: a deleted field or link named by a definition is
@@ -593,8 +612,9 @@ table is a report; the app makes it with a Name and a **`structured` field of sh
   `runReport` over the store, so it updates live as records and links change. The
   tree lists a section's reports under "Reports", after its canvases; "+" makes one
   (and a "Reports" table first, if the section has none). The outline
-  (`ReportOutline.vue`) draws each section as a table — record, role, the level's
-  fields by name, its rollups by label — with child sections nested under each row;
+  (`ReportOutline.vue`) draws each section as a table — record, role, the pair's
+  fields (through a junction), the level's fields by name, its rollups by label —
+  with child sections nested under each row;
   an empty section is drawn as "— nothing —". Clicking a row opens that record in
   the tray; "definition…" opens the report's own record. The grid cell summarises a
   definition structurally ("3 levels, 2 rollups").
@@ -602,8 +622,11 @@ table is a report; the app makes it with a Name and a **`structured` field of sh
   what the record tray shows for the report field: every choice is a pick from the
   schema — the root table; for a descent, the link fields that connect to the parent
   (forward on the parent, or pointing at it), each with a role box, narrowed to one
-  landing table once the first is ticked; pins offered from the links joining the
-  level's table to an ancestor above the parent; fields as tick boxes; the grid's
+  landing table once the first is ticked — a junction column is offered as
+  "Delivery ⇄ Files · through Delivery", and a level reached that way gets a `pair`
+  block (the junction's own fields as tick boxes, "+ pair filter"); pins offered
+  from the links joining the level's table to an ancestor above the parent; fields
+  as tick boxes; the grid's
   filter and sort rows; rollups over a direct child, with "where a field…" or
   "where its rollup…". Level ids come from table names (`files`, `files2`). It edits
   a draft, validates it live with `reportDefError`, and **Save writes once** (one
@@ -737,7 +760,8 @@ Not a paired second link field: that would be two copies of one fact.
 A table of kind `junction` (`sql/016`, **`src/contract/junction.ts`**, `test/junction.ts`,
 `test/junctionui.ts`). Each record is one PAIR — this file, that deliverable — and
 carries what the pair carries: a status, notes, any fields added. "Satisfied" is
-never stored; it is "any row Accepted", a report's question.
+never stored; it is "any row Accepted", a report's question — and a report walks
+THROUGH a junction to ask it (Reports, "Through a junction").
 
 ```jsonc
 { "type": "table.create", "kind": "junction", ... }

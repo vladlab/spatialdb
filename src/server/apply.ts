@@ -328,7 +328,7 @@ async function assertValuesValid(
     if (f.type === 'structured' && f.options?.shape === 'report' && data[f.key] !== undefined) {
       const [fields, tables] = await Promise.all([
         db.query(`select id, key, name, type, table_id, options from fields`),
-        db.query(`select id, name from tables`),
+        db.query(`select id, name, kind, junction from tables`),   // kind + junction: a via may go THROUGH one
       ]);
       const rerr = reportDefError(data[f.key], fields.rows, tables.rows);
       if (rerr) throw new MutationError(`'${f.key}': ${rerr}`);

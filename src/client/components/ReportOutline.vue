@@ -1,7 +1,9 @@
 <!--
   One SECTION of a report result (contract/reports.ts `ReportSection`), drawn as a
   table: a header row of the level's columns — the record, its role if any of the
-  level's links carry one, its fields by name, its rollups by label — then one row
+  level's links carry one, the PAIR's fields for a level reached through a junction
+  (the file's Delivery status, beside the file), its fields by name, its rollups by
+  label — then one row
   per node, and under a node that has children, its child sections, nested and
   indented, each drawn by this same component.
 
@@ -22,6 +24,7 @@
         <tr>
           <th class="c-label">{{ singular }}</th>
           <th v-if="hasRole" class="c-role">role</th>
+          <th v-for="c in pairColumns" :key="'p' + c.id" class="c-field c-pair" :title="`${pairTableName}: ${c.name} — of the pair, not the ${singular}`">{{ c.name }}</th>
           <th v-for="c in columns" :key="c.id" class="c-field">{{ c.name }}</th>
           <th v-for="r in level.rollups" :key="r.id" class="c-rollup">{{ r.label || r.id }}</th>
         </tr>
@@ -31,6 +34,7 @@
           <tr class="ro-row" :data-record="n.record.id" @click="$emit('open', n.record.id)">
             <td class="c-label"><span class="ro-label">{{ n.record.label }}</span></td>
             <td v-if="hasRole" class="c-role"><span v-for="r in n.roles" :key="r" class="ro-role">{{ r }}</span></td>
+            <td v-for="c in pairColumns" :key="'p' + c.id" class="c-field c-pair" :title="pairText(n, c.id)">{{ pairText(n, c.id) }}</td>
             <td v-for="c in n.cells" :key="c.fieldId" class="c-field" :title="c.text">{{ c.text }}</td>
             <td v-for="r in n.rollups" :key="r.id" class="c-rollup" :class="{ zero: r.value === 0, none: r.value === null }">{{ r.value === null ? '—' : r.value }}</td>
           </tr>
@@ -48,7 +52,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { ReportSection, RootLevel, Descent } from '../../contract/reports';
+import type { ReportNode, ReportSection, RootLevel, Descent } from '../../contract/reports';
 
 const props = defineProps<{
   section: ReportSection;
@@ -66,7 +70,11 @@ const tableName = computed(() => table.value?.name ?? '?');
 const singular = computed(() => table.value?.singular_name || table.value?.name || 'record');
 const hasRole = computed(() => 'via' in props.level && props.level.via.some((v) => !!v.role));
 const columns = computed(() => props.level.fields.flatMap((id) => { const f = props.fields.get(id); return f ? [f] : []; }));
-const span = computed(() => 1 + (hasRole.value ? 1 : 0) + columns.value.length + props.level.rollups.length);
+/** Through a junction: the pair's columns, drawn only where the walk found a junction to read them from. */
+const pairColumns = computed(() => (props.section.pairTableId && 'pair' in props.level ? props.level.pair?.fields ?? [] : []).flatMap((id) => { const f = props.fields.get(id); return f ? [f] : []; }));
+const pairTableName = computed(() => props.tables.get(props.section.pairTableId ?? '')?.name ?? 'pair');
+const pairText = (n: ReportNode, fieldId: string) => n.pair?.cells.find((c) => c.fieldId === fieldId)?.text ?? '';
+const span = computed(() => 1 + (hasRole.value ? 1 : 0) + pairColumns.value.length + columns.value.length + props.level.rollups.length);
 </script>
 
 <style scoped>
@@ -82,6 +90,7 @@ td { padding: 3px 8px 3px 0; vertical-align: top; border-bottom: 1px solid color
 .ro-row:hover td { background: var(--bg-surface-hover); }
 .ro-label { font-weight: 600; color: var(--text-primary); }
 .c-field { color: var(--text-secondary); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-pair { color: var(--text-primary); }
 .c-rollup { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-primary); }
 .c-rollup.zero { color: var(--warning); }
 .c-rollup.none { color: var(--text-faint); }

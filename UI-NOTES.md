@@ -16,6 +16,23 @@ sandbox has no browser and `test/ui.ts` cannot see layout or paint.
 
 ## When you come back — a checking order
 
+**Reports through a junction (Sept 30)** — Work › Deliverables › Files again, now
+that File→Deliverable is the Delivery junction. In a report's definition:
+1. Under the Deliverables level, "+ descend into…" lists **Delivery ⇄ Files · through
+   Delivery** (the junction column). Tick THAT one, not "Delivery.Deliverable ←
+   Delivery" (which is the pair rows as a level — hover either for the difference).
+   Is the pair of entries clear enough, or should the ⇄ one sort first / read differently?
+2. "pinned to" then offers **Work through Files.Work** — tick it; a shared
+   deliverable should list only the files of the Work it sits under.
+3. A new **pair** block under it: the junction's own fields (Status, Notes, Created…).
+   Tick Status → each file shows its status in a column right after its name.
+   "+ pair filter" → "Status is Accepted" keeps only accepted files.
+4. On the Deliverables level, "+ rollup" → count where → the field list now ends with
+   **Delivery › Status** etc. "accepted" = count where Delivery › Status is Accepted;
+   then on Works, count where its rollup accepted > 0 = satisfied.
+5. Layout to look at: the pair column is drawn in the primary text colour to set it
+   off from the file's own (secondary) columns — enough, or does it want a header hint?
+
 **Grid columns (Sept 29)** — pinned, resizable, reorderable; all of it layout, none
 of it visible to `test/ui.ts`:
 1. **Pinning.** Widen a table past the window and scroll right: `#` and the ★ primary
