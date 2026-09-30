@@ -77,8 +77,8 @@
                  already placed). A plain click still opens it. client/recordDrag.ts tells the two
                  apart by movement. -->
             <span class="pills">
-              <RecordPill v-for="to in linksFrom(f.id)" :key="to" :text="labelOfId(to)" :title="`Open ${labelOfId(to)} · drag onto a canvas to place it`"
-                          removable drag @down="dragPill(to, $event)" @remove="removeLink(f.id, to)" />
+              <RecordPill v-for="to in linksFrom(f.id)" :key="to" :text="labelOfId(to)" title="Drag onto a canvas to place it · ⤢ opens it"
+                          removable drag @down="dragPill(to, $event)" @open="$emit('open', to)" @remove="removeLink(f.id, to)" />
             </span>
             <span v-if="!linksFrom(f.id).length && editingId !== f.id" class="placeholder">add a link…</span>
             <LinkPicker v-if="editingId === f.id && targetOf(f)" :store="store" :target-table-id="targetOf(f)!"
@@ -99,9 +99,9 @@
             <template v-else-if="junctionOf(f)">
               <span class="pills">
                 <RecordPill v-for="row in derived.backlinkOf(recordId, f) ?? []" :key="row" junction :text="derived.junctionChip(row, junctionOf(f)!.side).text"
-                            :on="editingId === f.id && junctionRow === row" title="Change the status of this pair, or open it"
+                            :on="editingId === f.id && junctionRow === row" title="A pair: ✎ changes its status, ⤢ opens it"
                             removable remove-title="Delete this pair (undo restores it)"
-                            @open="editJunction(f, row)" @remove="store.mutate({ type: 'record.delete', id: row })" />
+                            @edit="editJunction(f, row)" @open="$emit('open', row)" @remove="store.mutate({ type: 'record.delete', id: row })" />
               </span>
               <span v-if="editingId !== f.id" class="placeholder">add {{ derived.backlinkOf(recordId, f)?.length ? 'another' : 'a' }} {{ junctionName(f) }}…</span>
               <JunctionEditor v-if="editingId === f.id" :store="store" :table="junctionOf(f)!.table" :cfg="junctionOf(f)!.cfg"
@@ -111,7 +111,7 @@
             <template v-else>
               <span class="pills">
                 <RecordPill v-for="from in derived.backlinkOf(recordId, f) ?? []" :key="from" back :text="labelOfId(from)"
-                            :title="`Open ${labelOfId(from)} · drag onto a canvas to place it`" drag @down="dragPill(from, $event)" />
+                            title="Drag onto a canvas to place it · ⤢ opens it" drag @down="dragPill(from, $event)" @open="$emit('open', from)" />
               </span>
               <span v-if="derived.backlinkOf(recordId, f)?.length === 0" class="placeholder">nothing links here</span>
             </template>
@@ -154,8 +154,8 @@
         <div v-for="g in referencedBy" :key="g.field.id" class="rp-ref">
           <span class="rp-ref-via">{{ g.tableName }} · {{ g.field.name }}</span>
           <span class="pills">
-            <RecordPill v-for="from in g.from" :key="from" back :text="labelOfId(from)" :title="`Open ${labelOfId(from)} · drag onto a canvas to place it`"
-                        drag @down="dragPill(from, $event)" />
+            <RecordPill v-for="from in g.from" :key="from" back :text="labelOfId(from)" title="Drag onto a canvas to place it · ⤢ opens it"
+                        drag @down="dragPill(from, $event)" @open="$emit('open', from)" />
           </span>
         </div>
       </div>
@@ -223,11 +223,11 @@ const verdicts = computed(() => derived.fieldVerdicts(props.recordId));
 const sideBySide = ref<{ linkId: string; target: string } | null>(null);
 watch(() => props.recordId, () => { sideBySide.value = null; });
 
-/** A pill: drag it onto a canvas, or click it to open. */
+/** A pill: drag it onto a canvas. A still press does nothing — the ⤢ opens. */
 function dragPill(recordId: string, e: PointerEvent) {
   const rec = store.state.records.get(recordId);
-  if (!rec) { emit('open', recordId); return; }
-  beginRecordDrag(() => [rec], e, () => derived.labelOfId(recordId), () => emit('open', recordId));
+  if (!rec) return;
+  beginRecordDrag(() => [rec], e, () => derived.labelOfId(recordId));
 }
 
 /** Copy the paired values from a target into this record's EMPTY fields — one batch, one Ctrl+Z. */

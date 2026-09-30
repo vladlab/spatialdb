@@ -886,10 +886,8 @@ async function main() {
   check('and a "Referenced by" section lists EVERY incoming link, grouped by where it comes from',
     panel().find('.rp-refs').exists() && /Files · Show/.test(panel().find('.rp-refs').text()) && /reel_10/.test(panel().find('.rp-refs').text()),
     panel().find('.rp-refs').exists() ? panel().find('.rp-refs').text() : 'no section');
-  // A pill in the tray is draggable: a click is a press-and-release without movement.
-  await panel().find('.rp-refs .pill.back').trigger('pointerdown', { button: 0, clientX: 300, clientY: 300 });
-  win.dispatchEvent(new ((win as any).PointerEvent ?? (win as any).MouseEvent)('pointerup', { bubbles: true, clientX: 300, clientY: 300 }));
-  check('clicking a referrer opens THAT record', await until(() => panel().find('.rp-title').text() === 'reel_10'), panel().find('.rp-title').text());
+  await panel().find('.rp-refs .pill.back .pill-open').trigger('click');
+  check('a referrer\'s ⤢ opens THAT record', await until(() => panel().find('.rp-title').text() === 'reel_10'), panel().find('.rp-title').text());
   await panel().find('.rp-close').trigger('click');
 
   await tab('canvas').trigger('click');

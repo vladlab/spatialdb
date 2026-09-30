@@ -54,8 +54,8 @@ export function useDerived(store: Store) {
       : store.farLabels.get(id) ?? id.slice(0, 8);
   }
   /**
-   * A record's label — for a JUNCTION row, composed from its ends: "Uploaded:
-   * reel_10.mov → Texted Master" (contract/junction.ts). The label contract names a
+   * A record's label — for a JUNCTION row, composed from its ends: "reel_10.mov →
+   * Texted Master › Uploaded" (contract/junction.ts). The label contract names a
    * record by its primary field, which for a junction row is the status alone —
    * true but useless in a chip. Only the client can do better: the ends are links,
    * and the server's far labels stay plain.
@@ -94,7 +94,7 @@ export function useDerived(store: Store) {
     return side ? { cfg, table: link.table_id, side } : null;
   }
 
-  /** What a junction row reads as on ONE of its ends: "Uploaded → Texted Master". */
+  /** What a junction row reads as on ONE of its ends: "Texted Master › Uploaded". */
   function junctionChip(rowId: string, side: 'a' | 'b'): { text: string; other?: string; status: string } {
     const j = junctionRow(rowId);
     if (!j) return { text: plainLabelOfId(rowId), status: '' };

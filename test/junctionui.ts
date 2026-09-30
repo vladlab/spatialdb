@@ -3,7 +3,7 @@
  * tables; the column it puts on Files is WRITABLE — "+" opens the pair editor, the
  * picker offers the deliverables that share the file's Work first, a status is
  * picked, and the row lands with its two links in one batch. Chips read
- * "Uploaded → Texted Master", change status in place, × deletes; the junction
+ * "Texted Master › Uploaded", change status in place, × deletes; the junction
  * table sits under the tree's folded utility group. Server rules: test/junction.ts.
  */
 import { randomUUID } from 'node:crypto';
@@ -101,7 +101,7 @@ async function main() {
     const rows = await untilDb(`select r.id, r.data->>'status' s, (select count(*)::int from links where from_record = r.id) n from records r where r.table_id = '${tJ}'`, (r) => r.length === 1 && r[0].n === 2, 8000);
     check('one row, status Uploaded, both links — one batch', rows[0].s === 'Uploaded' && rows[0].n === 2, JSON.stringify(rows));
     const chip = () => cellOf('a.mov').find('.pill.junction');
-    check('the chip reads "Uploaded → Texted Master"', await until(() => chip().exists() && chip().find('.pill-text').text() === 'Uploaded → Texted Master'), chip().exists() ? chip().text() : 'no chip');
+    check('the chip reads "Texted Master › Uploaded"', await until(() => chip().exists() && chip().find('.pill-text').text() === 'Texted Master › Uploaded'), chip().exists() ? chip().text() : 'no chip');
 
     console.log('\nJ3. Same pair again lands on the row; status changes in place');
     await w.find('.je .act:not(.primary):not(.danger)').trigger('click');   // Done
@@ -114,7 +114,7 @@ async function main() {
     await w.findAll('.je .st').find((b: any) => b.text() === 'Accepted').trigger('click');
     await untilDb(`select data->>'status' s from records where id = '${rows[0].id}'`, (r) => r[0]?.s === 'Accepted', 4000);
     check('status Accepted, still one row', (await pool.query(`select count(*)::int n from records where table_id = $1`, [tJ])).rows[0].n === 1);
-    check('the chip follows', await until(() => chip().text().includes('Accepted → Texted Master')), chip().text());
+    check('the chip follows', await until(() => chip().text().includes('Texted Master › Accepted')), chip().text());
     await w.find('.je .act.danger').trigger('click');
     await untilDb(`select count(*)::int n from records where table_id = '${tJ}'`, (r) => r[0].n === 0, 4000);
     check('Delete removes the pair; the chip goes', await until(() => !chip().exists()));
@@ -128,7 +128,7 @@ async function main() {
     await w.find('.je .act.primary').trigger('click');
     const r2 = await untilDb(`select id from records where table_id = '${tJ}'`, (r) => r.length === 1, 8000);
     const chipB = () => cellOf('b.mov').find('.pill.junction');
-    check('a row with no status reads "→ Trailer"', await until(() => chipB().exists() && chipB().find('.pill-text').text() === '→ Trailer'), chipB().exists() ? chipB().text() : 'no chip');
+    check('a row with no status reads just "Trailer"', await until(() => chipB().exists() && chipB().find('.pill-text').text() === 'Trailer'), chipB().exists() ? chipB().text() : 'no chip');
     await chipB().find('.pill-x').trigger('click');
     await untilDb(`select count(*)::int n from records where id = '${r2[0].id}'`, (r) => r[0].n === 0, 4000);
     check('× deletes the row', await until(() => !chipB().exists()));
@@ -139,7 +139,7 @@ async function main() {
       { type: 'link.add', id: randomUUID(), fieldId: cfg.a, fromRecord: r3, toRecord: b },
       { type: 'link.add', id: randomUUID(), fieldId: cfg.b, fromRecord: r3, toRecord: textless },
     ]);
-    check('a peer\'s pair arrives as a chip', await until(() => chipB().exists() && chipB().text().includes('Uploaded → Textless Master'), 8000));
+    check('a peer\'s pair arrives as a chip', await until(() => chipB().exists() && chipB().text().includes('Textless Master › Uploaded'), 8000));
     await post([{ type: 'record.delete', id: b }]);
     await untilDb(`select count(*)::int n from records where id = '${r3}'`, (r) => r[0].n === 0, 4000);
     check('deleting the file took the pair on the server', true);
@@ -196,6 +196,17 @@ async function main() {
     await untilDb(`select data->>'status' s from records where id = '${pair[0].id}'`, (r) => r[0]?.s === 'Accepted', 4000);
     await arrow().find('.arrow-hit').trigger('pointerdown', { button: 0 });
     check('status changed from the menu; the label follows', await until(() => w.find('.arrow-layer .arrow-label text').text() === 'Accepted'));
+
+    // The pair's pill on the CARD: ✎ opens the editor on that row, ⤢ opens the row itself.
+    const cardPill = () => portRow('a.mov').find('.pill.junction');
+    check('the card row shows the pair as a pill "Texted Master › Accepted" with ✎ and ⤢', await until(() => cardPill().exists() && cardPill().find('.pill-text').text() === 'Texted Master › Accepted') && cardPill().find('.pill-edit').exists() && cardPill().find('.pill-open').exists(), cardPill().exists() ? cardPill().text() : 'no pill');
+    await cardPill().find('.pill-edit').trigger('click');
+    check('✎ opens the pair editor on the existing row', await until(() => w.find('.junction-anchor .je').exists()) && w.find('.je .act.danger').exists() && !w.find('.je .picker').exists());
+    await w.findAll('.je .st').find((b: any) => b.text() === 'Rejected').trigger('click');
+    await untilDb(`select data->>'status' s from records where id = '${pair[0].id}'`, (r) => r[0]?.s === 'Rejected', 4000);
+    check('…and changes it', await until(() => cardPill().find('.pill-text').text() === 'Texted Master › Rejected'));
+    await w.find('.je .act:not(.primary):not(.danger)').trigger('click');
+    await until(() => !w.find('.je').exists());
 
     // Same pair again from the port: lands on the existing row.
     await portRow('a.mov').find('.port-handle').trigger('pointerdown', { button: 0, ...toClient(300, 80) });

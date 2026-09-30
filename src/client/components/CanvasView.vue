@@ -137,7 +137,7 @@
         :link-target="linkTargetState(c.recordId, c.tableId)"
         @pointerdown="onCardPointerDown"
         @link-start="startLinkDrag"
-        @drag-linked="onDragLinked"
+        @drag-linked="onDragLinked" @open-linked="(id) => emit('open-record', id)" @edit-pair="onEditPair"
         @resize="onCardResize"
         @unplace="unplace"
         @fold="toggleFold"
@@ -299,13 +299,14 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
     const j = f.type === 'backlink' ? derived.junctionOfBacklink(f) : null;
     const styleField = f.type === 'link' ? f.id : j ? j.table : f.type === 'backlink' ? backlinkSourceOf(f) : null;
     const color = styleField ? arrowStyles.value.get(styleField)?.color : undefined;
+    const rows = j ? derived.backlinkOf(rec.id, f) ?? [] : undefined;
     const ids = f.type === 'lookup' ? undefined
       : f.type === 'link' ? derived.linksFrom(rec.id, f.id)
-      : j ? (derived.backlinkOf(rec.id, f) ?? []).flatMap((row) => { const o = derived.junctionRow(row)?.[otherEnd(j.side)]; return o ? [o] : []; })
+      : j ? rows!.flatMap((row) => { const o = derived.junctionRow(row)?.[otherEnd(j.side)]; return o ? [o] : []; })
       : derived.backlinkOf(rec.id, f) ?? [];
     return broken ? { id: f.id, name: f.name, broken: true, text: `broken ${f.type}` }
       : { id: f.id, name: f.name, derived: true, text: texts.join(', '), lines: texts.length > 1 ? texts : undefined,
-          ids, color, link: f.type === 'link' || !!j, junction: !!j };
+          ids, color, link: f.type === 'link' || !!j, junction: !!j, rows };
   }
   if (f.type === 'rich_text') return { id: f.id, name: f.name, text: richTextToPlain(rec.data[f.key]).split('\n', 1)[0] };
   // A structured value is a one-line SUMMARY on a card ("4 tracks / 12 ch (5.1, 2.0…)"):
@@ -433,9 +434,18 @@ const arrowStyles = computed(() => {
 function onDragLinked({ recordId, e }: { recordId: string; e: PointerEvent }) {
   const rec = store.state.records.get(recordId);
   e.stopPropagation();
-  // A press that moves places (or jumps to) the record; one that does not is a click: open it.
-  if (!rec) { emit('open-record', recordId); return; }
-  beginRecordDrag(() => [rec], e, () => derived.labelOfId(recordId), () => emit('open-record', recordId));
+  // A press that moves places (or jumps to) the record; a still one does nothing — the pill's ⤢ opens.
+  if (!rec) return;
+  beginRecordDrag(() => [rec], e, () => derived.labelOfId(recordId));
+}
+/** A pair's ✎ on a card: the pair editor, on that row, anchored at the card. */
+function onEditPair({ recordId, fieldId, row }: { recordId: string; fieldId: string; row: string }) {
+  const f = store.state.fields.get(fieldId);
+  const j = f ? derived.junctionOfBacklink(f) : null;
+  const rect = cardRects.value.get(recordId);
+  if (!j || !rect) return;
+  const c = viewport.worldToClient(rect.x + rect.w, rect.y);
+  junctionPick.value = { table: j.table, cfg: j.cfg, side: j.side, fromRecord: recordId, rowId: row, client: { x: c.x, y: c.y }, world: { x: rect.x + rect.w, y: rect.y } };
 }
 
 /* ── a link dragged onto empty canvas: choose or create the other end ── */

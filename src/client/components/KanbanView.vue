@@ -30,7 +30,7 @@
                  must not start the card drag. -->
             <span v-if="linkedIds(r, f).length" class="kcard-val pills">
               <RecordPill v-for="(id, i) in linkedIds(r, f)" :key="id + i" :text="linkedTexts(r, f)[i] ?? ''" :back="f.type === 'backlink' && !derived.junctionOfBacklink(f)"
-                          :junction="f.type === 'backlink' && !!derived.junctionOfBacklink(f)" :title="`Open ${linkedTexts(r, f)[i] ?? ''}`" @open="$emit('open-record', id)" />
+                          :junction="f.type === 'backlink' && !!derived.junctionOfBacklink(f)" @open="$emit('open-record', id)" @edit="$emit('open-record', id)" />
             </span>
             <span v-else class="kcard-val">{{ valueText(r, f) }}</span>
             <span v-if="verdictOf(r.id, f.id)" class="kcard-verdict" :class="{ ok: verdictOf(r.id, f.id)!.ok }" :title="verdictOf(r.id, f.id)!.title">{{ verdictOf(r.id, f.id)!.ok ? '✓' : '⚠' }}</span>

@@ -360,14 +360,14 @@
                     <template v-else-if="f.type === 'backlink'">
                       <span v-if="derived.backlinkOf(r.id, f) === null" class="broken" title="This backlink is broken: the link field it mirrored was deleted.">broken backlink</span>
                       <!-- A JUNCTION's column (sql/016): each chip is a pair with its status,
-                           "Uploaded → Texted Master". Click a chip to change its status; × deletes
+                           "Texted Master › Uploaded". ✎ changes its status, ⤢ opens the row; × deletes
                            the pair; + (or Enter) adds one. Writable, unlike a plain backlink. -->
                       <template v-else-if="junctionOf(f)">
                         <span class="pills">
                           <RecordPill v-for="row in derived.backlinkOf(r.id, f) ?? []" :key="row" junction :text="derived.junctionChip(row, junctionOf(f)!.side).text"
-                                      :on="junctionRow === row && isSel(r.id, f.id) && editing" title="Change the status of this pair, or open it"
+                                      :on="junctionRow === row && isSel(r.id, f.id) && editing" title="A pair: ✎ changes its status, ⤢ opens it"
                                       removable remove-title="Delete this pair (undo restores it)"
-                                      @open="editJunction(r.id, f, row)" @remove="deleteJunctionRow(row)" />
+                                      @edit="editJunction(r.id, f, row)" @open="$emit('open-record', row)" @remove="deleteJunctionRow(row)" />
                         </span>
                         <button class="junc-add" tabindex="-1" :title="`Add a ${junctionName(f)}`" @pointerdown.stop @mousedown.stop.prevent @click.stop="editJunction(r.id, f)">+</button>
                       </template>

@@ -765,8 +765,9 @@ Rules the server keeps (none fit a check constraint):
 **How pairs are made.** The endpoint tables get an ordinary `backlink` field each
 (`source_field_id` = the junction's `a` / `b`); the app creates them with the
 junction and treats a backlink that mirrors a junction endpoint as WRITABLE: the
-"Delivery" column on Files shows chips `Uploaded → Texted Master` (from the other
-end: `Uploaded ← reel_10.mov`), "+" opens the pair editor, a chip's × deletes the
+"Delivery" column on Files shows pills `Texted Master › Uploaded` (from the other
+end: `reel_10.mov › Uploaded`) — the other end first, its status after. "+" opens
+the pair editor, a pill's ✎ changes the status, ⤢ opens the row, × deletes the
 row. The other end is picked FIRST, so picking a deliverable this file already
 pairs with edits that row instead of hitting the one-per-pair rule.
 
@@ -787,8 +788,8 @@ status. Right-click: change the status, open the row, delete the pair (asks;
 undoable). There is no "unlink" — the arrow is the row.
 
 Labels: the label contract names a junction row by its primary field (the status),
-which the client overrides with the composed form `Uploaded: reel_10.mov → Texted
-Master`; the server's far labels stay plain.
+which the client overrides with the composed form `reel_10.mov → Texted Master ›
+Uploaded`; the server's far labels stay plain.
 
 ### Search
 

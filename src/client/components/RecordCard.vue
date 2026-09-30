@@ -59,8 +59,9 @@
              canvas to place it, click to open it. One per line, CARD_MAX_LINES of them. -->
         <span v-if="r.ids && r.ids.length" class="card-val card-list pills column" :class="{ derived: r.derived }">
           <RecordPill v-for="(id, i) in r.ids.slice(0, CARD_MAX_LINES)" :key="id + i" class="card-line" :text="(r.lines ?? [r.text])[i] ?? ''" :back="!r.link" :junction="r.junction"
-                      title="Drag onto the canvas to place this record here · click to open it" drag
-                      @down="$emit('drag-linked', { recordId: id, e: $event })" />
+                      title="Drag onto the canvas to place this record here · ⤢ opens it" drag
+                      @down="$emit('drag-linked', { recordId: id, e: $event })" @open="$emit('open-linked', id)"
+                      @edit="r.junction && r.rows && $emit('edit-pair', { recordId, fieldId: r.id, row: r.rows[i] })" />
           <span v-if="r.ids.length > CARD_MAX_LINES" class="card-line more">+{{ r.ids.length - CARD_MAX_LINES }} more</span>
         </span>
         <span v-else-if="r.lines && r.lines.length > 1" class="card-val card-list" :class="{ derived: r.derived }">
@@ -113,8 +114,9 @@ export interface CardRow {
   broken?: boolean;
   /** A LINK field's row (or a junction column's): an output port, with a handle to drag a new link from. */
   link?: boolean;
-  /** A junction column's row: its pills are pairs ("Uploaded → Texted Master"). */
+  /** A junction column's row: its pills are pairs ("Texted Master › Uploaded"); `rows` are the pair rows, one per id. */
   junction?: boolean;
+  rows?: string[];
   /** Several values (a link to three works): shown as a vertical list, one per line. */
   lines?: string[];
   /** The linked records behind a link/backlink row, in `lines` (or `text`) order — draggable onto this canvas. */
@@ -152,6 +154,10 @@ const emit = defineEmits<{
   (e: 'link-start', payload: { recordId: string; fieldId: string; e: PointerEvent }): void;
   /** A linked record named on this card, picked up to be placed on the canvas. */
   (e: 'drag-linked', payload: { recordId: string; e: PointerEvent }): void;
+  /** A linked record's ⤢: open it (the tray). */
+  (e: 'open-linked', recordId: string): void;
+  /** A junction pair's ✎ on this card: edit its status (the pair editor, anchored at the card). */
+  (e: 'edit-pair', payload: { recordId: string; fieldId: string; row: string }): void;
   (e: 'resize', payload: { recordId: string; handle: 'e' | 's' | 'se'; e: PointerEvent }): void;
   (e: 'unplace', recordId: string): void;
   (e: 'fold', recordId: string): void;

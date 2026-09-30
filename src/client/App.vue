@@ -728,7 +728,7 @@ body {
 .pill {
   display: inline-flex; align-items: center; gap: 2px; min-width: 0; box-sizing: border-box;
   border: 1px solid transparent; border-radius: 10px; padding: 0 3px 0 6px;
-  font-size: 11px; line-height: 16px; white-space: nowrap; cursor: pointer; color: inherit;
+  font-size: 11px; line-height: 16px; white-space: nowrap; color: inherit;
 }
 .pill-text { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .pill.back { font-style: italic; color: var(--text-secondary); }
@@ -736,11 +736,16 @@ body {
 .pills:hover .pill, .pill.on { background: var(--controls-bg); border-color: var(--border-main); }
 .pill:hover { border-color: var(--accent); }
 .pill.on { border-color: var(--accent); }
-.pill-open, .pill-x { visibility: hidden; font-size: 11px; line-height: 1; padding: 0 1px; }
+.pill-open, .pill-edit, .pill-x { visibility: hidden; background: none; border: none; cursor: pointer; font-size: 11px; line-height: 1; padding: 0 1px; }
 .pill-open { color: var(--accent); }
-.pill-x { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; }
+.pill-edit { color: var(--text-secondary); }
+.pill-edit:hover { color: var(--accent); }
+.pill-x { color: var(--text-muted); font-size: 12px; }
 .pill-x:hover { color: var(--danger); }
-.pill:hover .pill-open, .pill:hover .pill-x { visibility: visible; }
+.pill:hover .pill-open, .pill:hover .pill-edit, .pill:hover .pill-x { visibility: visible; }
+.pill-text { cursor: default; }
+.pill { cursor: default; }
+.pills.column .pill, .rp-value .pill { cursor: grab; }   /* draggable ones (cards, tray) */
 /* A pill you can OPEN: the whole pill is the click target; the ⤢ is only a hint,
    revealed on hover with its space always reserved so nothing shifts. */
 .chip.openable { cursor: pointer; }

@@ -34,6 +34,11 @@ export function useViewport(containerRef: Ref<HTMLElement | null>) {
   function clientToWorld(clientX: number, clientY: number) {
     return toWorld(clientX, clientY, rect(), transform);
   }
+  /** The inverse: where a world point is on screen (to anchor a popover at a card). */
+  function worldToClient(x: number, y: number) {
+    const r = rect();
+    return { x: r.left + transform.x + x * transform.scale, y: r.top + transform.y + y * transform.scale };
+  }
 
   function apply(next: { x: number; y: number; scale: number }) {
     transform.x = next.x;
@@ -143,7 +148,7 @@ export function useViewport(containerRef: Ref<HTMLElement | null>) {
 
   return {
     transform, isPanning, scrollMode, transformCSS, gridStyle, zoomPercent,
-    clientToWorld, onWheel, onPointerDown, onPointerMove, onPointerUp, startPan,
+    clientToWorld, worldToClient, onWheel, onPointerDown, onPointerMove, onPointerUp, startPan,
     zoomIn: () => zoomBy(1.2),
     zoomOut: () => zoomBy(1 / 1.2),
     resetZoom, fit, centerOn,

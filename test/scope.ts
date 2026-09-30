@@ -337,7 +337,10 @@ async function main() {
       && (await pool.query(`select count(*)::int n from placements where canvas_id = $1 and record_id = $2`, [boardDuke, ep102])).rows[0].n === 1, `${worldBefore} → ${w.find('.canvas-world').attributes('style')}`);
     await pill().trigger('pointerdown', { button: 0, clientX: 900, clientY: 300 });
     win.dispatchEvent(new PE2('pointerup', { bubbles: true, clientX: 900, clientY: 300 }));
-    check('a plain CLICK on the pill (no movement) still opens the record', await until(() => w.find('.record-panel .rp-title').text() === 'Ep 102'));
+    await new Promise((r) => setTimeout(r, 150));
+    check('a still press on the pill opens nothing — only its ⤢ does', w.find('.record-panel .rp-title').text() !== 'Ep 102');
+    await pill().find('.pill-open').trigger('click');
+    check('the ⤢ opens the record', await until(() => w.find('.record-panel .rp-title').text() === 'Ep 102'));
     await w.find('.record-panel .rp-close').trigger('click');
     await post([{ type: 'record.delete', id: dragFile }]);
     await nav.scope(duke);

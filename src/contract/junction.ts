@@ -142,18 +142,19 @@ export function hasMatch(cfg: JunctionConfig, side: 'a' | 'b', from: string,
 }
 
 /**
- * The label of a junction row, seen from nowhere in particular:
- *     "Uploaded: reel_10.mov → Texted Master"
- * and seen from one end, which drops its own side:
- *     from the file          "Uploaded → Texted Master"
- *     from the deliverable   "Uploaded ← reel_10.mov"
+ * The label of a junction row. The OTHER END is the intent and comes first; the
+ * status follows it:
+ *     from the file          "Texted Master › Uploaded"
+ *     from the deliverable   "reel_10.mov › Uploaded"
+ * and seen from nowhere in particular, both ends then the status:
+ *     "reel_10.mov → Texted Master › Uploaded"
  * `status` is the row's status value (or empty), `a`/`b` the endpoint labels.
  */
 export function junctionLabel(status: string, a: string, b: string, from?: 'a' | 'b'): string {
-  const verb = status ? `${status} ` : '';
-  if (from === 'a') return `${verb}→ ${b}`;
-  if (from === 'b') return `${verb}← ${a}`;
-  return `${status ? `${status}: ` : ''}${a} → ${b}`;
+  const verb = status ? ` › ${status}` : '';
+  if (from === 'a') return `${b}${verb}`;
+  if (from === 'b') return `${a}${verb}`;
+  return `${a} → ${b}${verb}`;
 }
 
 /**

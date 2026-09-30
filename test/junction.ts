@@ -217,9 +217,9 @@ async function main() {
   check('the trailer belongs to no episode: no match', !matches(cfg, 'a', fileA, trailer, linksFrom));
   check('from the deliverable side', matches(cfg, 'b', texted, fileB, linksFrom));
   check('a file with no Work has no opinion', matches(cfg, 'a', 'orphan', trailer, linksFrom));
-  check('label from the file', junctionLabel('Uploaded', 'ep101_texted.mov', 'Texted Master', 'a') === 'Uploaded → Texted Master');
-  check('label from the deliverable', junctionLabel('Uploaded', 'ep101_texted.mov', 'Texted Master', 'b') === 'Uploaded ← ep101_texted.mov');
-  check('label from nowhere', junctionLabel('', 'a', 'b') === 'a → b');
+  check('label from the file', junctionLabel('Uploaded', 'ep101_texted.mov', 'Texted Master', 'a') === 'Texted Master › Uploaded');
+  check('label from the deliverable', junctionLabel('Uploaded', 'ep101_texted.mov', 'Texted Master', 'b') === 'ep101_texted.mov › Uploaded');
+  check('label from nowhere', junctionLabel('', 'a', 'b') === 'a → b' && junctionLabel('Accepted', 'a', 'b') === 'a → b › Accepted');
 
   db.release();
   console.log(`\n${pass} passed, ${fail} failed\n`);

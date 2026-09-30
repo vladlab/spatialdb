@@ -55,19 +55,20 @@ async function main() {
 
     console.log('\nT1b. Following a link');
     const pill = () => cellOf('ep101.mov', 'Targets').find('.pill');
-    check('a linked record\'s pill is OPENABLE — the whole pill is the target (a hover-only glyph was too small to hit)',
+    check('a linked record\'s pill carries the ⤢ that opens it',
       await until(() => pill().exists()) && pill().find('.pill-open').exists() && pill().text().includes('Network master'));
-    // the full press, as a browser sends it: pointerdown, mousedown, click — the cell's own
-    // mousedown/pointerdown handlers must not get in the way
+    // A click on the pill's BODY does nothing (only the ⤢ opens — like a column sorting only from its glyph).
     await pill().trigger('pointerdown'); await pill().trigger('mousedown'); await pill().trigger('click');
-    check('clicking it opens THAT record in the tray — the deliverable, not the file', await until(() => w.find('.record-panel .rp-title').text() === 'Network master'));
+    await new Promise((r) => setTimeout(r, 150));
+    check('a click on the name itself opens nothing', !w.find('.record-panel').exists() || w.find('.record-panel .rp-title').text() !== 'Network master');
+    await pill().find('.pill-open').trigger('click');
+    check('the ⤢ opens THAT record in the tray — the deliverable, not the file', await until(() => w.find('.record-panel .rp-title').text() === 'Network master'));
     check('…without putting the cell into edit mode', !w.find('.gridview td.editing').exists());
     await w.find('.record-panel .rp-close').trigger('click');
     await openRecord('ep101.mov');
-    // In the tray a pill is also DRAGGABLE (onto a canvas), so a click is a press-and-release without movement.
-    await pField('Targets').find('.pill').trigger('pointerdown', { button: 0, clientX: 300, clientY: 300 });
-    win.dispatchEvent(new ((win as any).PointerEvent ?? (win as any).MouseEvent)('pointerup', { bubbles: true, clientX: 300, clientY: 300 }));
-    check('the same on a pill INSIDE the tray walks the tray to the linked record', await until(() => w.find('.record-panel .rp-title').text() === 'Network master'));
+    // In the tray a pill is DRAGGABLE (onto a canvas); its ⤢ walks the tray.
+    await pField('Targets').find('.pill .pill-open').trigger('click');
+    check('the ⤢ on a pill INSIDE the tray walks the tray to the linked record', await until(() => w.find('.record-panel .rp-title').text() === 'Network master'));
     await w.find('.record-panel .rp-close').trigger('click');
 
     console.log('\nT1c. "Created" and "Created by": system fields on every table');
