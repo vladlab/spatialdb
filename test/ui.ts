@@ -398,8 +398,16 @@ async function main() {
       body: JSON.stringify({ clientId: randomUUID(), mutations: mutations.map((mutation) => ({ id: randomUUID(), mutation })) }) });
     await post([...extra.map((e) => ({ type: 'record.create', id: e.id, tableId: shows, data: { name: e.name } })),
       ...extra.map((e) => ({ type: 'link.add', id: randomUUID(), fieldId: linkField, fromRecord: rec, toRecord: e.id }))]);
-    check('with more links than a cell shows, a +N says how many are hidden (3 pills + 3)', await until(() => cell(0, LINK).find('.more').exists(), 8000)
-      && cell(0, LINK).find('.more').text() === '+3' && cell(0, LINK).findAll('.pill').length === 3, cell(0, LINK).text());
+    await until(() => cell(0, LINK).findAll('.pill').length === 6, 8000);
+    // happy-dom lays nothing out: give the cell a width and the pills positions (70px pitch),
+    // then a re-render, so CellPills can measure — three fit before the badge's room.
+    const box = cell(0, LINK).find('.cellpills').element as HTMLElement;
+    Object.defineProperty(box, 'clientWidth', { value: 250, configurable: true });
+    box.getBoundingClientRect = () => ({ left: 0, right: 250, top: 0, bottom: 20, width: 250, height: 20, x: 0, y: 0, toJSON() {} }) as DOMRect;
+    cell(0, LINK).findAll('.pill').forEach((p, i) => { (p.element as HTMLElement).getBoundingClientRect = () => ({ left: i * 70, right: i * 70 + 60, top: 0, bottom: 20, width: 60, height: 20, x: i * 70, y: 0, toJSON() {} }) as DOMRect; });
+    await post([{ type: 'record.update', id: rec, set: { name: 'reel_10' }, unset: [] }]);
+    check('with more links than fit, a +N says how many are hidden (3 fit, +3)', await until(() => cell(0, LINK).find('.more').exists(), 8000)
+      && cell(0, LINK).find('.more').text() === '+3' && cell(0, LINK).findAll('.pill.cut').length === 3, cell(0, LINK).text());
     // Unlink rather than delete: a later section restores "the delete" from History.
     await post(extra.map((e) => ({ type: 'link.remove', fieldId: linkField, fromRecord: rec, toRecord: e.id })));
     await until(() => !cell(0, LINK).find('.more').exists(), 8000);

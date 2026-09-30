@@ -45,7 +45,7 @@
     </div>
 
     <div v-if="!collapsed && (rows.length || rich?.length)" class="card-body">
-      <div v-for="r in rows" :key="r.id" class="card-field" :class="{ 'is-link': r.link }">
+      <div v-for="r in rows" :key="r.id" class="card-field" :class="{ 'is-link': r.link, tall: (r.ids?.length ?? 0) > 1 || (r.lines?.length ?? 0) > 1 }">
         <!-- LINK rows are OUTPUT PORTS, and the port is also where a new link starts:
              press this handle and drag to a card of the table the field points at.
              Only on a link row you can SEE — the field is never guessed (PLAN.md,
@@ -285,6 +285,9 @@ function onPointerDown(e: PointerEvent) {
 .card-rich-body :deep(.rich p) { margin: 0 0 0.4em; }
 .card-rich-body :deep(.rich img) { pointer-events: none; -webkit-user-drag: none; margin: 0.25em 0; }
 .card-field { display: flex; gap: 8px; height: var(--row-h); line-height: var(--row-h); }
+/* A row with SEVERAL values is as tall as its lines — the height the layout arithmetic
+   (cardLayout.rowLines) already counts; a fixed one-row height drew them over the rows below. */
+.card-field.tall { height: auto; }
 .card-key {
   color: var(--text-muted); flex: none; width: 76px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -293,7 +296,7 @@ function onPointerDown(e: PointerEvent) {
 .card-list { display: flex; flex-direction: column; }
 .draggable { cursor: grab; }
 .draggable:hover { color: var(--accent); }
-.card-line { line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-line { height: var(--row-h); line-height: var(--row-h); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-line.more { color: var(--text-faint); font-size: 10px; }
 .card-field { align-items: flex-start; }
 .card-warn { color: var(--warning); font-size: 11px; margin-left: 3px; flex: none; }
