@@ -169,7 +169,7 @@ onMounted(() => void nextTick(() => nameInput.value?.focus()));
 .ts { width: min(720px, 94vw); max-height: 88vh; overflow-y: auto; background: var(--bg-app); border: 1px solid var(--border-main); border-radius: 8px; padding: 16px 18px; box-shadow: var(--card-shadow-drag); font-size: 13px; }
 header { display: flex; align-items: center; margin-bottom: 10px; }
 h2 { margin: 0; font-size: 15px; flex: 1; }
-h3 { margin: 0 0 6px; font-size: 12px; font-weight: 600; }
+h3 { margin: 0 0 4px; font-size: 12px; font-weight: 600; }
 h3 .hint { font-weight: 400; }
 .x { background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; }
 .line { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
@@ -189,7 +189,7 @@ input[type='color'] { width: 30px; height: 26px; padding: 0; border: 1px solid v
 .fitem { border-radius: 4px; }
 .fitem.lifted { background: var(--controls-bg); box-shadow: var(--card-shadow-drag); position: relative; z-index: 1; }
 .fitem.open { background: var(--controls-bg); }
-.frow { display: flex; align-items: center; gap: 6px; padding: 3px 4px; min-height: 26px; }
+.frow { display: flex; align-items: center; gap: 6px; padding: 1px 4px; min-height: 24px; }
 .grip { color: var(--text-faint); cursor: grab; user-select: none; letter-spacing: -2px; padding: 0 2px; }
 .grip:hover, .lifted .grip { color: var(--accent); }
 .field-list.dragging { cursor: grabbing; }

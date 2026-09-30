@@ -685,7 +685,9 @@ body {
 .tray-splitter { flex: none; width: 5px; cursor: col-resize; background: var(--border-main); }
 .tray-splitter:hover { background: var(--accent); }
 .panel { padding: 16px; overflow: auto; flex: 1; }
-.hint { padding: 24px; color: var(--text-muted); }
+.hint { color: var(--text-muted); }
+/* The empty-view placeholders ("No table open — …") wear the padding, not every hint. */
+p.hint { padding: 24px; }
 .grid { border-collapse: collapse; width: 100%; }
 .grid th, .grid td {
   border: 1px solid var(--border-main); padding: 4px 8px; text-align: left; font-weight: 400;
