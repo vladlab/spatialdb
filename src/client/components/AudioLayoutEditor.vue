@@ -23,14 +23,21 @@
 <template>
   <div class="al">
     <table v-if="layout.tracks.length" class="al-table">
+      <!-- Headers instead of hint text in every cell: with ten tracks, ten "name — Full
+           mix, M&E, Dialog…" placeholders were the busiest thing in the tray. -->
+      <thead>
+        <tr class="al-head">
+          <th /><th>#</th><th>format</th><th>name</th><th>channels</th><th>lang</th><th />
+        </tr>
+      </thead>
       <tbody>
         <tr v-for="(t, i) in layout.tracks" :key="i" class="al-track" :class="{ picked: picked.has(i) }">
           <td class="al-pick"><input type="checkbox" :checked="picked.has(i)" title="Select, to merge" @change="togglePick(i)" /></td>
           <td class="al-n">{{ i + 1 }}</td>
           <td class="al-fmt">{{ trackFormat(t) }}</td>
-          <td class="al-name"><input :value="t.name" placeholder="name — Full mix, M&E, Dialog…" @change="rename(i, ($event.target as HTMLInputElement).value)" /></td>
+          <td class="al-name"><input :value="t.name" @change="rename(i, ($event.target as HTMLInputElement).value)" /></td>
           <td class="al-ch" :title="t.channels.join(' ')">{{ t.channels.join(' ') }}</td>
-          <td class="al-lang"><input :value="t.language ?? ''" placeholder="lang" maxlength="35" @change="setLang(i, ($event.target as HTMLInputElement).value)" /></td>
+          <td class="al-lang"><input :value="t.language ?? ''" maxlength="35" @change="setLang(i, ($event.target as HTMLInputElement).value)" /></td>
           <td class="al-acts">
             <button title="Move up" :disabled="i === 0" @click="apply(moveTrack(layout, i, -1))">↑</button>
             <button title="Move down" :disabled="i === layout.tracks.length - 1" @click="apply(moveTrack(layout, i, 1))">↓</button>
@@ -103,6 +110,7 @@ function paste() { if (layoutClipboard.value) apply(JSON.parse(JSON.stringify(la
 .al { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
 .al-table { width: 100%; border-collapse: collapse; }
 .al-track td { padding: 2px 4px; border-bottom: 1px solid var(--border-main); vertical-align: middle; }
+.al-head th { padding: 0 4px 3px; text-align: left; font-weight: 400; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); border-bottom: 1px solid var(--border-main); }
 .al-track.picked td { background: rgba(66, 165, 245, 0.12); }
 .al-pick { width: 1%; } .al-pick input { margin: 0; }
 .al-n { width: 1%; color: var(--text-faint); text-align: right; }

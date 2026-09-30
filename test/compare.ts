@@ -92,6 +92,16 @@ async function main() {
       && /ep101\.mov/.test(sbs().findAll('.sbs-col')[0].text()) && /Network master/.test(sbs().findAll('.sbs-col')[1].text()));
     const rowStatus = (name: string) => sbs().findAll('.sbs-row').find((r: any) => r.findAll('.sbs-name')[0].text() === name)!.classes().find((c: string) => ['match', 'differ', 'missing', 'unspecified'].includes(c));
     check('each row carries its verdict', rowStatus('Codec') === 'match' && rowStatus('Size') === 'match' && rowStatus('Audio layout') === 'missing', `${rowStatus('Codec')} ${rowStatus('Size')} ${rowStatus('Audio layout')}`);
+    const layoutRow = () => sbs().findAll('.sbs-row').find((r: any) => r.findAll('.sbs-name')[0].text() === 'Audio layout')!;
+    check('the expected layout reads as a SUMMARY, not JSON', /tracks? \/ \d+ ch/.test(layoutRow().findAll('.sbs-val')[1].text()) && !/\{/.test(layoutRow().text()), layoutRow().text());
+    // Give the file a layout that differs (stereo where 5.1 was asked): the tracks are shown, the wrong one marked.
+    await post([{ type: 'record.update', id: file, set: { audio_layout: { tracks: [{ name: 'Full mix', channels: ['L', 'R'] }] } }, unset: [] }]);
+    check('a differing layout shows both sides TRACK BY TRACK, the differing track in red, with the diff\'s words',
+      await until(() => rowStatus('Audio layout') === 'differ' && sbs().find('.sbs-layout').exists(), 8000)
+        && /2\.0 · Full mix · L R/.test(sbs().findAll('.sbs-layout .tr-cell.found')[0].text()) && /5\.1 ·/.test(sbs().findAll('.sbs-layout .tr-cell.expected')[0].text())
+        && sbs().findAll('.sbs-layout .tr-cell.found')[0].classes('off') && /count/.test(sbs().find('.tr-issues').text()), sbs().find('.sbs-layout').exists() ? sbs().find('.sbs-layout').text() : 'no layout block');
+    await post([{ type: 'record.update', id: file, set: {}, unset: ['audio_layout'] }]);
+    await until(() => rowStatus('Audio layout') === 'missing', 8000);
     await sbs().find('.sbs-close').trigger('click');
     check('closes', !sbs().exists());
 

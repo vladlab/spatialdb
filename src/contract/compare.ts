@@ -15,7 +15,7 @@
  */
 
 import { z } from 'zod';
-import { diffLayouts, AudioLayout } from './shapes.js';
+import { diffLayouts, AudioLayout, summarise, type LayoutDiff } from './shapes.js';
 import { choicesOf } from './values.js';
 
 /* ── the rule set ─────────────────────────────────────────────────────────── */
@@ -102,11 +102,21 @@ export function suggestPairs(ownerFields: FieldLike[], targetFields: FieldLike[]
 /* ── evaluation ───────────────────────────────────────────────────────────── */
 
 export type Status = 'match' | 'differ' | 'missing' | 'unspecified';
-export interface PairResult { pair: ComparePair; status: Status; detail: string; expected: string; found: string }
+export interface PairResult {
+  pair: ComparePair; status: Status; detail: string; expected: string; found: string;
+  /** For a `layout` pair: both layouts as parsed, and what differs — so a UI can show tracks, not JSON. */
+  layouts?: { found: AudioLayout; expected: AudioLayout; diff: LayoutDiff };
+}
 export interface CompareResult { same: boolean; results: PairResult[] }
 
 const isEmpty = (v: unknown) => v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0);
-const show = (v: unknown): string => (isEmpty(v) ? '—' : Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? JSON.stringify(v) : String(v));
+const show = (v: unknown, shape?: string | null): string => {
+  if (isEmpty(v)) return '—';
+  if (Array.isArray(v)) return v.join(', ');
+  // A structured value reads as its summary ("2 tracks / 8 ch (5.1, stereo)"), never as JSON.
+  if (typeof v === 'object') return shape ? summarise(shape as never, v) : JSON.stringify(v);
+  return String(v);
+};
 
 /**
  * Compare one owner record against one target record through a comparing link.
@@ -124,9 +134,11 @@ export function compareRecords(
     if (!from || !to) continue;                                 // a deleted field: the pair silently no longer applies
     const fv = from.type === 'link' ? linksFrom(owner.id, from.id) : owner.data[from.key];
     const tv = to.type === 'link' ? linksFrom(target.id, to.id) : target.data[to.key];
-    const found = from.type === 'link' ? (fv as string[]).map(labelOf).join(', ') || '—' : show(fv);
-    const expected = to.type === 'link' ? (tv as string[]).map(labelOf).join(', ') || '—' : show(tv);
-    const push = (status: Status, detail: string) => results.push({ pair, status, detail, expected, found });
+    const shapeOf = (f: FieldLike) => (f.type === 'structured' ? String(f.options?.shape ?? '') : null);
+    const found = from.type === 'link' ? (fv as string[]).map(labelOf).join(', ') || '—' : show(fv, shapeOf(from));
+    const expected = to.type === 'link' ? (tv as string[]).map(labelOf).join(', ') || '—' : show(tv, shapeOf(to));
+    let layouts: PairResult['layouts'];
+    const push = (status: Status, detail: string) => results.push({ pair, status, detail, expected, found, ...(layouts ? { layouts } : {}) });
 
     if (isEmpty(tv)) { push('unspecified', `${to.name}: not specified`); continue; }
     if (isEmpty(fv)) { push('missing', `${from.name} is empty; expected ${expected}`); continue; }
@@ -150,6 +162,7 @@ export function compareRecords(
         const a = AudioLayout.safeParse(tv), b = AudioLayout.safeParse(fv);
         if (!a.success || !b.success) { ok = false; why = 'not a valid layout'; break; }
         const d = diffLayouts(a.data, b.data);
+        layouts = { found: b.data, expected: a.data, diff: d };
         ok = d.same; why = ok ? 'same layout' : d.issues.map((i) => i.detail).join('; ');
         break;
       }
