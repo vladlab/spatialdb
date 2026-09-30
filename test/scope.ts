@@ -307,7 +307,7 @@ async function main() {
     await until(() => w.find('.record-panel .rp-title').text() === 'dragme.mov');
     await nav.openCanvas(boardDuke);
     await until(() => w.find('.canvas-container').exists() && w.find('.record-panel').exists());
-    const pill = () => w.findAll('.record-panel .chip.openable').find((c: any) => c.text().includes('Ep 102'))!;
+    const pill = () => w.findAll('.record-panel .pill').find((c: any) => c.text().includes('Ep 102'))!;
     check('the pill is there, in the tray, beside the canvas', !!pill() && !cardOf('Ep 102'));
     const PE2 = (win as any).PointerEvent ?? (win as any).MouseEvent;
     const box = (el: any, r: { left: number; top: number; right: number; bottom: number }) => { (el.element as HTMLElement).getBoundingClientRect = () => ({ ...r, width: r.right - r.left, height: r.bottom - r.top, x: r.left, y: r.top, toJSON() {} }) as DOMRect; };

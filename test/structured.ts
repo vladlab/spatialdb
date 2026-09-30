@@ -54,9 +54,9 @@ async function main() {
     check('a number field formatted as bytes reads as a size (the stored value is still a number)', cellOf('ep101.mov', 'Total size').text() === '120 GB', cellOf('ep101.mov', 'Total size').text());
 
     console.log('\nT1b. Following a link');
-    const pill = () => cellOf('ep101.mov', 'Targets').find('.chip');
+    const pill = () => cellOf('ep101.mov', 'Targets').find('.pill');
     check('a linked record\'s pill is OPENABLE — the whole pill is the target (a hover-only glyph was too small to hit)',
-      await until(() => pill().exists()) && pill().classes('openable') && pill().find('.chip-open').exists() && pill().text().includes('Network master'));
+      await until(() => pill().exists()) && pill().find('.pill-open').exists() && pill().text().includes('Network master'));
     // the full press, as a browser sends it: pointerdown, mousedown, click — the cell's own
     // mousedown/pointerdown handlers must not get in the way
     await pill().trigger('pointerdown'); await pill().trigger('mousedown'); await pill().trigger('click');
@@ -65,7 +65,7 @@ async function main() {
     await w.find('.record-panel .rp-close').trigger('click');
     await openRecord('ep101.mov');
     // In the tray a pill is also DRAGGABLE (onto a canvas), so a click is a press-and-release without movement.
-    await pField('Targets').find('.chip.openable').trigger('pointerdown', { button: 0, clientX: 300, clientY: 300 });
+    await pField('Targets').find('.pill').trigger('pointerdown', { button: 0, clientX: 300, clientY: 300 });
     win.dispatchEvent(new ((win as any).PointerEvent ?? (win as any).MouseEvent)('pointerup', { bubbles: true, clientX: 300, clientY: 300 }));
     check('the same on a pill INSIDE the tray walks the tray to the linked record', await until(() => w.find('.record-panel .rp-title').text() === 'Network master'));
     await w.find('.record-panel .rp-close').trigger('click');

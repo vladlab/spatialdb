@@ -54,15 +54,20 @@
               :title="`Drag to a card to link it through “${r.name}”`"
               @pointerdown.stop.prevent="$emit('link-start', { recordId, fieldId: r.id, e: $event })" />
         <span class="card-key"><span v-if="r.color" class="port-dot" :style="{ background: r.color }" />{{ r.name }}</span>
-        <span v-if="r.lines && r.lines.length > 1" class="card-val card-list" :class="{ derived: r.derived }">
-          <span v-for="(l, i) in r.lines.slice(0, CARD_MAX_LINES)" :key="i" class="card-line" :class="{ draggable: r.ids?.[i] }"
-                :title="r.ids?.[i] ? 'Drag onto the canvas to place this record here' : undefined"
-                @pointerdown="r.ids?.[i] && $emit('drag-linked', { recordId: r.ids[i], e: $event })">{{ l }}</span>
+        <!-- Linked records (a link, a backlink, a junction column) are PILLS — the same
+             pill as the grid and the tray: hover the row and they show; drag one onto the
+             canvas to place it, click to open it. One per line, CARD_MAX_LINES of them. -->
+        <span v-if="r.ids && r.ids.length" class="card-val card-list pills column" :class="{ derived: r.derived }">
+          <RecordPill v-for="(id, i) in r.ids.slice(0, CARD_MAX_LINES)" :key="id + i" class="card-line" :text="(r.lines ?? [r.text])[i] ?? ''" :back="!r.link" :junction="r.junction"
+                      title="Drag onto the canvas to place this record here · click to open it" drag
+                      @down="$emit('drag-linked', { recordId: id, e: $event })" />
+          <span v-if="r.ids.length > CARD_MAX_LINES" class="card-line more">+{{ r.ids.length - CARD_MAX_LINES }} more</span>
+        </span>
+        <span v-else-if="r.lines && r.lines.length > 1" class="card-val card-list" :class="{ derived: r.derived }">
+          <span v-for="(l, i) in r.lines.slice(0, CARD_MAX_LINES)" :key="i" class="card-line">{{ l }}</span>
           <span v-if="r.lines.length > CARD_MAX_LINES" class="card-line more">+{{ r.lines.length - CARD_MAX_LINES }} more</span>
         </span>
-        <span v-else class="card-val" :class="{ empty: !r.text, derived: r.derived, broken: r.broken, draggable: r.ids?.length === 1 }"
-              :title="r.ids?.length === 1 ? 'Drag onto the canvas to place this record here' : undefined"
-              @pointerdown="r.ids?.length === 1 && $emit('drag-linked', { recordId: r.ids[0], e: $event })">{{ r.text || '—' }}</span>
+        <span v-else class="card-val" :class="{ empty: !r.text, derived: r.derived, broken: r.broken }">{{ r.text || '—' }}</span>
         <span v-if="r.verdict" class="card-warn" :class="{ ok: r.verdict.ok }" :title="r.verdict.title">{{ r.verdict.ok ? '✓' : '⚠' }}</span>
       </div>
       <!-- NOTES: formatted, with their images, in a window of FIXED height that scrolls
@@ -91,6 +96,7 @@
 import { CARD_MAX_LINES } from '../canvas/cardLayout';
 import { textOn } from '../colorText';
 import { computed, defineAsyncComponent } from 'vue';
+import RecordPill from './RecordPill.vue';
 import type { Store } from '../store';
 import {
   CARD_BODY_PAD, CARD_HEAD_H, CARD_RICH_H, CARD_RICH_LABEL_H, CARD_ROW_H, CARD_TITLE_H, CARD_W, effectiveHeight,
@@ -105,8 +111,10 @@ export interface CardRow {
   /** A link or lookup: computed from elsewhere, shown in italics as in the grid. */
   derived?: boolean;
   broken?: boolean;
-  /** A LINK field's row: an output port, with a handle to drag a new link from. */
+  /** A LINK field's row (or a junction column's): an output port, with a handle to drag a new link from. */
   link?: boolean;
+  /** A junction column's row: its pills are pairs ("Uploaded → Texted Master"). */
+  junction?: boolean;
   /** Several values (a link to three works): shown as a vertical list, one per line. */
   lines?: string[];
   /** The linked records behind a link/backlink row, in `lines` (or `text`) order — draggable onto this canvas. */

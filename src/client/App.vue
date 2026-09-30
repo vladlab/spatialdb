@@ -719,6 +719,28 @@ body {
   cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1;
 }
 .chip-x:hover { color: var(--danger); }
+/* PILLS — every linked record, everywhere (components/RecordPill.vue). At rest, a
+   name; hover the GROUP (.pills) and every name is a bordered pill; hover ONE and
+   its ⤢ / × show. Action space is always reserved, so nothing shifts. Global on
+   purpose: the grid, the tray, the cards and the kanban must not drift apart. */
+.pills { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 1px 4px; min-width: 0; max-width: 100%; }
+.pills.column { flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: 0; }
+.pill {
+  display: inline-flex; align-items: center; gap: 2px; min-width: 0; box-sizing: border-box;
+  border: 1px solid transparent; border-radius: 10px; padding: 0 3px 0 6px;
+  font-size: 11px; line-height: 16px; white-space: nowrap; cursor: pointer; color: inherit;
+}
+.pill-text { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.pill.back { font-style: italic; color: var(--text-secondary); }
+.pill.junction { font-style: normal; }
+.pills:hover .pill, .pill.on { background: var(--controls-bg); border-color: var(--border-main); }
+.pill:hover { border-color: var(--accent); }
+.pill.on { border-color: var(--accent); }
+.pill-open, .pill-x { visibility: hidden; font-size: 11px; line-height: 1; padding: 0 1px; }
+.pill-open { color: var(--accent); }
+.pill-x { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; }
+.pill-x:hover { color: var(--danger); }
+.pill:hover .pill-open, .pill:hover .pill-x { visibility: visible; }
 /* A pill you can OPEN: the whole pill is the click target; the ⤢ is only a hint,
    revealed on hover with its space always reserved so nothing shifts. */
 .chip.openable { cursor: pointer; }

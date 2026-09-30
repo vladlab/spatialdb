@@ -25,7 +25,14 @@
                  @pointerdown="startDrag(r, c.key, $event)" @dblclick="$emit('open-record', r.id)">
           <div class="kcard-title">{{ labelOf(r) }}<button class="kcard-open" title="Open record" @pointerdown.stop @click.stop="$emit('open-record', r.id)">⤢</button></div>
           <div v-for="f in cardFields" :key="f.id" class="kcard-row">
-            <span class="kcard-name">{{ f.name }}</span><span class="kcard-val">{{ valueText(r, f) }}</span>
+            <span class="kcard-name">{{ f.name }}</span>
+            <!-- Linked records are PILLS here too (RecordPill.vue): click opens; a press
+                 must not start the card drag. -->
+            <span v-if="linkedIds(r, f).length" class="kcard-val pills">
+              <RecordPill v-for="(id, i) in linkedIds(r, f)" :key="id + i" :text="linkedTexts(r, f)[i] ?? ''" :back="f.type === 'backlink' && !derived.junctionOfBacklink(f)"
+                          :junction="f.type === 'backlink' && !!derived.junctionOfBacklink(f)" :title="`Open ${linkedTexts(r, f)[i] ?? ''}`" @open="$emit('open-record', id)" />
+            </span>
+            <span v-else class="kcard-val">{{ valueText(r, f) }}</span>
             <span v-if="verdictOf(r.id, f.id)" class="kcard-verdict" :class="{ ok: verdictOf(r.id, f.id)!.ok }" :title="verdictOf(r.id, f.id)!.title">{{ verdictOf(r.id, f.id)!.ok ? '✓' : '⚠' }}</span>
           </div>
         </article>
@@ -42,6 +49,7 @@ import type { FieldRow, RecordRow } from '../state';
 import { useDerived } from '../derived';
 import { beginRecordDrag, registerDropTarget } from '../recordDrag';
 import { addLink } from '../links';
+import RecordPill from './RecordPill.vue';
 import { kanbanColumns, type GroupValue } from '../../contract/views';
 import { richTextToPlain } from '../../contract/richtext';
 import { formatNumberField, shapeOf, summarise } from '../../contract/shapes';
@@ -72,6 +80,17 @@ const columns = computed(() => kanbanColumns(props.records, props.field, (rid, f
 
 const verdictOf = (recordId: string, fieldId: string) => derived.fieldVerdicts(recordId).get(fieldId);
 const labelOf = (r: RecordRow) => (props.primary ? valueText(r, props.primary) : '') || '(untitled)';
+/** The records behind a link / backlink / junction-column row, and their pill texts (same order). */
+function linkedIds(r: RecordRow, f: FieldRow): string[] {
+  if (f.type === 'link') return derived.linksFrom(r.id, f.id);
+  if (f.type !== 'backlink') return [];
+  // A junction column's pill opens the PAIR row; a plain backlink's the record holding the link.
+  return derived.backlinkOf(r.id, f) ?? [];
+}
+function linkedTexts(r: RecordRow, f: FieldRow): string[] {
+  if (f.type === 'link') return derived.linksFrom(r.id, f.id).map((id) => derived.labelOfId(id));
+  return derived.textOf(r.id, f).texts;
+}
 function valueText(r: RecordRow, f: FieldRow): string {
   if (f.type === 'link') return derived.linksFrom(r.id, f.id).map((id) => derived.labelOfId(id)).join(', ');
   if (f.type === 'lookup' || f.type === 'backlink') return derived.textOf(r.id, f).texts.join(', ');

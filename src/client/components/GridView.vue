@@ -320,11 +320,9 @@
                        pill is the target: a hover-only glyph was too small to hit, and a miss
                        selected the cell instead. It stops the press so the cell does not
                        also select or start editing. -->
-                  <span v-for="to in linksFrom(r.id, f.id)" :key="to" class="chip openable" :title="`Open ${labelFor(to)}`"
-                        @pointerdown.stop @mousedown.stop.prevent @click.stop="$emit('open-record', to)">
-                    {{ labelFor(to) }}<span class="chip-open">⤢</span>
-                    <button class="chip-x" tabindex="-1" title="Remove this link"
-                            @mousedown.stop.prevent @click.stop="removeLink(f.id, r.id, to)">×</button>
+                  <span class="pills">
+                    <RecordPill v-for="to in linksFrom(r.id, f.id)" :key="to" :text="labelFor(to)" :title="`Open ${labelFor(to)}`" removable
+                                @open="$emit('open-record', to)" @remove="removeLink(f.id, r.id, to)" />
                   </span>
                   <!-- Mounted for the ONE cell being edited; see LinkPicker.vue. -->
                   <LinkPicker v-if="isSel(r.id, f.id) && editing && targetOf(f)"
@@ -365,13 +363,18 @@
                            "Uploaded → Texted Master". Click a chip to change its status; × deletes
                            the pair; + (or Enter) adds one. Writable, unlike a plain backlink. -->
                       <template v-else-if="junctionOf(f)">
-                        <span v-for="row in derived.backlinkOf(r.id, f) ?? []" :key="row" class="chip junc" :class="{ on: junctionRow === row && isSel(r.id, f.id) && editing }" :title="`Change the status of this pair, or open it`"
-                              @pointerdown.stop @mousedown.stop.prevent @click.stop="editJunction(r.id, f, row)">{{ derived.junctionChip(row, junctionOf(f)!.side).text }}
-                          <button class="chip-x" tabindex="-1" title="Delete this pair (undo restores it)" @mousedown.stop.prevent @click.stop="deleteJunctionRow(row)">×</button>
+                        <span class="pills">
+                          <RecordPill v-for="row in derived.backlinkOf(r.id, f) ?? []" :key="row" junction :text="derived.junctionChip(row, junctionOf(f)!.side).text"
+                                      :on="junctionRow === row && isSel(r.id, f.id) && editing" title="Change the status of this pair, or open it"
+                                      removable remove-title="Delete this pair (undo restores it)"
+                                      @open="editJunction(r.id, f, row)" @remove="deleteJunctionRow(row)" />
                         </span>
                         <button class="junc-add" tabindex="-1" :title="`Add a ${junctionName(f)}`" @pointerdown.stop @mousedown.stop.prevent @click.stop="editJunction(r.id, f)">+</button>
                       </template>
-                      <span v-for="from in derived.backlinkOf(r.id, f) ?? []" v-else :key="from" class="chip plain back openable" :title="`Open ${labelFor(from)} — the link is edited there`" @pointerdown.stop @mousedown.stop.prevent @click.stop="$emit('open-record', from)">{{ labelFor(from) }}<span class="chip-open">⤢</span></span>
+                      <span v-else class="pills">
+                        <RecordPill v-for="from in derived.backlinkOf(r.id, f) ?? []" :key="from" back :text="labelFor(from)" :title="`Open ${labelFor(from)} — the link is edited there`"
+                                    @open="$emit('open-record', from)" />
+                      </span>
                     </template>
                     <!-- LOOKUP: computed, read-only. Broken (its link field or far field
                          was deleted) is shown as such, not as an empty cell. -->
@@ -437,6 +440,7 @@ import { LABEL_TYPES } from '../../contract/labels';
 import CellEditor from './CellEditor.vue';
 import LinkPicker from './LinkPicker.vue';
 import JunctionEditor from './JunctionEditor.vue';
+import RecordPill from './RecordPill.vue';
 import Popover from './Popover.vue';
 import FieldForm from './FieldForm.vue';
 import FieldSettings from './FieldSettings.vue';
@@ -1398,9 +1402,6 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .broken { color: var(--danger); font-size: 11px; }
 .value.note { color: var(--text-secondary); }
 .chip.plain { padding: 1px 8px; }
-.chip.back { font-style: italic; color: var(--text-secondary); }
-.chip.junc { cursor: pointer; }
-.chip.junc.on { outline: 1px solid var(--accent); }
 .junc-add { background: none; border: 1px dashed var(--border-main); border-radius: 10px; color: var(--text-muted); cursor: pointer; font: inherit; line-height: 1; padding: 0 6px; visibility: hidden; }
 td:hover .junc-add, td.sel .junc-add { visibility: visible; }
 .junc-add:hover { color: var(--accent); border-color: var(--accent); }

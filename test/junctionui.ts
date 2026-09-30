@@ -100,8 +100,8 @@ async function main() {
     await w.find('.je .act.primary').trigger('click');
     const rows = await untilDb(`select r.id, r.data->>'status' s, (select count(*)::int from links where from_record = r.id) n from records r where r.table_id = '${tJ}'`, (r) => r.length === 1 && r[0].n === 2, 8000);
     check('one row, status Uploaded, both links — one batch', rows[0].s === 'Uploaded' && rows[0].n === 2, JSON.stringify(rows));
-    const chip = () => cellOf('a.mov').find('.chip.junc');
-    check('the chip reads "Uploaded → Texted Master"', await until(() => chip().exists() && chip().text().replace('×', '').trim() === 'Uploaded → Texted Master'), chip().exists() ? chip().text() : 'no chip');
+    const chip = () => cellOf('a.mov').find('.pill.junction');
+    check('the chip reads "Uploaded → Texted Master"', await until(() => chip().exists() && chip().find('.pill-text').text() === 'Uploaded → Texted Master'), chip().exists() ? chip().text() : 'no chip');
 
     console.log('\nJ3. Same pair again lands on the row; status changes in place');
     await w.find('.je .act:not(.primary):not(.danger)').trigger('click');   // Done
@@ -127,9 +127,9 @@ async function main() {
     await until(() => w.find('.je .act.primary').exists());
     await w.find('.je .act.primary').trigger('click');
     const r2 = await untilDb(`select id from records where table_id = '${tJ}'`, (r) => r.length === 1, 8000);
-    const chipB = () => cellOf('b.mov').find('.chip.junc');
-    check('a row with no status reads "→ Trailer"', await until(() => chipB().exists() && chipB().text().replace('×', '').trim() === '→ Trailer'), chipB().exists() ? chipB().text() : 'no chip');
-    await chipB().find('.chip-x').trigger('click');
+    const chipB = () => cellOf('b.mov').find('.pill.junction');
+    check('a row with no status reads "→ Trailer"', await until(() => chipB().exists() && chipB().find('.pill-text').text() === '→ Trailer'), chipB().exists() ? chipB().text() : 'no chip');
+    await chipB().find('.pill-x').trigger('click');
     await untilDb(`select count(*)::int n from records where id = '${r2[0].id}'`, (r) => r[0].n === 0, 4000);
     check('× deletes the row', await until(() => !chipB().exists()));
     // Make a pair from the server side, then delete the file: the client mirrors the cascade.
@@ -144,7 +144,7 @@ async function main() {
     await untilDb(`select count(*)::int n from records where id = '${r3}'`, (r) => r[0].n === 0, 4000);
     check('deleting the file took the pair on the server', true);
     await until(() => w.findAll('.gridview tr.row').length === 1, 8000);
-    check('and the client dropped the junction row with it', await until(() => !w.findAll('.chip.junc').length) && !w.find('.errors').exists());
+    check('and the client dropped the junction row with it', await until(() => !w.findAll('.pill.junction').length) && !w.find('.errors').exists());
 
     console.log('\nJ5. On the canvas: a pair is dragged out of a port, drawn as an arrow, and worked from it');
     // a.mov and Texted Master on a board. Texted Master's card must show its Delivery

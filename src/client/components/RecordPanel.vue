@@ -76,10 +76,9 @@
             <!-- DRAG a pill onto a canvas to place that record there (or jump to it, if it is
                  already placed). A plain click still opens it. client/recordDrag.ts tells the two
                  apart by movement. -->
-            <span v-for="to in linksFrom(f.id)" :key="to" class="chip openable" :title="`Open ${labelOfId(to)} · drag onto a canvas to place it`"
-                  @pointerdown.stop="dragPill(to, $event)" @mousedown.stop.prevent>
-              {{ labelOfId(to) }}<span class="chip-open">⤢</span><button class="chip-x" tabindex="-1" title="Remove this link"
-                                        @click.stop="removeLink(f.id, to)">×</button>
+            <span class="pills">
+              <RecordPill v-for="to in linksFrom(f.id)" :key="to" :text="labelOfId(to)" :title="`Open ${labelOfId(to)} · drag onto a canvas to place it`"
+                          removable drag @down="dragPill(to, $event)" @remove="removeLink(f.id, to)" />
             </span>
             <span v-if="!linksFrom(f.id).length && editingId !== f.id" class="placeholder">add a link…</span>
             <LinkPicker v-if="editingId === f.id && targetOf(f)" :store="store" :target-table-id="targetOf(f)!"
@@ -98,16 +97,22 @@
             <!-- A JUNCTION's column (sql/016): writable. Chips are pairs with their status;
                  click one to change it, × deletes the pair, the box itself adds one. -->
             <template v-else-if="junctionOf(f)">
-              <span v-for="row in derived.backlinkOf(recordId, f) ?? []" :key="row" class="chip junc" title="Change the status of this pair, or open it"
-                    @click.stop="editJunction(f, row)">{{ derived.junctionChip(row, junctionOf(f)!.side).text }}<button class="chip-x" tabindex="-1" title="Delete this pair (undo restores it)" @click.stop="store.mutate({ type: 'record.delete', id: row })">×</button></span>
+              <span class="pills">
+                <RecordPill v-for="row in derived.backlinkOf(recordId, f) ?? []" :key="row" junction :text="derived.junctionChip(row, junctionOf(f)!.side).text"
+                            :on="editingId === f.id && junctionRow === row" title="Change the status of this pair, or open it"
+                            removable remove-title="Delete this pair (undo restores it)"
+                            @open="editJunction(f, row)" @remove="store.mutate({ type: 'record.delete', id: row })" />
+              </span>
               <span v-if="editingId !== f.id" class="placeholder">add {{ derived.backlinkOf(recordId, f)?.length ? 'another' : 'a' }} {{ junctionName(f) }}…</span>
               <JunctionEditor v-if="editingId === f.id" :store="store" :table="junctionOf(f)!.table" :cfg="junctionOf(f)!.cfg"
                               :side="junctionOf(f)!.side" :from="recordId" :row-id="junctionRow" :anchor="valueEls.get(f.id)"
                               @done="onDone('none')" @open="(id: string) => { onDone('none'); $emit('open', id); }" />
             </template>
             <template v-else>
-              <button v-for="from in derived.backlinkOf(recordId, f) ?? []" :key="from" class="chip back"
-                      title="Open that record" @click.stop="$emit('open', from)">{{ labelOfId(from) }}</button>
+              <span class="pills">
+                <RecordPill v-for="from in derived.backlinkOf(recordId, f) ?? []" :key="from" back :text="labelOfId(from)"
+                            :title="`Open ${labelOfId(from)} · drag onto a canvas to place it`" drag @down="dragPill(from, $event)" />
+              </span>
               <span v-if="derived.backlinkOf(recordId, f)?.length === 0" class="placeholder">nothing links here</span>
             </template>
           </template>
@@ -148,8 +153,10 @@
         <h3>Referenced by</h3>
         <div v-for="g in referencedBy" :key="g.field.id" class="rp-ref">
           <span class="rp-ref-via">{{ g.tableName }} · {{ g.field.name }}</span>
-          <button v-for="from in g.from" :key="from" class="chip back" title="Open that record"
-                  @click="$emit('open', from)">{{ labelOfId(from) }}</button>
+          <span class="pills">
+            <RecordPill v-for="from in g.from" :key="from" back :text="labelOfId(from)" :title="`Open ${labelOfId(from)} · drag onto a canvas to place it`"
+                        drag @down="dragPill(from, $event)" />
+          </span>
         </div>
       </div>
 
@@ -175,6 +182,7 @@ import CellEditor, { type EditExit } from './CellEditor.vue';
 import { invoke, isDesktop, jobs, notice } from '../desktop';
 import LinkPicker from './LinkPicker.vue';
 import JunctionEditor from './JunctionEditor.vue';
+import RecordPill from './RecordPill.vue';
 import AttachmentField from './AttachmentField.vue';
 import StructuredField from './StructuredField.vue';
 import { formatNumberField } from '../../contract/shapes';
@@ -417,18 +425,6 @@ watch(() => props.recordId, () => {
 .placeholder { color: var(--text-faint); font-style: italic; }
 .looked-up { color: var(--text-secondary); font-style: italic; }
 .broken { color: var(--danger); font-size: 11px; }
-/* These chips are <button>s (they open the record they name), and a button does
-   NOT inherit `color` — left unset, the browser paints its default near-black
-   text, which on this background was unreadable. Same chip, explicit colours;
-   accent-coloured because they are the only chips in the panel you can click. */
-.chip.back {
-  font: inherit; font-size: 11px; font-style: italic; cursor: pointer;
-  color: var(--accent); background: var(--controls-bg); border: 1px solid var(--border-main);
-  padding: 1px 8px;
-}
-.chip.back:hover { border-color: var(--accent); color: var(--text-primary); }
-.chip.junc { cursor: pointer; }
-.chip.junc:hover { border-color: var(--accent); }
 .rp-refs { margin-top: 14px; padding: 0 2px; }
 .rp-refs h3 { margin: 0 0 6px; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
 .rp-ref { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 3px 0; }

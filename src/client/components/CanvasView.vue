@@ -305,7 +305,7 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
       : derived.backlinkOf(rec.id, f) ?? [];
     return broken ? { id: f.id, name: f.name, broken: true, text: `broken ${f.type}` }
       : { id: f.id, name: f.name, derived: true, text: texts.join(', '), lines: texts.length > 1 ? texts : undefined,
-          ids, color, link: f.type === 'link' || !!j };
+          ids, color, link: f.type === 'link' || !!j, junction: !!j };
   }
   if (f.type === 'rich_text') return { id: f.id, name: f.name, text: richTextToPlain(rec.data[f.key]).split('\n', 1)[0] };
   // A structured value is a one-line SUMMARY on a card ("4 tracks / 12 ch (5.1, 2.0…)"):
@@ -432,9 +432,10 @@ const arrowStyles = computed(() => {
  */
 function onDragLinked({ recordId, e }: { recordId: string; e: PointerEvent }) {
   const rec = store.state.records.get(recordId);
-  if (!rec) return;
   e.stopPropagation();
-  beginRecordDrag(() => [rec], e, () => derived.labelOfId(recordId));
+  // A press that moves places (or jumps to) the record; one that does not is a click: open it.
+  if (!rec) { emit('open-record', recordId); return; }
+  beginRecordDrag(() => [rec], e, () => derived.labelOfId(recordId), () => emit('open-record', recordId));
 }
 
 /* ── a link dragged onto empty canvas: choose or create the other end ── */

@@ -362,7 +362,7 @@ async function main() {
   const LINK = ths().indexOf('Show');
   const picker = () => w.find('.gridview .picker');
   const options = () => picker().findAll('.list li .name').map((x) => x.text());
-  const chips = (row: number) => cell(row, LINK).findAll('.cell > .chip').map((c) => c.text().replace(/[×⤢]/g, '').trim());
+  const chips = (row: number) => cell(row, LINK).findAll('.cell .pill').map((c) => c.text().replace(/[×⤢]/g, '').trim());
   const pkey = (k: string, opts: Record<string, unknown> = {}) => picker().find('input').trigger('keydown', { key: k, ...opts });
 
   await cell(0, LINK).trigger('mousedown');
@@ -652,7 +652,7 @@ async function main() {
   await panel().find('.picker input').trigger('keydown', { key: 'Enter' });
   const alphaLink = await untilDb(`select 1 from links where from_record = '${await recId('reel_2')}' and to_record = '${showIds[0]}'`, (r) => r.length === 1);
   check('and links from there exactly as from the grid', alphaLink.length === 1
-    && pField('Show').findAll('.chip').some((c) => c.text().includes('Alpha')));
+    && pField('Show').findAll('.pill').some((c) => c.text().includes('Alpha')));
   await panel().find('.picker input').trigger('keydown', { key: 'Escape' });
 
   await cell(rowOf('reel_1'), 0).trigger('mousedown');
@@ -716,7 +716,8 @@ async function main() {
     { type: 'placement.add', id: randomUUID(), canvasId: boardId, recordId: showIds[2], x: 500, y: 40, w: null, h: null, z: 6 },
   ]);
   check('cards placed by a peer appear live', await until(() => !!cardBy('reel_10')), cardsNow().map((c) => c.find('.card-label').text()).join());
-  const rowsOf = (c: ReturnType<typeof cardBy>) => Object.fromEntries(c.findAll('.card-field').map((f) => [f.find('.card-key').text(), f.find('.card-val').text()]));
+  // A row's value, as read: linked records are pills whose ⤢ / × are reserved glyphs, not text.
+  const rowsOf = (c: ReturnType<typeof cardBy>) => Object.fromEntries(c.findAll('.card-field').map((f) => [f.find('.card-key').text(), f.findAll('.pill-text').length ? f.findAll('.pill-text').map((p) => p.text()).join(', ') : f.find('.card-val').text()]));
   check('a card shows a few fields by default — and NOT the primary twice',
     Object.keys(rowsOf(cardBy('reel_10'))).length > 0 && !('Name' in rowsOf(cardBy('reel_10'))), JSON.stringify(rowsOf(cardBy('reel_10'))));
 
@@ -880,12 +881,14 @@ async function main() {
 
   await key(' ');
   await until(() => panel().exists());
-  check('the record panel shows the backlink as chips', await until(() => pField('Used by').findAll('.chip.back').some((c) => c.text() === 'reel_10')),
+  check('the record panel shows the backlink as chips', await until(() => pField('Used by').findAll('.pill.back').some((c) => c.find('.pill-text').text() === 'reel_10')),
     pField('Used by').text());
   check('and a "Referenced by" section lists EVERY incoming link, grouped by where it comes from',
     panel().find('.rp-refs').exists() && /Files · Show/.test(panel().find('.rp-refs').text()) && /reel_10/.test(panel().find('.rp-refs').text()),
     panel().find('.rp-refs').exists() ? panel().find('.rp-refs').text() : 'no section');
-  await panel().find('.rp-refs .chip.back').trigger('click');
+  // A pill in the tray is draggable: a click is a press-and-release without movement.
+  await panel().find('.rp-refs .pill.back').trigger('pointerdown', { button: 0, clientX: 300, clientY: 300 });
+  win.dispatchEvent(new ((win as any).PointerEvent ?? (win as any).MouseEvent)('pointerup', { bubbles: true, clientX: 300, clientY: 300 }));
   check('clicking a referrer opens THAT record', await until(() => panel().find('.rp-title').text() === 'reel_10'), panel().find('.rp-title').text());
   await panel().find('.rp-close').trigger('click');
 
@@ -898,7 +901,7 @@ async function main() {
   await until(() => cardBy('reel_10').find('.card-list').exists(), 8000);
   const listRow = cardBy('reel_10').findAll('.card-field').find((f) => f.find('.card-key').text() === 'Show')!;
   check('a link row with two records is a LIST, one per line, not "Gamma, Beta" on one line',
-    listRow.find('.card-list').exists() && listRow.findAll('.card-line').map((l) => l.text()).sort().join() === 'Beta,Gamma', listRow.text());
+    listRow.find('.card-list').exists() && listRow.findAll('.card-line').map((l) => l.find('.pill-text').text()).sort().join() === 'Beta,Gamma', listRow.text());
   await tab('table').trigger('click');
 
   console.log('\nU14. The command palette (Ctrl+K)');
