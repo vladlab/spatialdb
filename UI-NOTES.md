@@ -16,6 +16,27 @@ sandbox has no browser and `test/ui.ts` cannot see layout or paint.
 
 ## When you come back — a checking order
 
+**Adding links, in the tray and in the picker (Oct 1)** — owner: a full link field
+has no good way to add more (a junction's has its "add another…" line); and in the
+picker "it's not clear what's already in and what's being searched", with the pills
+laid out differently while adding.
+1. Every link field in the tray ends with the way in: "add a Deliverable…" when
+   empty, "add another Deliverable…" when not ("change the …" on a link ticked
+   single). The noun is the TARGET table's singular name — set one on the table if it
+   reads "add another Deliverables…".
+2. Click it (or the field): the pills above do not move. The line becomes the search
+   ("+ find in Deliverables…") and the results hang under the field as a dropdown,
+   over what is below — nothing in the tray shifts. Enter links and stays open; the
+   new link appears as a pill above. × on a pill still removes it while searching.
+3. Backspace on an empty search no longer unlinks in the tray (it still does in the
+   grid's picker, where the chips are in the box with you).
+4. The grid's picker (and the canvas ones) now has two sections: LINKED — darker,
+   the chips — then ADD, the search line and its results. Is the pair of labels
+   right, or too much?
+5. Not touched: the hint beside each result still lists every value of the record,
+   raw created-at timestamp included ("2026-10-01T16:07:55.972Z · Vlad"). Say if the
+   system fields should be left out of it.
+
 **The grid follows the keyboard (Oct 1)** — owner: "when navigating fields on a table
 with arrows the view doesn't scroll". Two things, one of them older than it looked:
 1. SIDEWAYS there was no scrolling at all. Arrows, Tab / Shift+Tab (including the wrap

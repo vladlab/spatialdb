@@ -399,6 +399,7 @@ async function main() {
   await cell(0, LINK).trigger('mousedown');
   await key('Enter');
   check('Enter on a link cell opens the picker', await until(() => picker().exists()));
+  check('with nothing linked yet it is only the "add" line — no empty "linked" section', !picker().find('.current').exists() && picker().find('.find .sec').text() === 'add' && picker().find('.find input.q').exists());
   check('it walks the target table and lists every record',
     await until(() => options().length === 3), options().join());
   await picker().find('input').setValue('xj9');
@@ -406,6 +407,9 @@ async function main() {
     await until(() => options().join() === 'Gamma'), options().join());
   await pkey('Enter');
   check('Enter links the highlighted record', await until(() => chips(0).join() === 'Gamma'), chips(0).join());
+  check('what is linked and where you search are TWO sections: "linked" with its chips, then the "add" line — the input is not among the chips',
+    await until(() => picker().find('.current').exists()) && picker().find('.current .sec').text() === 'linked' && picker().findAll('.current .chip').length === 1
+    && !picker().find('.current input').exists() && picker().find('.find input.q').exists(), picker().html().slice(0, 200));
   check('and the picker STAYS OPEN with the query cleared, minus what is now linked',
     picker().exists() && (picker().find('input').element as HTMLInputElement).value === ''
     && options().join() === 'Alpha,Beta', options().join());
@@ -698,15 +702,25 @@ async function main() {
   check('and Ctrl+Enter commits — both lines', notes[0].data.notes === 'line one\nline two', JSON.stringify(notes[0].data.notes));
   if (pEditor().exists()) await pEditor().trigger('keydown', { key: 'Escape' });
 
+  check('an EMPTY link field says what it takes — "add a …", named by the table it links to', /^add a \S.*…$/.test(pField('Show').find('.add-link').text()), pField('Show').find('.add-link').text());
   await pField('Show').find('.rp-value').trigger('click');
   check('a link field opens the link picker, in the panel', await until(() => panel().find('.picker').exists()));
+  check('…as a search line INSIDE the field, where the "add" line was — with no "linked" section of its own (the field\'s pills are that)',
+    pField('Show').find('.picker.field .find input.q').exists() && !panel().find('.picker .current').exists() && !pField('Show').find('.add-link').exists());
   await until(() => panel().findAll('.picker .list li').length > 0);
   await panel().find('.picker input').setValue('alpha');
   await panel().find('.picker input').trigger('keydown', { key: 'Enter' });
   const alphaLink = await untilDb(`select 1 from links where from_record = '${await recId('reel_2')}' and to_record = '${showIds[0]}'`, (r) => r.length === 1);
   check('and links from there exactly as from the grid', alphaLink.length === 1
     && pField('Show').findAll('.pill').some((c) => c.text().includes('Alpha')));
+  check('the new link is a PILL in the field, above the search line, which is still open', pField('Show').findAll('.pills.column .pill').length === 1 && pField('Show').find('.picker.field').exists());
+  await panel().find('.picker input').trigger('keydown', { key: 'Backspace' });
+  await new Promise((r) => setTimeout(r, 200));
+  check('Backspace on an empty search does NOT unlink here (the pills have their own ×; clearing a query must not eat a link)',
+    pField('Show').findAll('.pill').length === 1 && (await pool.query(`select 1 from links where from_record = $1 and field_id = $2`, [await recId('reel_2'), linkField])).rowCount === 1);
   await panel().find('.picker input').trigger('keydown', { key: 'Escape' });
+  check('closed, a field that HAS links still offers the way in: "add another …"', await until(() => !panel().find('.picker').exists())
+    && /^add another \S.*…$/.test(pField('Show').find('.add-link').text()), pField('Show').find('.add-link').text());
 
   await cell(rowOf('reel_1'), 0).trigger('mousedown');
   await key(' ');

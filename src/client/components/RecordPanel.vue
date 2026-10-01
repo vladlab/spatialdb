@@ -81,8 +81,12 @@
               <RecordPill v-for="to in linksFrom(f.id)" :key="to" :text="labelOfId(to)" title="Drag onto a canvas to place it · ⤢ opens it"
                           removable drag @down="dragPill(to, $event)" @open="$emit('open', to)" @remove="removeLink(f.id, to)" />
             </span>
-            <span v-if="!linksFrom(f.id).length && editingId !== f.id" class="placeholder">add a link…</span>
-            <LinkPicker v-if="editingId === f.id && targetOf(f)" :store="store" :target-table-id="targetOf(f)!"
+            <!-- The way IN, always there — as a junction's field has it: "add another
+                 Deliverable…" under the links (a field that is full of links used to
+                 offer nothing to click but the links). Editing, the search line takes
+                 this line's place and the pills above stay exactly where they are. -->
+            <span v-if="editingId !== f.id" class="placeholder add-link">{{ addLinkText(f) }}</span>
+            <LinkPicker v-if="editingId === f.id && targetOf(f)" field :store="store" :target-table-id="targetOf(f)!"
                         :linked="linksFrom(f.id)" :anchor="valueEls.get(f.id)"
                         @add="(to) => addLink(f.id, to)" @remove="(to) => removeLink(f.id, to)" @done="onDone" />
           </template>
@@ -311,6 +315,18 @@ const labelOfId = derived.labelOfId;
 const linksFrom = (fieldId: string) => derived.linksFrom(props.recordId, fieldId);
 const lookupOf = (f: FieldRow) => derived.lookupOf(props.recordId, f);
 const targetOf = (f: FieldRow) => f.options?.target_table_id as string | undefined;
+/**
+ * "add a Deliverable…" / "add another Deliverable…" — named by what the field links
+ * TO (the target table's singular name), as a junction's line is named by its pair.
+ * A link ticked "single" holds one: adding replaces it (client/links.ts), so say so.
+ */
+function addLinkText(f: FieldRow): string {
+  const t = store.state.tables.get(targetOf(f) ?? '');
+  const noun = t?.singular_name || t?.name || 'link';
+  const n = linksFrom(f.id).length;
+  if (!n) return `add a ${noun}…`;
+  return f.options?.single === true ? `change the ${noun}…` : `add another ${noun}…`;
+}
 const referencedBy = computed(() => derived.referencedBy(props.recordId));
 /** A backlink mirroring a junction's endpoint is WRITABLE (contract/junction.ts) — the one backlink that is. */
 const junctionOf = (f: FieldRow) => derived.junctionOfBacklink(f);

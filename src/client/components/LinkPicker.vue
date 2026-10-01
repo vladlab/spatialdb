@@ -29,17 +29,33 @@
 
   Positioned `fixed` from the cell's rectangle, because every ancestor clips:
   the cell (fixed row height) and the scroller (the grid's viewport).
+
+  TWO SECTIONS, and they must not read as one. What is ALREADY linked (top, darker,
+  labelled "linked") and where you SEARCH for more (the "add" line and its results)
+  used to share a row — chips and the query input in one wrapping line — and the
+  owner could not tell at a glance what was in from what was being looked for.
+
+  `field` is the record tray's mode. There the FIELD shows its own links, as the
+  same pills in the same places as when it is not being edited — so this draws no
+  "linked" section at all: it is only the search line, sitting exactly where the
+  field's "add another…" line was, with the results hanging beneath the field as a
+  dropdown (over what is below, so nothing in the tray moves when it opens).
 -->
 <template>
-  <div class="picker" :class="{ inline }" :style="inline ? undefined : pos" @keydown.stop="onKey" @mousedown.stop>
-    <div class="current">
+  <div class="picker" :class="{ inline, field }" :style="inline || field ? undefined : pos" @keydown.stop="onKey" @mousedown.stop>
+    <div v-if="!field && linked.length" class="current">
+      <span class="sec">linked</span>
       <span v-for="id in linked" :key="id" class="chip">
         {{ label(id) }}<button class="chip-x" tabindex="-1" :title="`Unlink ${label(id)}`"
                                @mousedown.prevent @click="$emit('remove', id)">×</button>
       </span>
+    </div>
+    <div class="find">
+      <span class="sec add">{{ field ? '+' : 'add' }}</span>
       <input ref="input" v-model="query" class="q" type="text" :placeholder="`find in ${targetName}…`"
              @blur="onBlur" />
     </div>
+    <div ref="drop" class="drop">
     <!-- In a project, candidates default to THAT project's records — with a way
          out, because reusing a file from another show is a legitimate thing to do. -->
     <label v-if="scopeFilter" class="note scope-toggle" @mousedown.prevent>
@@ -71,6 +87,7 @@
     <div v-else-if="matches.length > visible.length" class="note">
       {{ (matches.length - visible.length).toLocaleString() }} more — keep typing
     </div>
+    </div>
   </div>
 </template>
 
@@ -91,6 +108,8 @@ const props = defineProps<{
   anchor?: HTMLElement | null;
   /** Sit in the normal flow of whatever contains it (a popover), not floating over a cell. */
   inline?: boolean;
+  /** Inside a record-tray FIELD that shows its own links: only the search line, in the flow, its results a dropdown beneath. */
+  field?: boolean;
   /** Offer "+ new: …" for a query that matches nothing exactly; the caller creates it. */
   allowCreate?: boolean;
   /** Set when the edit was started by typing: becomes the first search character. */
@@ -190,7 +209,9 @@ function onKey(e: KeyboardEvent) {
       return;
     }
     case 'Backspace':
-      if (query.value === '' && props.linked.length) {
+      // Not in a tray field: its links are the field's own pills, each with its ×, and
+      // holding Backspace to clear a query must not go on to eat a link.
+      if (query.value === '' && props.linked.length && !props.field) {
         e.preventDefault();
         emit('remove', props.linked[props.linked.length - 1]);
       }
@@ -209,9 +230,13 @@ const pos = computed(() => {
   return { left: `${r.left}px`, top: `${r.top}px`, minWidth: `${Math.max(r.width, 320)}px` };
 });
 
+/** A tray field near the bottom of the tray: bring the dropdown into view rather than open it below the fold. */
+const drop = ref<HTMLElement>();
+function showDrop() { if (props.field) drop.value?.scrollIntoView?.({ block: 'nearest' }); }
+
 onMounted(() => {
   void props.store.loadTable(props.targetTableId);   // no-op if already walked
-  void nextTick(() => input.value?.focus());
+  void nextTick(() => { input.value?.focus(); showDrop(); });
 });
 </script>
 
@@ -222,10 +247,28 @@ onMounted(() => {
   box-shadow: var(--card-shadow-drag); font-size: 12px;
 }
 .picker.inline { position: static; max-width: none; box-shadow: none; border-width: 1px; border-color: var(--border-main); }
-.current { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; padding: 4px 6px; }
+/* LINKED: what is already in. Darker than the rest, and said. */
+.current { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; padding: 5px 6px; background: var(--bg-app); border-bottom: 1px solid var(--border-main); border-radius: 2px 2px 0 0; }
+.sec { flex: none; color: var(--text-faint); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; user-select: none; }
+/* ADD: the search line, and under it what it finds. */
+.find { display: flex; align-items: center; gap: 4px; padding: 4px 6px; }
+.sec.add { color: var(--success); }
 .q {
   flex: 1; min-width: 120px; background: none; border: none; outline: none;
   color: inherit; font: inherit; padding: 2px 0;
+}
+
+/* IN A TRAY FIELD: no box of its own — the field is the box. The search line takes
+   the place of the field's "add another…" line; the results hang off the field's
+   bottom edge (-9px / +5px: the field's padding and border), over what is below. */
+.picker.field { position: relative; flex: 1 1 100%; max-width: none; background: none; border: none; box-shadow: none; font-size: inherit; }
+.picker.field .find { padding: 0; }
+.picker.field .sec.add { font-size: 13px; letter-spacing: 0; margin-right: 2px; }
+.picker.field .q { padding: 0; }
+.picker.field .drop {
+  position: absolute; z-index: 50; top: calc(100% + 4px); left: -9px; right: -9px;
+  background: var(--controls-bg); border: 1px solid var(--success); border-radius: 0 0 4px 4px;
+  box-shadow: var(--card-shadow-drag); font-size: 12px;
 }
 .list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto;
         border-top: 1px solid var(--border-main); }
