@@ -16,6 +16,23 @@ sandbox has no browser and `test/ui.ts` cannot see layout or paint.
 
 ## When you come back — a checking order
 
+**The save queue, and resync (Oct 1, from the code review)** — nothing to look at
+until something goes wrong, which is the point. The suite covers it
+(`npm run test:savequeue`); what only a real browser shows:
+1. Two windows on one canvas. Delete a record in one; in the other, immediately Ctrl+Z
+   an "unplace" of it, or place it from the palette. Before: a red "Saving is failing"
+   line that never cleared, and nothing you typed afterwards was saved. Now: one
+   "rejected (409)" line, the card goes, and the next edit saves ("saved" in the
+   status readout).
+2. The banner lines are dismissed with a click. Is that discoverable enough? (They
+   never went away at all before.)
+3. A resync must not move you. Sleep a laptop with the app open on a canvas and a
+   record in the tray while someone else works (1000+ changes), or restart the
+   server on an older dump: you should still be on the same canvas, cards and tray
+   intact. It used to drop you on the first table with an empty canvas.
+4. Type in a cell and close the tab at once: the browser asks. It should NOT ask a
+   second later. Not covered: the desktop app's window close.
+
 **Link pills, always visible; a count for busy fields (Oct 1)** — owner: links were
 invisible until hovered, "so all they really do is make text smaller than other fields,
 and oddly formatted at times because we leave space for the edit icons". Chosen from

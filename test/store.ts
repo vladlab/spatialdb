@@ -437,6 +437,8 @@ async function partB() {
     A.errors.value.slice(0, 2).join(' | '));
   check('and the server stored nothing',
     (await pool.query(`select 1 from records where id = $1`, [badRecord])).rowCount === 0);
+  await waitFor(() => !A.state.records.has(badRecord), 6000, 'the refused record to leave the screen');
+  check('nor does the screen go on showing it (test/savequeue.ts has the rest)', !A.state.records.has(badRecord));
 
   console.log('\nB8. Last write wins ON SCREEN too — not just in the database');
   // The order that matters: a colleague's write COMMITS before yours, but REACHES you

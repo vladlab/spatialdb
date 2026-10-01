@@ -659,9 +659,15 @@ async function main() {
     slow.state.records.get(target.id)!.data.name === 'typed during load',
     String(slow.state.records.get(target.id)!.data.name));
 
-  console.log('\nG3c. A resync unloads every table');
+  console.log('\nG3c. A resync reloads the tables that were loaded');
+  // It used to UNLOAD them (clear the state, clear tableLoads, let each view walk its
+  // table again) — which left the app empty for the duration and moved the user to
+  // the first table. Now it reads first and swaps: see store.ts `resync`.
+  const heldBefore = [...A.state.records.values()].filter((r) => r.table_id === tableId).length;
   await A.resync();
-  check('tableLoads is cleared, which is what tells the grid to walk again', A.tableLoads.size === 0);
+  check('the table is still marked loaded', A.tableLoads.get(tableId)?.state === 'loaded', String(A.tableLoads.get(tableId)?.state));
+  const heldAfter = [...A.state.records.values()].filter((r) => r.table_id === tableId).length;
+  check('…and its records are there, fresh from the server', heldAfter === heldBefore && heldAfter > 0 && A.tableLoads.get(tableId)?.rows === heldAfter, `${heldBefore} -> ${heldAfter}`);
 
   console.log('\nG4. Saved views');
   const viewId = randomUUID();

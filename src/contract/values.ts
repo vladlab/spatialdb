@@ -70,7 +70,11 @@ export function validateValue(field: FieldShape, value: unknown): string | null 
     case 'text':
     case 'long_text':
     case 'file_path':
-      return typeof value === 'string' ? null : `'${field.key}' must be text`;
+      if (typeof value !== 'string') return `'${field.key}' must be text`;
+      // Postgres's jsonb cannot hold U+0000 at all. It turns up in text copied out of
+      // binary metadata (a tag off a media file); refused here so it is caught at the
+      // cell, with a reason, rather than by the database.
+      return value.includes('\u0000') ? `'${field.key}' contains a NUL character (\\u0000), which cannot be stored` : null;
 
     case 'number':
       return typeof value === 'number' && Number.isFinite(value)

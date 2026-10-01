@@ -9,8 +9,11 @@
  *       IMMEDIATELY — the UI never waits on the network
  *    2. the mutation goes onto a pending queue with an idempotency key
  *    3. the queue flushes on a ~100ms debounce to POST /api/mutate
- *    4. on failure, the batch goes back on the queue and is retried; the
- *       idempotency keys make that safe
+ *    4. on a failure that may pass (5xx, the network), the batch goes back on the
+ *       queue and is retried; the idempotency keys make that safe
+ *    5. on a REFUSAL (4xx), the one action the server refused is given up — not
+ *       the whole batch — the rest is sent again, and the screen is reloaded from
+ *       the server so it stops showing what was never saved (`rejected`, `resync`)
  *
  *  And the read path is the same apply function, fed from the stream. That
  *  symmetry is the thing being proved here. Once it holds, an offline queue is
@@ -52,6 +55,9 @@ import {
   ingestSchema, ingestScene, linkKey, touchedBy, type RecordRow, type SectionRow, type State,
 } from './state.js';
 
+/** A server's answer to a batch it did not apply (server/failures.ts). */
+interface Refusal { error?: string; detail?: unknown; failed?: string }
+
 import { inverseOf, type Inverse } from './history.js';
 
 /** The signed-in user, as the server describes them. */
@@ -75,6 +81,13 @@ export interface PendingEntry {
   mutation: Mutation;
   /** Provenance tag for the batch this rides in (MutationRequest.via). Not sent per entry. */
   via?: string;
+  /**
+   * Which ACTION this belongs to: everything mutated in one synchronous run shares a
+   * number — a card made and placed, 45 dropped files, a pair row and its two links.
+   * It is the unit the server's all-or-nothing batch exists to protect, so it is the
+   * unit given up when the server refuses one of its mutations. Not sent.
+   */
+  run: number;
 }
 
 export interface MutateOptions {
@@ -211,9 +224,21 @@ export function createStore(opts: StoreOptions = {}) {
     for (let i = unechoed.length - 1; i >= 0; i--) if (gone.has(unechoed[i].id)) unechoed.splice(i, 1);
   };
 
+  /** The current action's number — see PendingEntry.run. Closes on a microtask, like an undo step. */
+  let runNo = 0, runOpen = false;
+  function currentRun(): number {
+    if (!runOpen) {
+      runNo++;
+      runOpen = true;
+      queueMicrotask(() => { runOpen = false; });
+    }
+    return runNo;
+  }
+
   function mutate(mutation: Mutation, options: MutateOptions = {}) {
     localChanges++;
     const id = crypto.randomUUID();
+    const run = currentRun();
     // BEFORE applying: the inverse is read off the state this is about to change.
     if (mutation.type !== 'restore' && options.undoable !== false) record(inverseOf(state, mutation, id));
     // A new record's SYSTEM FIELDS, as this client knows them: created now, by whoever
@@ -226,7 +251,7 @@ export function createStore(opts: StoreOptions = {}) {
     }
     applyMutation(state, mutation);
     touch(mutation, Infinity);   // see loadTable: a page must not revert this
-    pending.value.push(options.via ? { id, mutation, via: options.via } : { id, mutation });
+    pending.value.push(options.via ? { id, mutation, run, via: options.via } : { id, mutation, run });
     unechoed.push({ id, mutation });
     if (unechoed.length > 5000) unechoed.splice(0, unechoed.length - 5000);   // a stream that never echoes must not become a leak
     scheduleFlush();
@@ -247,6 +272,14 @@ export function createStore(opts: StoreOptions = {}) {
 
   type Step = Inverse[];
   const undoStack: Step[] = [], redoStack: Step[] = [];
+  /** The action (PendingEntry.run) each step was recorded in — so a refused action leaves no Ctrl+Z behind. */
+  const stepRun = new WeakMap<Step, number>();
+  function dropSteps(runs: ReadonlySet<number>) {
+    for (const stack of [undoStack, redoStack]) {
+      for (let i = stack.length - 1; i >= 0; i--) if (runs.has(stepRun.get(stack[i]) ?? -1)) stack.splice(i, 1);
+    }
+    sync();
+  }
   const canUndo = ref(false), canRedo = ref(false);
   let open: Step | null = null;
   let mode: 'do' | 'undo' | 'redo' = 'do';
@@ -256,6 +289,7 @@ export function createStore(opts: StoreOptions = {}) {
     if (!inv) return;
     if (!open) {
       const step: Step = open = [];
+      stepRun.set(step, currentRun());
       const target = mode === 'undo' ? redoStack : undoStack;
       if (mode === 'do') redoStack.length = 0;
       target.push(step);
@@ -325,10 +359,12 @@ export function createStore(opts: StoreOptions = {}) {
       });
 
       if (!res.ok) {
-        const body = await res.text();
+        const text = await res.text();
+        let body: Refusal = {};
+        try { body = JSON.parse(text) as Refusal; } catch { /* not JSON: a proxy's error page */ }
         // 4xx means the server rejected the CONTENT. Retrying cannot help and
-        // would spin forever, so drop the batch and surface it loudly. 5xx and
-        // network faults are transient and do go back on the queue.
+        // would spin forever, so the refused action is given up, loudly — see
+        // `rejected`. 5xx and network faults are transient and go back on the queue.
         // …EXCEPT 401. "You are not signed in" says nothing about the content: the
         // session expired, or was revoked, while edits were waiting. Dropping them
         // would silently lose work to a login timeout. They go back on the queue,
@@ -339,19 +375,25 @@ export function createStore(opts: StoreOptions = {}) {
           signedOut();
           return;
         }
-        if (res.status >= 400 && res.status < 500) {
-          inflight.value = [];
-          forget(batch.map((q) => q.id));       // refused: they will never be in the log, so never re-apply them
-          fail(`rejected (${res.status}), dropped ${batch.length}: ${body.slice(0, 200)}`);
-          return;
+        if (res.status >= 400 && res.status < 500) { rejected(batch, res.status, body, text); return; }
+        // A 500 that NAMES a mutation is the server's own code failing on it (a
+        // TypeError in apply, a query that cannot run). That is not going to pass:
+        // the third identical failure in a row is treated as a refusal, so one
+        // mutation that crashes the server cannot hold every later edit hostage.
+        // (A database that is down answers 503 and names nothing — retried forever,
+        // as it should be.)
+        if (res.status === 500 && typeof body.failed === 'string') {
+          crash = crash.id === body.failed ? { id: crash.id, n: crash.n + 1 } : { id: body.failed, n: 1 };
+          if (crash.n >= CRASH_LIMIT) { rejected(batch, res.status, body, text); return; }
         }
-        throw new Error(`${res.status} ${body.slice(0, 400)}`);
+        throw new Error(`${res.status} ${text.slice(0, 400)}`);
       }
 
       const out = await res.json();
       serverHead.value = Number(out.seq) || serverHead.value;   // diagnostic only — see (A)
       inflight.value = [];
       retryDelay = RETRY_BASE_MS;
+      crash = { id: '', n: 0 };
       clearRetrying();
       note(`flushed ${out.applied.length} applied, ${out.skipped.length} skipped`);
 
@@ -367,6 +409,65 @@ export function createStore(opts: StoreOptions = {}) {
       retryDelay = Math.min(retryDelay * 2, RETRY_MAX_MS);
       flushTimer = setTimeout(() => void flush(), delay);
     }
+  }
+
+  /** Consecutive 500s that named the same mutation. */
+  let crash = { id: '', n: 0 };
+  const CRASH_LIMIT = 3;
+
+  /**
+   * The server REFUSED this batch, and will refuse it every time.
+   *
+   * A batch is all-or-nothing on the server, so nothing in it was applied. What is
+   * given up here is not the batch, though — it is the one ACTION the refused
+   * mutation belongs to (`run`): the rest were only its neighbours in a 100 ms
+   * window, or in a backlog after the network came back, and go straight back on
+   * the queue. It used to be the whole batch: one edit to a record a colleague had
+   * just deleted took up to 399 unrelated changes with it.
+   *
+   * And the SCREEN is put right. Every one of these mutations was applied locally
+   * the moment it was made; dropping them from the queue left them on screen —
+   * a record that was typed, visible, and not in the database, until a reload.
+   * `resync` reloads what this client holds from the server and puts the unsent
+   * changes back on top, so what is shown is what is saved plus what is still
+   * being saved, and nothing else.
+   *
+   * If a kept change DEPENDED on the refused one (an edit to the record whose
+   * creation was refused) it is refused in its own turn on the next flush, and
+   * goes the same way. Each round gives up at least one action, so it ends.
+   */
+  function rejected(batch: PendingEntry[], status: number, body: Refusal, text: string) {
+    const bad = typeof body.failed === 'string' ? batch.find((q) => q.id === body.failed) : undefined;
+    const goes = (q: PendingEntry) => !bad || q.run === bad.run;
+    const dropped = batch.filter(goes);
+    const kept = batch.filter((q) => !goes(q));
+    if (bad) {
+      // The rest of the same action may still be waiting BEHIND this batch: a batch
+      // ends at 400 entries, and where the tool tag changes.
+      dropped.push(...pending.value.filter(goes));
+      pending.value = pending.value.filter((q) => !goes(q));
+    }
+    inflight.value = [];
+    pending.value.unshift(...kept);
+    forget(dropped.map((q) => q.id));         // refused: they will never be in the log, so never re-apply them
+    dropSteps(new Set(dropped.map((q) => q.run)));
+    crash = { id: '', n: 0 };
+    retryDelay = RETRY_BASE_MS;
+    clearRetrying();
+
+    const first = Array.isArray(body.detail) ? body.detail[0] as { path?: unknown[]; message?: string } | undefined : undefined;
+    const why = [
+      body.error,
+      first ? `${(first.path ?? []).join('.')}: ${first.message ?? ''}` : '',
+      status >= 500 && typeof body.detail === 'string' ? body.detail : '',
+    ].filter(Boolean).join(' — ') || text.slice(0, 200) || `HTTP ${status}`;
+    const kinds = [...new Set(dropped.map((q) => q.mutation.type))].join(', ');
+    fail(`rejected (${status}) — ${why}. Dropped ${dropped.length} change(s) (${kinds})`
+      + (kept.length ? `; ${kept.length} other queued change(s) are being sent again` : '')
+      + '. The screen now shows what the server has.');
+
+    void resync();
+    if (pending.value.length) scheduleFlush();
   }
 
   /** `Error: 503 {"error":"…"}` → the sentence inside, when there is one. */
@@ -580,19 +681,22 @@ export function createStore(opts: StoreOptions = {}) {
 
   /** Reactive, so the grid can show "loading 12,500…" and know when sort is trustworthy. */
   const tableLoads = reactive(new Map<string, TableLoad>());
-  const walking = new Map<string, Promise<void>>();
+  const walking = new Map<string, { load: TableLoad; walk: Promise<void> }>();
 
   function loadTable(tableId: string, opts: { pageSize?: number; force?: boolean } = {}) {
     if (!opts.force && tableLoads.get(tableId)?.state === 'loaded') return Promise.resolve();
     // One walk per table at a time: the grid and a link picker can both ask for
     // the same table in the same tick.
+    // …but only a walk that is still THIS table's load. One whose entry a resync
+    // replaced is on its way out (it stops at its next page) — returning it here
+    // left the table unloaded for good: the caller awaited a walk that had given up.
     const existing = walking.get(tableId);
-    if (existing) return existing;
+    if (existing && tableLoads.get(tableId) === existing.load) return existing.walk;
 
+    const load: TableLoad = reactive({ state: 'loading', rows: 0 });
+    tableLoads.set(tableId, load);
     const walk = (async () => {
       const pageSize = opts.pageSize ?? 500;
-      const load: TableLoad = reactive({ state: 'loading', rows: 0 });
-      tableLoads.set(tableId, load);
       // Writes already queued when the walk starts are as unknown to the server
       // as ones made during it, and would be reverted by a page the same way.
       if (!walks) touched.clear();
@@ -621,11 +725,11 @@ export function createStore(opts: StoreOptions = {}) {
         load.state = 'failed';
         fail(`loading table ${tableId}: ${e}`);
       } finally {
-        walking.delete(tableId);
+        if (walking.get(tableId)?.load === load) walking.delete(tableId);
         if (--walks === 0) touched.clear();
       }
     })();
-    walking.set(tableId, walk);
+    walking.set(tableId, { load, walk });
     return walk;
   }
 
@@ -634,6 +738,9 @@ export function createStore(opts: StoreOptions = {}) {
    * snapshot that reports its own log position, so there is neither a gap nor an
    * overlap to reason about. This is the exact path, and phase 2 lives on it.
    */
+  /** Canvases whose scene this client holds — what a resync must fetch again. */
+  const scenesLoaded = new Set<string>();
+
   async function loadScene(canvasId: string) {
     // A canvas we created ourselves a moment ago is not on the server yet: its
     // canvas.create is still queued or in flight (writes flush on a debounce).
@@ -649,6 +756,7 @@ export function createStore(opts: StoreOptions = {}) {
     if (unsent) return null;
     const scene = await get(`/api/canvases/${canvasId}/scene`);
     ingestScene(state, scene);
+    scenesLoaded.add(canvasId);
     lastSeq.value = Math.max(lastSeq.value, Number(scene.seq) || 0);
     return scene;
   }
@@ -711,6 +819,10 @@ export function createStore(opts: StoreOptions = {}) {
    */
   async function runStream() {
     while (!stopped) {
+      // Not while a resync is reading: it takes its watermark first and swaps the
+      // state in at the end, and events applied in between would be wiped by the swap.
+      if (resyncing) await resyncing;
+      if (stopped) break;
       streamState.value = streamState.value === 'offline' ? 'connecting' : 'reconnecting';
       streamAbort = new AbortController();
       try {
@@ -763,16 +875,33 @@ export function createStore(opts: StoreOptions = {}) {
   }
 
   /**
-   * Recover from being too far behind to replay.
+   * Reload what this client holds from the server — because the stream cannot be
+   * replayed (too far behind, or ahead of a restored database), or because the
+   * server refused something that is still on screen (`rejected`).
    *
-   * Drop everything, refetch, and reconnect from the refetch's own position.
-   * Deliberately NOT `lastSeq = event.head`: the refetch reflects a state at or
-   * after `head`, so resuming from `head` would replay events the refetched data
-   * already contains. Harmless given idempotent apply, but hydrate() is explicit
-   * about where its watermark comes from and that is the property worth keeping.
+   * READ FIRST, THEN SWAP. Everything is fetched while the screen stays exactly as
+   * it is, and the old state is replaced by the new in one synchronous step. The
+   * first version cleared the state and THEN fetched — and for those few hundred
+   * milliseconds the app had no tables and no canvases, which three things acted
+   * on: the "keep the pickers pointing at something real" watchers moved you to the
+   * first table and the first canvas; the open canvas, which only loads its scene
+   * when it is opened, stayed empty; and the record tray lost its record and had no
+   * way to ask for it again. A resync was correct and looked like a crash.
    *
-   * Pending writes are kept. They have not been acknowledged, so they still need
-   * to reach the server; their idempotency keys make it safe if some already did.
+   * WHAT IS RELOADED is what was held: the schema, boards and sections; every table
+   * that was loaded or loading (so a grid, a link picker, a report and the tray all
+   * find their records where they were); every canvas scene that had been opened.
+   *
+   * THE WATERMARK is the log head, read BEFORE any of the data — rule (B) at the top
+   * of this file. The stream is held closed meanwhile (`runStream` waits) and resumes
+   * from there; whatever committed during the reads is replayed on top, idempotently.
+   *
+   * UNSENT WRITES ARE KEPT, in the queue and on the screen: once the fresh state is
+   * in, they are applied to it again, exactly as they are after any stream event.
+   * Their idempotency keys make it safe if some had already reached the server.
+   *
+   * If a read fails (the server is away), nothing is swapped: a stale screen is
+   * better than an empty one, and the stream's next reconnect will ask again.
    */
   async function resync(): Promise<void> {
     if (resyncing) return resyncing;
@@ -780,16 +909,74 @@ export function createStore(opts: StoreOptions = {}) {
       streamState.value = 'resyncing';
       intentionalAbort = true;
       streamAbort?.abort();
-      clearState(state);
-      // The snapshot we are about to load already contains everything the server has
-      // accepted; only what is still UNSENT remains ours to re-apply.
-      { const unsent = new Set([...pending.value, ...inflight.value].map((q) => q.id)); forget(unechoed.filter((q) => !unsent.has(q.id)).map((q) => q.id)); }
-      // Every table is now unloaded, whatever this map said. Clearing it is what
-      // tells the grid to walk its table again.
-      tableLoads.clear();
-      lastSeq.value = 0;
       try {
-        await hydrate();
+        /* ── read ── */
+        const head = Number((await get('/api/head')).seq) || 0;
+        const schema = await get('/api/schema') as Array<{ id: string }>;
+        const boards = await get('/api/canvases');
+        const sections = await get('/api/sections') as SectionRow[];
+        const exists = new Set(schema.map((t) => t.id));
+        const pagesOf = new Map<string, any[]>();
+        for (const tableId of [...tableLoads.keys()]) {
+          if (!exists.has(tableId)) continue;                 // the table itself is gone
+          const pages: any[] = [];
+          let after: string | null = null;
+          do {
+            const page: any = await get(`/api/tables/${tableId}/records?limit=500` + (after ? `&after=${encodeURIComponent(after)}` : ''));
+            pages.push(page);
+            after = page.nextCursor ?? null;
+          } while (after);
+          pagesOf.set(tableId, pages);
+        }
+        const scenes: any[] = [];
+        for (const canvasId of [...scenesLoaded]) {
+          const res = await fetch(`${baseUrl}/api/canvases/${canvasId}/scene`);
+          if (res.status === 401) { signedOut(); throw new Error('signed out'); }
+          if (res.status === 404) { scenesLoaded.delete(canvasId); continue; }   // the board was deleted
+          if (!res.ok) throw new Error(`GET scene ${canvasId} -> ${res.status}`);
+          scenes.push(await res.json());
+        }
+
+        /* ── swap: synchronous from here to the end of the block ── */
+        // The snapshot contains everything the server has accepted; only what is
+        // still UNSENT remains ours to re-apply.
+        const unsent = new Set([...pending.value, ...inflight.value].map((q) => q.id));
+        forget(unechoed.filter((q) => !unsent.has(q.id)).map((q) => q.id));
+        // Records an unsent change refers to that no table or scene above will bring
+        // back — one found by the palette and about to be placed, say. Held over.
+        const heldOver: RecordRow[] = [];
+        for (const q of unechoed) {
+          const m = q.mutation as { id?: string; recordId?: string; fromRecord?: string; toRecord?: string; moves?: Array<{ recordId: string }> };
+          for (const id of [m.id, m.recordId, m.fromRecord, m.toRecord, ...(m.moves ?? []).map((mv) => mv.recordId)]) {
+            const r = typeof id === 'string' ? state.records.get(id) : undefined;
+            if (r) heldOver.push(r);
+          }
+        }
+
+        clearState(state);
+        tableLoads.clear();
+        farLabels.clear();
+        ingestSchema(state, schema as never);
+        ingestCanvases(state, boards);
+        for (const sec of sections) state.sections.set(sec.id, sec);
+        const none = new Map<string, number>();
+        for (const [tableId, pages] of pagesOf) {
+          const load: TableLoad = reactive({ state: 'loaded', rows: 0 });
+          for (const page of pages) {
+            load.rows += ingestPage(state, page, none);
+            for (const [id, label] of Object.entries(page.labels ?? {})) farLabels.set(id, label as string);
+          }
+          // A walk that was in flight for this table sees a load that is not its own
+          // and stops (loadTable); this one is complete.
+          tableLoads.set(tableId, load);
+        }
+        for (const scene of scenes) ingestScene(state, scene);
+        adopt(heldOver);
+        for (const q of unechoed) {
+          try { applyMutation(state, q.mutation); } catch { /* it will be refused, or echoed, in its own time */ }
+        }
+        lastSeq.value = head;
+        localChanges++;                   // a read that was in flight across the swap is stale
         note(`resynced, watermark now ${lastSeq.value}`);
       } catch (e) {
         fail(`resync failed: ${e}`);
@@ -886,6 +1073,8 @@ export function createStore(opts: StoreOptions = {}) {
     undoLast, redoLast, canUndo, canRedo,
     me, auth, authDisabled, whoAmI, login, logout, call,
     unechoedCount: () => unechoed.length,
+    /** Changes made here that the server has not accepted yet — what closing the tab now would lose. */
+    unsaved: () => pending.value.length + inflight.value.length,
     uploadAsset, assetUrl, assetMeta, ensureAssetMeta, search, adopt, loadSceneLinks,
     loadTable,
     tableLoads,

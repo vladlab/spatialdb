@@ -103,11 +103,15 @@ export function mappedData(outputs: Record<string, unknown>, map: Map<string, st
   const byKey = new Map(fields.map((f) => [f.key, f]));
   const data: Record<string, unknown> = {};
   const skipped: string[] = [];
-  for (const [out, value] of Object.entries(outputs)) {
+  for (const [out, raw] of Object.entries(outputs)) {
     const key = map.get(out);
-    if (key === undefined || value === undefined || value === null) continue;
+    if (key === undefined || raw === undefined || raw === null) continue;
     const field = byKey.get(key);
     if (!field) continue;
+    // A tag read off a file can carry NULs (a C string's padding); the database
+    // cannot store one (contract/values.ts). They mean nothing: taken out, not refused.
+    const value = typeof raw === 'string' && raw.includes('\u0000') ? raw.replace(/\u0000/g, '') : raw;
+    if (value === '' && raw !== '') continue;
     const problem = validateValue(field as never, value);
     if (problem) skipped.push(`${field.name}: ${problem}`); else data[key] = value;
   }

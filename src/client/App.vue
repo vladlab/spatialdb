@@ -136,7 +136,7 @@
     </div>
 
     <div v-if="store.errors.value.length" class="errors">
-      <div v-for="(e, i) in store.errors.value.slice(0, 5)" :key="i">{{ e }}</div>
+      <div v-for="(e, i) in store.errors.value.slice(0, 5)" :key="i" class="error-line" title="Click to dismiss" @click="store.errors.value.splice(i, 1)">{{ e }}</div>
     </div>
   </div>
 </template>
@@ -171,6 +171,10 @@ import LoginPage from './components/LoginPage.vue';
 import { askFull } from './dialogs';
 
 const store = createStore();
+// Reachable from outside the component: test/savequeue.ts drives the app's OWN store
+// (a resync, a refused edit), and it is what you want in the console when something
+// looks wrong. A <script setup> component is closed unless it says otherwise.
+defineExpose({ store });
 const schema = useSchemaActions(store);
 /** The record shown in the side panel, or ''. Opened by the grid and by the canvas. */
 const openRecordId = ref('');
@@ -585,6 +589,21 @@ onMounted(() => {
   void store.whoAmI();
 });
 onUnmounted(() => window.removeEventListener('hashchange', onHashChange));
+
+// The queue of unsent changes lives in this tab's memory. Normally it is empty a
+// tenth of a second after the last keystroke; when the server is away, or you have
+// been signed out, it can hold a morning's work — and closing or reloading the tab
+// discarded it without a word. The browser's own "leave this page?" prompt is the
+// only thing a page is allowed to show here; it appears only while something is
+// unsent. (The desktop app's window is not covered: a native close does not ask
+// the page.)
+const onBeforeUnload = (e: Event) => {
+  if (!store.unsaved()) return;
+  e.preventDefault();
+  (e as BeforeUnloadEvent).returnValue = '';      // what older browsers look at
+};
+onMounted(() => window.addEventListener('beforeunload', onBeforeUnload));
+onUnmounted(() => window.removeEventListener('beforeunload', onBeforeUnload));
 
 onUnmounted(() => store.stop());
 </script>

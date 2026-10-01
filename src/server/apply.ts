@@ -45,9 +45,23 @@ import { junctionColumnTarget, junctionOf, junctionProblem } from '../contract/j
 import { captureFor, JUNCTION_ROWS_OF, type Capture } from './capture.js';
 
 export class MutationError extends Error {
+  /**
+   * The idempotency key of the mutation this was thrown for, once applyBatch knows
+   * it. Goes back to the client as `failed` (server/failures.ts), which is what lets
+   * it give up ONE action instead of the whole batch.
+   */
+  mutationId?: string;
   constructor(message: string, readonly status = 400) {
     super(message);
   }
+}
+
+/** Name the mutation an error belongs to — any error, not only ours (a Postgres one too). */
+function blame<E>(err: E, mutationId: string): E {
+  if (err && typeof err === 'object' && (err as { mutationId?: string }).mutationId === undefined) {
+    try { (err as { mutationId?: string }).mutationId = mutationId; } catch { /* frozen: goes unnamed */ }
+  }
+  return err;
 }
 
 export interface Actor {
@@ -204,9 +218,12 @@ async function assertJunctionValid(db: PoolClient, tableId: string, junction: Re
  * its two links" is legal in any order within one request, and a row can never
  * exist half-connected across a commit.
  */
-async function assertJunctionRowsWhole(db: PoolClient, recordIds: Iterable<string>) {
-  const ids = [...new Set(recordIds)];
+async function assertJunctionRowsWhole(db: PoolClient, touched: Array<{ recordId: string; by: string }>) {
+  // The LAST mutation to touch a row is the one named when the row is not whole.
+  const by = new Map(touched.map((t) => [t.recordId, t.by]));
+  const ids = [...by.keys()];
   if (!ids.length) return;
+  const refuse = (recordId: string, message: string) => blame(new MutationError(message), by.get(recordId) ?? '');
   const { rows } = await db.query(
     `select r.id, t.kind, t.junction, t.name from records r join tables t on t.id = r.table_id
       where r.id = any($1::uuid[]) and t.kind = 'junction'`, [ids]);
@@ -219,7 +236,7 @@ async function assertJunctionRowsWhole(db: PoolClient, recordIds: Iterable<strin
       [r.id, cfg.a, cfg.b]);
     const a: string[] = ends.rows[0].a ?? [], b: string[] = ends.rows[0].b ?? [];
     if (a.length !== 1 || b.length !== 1) {
-      throw new MutationError(
+      throw refuse(r.id,
         `a row of '${r.name}' must link exactly one record through each endpoint (has ${a.length} and ${b.length}) — ` +
         `create it with both links in one batch, and delete the row rather than unlinking an end`);
     }
@@ -227,7 +244,7 @@ async function assertJunctionRowsWhole(db: PoolClient, recordIds: Iterable<strin
       `select 1 from links la join links lb on lb.from_record = la.from_record
         where la.field_id = $1 and la.to_record = $2 and lb.field_id = $3 and lb.to_record = $4 and la.from_record <> $5`,
       [cfg.a, a[0], cfg.b, b[0], r.id]);
-    if (dupe.rowCount) throw new MutationError(`'${r.name}' already has a row for that pair — edit it instead of making another`);
+    if (dupe.rowCount) throw refuse(r.id, `'${r.name}' already has a row for that pair — edit it instead of making another`);
   }
 }
 
@@ -509,6 +526,9 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
       await assertFieldKeysExist(db, m.id, keys);
       {
         const { rows } = await db.query(`select table_id from records where id = $1`, [m.id]);
+        // With no keys the check above returns before it looks, and `rows[0].table_id`
+        // was then a TypeError — a 500, which the client retried forever.
+        if (!rows[0]) throw new MutationError('record does not exist');
         await assertValuesValid(db, rows[0].table_id, m.set);
       }
       // `data || patch` merges at the top level: per-FIELD last-write-wins, so
@@ -934,7 +954,7 @@ export async function applyBatch(
   const events: MutationEvent[] = [];
   let seq = 0;
   /** Records that may be junction rows and were created or re-linked here — checked whole at the end. */
-  const touched: string[] = [];
+  const touched: Array<{ recordId: string; by: string }> = [];
 
   await db.query('begin');
   try {
@@ -958,27 +978,34 @@ export async function applyBatch(
         continue;
       }
 
-      // Capture BEFORE applying, inside the same transaction. If the mutation
-      // rolls back so does its capture, so the two can never disagree.
-      let capture: Capture | null = null;
-      if (DESTRUCTIVE_MUTATIONS.has(entry.mutation.type)) {
-        capture = await captureFor(db, entry.mutation);
+      // Whatever goes wrong from here to the log row belongs to THIS mutation, and
+      // says so (`blame`) — a refusal of ours, or an error Postgres raised.
+      let rows;
+      try {
+        // Capture BEFORE applying, inside the same transaction. If the mutation
+        // rolls back so does its capture, so the two can never disagree.
+        let capture: Capture | null = null;
+        if (DESTRUCTIVE_MUTATIONS.has(entry.mutation.type)) {
+          capture = await captureFor(db, entry.mutation);
+        }
+
+        await applyOne(db, entry.mutation, actor);
+        const mm = entry.mutation;
+        if (mm.type === 'record.create') touched.push({ recordId: mm.id, by: entry.id });
+        else if (mm.type === 'link.add' || mm.type === 'link.remove') touched.push({ recordId: mm.fromRecord, by: entry.id });
+
+        ({ rows } = await db.query(
+          `insert into mutations (id, actor_id, client_id, type, payload, undo, via)
+           values ($1,$2,$3,$4,$5,$6,$7)
+           returning seq, id, client_id, type, payload, applied_at, via`,
+          [entry.id, actor.id, req.clientId, entry.mutation.type,
+           JSON.stringify(entry.mutation),
+           capture ? JSON.stringify(capture) : null,
+           req.via ?? null],
+        ));
+      } catch (err) {
+        throw blame(err, entry.id);
       }
-
-      await applyOne(db, entry.mutation, actor);
-      const mm = entry.mutation;
-      if (mm.type === 'record.create') touched.push(mm.id);
-      else if (mm.type === 'link.add' || mm.type === 'link.remove') touched.push(mm.fromRecord);
-
-      const { rows } = await db.query(
-        `insert into mutations (id, actor_id, client_id, type, payload, undo, via)
-         values ($1,$2,$3,$4,$5,$6,$7)
-         returning seq, id, client_id, type, payload, applied_at, via`,
-        [entry.id, actor.id, req.clientId, entry.mutation.type,
-         JSON.stringify(entry.mutation),
-         capture ? JSON.stringify(capture) : null,
-         req.via ?? null],
-      );
       events.push(toMutationEvent(rows[0], false));
       seq = Number(rows[0].seq);
       applied.push(entry.id);
@@ -1000,7 +1027,9 @@ export async function applyBatch(
 
     await db.query('commit');
   } catch (err) {
-    await db.query('rollback');
+    // The rollback can fail too (the connection is what broke); the ORIGINAL error
+    // is the one worth reporting.
+    await db.query('rollback').catch(() => {});
     throw err;
   }
 

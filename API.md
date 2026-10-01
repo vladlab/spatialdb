@@ -76,8 +76,10 @@ the only line of defence. The rules, and the decisions inside them:
 - **Write-time only.** Rows that predate a rule (or arrived by SQL) are left
   alone and stay readable; a bad old value fails validation on the next edit of
   that field, which is the moment someone can actually fix it. A batch that
-  fails validation is rejected as a whole (one transaction), and the client
-  drops rejected 4xx batches rather than retrying them.
+  fails validation is rejected as a whole (one transaction); the answer names
+  the mutation that failed, and the client gives up that action and re-sends the
+  rest (see Client write path).
+- Text may not contain U+0000: Postgres's jsonb cannot hold it.
 
 ## Reads
 
@@ -1021,8 +1023,38 @@ function it shares with the stream.
    time — concurrent flushes would let a later batch commit before an earlier
    one, and the log order is the audit trail.
 4. On a 5xx or network fault, put the batch back and retry with backoff;
-   idempotency makes that safe. On a **4xx, drop it** and surface the error — the
-   server rejected the content, so retrying can only spin forever.
+   idempotency makes that safe.
+5. On a **4xx the server has refused the content**, and retrying can only spin
+   forever. The answer names the mutation the batch died on — `failed`, its
+   idempotency key — and the client gives up that one **action** (everything
+   mutated in the same synchronous run as it: a card and its placement, a pair row
+   and its two links), puts the rest of the batch back on the queue, says so in the
+   banner, and **resyncs** so the screen stops showing what was never saved. With
+   no `failed` (a proxy's error page) the whole batch goes. A `500` that names the
+   same mutation three times running is treated the same way: that is the server's
+   own code failing on it, and one such mutation must not hold up every edit queued
+   behind it. `401` is neither: the batch is kept and sent after signing in.
+
+**What a failed batch answers** (`src/server/failures.ts`) — the status is what the
+queue acts on, so it has to be true:
+
+| status | meaning | `failed` |
+|---|---|---|
+| `400` | a refusal of ours (unknown key, bad value, record does not exist…), a mutation that does not parse, or a value Postgres cannot store (SQLSTATE class 22/54 — a NUL in text) | the mutation |
+| `403` | the role may not do this | the mutation |
+| `409` | an integrity violation (class 23): it refers to something that no longer exists, or collides with something that does. The ordinary two-person race — a card placed for a record a colleague just deleted | the mutation |
+| `500` | a bug in apply, or SQL that cannot run | the mutation |
+| `503` | the database is away or busy (classes 08, 40, 53, 55, 57, 58; no connection), or behind the code. Retry everything | — |
+
+`error` is a sentence for the person; `detail` is the server's own (Postgres's
+message, or the Zod issues).
+
+**Resync** (`store.resync`) reloads what the client holds — schema, boards, sections,
+every loaded table, every opened scene — reading it all FIRST and swapping it in at
+once, so nothing on screen passes through an empty state; unsent changes are put
+back on top. It runs after a refusal and on a `resync` stream event.
+
+A tab with unsent changes asks before it is closed or reloaded (`beforeunload`).
 
 **Do NOT adopt the response `seq` as your stream watermark.** An earlier version
 of this document said to, and it is wrong in a way that only bites when it

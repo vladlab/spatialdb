@@ -23,6 +23,7 @@ import {
   noteLoginFailure, noteLoginSuccess, passwordProblem, verifyPassword, type AuthUser,
 } from './auth.js';
 import { migrationGate } from './migrations.js';
+import { failureOf } from './failures.js';
 import { parseScope } from '../contract/scope.js';
 import { appVersion, serveFrontend } from './web.js';
 import { AudioLayout, diffLayouts } from '../contract/shapes.js';
@@ -110,12 +111,25 @@ const currentActor = (c: Context): Actor => { const u = userOf(c); return { id: 
  * ──────────────────────────────────────────────────────────────────────────*/
 
 app.post('/api/mutate', async (c) => {
-  const parsed = MutationRequest.safeParse(await c.req.json());
+  const raw = await c.req.json().catch(() => null);
+  const parsed = MutationRequest.safeParse(raw);
   if (!parsed.success) {
-    return c.json({ error: 'invalid mutation batch', detail: parsed.error.issues }, 400);
+    // Name the entry that does not parse, when it is ONE entry (`mutations.<n>.…`):
+    // the client then drops that action and re-sends the rest, rather than losing
+    // every edit that was queued beside a single malformed one.
+    const at = parsed.error.issues[0]?.path;
+    const n = at?.[0] === 'mutations' && typeof at[1] === 'number' ? at[1] : -1;
+    const failed = n >= 0 ? (raw as { mutations?: Array<{ id?: unknown }> } | null)?.mutations?.[n]?.id : undefined;
+    return c.json({ error: 'invalid mutation batch', detail: parsed.error.issues, ...(typeof failed === 'string' ? { failed } : {}) }, 400);
   }
 
-  const db = await pool.connect();
+  let db;
+  try { db = await pool.connect(); }
+  catch (err) {
+    // No connection to be had: Postgres is down or restarting. Temporary by nature.
+    const f = failureOf(err);
+    return c.json(f.body, 503);
+  }
   try {
     // INSIDE the try. This used to sit above it, so the one error written
     // specifically to tell you what was wrong — "no users exist" — was the one
@@ -133,18 +147,14 @@ app.post('/api/mutate', async (c) => {
 
     return c.json(result);
   } catch (err) {
-    if (err instanceof MutationError) {
-      // `as ContentfulStatusCode` rather than `as 400`: the cast used to name one
-      // specific code, which typechecked but lied about every other status the
-      // class can carry (403 role refusals, and now 503).
-      return c.json({ error: err.message }, err.status as ContentfulStatusCode);
-    }
-    console.error(err);
-    // Say what went wrong. This used to be a bare "internal error", which hid the
-    // one sentence ("column \"config\" does not exist") that would have explained
-    // the failure to the person looking at it. Everyone who can reach this server
-    // is trusted with its schema; revisit with auth.
-    return c.json({ error: 'internal error', detail: String((err as Error)?.message ?? err) }, 500);
+    // The status decides what the sender's queue does next — drop (4xx) or retry
+    // (5xx) — so it is worked out in one place: server/failures.ts. `failed` names
+    // the mutation the batch died on. `detail` says what went wrong in the server's
+    // own words ("column \"config\" does not exist"): everyone who can reach this
+    // is signed in and trusted with its schema.
+    const f = failureOf(err);
+    if (f.status >= 500) console.error(err);
+    return c.json(f.body, f.status as ContentfulStatusCode);
   } finally {
     db.release();
   }
