@@ -6,6 +6,7 @@
                    desktop drop tool), not typed; it describes files on disk, and a
                    hand-edited one would describe nothing.
     audio_layout   AudioLayoutEditor — tracks, presets, split/merge, copy/paste, compare.
+    video_layout   VideoLayoutEditor — a strip of blocks over the list they are typed in.
     json           the raw editor below.
 
   EVERY shape also has "edit as JSON", behind a toggle: the escape hatch for fixing
@@ -20,6 +21,8 @@
     <template v-if="!raw">
       <ManifestView v-if="shape === 'manifest' && value !== undefined" :value="value" />
       <AudioLayoutEditor v-else-if="shape === 'audio_layout'" :store="store" :record-id="recordId" :field="field" :value="value"
+                         @set="(v) => $emit('set', field.key, v)" @unset="$emit('unset', field.key)" />
+      <VideoLayoutEditor v-else-if="shape === 'video_layout'" :store="store" :record-id="recordId" :field="field" :value="value"
                          @set="(v) => $emit('set', field.key, v)" @unset="$emit('unset', field.key)" />
       <ReportEditor v-else-if="shape === 'report'" :store="store" :record-id="recordId" :field="field" :value="value"
                     @set="(v) => $emit('set', field.key, v)" />
@@ -47,6 +50,7 @@ import { validateValue } from '../../contract/values';
 import { reportDefError } from '../../contract/reports';
 import ManifestView from './ManifestView.vue';
 import AudioLayoutEditor from './AudioLayoutEditor.vue';
+import VideoLayoutEditor from './VideoLayoutEditor.vue';
 import ReportEditor from './ReportEditor.vue';
 
 const props = defineProps<{ store: Store; recordId: string; field: FieldRow; value: unknown }>();

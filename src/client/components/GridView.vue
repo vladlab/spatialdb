@@ -356,7 +356,7 @@
                     <!-- RICH TEXT / ATTACHMENT: a summary. Neither fits a 30px row, so
                          Enter (or a double-click) opens the record panel instead. -->
                     <span v-else-if="f.type === 'rich_text'" class="value note" title="Enter opens the record to read or edit this">{{ notePreview(r.data[f.key]) }}</span>
-                    <span v-else-if="f.type === 'structured'" class="value note" title="Enter opens the record to view or edit this">{{ summariseValue(shapeOf(f), r.data[f.key]) }}</span>
+                    <span v-else-if="f.type === 'structured'" class="value note" title="Enter opens the record to view or edit this"><VideoLayoutStrip v-if="r.data[f.key] !== undefined && shapeOf(f) === 'video_layout'" mini :value="r.data[f.key]" />{{ summariseValue(shapeOf(f), r.data[f.key]) }}</span>
                     <span v-else-if="f.type === 'attachment'" class="value note" title="Enter opens the record">{{ attachSummary(r.data[f.key]) }}</span>
                     <!-- BACKLINK: the other end of a link made elsewhere. Read-only here —
                          the link belongs to the record that holds it. -->
@@ -454,6 +454,7 @@ import { ancestorsOf, canMakeColumns, groupRows, type GroupHeader, type GroupVal
 import { ask, confirmDialog } from '../dialogs';
 import { richTextToPlain } from '../../contract/richtext';
 import { formatNumberField, shapeOf, summarise as summariseValue } from '../../contract/shapes';
+import VideoLayoutStrip from './VideoLayoutStrip.vue';
 import { addLink as addLinkVia } from '../links';
 import { SYSTEM_FIELD_TYPES, formatCreated } from '../../contract/systemFields';
 import KanbanView from './KanbanView.vue';   // (`summarise` here is the VIEW's summary)

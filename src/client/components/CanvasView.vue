@@ -313,7 +313,8 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
   if (f.type === 'rich_text') return { id: f.id, name: f.name, text: richTextToPlain(rec.data[f.key]).split('\n', 1)[0] };
   // A structured value is a one-line SUMMARY on a card ("4 tracks / 12 ch (5.1, 2.0…)"):
   // a card's rows are fixed-height, and the full thing lives in the tray.
-  if (f.type === 'structured') return { id: f.id, name: f.name, text: summarise(shapeOf(f), rec.data[f.key]) };
+  // A video layout also hands the card its VALUE: the row draws the mini strip beside the summary.
+  if (f.type === 'structured') return { id: f.id, name: f.name, text: summarise(shapeOf(f), rec.data[f.key]), strip: shapeOf(f) === 'video_layout' ? rec.data[f.key] : undefined };
   if (f.type === 'attachment') {
     const n = Array.isArray(rec.data[f.key]) ? (rec.data[f.key] as unknown[]).length : 0;
     return { id: f.id, name: f.name, text: n ? `${n} file${n === 1 ? '' : 's'}` : '' };

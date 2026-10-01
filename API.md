@@ -290,13 +290,13 @@ identity-aware proxy with 2FA in front and use the trusted-header seam. Over pla
 HTTP the password and session cross the network unencrypted — on NixOS, Caddy with
 its internal CA is a few lines.
 
-### `structured` values: shapes, manifests, audio layouts
+### `structured` values: shapes, manifests, audio and video layouts
 
 `sql/012`, rules in the tenth shared contract file, **`src/contract/shapes.ts`**.
 A `structured` field holds a JSON **object** whose SHAPE is named in the field's
 options: `field.create { fieldType: 'structured', options: { shape } }`.
 
-- `shape` must be one of **`manifest` · `audio_layout` · `json` · `report`** (the last only in a table of reports, below). An unknown name is a
+- `shape` must be one of **`manifest` · `audio_layout` · `video_layout` · `json` · `report`** (the last only in a table of reports, below). An unknown name is a
   400 at field creation (not "generic JSON": a typo must not switch validation off —
   generic is spelled `json`). **A field's shape cannot be changed afterwards**; every
   stored value was validated against it.
@@ -312,6 +312,17 @@ type Manifest =
   | { kind: 'channel_set'; members: { path: string; channel: string }[] };                              // multi-mono mix
 
 type AudioLayout = { tracks: { name: string; channels: string[]; language?: string }[] };
+
+type VideoLayout = {                      // contract/videoLayout.ts, over contract/timecode.ts
+  rate: 23.976 | 24 | 25 | 29.97 | 30 | 47.952 | 48 | 50 | 59.94 | 60;
+  drop: boolean;                          // true only at 29.97 / 59.94
+  items: {                                // in FILE ORDER; ≤ 200
+    label: string;
+    kind?: 'black' | 'bars' | 'slate' | 'picture' | 'textless' | 'other';   // the block's colour; nothing else
+    start?: string;                       // "HH:MM:SS:FF" (";" before the frames at a drop base). Absent: starts where the block before it ends
+    duration?: string;                    // "HH:MM:SS:FF" a length · "open" length unknown (the program) · absent: a MARKER
+  }[];
+};
 ```
 
 - **Member paths are relative to the record's own path** (a `file_path` field): no
@@ -320,9 +331,29 @@ type AudioLayout = { tracks: { name: string; channels: string[]; language?: stri
   "5.1 + 3× stereo" are the same channels and a different layout. Channel labels are
   free text (vendors vary); `LAYOUT_PRESETS` supplies mono / 2.0 / 5.1 / 7.1. An empty
   layout is stored as NO value, not `{ tracks: [] }`.
+- A **video layout** is a mini EDL of what is on a file — "3s black from 00:59:27:00,
+  bars, slate, picture at 01:00:00:00". Three kinds of item, told apart by `duration`
+  alone: a length (a block), `"open"` (a block whose length is not known — a spec's
+  program), absent (a marker: 2-pop, FFOA). A `start` is either TYPED (pinned) or
+  absent, meaning "where the block before it ends"; `resolveLayout` walks the list and
+  works the rest out, and where a pinned block follows a chain it says whether the
+  chain LANDS on it, falls short (`gap`) or runs past (`overlap`) — those are reported,
+  never refused: a layout that does not add up is still what the spec says. A start
+  after an open block is unknown (`follows` names the block it comes after) until the
+  next pinned block, which is also where the open one stops. Markers never move the
+  chain. Every timecode must exist at the base: frame 24 at 23.976 and a label
+  drop-frame skips (`00:59:00;00`) are 400s naming the item (`items.3.start: …`); a
+  zero duration is refused (that is a marker). An empty layout is NO value.
+- **Timecode arithmetic is in LABEL frames** (`contract/timecode.ts`): hh:mm:ss:ff
+  counted at the nominal rate, which is how a spec is written. A minute of bars from
+  `00:58:30;00` ends at `00:59:30;00`, not `;02`; a sum landing on a skipped drop-frame
+  label moves to the next that exists. Lengths are stored as timecode text with `:`
+  (a length is a count, not a drop-frame label). Real frame counts (`tcToFrames`,
+  `framesToTc`: 01:00:00;00 = 107,892) are there for whatever needs them.
 - Sort, filter ("contains") and quick search use the value's one-line **summary**
   (`summarise`): `"4 tracks / 12 ch (5.1, 2.0, 2.0, 2.0)"`, `"86,395 frames 1001–87400,
-  5 missing in 1 gap"`. Structured fields cannot be grouped by, or looked up.
+  5 missing in 1 gap"`, `"23.976 · file 00:59:27:00 · picture 01:00:00:00 · 8 items"`.
+  Structured fields cannot be grouped by, or looked up.
 - The Files CONVENTION (`FILES_STANDARD_FIELDS`: kind, path, manifest, file_count,
   total_size, hash, audio_layout, parent) is a convenience offered in Table settings,
   not a rule — nothing reads those keys. A number field with `options.format = 'bytes'`

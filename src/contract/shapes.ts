@@ -7,7 +7,9 @@
  *  options. Everything about a shape is here, pure, and shared: the server uses it
  *  to refuse a bad value, the web app to summarise and edit one, and the desktop
  *  client's tools (the file-drop tool writes manifests; ffprobe fills audio
- *  layouts) to produce values that will be accepted. A Python QC script gets the
+ *  layouts) to produce values that will be accepted. (The `video_layout` shape —
+ *  a mini EDL of what is on a file — has a file of its own, contract/videoLayout.ts,
+ *  over contract/timecode.ts; it is registered here like the rest.) A Python QC script gets the
  *  same diff through `POST /api/qc/audio-layout-diff`.
  *
  *  Rules that apply to every shape:
@@ -22,6 +24,7 @@
  */
 
 import { z } from 'zod';
+import { VideoLayout, summariseVideoLayout } from './videoLayout.js';
 
 export const STRUCTURED_MAX_BYTES = 256 * 1024;
 export const MANIFEST_MAX_MEMBERS = 2000;
@@ -90,10 +93,10 @@ export const LAYOUT_PRESETS: Array<{ id: string; label: string; channels: string
 
 /* ── the registry ─────────────────────────────────────────────────────────── */
 
-export const SHAPES = ['manifest', 'audio_layout', 'json', 'report'] as const;
+export const SHAPES = ['manifest', 'audio_layout', 'video_layout', 'json', 'report'] as const;
 export type Shape = (typeof SHAPES)[number];
 export const SHAPE_LABELS: Record<Shape, string> = {
-  manifest: 'File manifest', audio_layout: 'Audio layout', json: 'Generic JSON', report: 'Report definition',
+  manifest: 'File manifest', audio_layout: 'Audio layout', video_layout: 'Video layout', json: 'Generic JSON', report: 'Report definition',
 };
 /**
  * 'report' is a shape only a table of REPORTS makes (sql/013), so the field form does
@@ -102,7 +105,7 @@ export const SHAPE_LABELS: Record<Shape, string> = {
  * never here: a cycle through zod schemas evaluated at module load would be a TDZ
  * error the moment views.ts is imported first.
  */
-export const FIELD_FORM_SHAPES: readonly Shape[] = ['manifest', 'audio_layout', 'json'];
+export const FIELD_FORM_SHAPES: readonly Shape[] = ['manifest', 'audio_layout', 'video_layout', 'json'];
 
 export const shapeOf = (f: { options?: Record<string, unknown> | null }): Shape | null =>
   (SHAPES as readonly string[]).includes(String(f.options?.shape)) ? (f.options!.shape as Shape) : null;
@@ -122,6 +125,7 @@ export function structuredError(key: string, shape: Shape | null, value: unknown
   if (JSON.stringify(value).length > STRUCTURED_MAX_BYTES) return `'${key}' is larger than ${STRUCTURED_MAX_BYTES / 1024} KB — a structured value describes a record; it is not a place to keep an inventory`;
   if (shape === 'manifest') { const r = Manifest.safeParse(value); return r.success ? null : `'${key}' (manifest) — ${first(r.error)}`; }
   if (shape === 'audio_layout') { const r = AudioLayout.safeParse(value); return r.success ? null : `'${key}' (audio layout) — ${first(r.error)}`; }
+  if (shape === 'video_layout') { const r = VideoLayout.safeParse(value); return r.success ? null : `'${key}' (video layout) — ${first(r.error)}`; }
   return null;                                                  // 'json' (an object is enough), or 'report' (values.ts parses it)
 }
 
@@ -175,6 +179,10 @@ export function summarise(shape: Shape | null, value: unknown): string {
     const t = r.data.tracks;
     if (!t.length) return 'no tracks';
     return `${t.length} track${t.length === 1 ? '' : 's'} / ${flattenChannels(r.data).length} ch (${t.map(trackFormat).join(', ')})`;
+  }
+  if (shape === 'video_layout') {
+    const r = VideoLayout.safeParse(value);
+    return r.success ? summariseVideoLayout(r.data) : 'invalid layout';
   }
   if (shape === 'report') {
     // Structural, deliberately without the schema: "3 levels, 2 rollups". The

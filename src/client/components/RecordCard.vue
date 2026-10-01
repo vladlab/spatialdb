@@ -68,7 +68,7 @@
           <span v-for="(l, i) in r.lines.slice(0, CARD_MAX_LINES)" :key="i" class="card-line">{{ l }}</span>
           <span v-if="r.lines.length > CARD_MAX_LINES" class="card-line more">+{{ r.lines.length - CARD_MAX_LINES }} more</span>
         </span>
-        <span v-else class="card-val" :class="{ empty: !r.text, derived: r.derived, broken: r.broken }">{{ r.text || '—' }}</span>
+        <span v-else class="card-val" :class="{ empty: !r.text, derived: r.derived, broken: r.broken }"><VideoLayoutStrip v-if="r.strip !== undefined" mini :value="r.strip" />{{ r.text || '—' }}</span>
         <span v-if="r.verdict" class="card-warn" :class="{ ok: r.verdict.ok }" :title="r.verdict.title">{{ r.verdict.ok ? '✓' : '⚠' }}</span>
       </div>
       <!-- NOTES: formatted, with their images, in a window of FIXED height that scrolls
@@ -98,6 +98,7 @@ import { CARD_MAX_LINES } from '../canvas/cardLayout';
 import { textOn } from '../colorText';
 import { computed, defineAsyncComponent } from 'vue';
 import RecordPill from './RecordPill.vue';
+import VideoLayoutStrip from './VideoLayoutStrip.vue';
 import type { Store } from '../store';
 import {
   CARD_BODY_PAD, CARD_HEAD_H, CARD_RICH_H, CARD_RICH_LABEL_H, CARD_ROW_H, CARD_TITLE_H, CARD_W, effectiveHeight,
@@ -121,6 +122,8 @@ export interface CardRow {
   lines?: string[];
   /** The linked records behind a link/backlink row, in `lines` (or `text`) order — draggable onto this canvas. */
   ids?: string[];
+  /** A video layout's value: the row draws its mini strip before the summary text. */
+  strip?: unknown;
   /** A comparing link's verdict on this value: ✓ or ⚠, with the why. */
   verdict?: { ok: boolean; title: string };
   /** A link or backlink row whose field has an arrow colour: the row is a PORT,

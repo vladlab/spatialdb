@@ -16,6 +16,34 @@ sandbox has no browser and `test/ui.ts` cannot see layout or paint.
 
 ## When you come back — a checking order
 
+**Video layout — a new structured shape (Oct 1)** — a mini EDL on a record: what is
+on the file and where. Add a field → structured → "Video layout", open a record.
+1. Enter a head build the way a spec writes it: Black, type its start
+   (`59:27:00` completes to 00:59:27:00) and `3s`; Bars and tone `15s`; Slate `10s`;
+   Black `5s`; Program, start `1:00:00:00`. Starts you did NOT type are greyed behind
+   a ↳ — is typed-versus-worked-out clear enough at a glance?
+2. Program should wear a ✓ and the line under the list say the head adds up. Change
+   a length: the ✓ goes, and a gap (amber, hatched block in the strip) or an overlap
+   (red, outlined block) says by how much. They are warnings — the value saves either way.
+3. Length cell: `3s`, `1m30s`, `72f`, `00:00:03:00`, a bare number (seconds), `open`
+   for "length unknown", EMPTY for a marker. A bare `300` is 300 seconds, not Resolve's
+   3:00 — say if you would rather it were digits-from-the-right.
+4. The strip is NOT true to time (a log of the length; open blocks a fixed width) so
+   3s of black and a 90-minute program are both readable. Right call, or do you want
+   a true-scale toggle?
+5. Markers: add Marker, name it, type a start. Several close together stack on up to
+   three rows above the strip — does that hold with your real FFOA/LFOA/2-pop sets?
+6. Typed timecodes print under the strip only where there is room (the list has them
+   all). On an as-built layout with every start typed, is that enough, or too sparse?
+7. The ENDS column hides when the tray is narrow (an end is the next item's start,
+   shown there). Widen the tray and it returns.
+8. Grid cells and canvas cards show a mini strip before the one-line summary.
+9. 29.97 / 59.94: tick drop-frame — starts are rewritten with `;`, a start on a skipped
+   label moves to the next that exists. Arithmetic is on the LABELS: a minute of bars
+   from 00:58:30;00 ends at 00:59:30;00 (not ;02). Is that what you expect of a spec?
+10. Not built: comparing a file's layout with a spec's (the `kind` is there to match
+    on), and filling a File's layout from the desktop client.
+
 **The report outline, tightened (Sept 30)** — owner: "Deliverables 3, followed by
 Deliverables… so much negative space and repeated headers that it is hard to read."
 There was no technical reason for the doubling. Now:

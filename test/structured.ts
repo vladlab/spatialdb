@@ -118,7 +118,7 @@ async function main() {
     const form = () => w.find('.gridview .popover');
     await form().find('input.name').setValue('Manifest');
     await form().find('select.type').setValue('structured');
-    check('choosing "structured" asks for a SHAPE', form().find('select.shape').exists() && form().findAll('select.shape option').map((o: any) => o.text()).join() === 'shape…,File manifest,Audio layout,Generic JSON');
+    check('choosing "structured" asks for a SHAPE', form().find('select.shape').exists() && form().findAll('select.shape option').map((o: any) => o.text()).join() === 'shape…,File manifest,Audio layout,Video layout,Generic JSON');
     await form().find('button.add').trigger('click');
     check('…and will not create the field without one', await until(() => /needs a shape/.test(form().text())) && (await pool.query(`select 1 from fields where key = 'manifest'`)).rowCount === 0, form().text());
     await form().find('select.shape').setValue('manifest');

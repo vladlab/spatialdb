@@ -89,6 +89,8 @@ src/
   contract/vocab.ts      ★ built-in choice lists a select can bind to; the video-codec lookup (raw ffprobe pair → one spelling)
   contract/tools.ts      ★ the desktop client's tools: ANALYZERS (what derives what, how), a table's RECIPE and its validation, the `via` tag
   contract/shapes.ts     ★ structured values: shapes, summaries, layout operations, the layout diff
+  contract/videoLayout.ts ★ the video_layout shape: a mini EDL — the schema, resolving lengths and pins to positions, the strip's geometry
+  contract/timecode.ts   ★ timecode: labels vs real frames, drop-frame, what a person types, lengths
   contract/scope.ts      ★ scope: the membership flag and "is this record in scope"
   contract/richtext.ts   ★ rich text + attachment values: refer to files, never contain them
   contract/values.ts     ★ what a VALUE may be, per field type — same deal again
