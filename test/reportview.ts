@@ -6,6 +6,7 @@
  * Files reached THROUGH A JUNCTION: accepted by the server, drawn with the pair's
  * status beside each file, and built in the level editor (the ⇄ via, the pair block).
  * V7 turns it round — Deliverables › Works › Files — with the PIN through the junction.
+ * V8 is the outline's economy: one header line per section, and only where it says something.
  */
 import { randomUUID } from 'node:crypto';
 import { mountApp } from './uiHarness.js';
@@ -80,9 +81,10 @@ async function main() {
     const root = w.find('.reportview .ro.root');
     const rows = () => root.findAll('.ro-row');
     const labelOf = (r: any) => r.find('.ro-label').text();
-    check('root section: "Works", count 2, one row per work, sorted', root.find('.ro-head .ro-table').text() === 'Works' && root.find('.ro-head .ro-count').text() === '2'
+    check('root section: "Works", count 2, one row per work, sorted', root.find('thead .ro-table').text() === 'Works' && root.find('thead .ro-count').text() === '2'
       && rows().filter((r: any) => r.attributes('data-record') === ep1 || r.attributes('data-record') === ep2).map(labelOf).join('|') === 'Ep 101|Ep 102');
-    check('the header names the record column by the table\'s SINGULAR name and the rollups by label', root.find('thead').findAll('th').map((t: any) => t.text()).join(' ') === 'Work expected delivered', root.find('thead').findAll('th').map((t: any) => t.text()).join(' '));
+    check('ONE line above the rows: the header row, its first cell the section\'s own label and count, then the rollups by label — no separate heading', !root.find('.ro-head').exists()
+      && root.find('thead').findAll('th:not(.c-fill)').length === 3 && root.find('thead').findAll('th.c-rollup').map((t: any) => t.text()).join(' ') === 'expected delivered', root.find('thead').text());
     const ep1Row = rows().find((r: any) => r.attributes('data-record') === ep1)!;
     check('Ep 101: expected 2, delivered 1', ep1Row.findAll('.c-rollup').map((c: any) => c.text()).join() === '2,1', ep1Row.text());
     const ep1Children = ep1Row.element.nextElementSibling as HTMLElement;
@@ -90,7 +92,7 @@ async function main() {
     check('under Ep 101, its deliverables in their own section, sorted, with ROLE chips: DCP (added), ProRes (bid)', delivs.map((r: any) => `${labelOf(r)} [${r.findAll('.ro-role').map((x: any) => x.text()).join(',')}]`).join('|') === 'DCP 2K Flat [added]|ProRes 4444 texted [bid]', delivs.map((r: any) => r.text()).join('|'));
     check('a deliverable\'s cells come from its fields list (Codec), its files count from the rollup — zero is marked', delivs[0].find('.c-field').text() === 'JPEG 2000' && delivs[0].find('.c-rollup').text() === '0' && delivs[0].find('.c-rollup').classes('zero'));
     const dcpChildren = delivs[0].element.nextElementSibling as HTMLElement;
-    check('the DCP has no files: an EMPTY section is drawn, saying so', /— nothing —/.test(dcpChildren.textContent ?? ''));
+    check('the DCP has no files: an EMPTY section is drawn, as ONE line saying so — no heading, no table', /— no files —/.test(dcpChildren.textContent ?? '') && dcpChildren.querySelectorAll('table, thead').length === 0);
     const proresChildren = delivs[1].element.nextElementSibling as HTMLElement;
     const files = w.findAll('.ro-row').filter((r: any) => proresChildren.contains(r.element));
     check('the ProRes has the two ep101 files, sorted desc, with Path and Status — and NOT ep102\'s file (pinned to the work)', files.map(labelOf).join('|') === 'ep101_prores_v2.mov|ep101_prores_v1.mov'
@@ -203,7 +205,7 @@ async function main() {
     check('no warning: the definition is valid on the client too', !w.find('.reportview .rv-warning').exists(), w.find('.reportview .rv-warning').exists() ? w.find('.reportview .rv-warning').text() : '');
     check('Ep 101 › ProRes › its two files — ONE level, no pair rows in between, Ep 102\'s file pinned out', await until(() => e1Files().map(labelOf).join('|') === 'ep101_prores_v2.mov|ep101_prores_v1.mov', 6000), e1Files().map((r: any) => r.text()).join('|'));
     const filesTable = e1Files()[0].element.closest('table') as HTMLElement;
-    check('the Files section\'s header: File, the PAIR\'s Status, then the file\'s own Path', [...filesTable.querySelectorAll(':scope > thead th')].map((t) => t.textContent!.trim()).join('|') === 'File|Status|Path');
+    check('the Files section\'s header: its label and count, the PAIR\'s Status, then the file\'s own Path', [...filesTable.querySelectorAll(':scope > thead th:not(.c-fill)')].map((t) => t.textContent!.trim()).join('|') === 'Files2|Status|Path');
     check('each file shows its pair\'s status beside it', e1Files().map((r: any) => r.find('.c-pair').text()).join() === 'Accepted,Rejected');
     check('the rollups read the pair: ProRes on 101 has 2 files, 1 accepted; 101 has 1 satisfied, 102 none', proresOf(ep1).findAll('.c-rollup').map((c: any) => c.text()).join() === '2,1'
       && rowOf(ep1)!.findAll('.c-rollup')[0].text() === '1' && rowOf(ep2)!.findAll('.c-rollup')[0].text() === '0');
@@ -237,7 +239,7 @@ async function main() {
     const savedPair = await ui.untilDb(`select data->'report'->'root'->'children'->0->'children'->0->'pair' p from records where id = '${through}'`, (r) => r[0]?.p?.filters?.length === 1, 8000);
     check('save writes the pair: its fields and the filter', savedPair[0].p.fields.join() === jStatus && savedPair[0].p.filters[0].fieldId === jStatus && savedPair[0].p.filters[0].op === 'eq' && savedPair[0].p.filters[0].value === 'Rejected', JSON.stringify(savedPair[0].p));
     check('…and the outline keeps only the files whose pair passes: 101\'s rejected v1; 102\'s section is empty but drawn',
-      await until(() => e1Files().map(labelOf).join() === 'ep101_prores_v1.mov' && under(proresOf(ep2)).length === 0 && /— nothing —/.test((proresOf(ep2).element.nextElementSibling as HTMLElement).textContent ?? ''), 6000), e1Files().map((r: any) => r.text()).join('|'));
+      await until(() => e1Files().map(labelOf).join() === 'ep101_prores_v1.mov' && under(proresOf(ep2)).length === 0 && /— no files —/.test((proresOf(ep2).element.nextElementSibling as HTMLElement).textContent ?? ''), 6000), e1Files().map((r: any) => r.text()).join('|'));
     await throughVia().find('input[type="checkbox"]').setValue(false);
     check('unticking the junction via takes the pair block (and its picks) with it; revert brings them back', await until(() => !filesEd().find('.rl-pair').exists())
       && await (async () => { await ed().find('.revert-report').trigger('click'); return until(() => ed().findAll('.rl').length === 3 && filesEd().find('.rl-pair .pair-filter').exists()); })());
@@ -258,7 +260,7 @@ async function main() {
     check('ProRes › Ep 101 › the two files paired with ProRes, each with its status; › Ep 102 › its own', await until(() => filesUnder(prores, ep1).map((r: any) => `${labelOf(r)}:${r.find('.c-pair').text()}`).join('|') === 'ep101_prores_v2.mov:Accepted|ep101_prores_v1.mov:Rejected'
       && filesUnder(prores, ep2).map((r: any) => `${labelOf(r)}:${r.find('.c-pair').text()}`).join() === 'ep102_prores_v1.mov:Accepted', 6000), filesUnder(prores, ep1).map((r: any) => r.text()).join('|'));
     check('DCP › its Works are listed, each with an empty Files section — nothing is paired with it', under(rowOf(dcp)).filter((r: any) => [ep1, ep2].includes(r.attributes('data-record'))).length === 2 && filesUnder(dcp, ep1).length === 0
-      && /— nothing —/.test((workUnder(dcp, ep1).element.nextElementSibling as HTMLElement).textContent ?? ''));
+      && /— no files —/.test((workUnder(dcp, ep1).element.nextElementSibling as HTMLElement).textContent ?? ''));
     check('the Work\'s rollup reads the pair through the pin', workUnder(prores, ep1).find('.c-rollup').text() === '1' && workUnder(dcp, ep1).find('.c-rollup').text() === '0');
 
     await w.find('.reportview .rv-def').trigger('click');
@@ -278,7 +280,31 @@ async function main() {
     await until(() => ed().findAll('.rl').length === 3 && filesEd().find(':scope > .rl-pair').exists());
     await w.find('.record-panel .rp-close').trigger('click');
 
-    check('the grid of a reports table offers "open" on each row', await (async () => { await nav.openTable(tRep); await until(() => w.findAll('.gridview tr.row').length === 5); return w.find('.gridview .open-report').exists(); })());
+    console.log('\nV8. The outline spends its lines on records: headings only where they say something');
+    const plain = randomUUID(), forked = randomUUID();
+    const bare = (id: string, via: string) => ({ id, via: [{ fieldId: via }], children: [] });
+    const lean = await post([
+      { type: 'record.create', id: plain, tableId: tRep, data: { name: 'Plain', report: { v: 1, root: { id: 'works', table: tWorks, sort: [{ fieldId: fWName, dir: 'asc' }], children: [bare('delivs', fBid)] } } } },
+      { type: 'record.create', id: forked, tableId: tRep, data: { name: 'Forked', report: { v: 1, root: { id: 'works', table: tWorks, sort: [{ fieldId: fWName, dir: 'asc' }], children: [bare('delivs', fBid), bare('files', fWork)] } } } },
+    ]);
+    check('fixtures accepted', lean.status === 200, (await lean.text()).slice(0, 200));
+    await nav.openReport(plain);
+    await until(() => w.find('.reportview .rv-title').text() === 'Plain' && w.findAll('.reportview .ro-row').length >= 4, 8000);
+    check('one line names the levels — "Works › Deliverables" — so nested sections need not', w.find('.reportview .rv-shape').text() === 'Works › Deliverables');
+    check('levels with nothing but names draw NO header at all: the bar counts the root, the indent shows the rest', w.findAll('.reportview thead').length === 0 && w.find('.reportview .rv-count').text() === '2 Works');
+    check('the rows are still there, nested: Ep 101 › ProRes; Ep 102 › DCP, ProRes', under(rowOf(ep1)).map(labelOf).join() === 'ProRes 4444 texted' && under(rowOf(ep2)).map(labelOf).sort().join() === 'DCP 2K Flat,ProRes 4444 texted');
+    const sizer = () => w.findAll('.reportview tfoot.ro-sizer');
+    check('every section ends in a hidden sizer row holding its level\'s longest labels — never counted as a row', sizer().length === 3 && sizer().every((t: any) => !t.find('.ro-row').exists() && t.attributes('aria-hidden') === 'true')
+      && sizer().map((t: any) => t.findAll('.ro-label').map((x: any) => x.text()).join('|')).sort().join(' / ') === 'Ep 101|Ep 102 / ProRes 4444 texted|DCP 2K Flat / ProRes 4444 texted|DCP 2K Flat',
+      sizer().map((t: any) => t.findAll('.ro-label').map((x: any) => x.text()).join('|')).join(' / '));
+    await nav.openReport(forked);
+    await until(() => w.find('.reportview .rv-title').text() === 'Forked' && w.findAll('.reportview .ro-row').length >= 6, 8000);
+    check('a level with two descents lists both: "Works › (Deliverables · Files)"', w.find('.reportview .rv-shape').text() === 'Works › (Deliverables · Files)');
+    const ep1Kids = (rowOf(ep1)!.element.nextElementSibling as HTMLElement);
+    check('…and there each nested section IS titled, to tell them apart — one line each, label and count', [...ep1Kids.querySelectorAll('thead')].map((h) => `${h.querySelector('.ro-table')!.textContent}:${h.querySelector('.ro-count')!.textContent}`).join() === 'Deliverables:1,Files:2'
+      && w.find('.reportview .ro.root > table > thead').exists() === false, ep1Kids.textContent ?? '');
+
+    check('the grid of a reports table offers "open" on each row', await (async () => { await nav.openTable(tRep); await until(() => w.findAll('.gridview tr.row').length === 7); return w.find('.gridview .open-report').exists(); })());
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);
     await ui.close();

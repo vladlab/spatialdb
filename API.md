@@ -622,8 +622,15 @@ table is a report; the app makes it with a Name and a **`structured` field of sh
   (and a "Reports" table first, if the section has none). The outline
   (`ReportOutline.vue`) draws each section as a table — record, role, the pair's
   fields (through a junction), the level's fields by name, its rollups by label —
-  with child sections nested under each row;
-  an empty section is drawn as "— nothing —". Clicking a row opens that record in
+  with child sections nested under each row. A section has at most ONE line above
+  its rows: the header row, whose first cell is the section's own label and count,
+  drawn only where it says something — when the level has columns to name, or when
+  its node has several child sections to tell apart; a lone column of names has
+  none (the view's first line, "Deliverables › Work › Files", names the levels, and
+  the bar counts the root). Columns hug their content, and every section of a level
+  ends in an invisible sizer row holding the level's longest texts, so they all get
+  the same column widths;
+  an empty section is one line, "— no files —". Clicking a row opens that record in
   the tray; "definition…" opens the report's own record. The grid cell summarises a
   definition structurally ("3 levels, 2 rollups").
 - **The editor** (`ReportEditor.vue` → `ReportLevelEditor.vue`, one per level) is

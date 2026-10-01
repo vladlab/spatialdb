@@ -16,6 +16,22 @@ sandbox has no browser and `test/ui.ts` cannot see layout or paint.
 
 ## When you come back — a checking order
 
+**The report outline, tightened (Sept 30)** — owner: "Deliverables 3, followed by
+Deliverables… so much negative space and repeated headers that it is hard to read."
+There was no technical reason for the doubling. Now:
+1. No separate heading over a section: the header row's first cell is the label and
+   count ("FILES 3"), and the row exists only when the level has columns to name
+   (Status, Path, rollups) or its node has several child sections. Label-only levels
+   have no header; the faint first line ("Deliverables › Work › Files") names them.
+2. An empty section is one faint line — "— no files —".
+3. Columns hug their content (file and Status side by side, not at opposite edges),
+   and line up across every section of a level. Does that hold with your real names
+   — and is a long Path, cut at 320 px with an ellipsis, still right for a report?
+4. Rules only between top-level records; nesting is the indent and its left line.
+5. Still repeated: "FILES n · Status" above each non-empty Files section. Now that
+   the columns line up it could be drawn once per top-level record instead — say if
+   you want that.
+
 **Reports through a junction (Sept 30)** — Work › Deliverables › Files again, now
 that File→Deliverable is the Delivery junction. In a report's definition:
 1. Under the Deliverables level, "+ descend into…" lists **Delivery ⇄ Files · through

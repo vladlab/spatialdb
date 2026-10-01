@@ -23,7 +23,8 @@
     <p v-if="problem" class="hint">{{ problem }}</p>
     <div v-else-if="result && rootLevel" class="rv-body">
       <p v-if="warning" class="rv-warning">⚠ {{ warning }}</p>
-      <ReportOutline :section="result" :level="rootLevel" :levels="levels" :depth="0" :fields="fieldMap" :tables="store.state.tables"
+      <p v-if="shape" class="rv-shape" title="The levels of this report, outermost first">{{ shape }}</p>
+      <ReportOutline :section="result" :level="rootLevel" :levels="levels" :depth="0" :sizers="sizers" :fields="fieldMap" :tables="store.state.tables"
                      @open="$emit('open-record', $event)" />
     </div>
   </div>
@@ -35,7 +36,7 @@ import type { Store } from '../store';
 import { reportFieldOf, type RecordRow } from '../state';
 import { useDerived } from '../derived';
 import { SCOPE } from '../scope';
-import { ReportDef, reportDefError, reportSchema, resolvePin, resolveVia, runReport, type Descent, type ReportContext, type ReportField, type RootLevel } from '../../contract/reports';
+import { ReportDef, reportDefError, reportSchema, resolvePin, resolveVia, runReport, type Descent, type ReportContext, type ReportField, type ReportSection, type RootLevel } from '../../contract/reports';
 import ReportOutline from './ReportOutline.vue';
 
 const props = defineProps<{ store: Store; reportId: string }>();
@@ -87,11 +88,15 @@ const fieldMap = computed(() => store.state.fields as Map<string, { id: string; 
  * and the JUNCTION tables it goes through: their pair rows are what the walk follows.
  */
 const schema = computed(() => reportSchema(fields.value, store.state.tables.values()));
+/** Each level's own table, by level id — found on the same walk. */
+const levelTables = new Map<string, string>();
 const tablesNeeded = computed(() => {
   const out = new Set<string>();
+  levelTables.clear();
   if (!def.value) return out;
   const walk = (l: RootLevel | Descent, tableId: string, above: { id: string; table: string }[]) => {
     out.add(tableId);
+    levelTables.set(l.id, tableId);
     const here = [...above, { id: l.id, table: tableId }];
     for (const c of l.children) {
       let landing = '';
@@ -135,6 +140,49 @@ const ctx = computed<ReportContext>(() => {
   };
 });
 const result = computed(() => (def.value ? runReport(def.value, ctx.value) : null));
+
+/**
+ * The report's levels as one line — "Deliverables › Work › Files" — so the outline
+ * need not title every nested section to say what it is. A level with several
+ * descents lists them: "Works › (Deliverables › Files · Edits)".
+ */
+const shape = computed(() => {
+  if (!def.value || !def.value.root.children.length) return '';
+  void tablesNeeded.value;                                 // levelTables is filled by that walk
+  const name = (l: RootLevel | Descent): string => {
+    const own = store.state.tables.get(levelTables.get(l.id) ?? '')?.name ?? l.id;
+    const kids = l.children.map(name);
+    return kids.length === 0 ? own : kids.length === 1 ? `${own} › ${kids[0]}` : `${own} › (${kids.join(' · ')})`;
+  };
+  return name(def.value.root);
+});
+
+/**
+ * Per level, the longest few texts of each column. The outline puts them in an
+ * invisible sizer row at the foot of every section, so all the sections of a level
+ * — each its own small table — get the same column widths from the browser itself.
+ * Three per column, because the longest string is not always the widest.
+ */
+const sizers = computed(() => {
+  const out = new Map<string, Record<string, string[]>>();
+  const walk = (s: ReportSection) => {
+    if (!s.nodes.length) return;
+    const m = out.get(s.levelId) ?? out.set(s.levelId, {}).get(s.levelId)!;
+    const see = (key: string, text: string) => {
+      const top = (m[key] ??= []);
+      if (!text || top.includes(text)) return;
+      top.push(text); top.sort((a, b) => b.length - a.length); top.length = Math.min(top.length, 3);
+    };
+    for (const n of s.nodes) {
+      see('label', n.record.label);
+      for (const c of n.cells) see(`f:${c.fieldId}`, c.text);
+      for (const c of n.pair?.cells ?? []) see(`p:${c.fieldId}`, c.text);
+      n.children.forEach(walk);
+    }
+  };
+  if (result.value) walk(result.value);
+  return out;
+});
 </script>
 
 <style scoped>
@@ -149,5 +197,6 @@ const result = computed(() => (def.value ? runReport(def.value, ctx.value) : nul
 .rv-def:hover { border-color: var(--accent); }
 .rv-body { flex: 1; overflow: auto; padding: 12px 16px 40px; }
 .rv-warning { margin: 0 0 10px; color: var(--warning); font-size: 12px; }
+.rv-shape { margin: 0 0 10px; color: var(--text-faint); font-size: 11px; }
 .hint { padding: 24px; color: var(--text-muted); white-space: normal; max-width: 640px; }
 </style>
