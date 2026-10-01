@@ -43,7 +43,7 @@ export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * so the dialog itself is exercised by every test that opens one.
  */
 export function navigator(w: any, until: (p: () => boolean, ms?: number) => Promise<boolean>) {
-  const dialogs = { text: '', checks: {} as Record<string, boolean>, choice: '', seen: [] as string[], cancelNext: false };
+  const dialogs = { text: '', checks: {} as Record<string, boolean>, choice: '', seen: [] as string[], bodies: [] as string[], cancelNext: false };
   let busy = false;
   const pilot = setInterval(async () => {
     if (busy) return;
@@ -52,6 +52,7 @@ export function navigator(w: any, until: (p: () => boolean, ms?: number) => Prom
     busy = true;
     try {
       dialogs.seen.push(d.find('h2').text());
+      dialogs.bodies.push(d.find('.dlg-body').exists() ? d.find('.dlg-body').text() : '');
       if (dialogs.cancelNext) { dialogs.cancelNext = false; await d.find('.dlg-cancel').trigger('click'); return; }
       if (d.find('.dlg-input').exists()) await d.find('.dlg-input').setValue(dialogs.text);
       if (dialogs.choice && d.find('.dlg-select').exists()) await d.find('.dlg-select').setValue(dialogs.choice);

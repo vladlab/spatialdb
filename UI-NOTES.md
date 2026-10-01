@@ -16,6 +16,21 @@ sandbox has no browser and `test/ui.ts` cannot see layout or paint.
 
 ## When you come back — a checking order
 
+**Delete dialogs that tell the truth (Oct 1, from the code review)** — the table and
+field delete dialogs ask the server what would go before they say anything.
+1. Delete a field, then a small table: the numbers are the server's (records, links,
+   cards on canvases, saved views), including for a table you have not opened. Is
+   the sentence readable, or too much of a list?
+2. A table whose cascade is over 10,000 rows (a big Files table: records + links +
+   pairs + cards all count): a different dialog, "this cannot be undone", OK greyed
+   out until the table's name is typed exactly. Too much friction, or right for the
+   one delete History cannot give back?
+3. There is a short wait before either dialog appears (the server is counting).
+   Noticeable on a large table?
+4. Not built: a way to force-delete ONE record whose cascade is over the cap (a
+   project with 10,000+ member files). It is refused with a banner that says why;
+   unlinking first, or a script with `withoutUndo`, are the ways through.
+
 **The save queue, and resync (Oct 1, from the code review)** — nothing to look at
 until something goes wrong, which is the point. The suite covers it
 (`npm run test:savequeue`); what only a real browser shows:

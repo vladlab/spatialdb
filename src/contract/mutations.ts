@@ -129,6 +129,15 @@ const TableUpdate = z.strictObject({
 const TableDelete = z.strictObject({
   type: z.literal('table.delete'),
   id: uuid,
+  /**
+   * "Delete it even though it cannot be undone." A delete whose cascade is too
+   * large to capture (server/capture.ts MAX_CAPTURE_ROWS) is REFUSED without this:
+   * the server used to go ahead and keep only the counts, so the one delete that
+   * destroyed the most was the one with no way back. Never set by default —
+   * `POST /api/capture-preview` says in advance whether it will be needed, and
+   * the UI sets it only after saying so and being told to go ahead.
+   */
+  withoutUndo: z.literal(true).optional(),
 });
 
 const FieldCreate = z.strictObject({
@@ -158,6 +167,8 @@ const FieldUpdate = z.strictObject({
 const FieldDelete = z.strictObject({
   type: z.literal('field.delete'),
   id: uuid,
+  /** See TableDelete.withoutUndo. */
+  withoutUndo: z.literal(true).optional(),
 });
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -188,6 +199,8 @@ const RecordUpdate = z.strictObject({
 const RecordDelete = z.strictObject({
   type: z.literal('record.delete'),
   id: uuid,
+  /** See TableDelete.withoutUndo. */
+  withoutUndo: z.literal(true).optional(),
 });
 
 /* ────────────────────────────────────────────────────────────────────────────

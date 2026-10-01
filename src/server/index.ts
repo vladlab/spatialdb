@@ -14,7 +14,8 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import pg from 'pg';
-import { MutationRequest } from '../contract/mutations.js';
+import { DESTRUCTIVE_MUTATIONS, Mutation, MutationRequest } from '../contract/mutations.js';
+import { captureFor, MAX_CAPTURE_ROWS } from './capture.js';
 import { StreamEvent, toMutationEvent } from '../contract/events.js';
 import { applyBatch, compareTargetOfBacklink, MutationError, type Actor } from './apply.js';
 import type { Context } from 'hono';
@@ -324,6 +325,34 @@ app.get('/api/mutations/:id/undo', async (c) => {
       }, 409);
     }
     return c.json(undo);
+  } finally { db.release(); }
+});
+
+/**
+ * What WOULD this delete destroy? The same capture the delete itself takes
+ * (capture.ts — cascades included), read-only, returning the counts and whether it
+ * is over the cap. It exists so a confirmation can tell the truth: the dialog used
+ * to count the records the BROWSER had loaded and promise an undo the server might
+ * not be able to keep. Counts only, never rows.
+ */
+app.post('/api/capture-preview', async (c) => {
+  const parsed = Mutation.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success || !DESTRUCTIVE_MUTATIONS.has(parsed.data.type)) {
+    return c.json({ error: 'send one destructive mutation (table.delete, field.delete, record.delete, …)' }, 400);
+  }
+  const db = await pool.connect();
+  try {
+    await db.query('begin isolation level repeatable read read only');
+    const cap = await captureFor(db, parsed.data);
+    await db.query('commit');
+    return c.json({
+      exists: cap !== null,
+      counts: cap?.counts ?? {}, total: cap?.total ?? 0, truncated: cap?.truncated ?? false,
+      limit: MAX_CAPTURE_ROWS,
+    });
+  } catch (e) {
+    await db.query('rollback').catch(() => {});
+    throw e;
   } finally { db.release(); }
 });
 

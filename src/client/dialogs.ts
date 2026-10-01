@@ -34,6 +34,15 @@ export interface AskOptions {
   select?: { label: string; options: Array<{ value: string; label: string }>; initial?: string };
   /** No text field at all — just the select and/or checkboxes. */
   noText?: boolean;
+  /** A paragraph above the field (line breaks kept), as a confirm has. */
+  body?: string;
+  /** The OK button is the danger colour. */
+  danger?: boolean;
+  /**
+   * OK stays disabled until exactly this has been typed. For the one kind of
+   * confirmation a click must not be enough for: a delete that cannot be undone.
+   */
+  mustMatch?: string;
 }
 export interface AskResult { value: string; checks: Record<string, boolean>; choice: string }
 

@@ -1158,9 +1158,19 @@ Role gating is dynamic — `restore` needs `admin` only when it carries tables o
 fields, otherwise `editor`. Static gating would have made undoing a `table.delete`
 an editor's back door into the schema.
 
-Cascades above 10,000 rows store counts instead of contents;
-`GET /api/mutations/:id/undo` then returns **409** rather than an empty restore a
-careless caller would send and believe worked. That is what dumps are for.
+**A delete too large to undo has to say it is permanent.** A capture holds at most
+10,000 rows — records, links, placements, pairs and stripped values all count
+(`MAX_CAPTURE_ROWS`). A `table.delete`, `field.delete` or `record.delete` whose
+cascade is larger is **refused with 409** ("not deleted: that would destroy 14,203
+rows (…) — more than History can keep") unless it carries `"withoutUndo": true`;
+then it runs, and its log row keeps the counts with `truncated: true`. It used to
+run regardless, so the delete that destroyed the most was the one with no way back.
+`GET /api/mutations/:id/undo` for such a row returns **409** rather than an empty
+restore a careless caller would send and believe worked. That is what dumps are for.
+
+| Endpoint | Returns |
+|---|---|
+| `POST /api/capture-preview` | body: one destructive mutation. `{ exists, counts, total, truncated, limit }` — what it WOULD destroy, cascades included; reads only. The table and field delete dialogs ask this before they say anything about undo, and require the name to be typed when `truncated`. |
 
 ## Concurrency
 

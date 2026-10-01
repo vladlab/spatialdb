@@ -34,6 +34,23 @@ import { CAPTURED_TABLES, type CapturedRows, type Mutation } from '../contract/m
  */
 export const MAX_CAPTURE_ROWS = 10_000;
 
+/**
+ * Why a delete is refused when its cascade is over the cap: what would go, in
+ * numbers, and that nothing went. Thrown by applyBatch (apply.ts) unless the
+ * mutation carries `withoutUndo`.
+ */
+export function uncapturableMessage(type: string, c: { counts: Record<string, number>; total: number }): string {
+  const n = (x: number) => x.toLocaleString('en-US');
+  // "tables" → "table", "canvases" → "canvas", "record_values" → "record value"
+  const word = (k: string, v: number) => (v === 1 ? k.replace(/(ses|s)$/, (m) => (m === 'ses' ? 's' : '')) : k).replace(/_/g, ' ');
+  const parts = Object.entries(c.counts).filter(([, v]) => v > 0).map(([k, v]) => `${n(v)} ${word(k, v)}`).join(', ');
+  const how = type === 'record.delete'
+    ? 'Unlink it first, so less goes with it'
+    : type === 'field.delete' ? 'Delete it from the field\'s settings, which asks first' : 'Delete it from Table settings, which asks first';
+  return `not deleted: that would destroy ${n(c.total)} rows (${parts}) — more than History can keep (${n(MAX_CAPTURE_ROWS)}), `
+    + `so it could not be undone. Nothing was deleted. ${how}; a script sends "withoutUndo": true.`;
+}
+
 export interface Capture {
   rows: CapturedRows;
   counts: Record<string, number>;

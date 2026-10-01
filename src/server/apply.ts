@@ -42,7 +42,7 @@ import { reportDefError } from '../contract/reports.js';
 import { toolsProblem } from '../contract/tools.js';
 import { vocabularyOptionError } from '../contract/vocab.js';
 import { junctionColumnTarget, junctionOf, junctionProblem } from '../contract/junction.js';
-import { captureFor, JUNCTION_ROWS_OF, type Capture } from './capture.js';
+import { captureFor, JUNCTION_ROWS_OF, uncapturableMessage, type Capture } from './capture.js';
 
 export class MutationError extends Error {
   /**
@@ -987,6 +987,12 @@ export async function applyBatch(
         let capture: Capture | null = null;
         if (DESTRUCTIVE_MUTATIONS.has(entry.mutation.type)) {
           capture = await captureFor(db, entry.mutation);
+          // Too much to keep means no undo — and this used to go ahead regardless,
+          // under a dialog that said "everything is captured". Now the delete has
+          // to SAY it is meant to be permanent (`withoutUndo`), or it does not run.
+          if (capture?.truncated && (entry.mutation as { withoutUndo?: true }).withoutUndo !== true) {
+            throw new MutationError(uncapturableMessage(entry.mutation.type, capture), 409);
+          }
         }
 
         await applyOne(db, entry.mutation, actor);

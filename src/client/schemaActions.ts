@@ -27,7 +27,7 @@ import { REQUIRED, analyzerOf, defaultRecipe, fieldAccepts, toolsProblem, type O
 import { fieldsOf, recordsOf, tablesSorted, type FieldRow } from './state';
 import { junctionOf, junctionProblem, type JunctionConfig } from '../contract/junction';
 import type { Store } from './store';
-import { confirmDialog } from './dialogs';
+import { askFull, confirmDialog } from './dialogs';
 
 export type FieldType = (typeof FIELD_TYPES)[number];
 
@@ -183,6 +183,40 @@ export function useSchemaActions(store: Store) {
     if (name && name !== store.state.tables.get(id)?.name) store.mutate({ type: 'table.update', id, name });
   }
 
+  /* ── deleting: say what will really go, and whether it can come back ─────────
+
+     The server is asked first (POST /api/capture-preview — the same capture the
+     delete itself takes, cascades included). These dialogs used to count the records
+     the BROWSER happened to have loaded and promise "everything is captured, and can
+     be restored from History" — which stopped being true at 10,000 captured rows
+     (records, links, cards and pairs all count), where the server kept only the
+     numbers and deleted anyway. Over that, the delete is now refused unless it says
+     it is meant to be permanent, and saying so takes typing the name. */
+  interface Preview { exists: boolean; counts: Record<string, number>; total: number; truncated: boolean; limit: number }
+  const num = (x: number) => x.toLocaleString('en-US');
+  const WORDS: Record<string, [string, string]> = {
+    records: ['record', 'records'], links: ['link', 'links'], placements: ['card on a canvas', 'cards on canvases'],
+    fields: ['field', 'fields'], views: ['saved view', 'saved views'], canvases: ['canvas', 'canvases'],
+    canvas_annotations: ['canvas annotation', 'canvas annotations'], record_values: ['value', 'values'],
+  };
+  function goes(counts: Record<string, number>, only?: string[]): string {
+    const parts = (only ?? ['records', 'record_values', 'links', 'placements', 'canvases', 'canvas_annotations', 'fields', 'views'])
+      .filter((k) => counts[k] > 0).map((k) => `${num(counts[k])} ${WORDS[k][counts[k] === 1 ? 0 : 1]}`);
+    return parts.length ? parts.join(', ') : 'nothing else';
+  }
+  async function previewOf(mutation: { type: 'table.delete' | 'field.delete'; id: string }): Promise<Preview | null> {
+    await store.settled(3000);            // a table made a moment ago has to exist there before it can be counted
+    const r = await store.call<Preview>('POST', '/api/capture-preview', mutation).catch(() => null);
+    return r && r.ok ? r.data : null;
+  }
+  /** The confirmation for a delete that is over the cap: the name has to be typed. */
+  const typeToDelete = async (what: string, name: string, p: Preview, extra = '') => !!(await askFull({
+    title: `Delete the ${what} “${name}” — this cannot be undone`, danger: true, okText: 'Delete for good',
+    body: `${num(p.total)} rows go with it (${goes(p.counts)}) — more than History can keep (${num(p.limit)}).${extra}\n`
+      + 'They would be gone for good. The only way back is a backup.',
+    label: `Type “${name}” to go ahead`, mustMatch: name,
+  }));
+
   async function deleteTable(id: string): Promise<boolean> {
     const t = store.state.tables.get(id);
     if (!t) return false;
@@ -190,8 +224,16 @@ export function useSchemaActions(store: Store) {
     const boards = t.kind === 'canvas' ? ' Every record in it is a canvas — the boards and everything placed on them go too.'
       : t.kind === 'report' ? ' Every record in it is a report — their definitions and any snapshots attached to them go too.'
       : t.kind === 'junction' ? ' Every record in it is a pair — the columns it put on the two tables it connects go too.' : '';
-    if (!await confirmDialog({ title: `Delete the table “${t.name}”?`, danger: true, okText: 'Delete table',
-      body: `It and its ${n} loaded record(s) will be deleted.${boards}\nEverything is captured, and can be restored from History.` })) return false;
+    const p = await previewOf({ type: 'table.delete', id });
+    if (p?.truncated) {
+      if (!await typeToDelete('table', t.name, p, boards)) return false;
+    } else {
+      const body = p
+        ? `It will be deleted with everything that goes with it: ${goes(p.counts)}.${boards}\nEverything is captured, and can be restored from History.`
+        // The server could not be asked. Promise nothing it has not confirmed.
+        : `It and its ${n} loaded record(s) will be deleted.${boards}\nThe server could not be asked how much goes with it: if that is more than History can keep, it will refuse the delete.`;
+      if (!await confirmDialog({ title: `Delete the table “${t.name}”?`, danger: true, okText: 'Delete table', body })) return false;
+    }
     // A junction's columns on its endpoint tables would be left "broken backlink":
     // take them in the same run, so the delete is one Ctrl+Z either way.
     const j = junctionOf(t);
@@ -200,7 +242,7 @@ export function useSchemaActions(store: Store) {
         if (f.type === 'backlink' && (f.options?.source_field_id === j.a || f.options?.source_field_id === j.b)) store.mutate({ type: 'field.delete', id: f.id });
       }
     }
-    store.mutate({ type: 'table.delete', id });
+    store.mutate(p?.truncated ? { type: 'table.delete', id, withoutUndo: true } : { type: 'table.delete', id });
     return true;
   }
 
@@ -470,12 +512,21 @@ export function useSchemaActions(store: Store) {
     const f = store.state.fields.get(id);
     if (!f) return false;
     const n = recordsOf(store.state, f.table_id).filter((r) => f.key in r.data).length;
-    const values = f.type === 'link'
-      ? 'Its links are captured and can be restored.'
-      : `Its values on ${n} loaded record(s) are removed, but captured — restorable from History.`;
     const naming = isPrimary(id) ? '\nIt is the PRIMARY field: records will be named by the next field instead.' : '';
-    if (!await confirmDialog({ title: `Delete the field “${f.name}”?`, body: `${values}${naming}`, danger: true, okText: 'Delete field' })) return false;
-    store.mutate({ type: 'field.delete', id });
+    const p = await previewOf({ type: 'field.delete', id });
+    if (p?.truncated) {
+      if (!await typeToDelete('field', f.name, p, naming)) return false;
+    } else {
+      const held = p?.counts[f.type === 'link' ? 'links' : 'record_values'] ?? 0;
+      const values = !p
+        ? (f.type === 'link' ? 'Its links go with it.' : `Its values on ${n} loaded record(s) are removed.`)
+          + ' The server could not be asked how many that is: if it is more than History can keep, it will refuse the delete.'
+        : f.type === 'link'
+          ? (held ? `Its ${num(held)} link(s) are captured and can be restored from History.` : 'It holds no links. The field itself can be restored from History.')
+          : (held ? `Its value on ${num(held)} record(s) is removed, but captured — restorable from History.` : 'No record has a value in it. The field itself can be restored from History.');
+      if (!await confirmDialog({ title: `Delete the field “${f.name}”?`, body: `${values}${naming}`, danger: true, okText: 'Delete field' })) return false;
+    }
+    store.mutate(p?.truncated ? { type: 'field.delete', id, withoutUndo: true } : { type: 'field.delete', id });
     return true;
   }
 

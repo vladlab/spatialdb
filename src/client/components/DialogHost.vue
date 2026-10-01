@@ -11,6 +11,7 @@
       <h2>{{ current.opts.title }}</h2>
 
       <template v-if="current.kind === 'ask'">
+        <p v-if="current.opts.body" class="dlg-body">{{ current.opts.body }}</p>
         <label v-if="!current.opts.noText" class="dlg-field">
           <span v-if="current.opts.label">{{ current.opts.label }}</span>
           <input ref="input" v-model="value" class="dlg-input" :type="current.opts.password ? 'password' : 'text'"
@@ -31,7 +32,7 @@
 
       <footer>
         <button ref="cancelBtn" class="dlg-cancel" @click="cancel">Cancel</button>
-        <button ref="okBtn" class="dlg-ok" :class="{ danger: current.kind === 'confirm' && current.opts.danger }" @click="ok">
+        <button ref="okBtn" class="dlg-ok" :class="{ danger: current.opts.danger }" :disabled="blocked" @click="ok">
           {{ current.opts.okText ?? (current.kind === 'confirm' ? 'OK' : 'Create') }}
         </button>
       </footer>
@@ -66,9 +67,15 @@ watch(current, (d) => {
   });
 }, { immediate: true });
 
+/** An ask with `mustMatch` cannot be confirmed — by click or by Enter — until it has been typed. */
+const blocked = computed(() => {
+  const d = current.value;
+  return !!d && d.kind === 'ask' && d.opts.mustMatch !== undefined && value.value.trim() !== d.opts.mustMatch;
+});
+
 function ok() {
   const d = current.value;
-  if (!d) return;
+  if (!d || blocked.value) return;
   settle(d.kind === 'confirm' ? true : { value: value.value, checks: { ...checks }, choice: choice.value });
 }
 const cancel = () => settle(null);
@@ -94,4 +101,5 @@ button { background: none; border: 1px solid var(--border-main); color: var(--te
 button:focus { outline: none; border-color: var(--accent); }
 .dlg-ok { color: var(--accent); border-color: var(--accent); }
 .dlg-ok.danger { color: var(--danger); border-color: var(--danger); }
+.dlg-ok:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>

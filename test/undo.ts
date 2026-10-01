@@ -417,9 +417,41 @@ async function main() {
   check(`fixture has ${MAX_CAPTURE_ROWS + 1} records`, bulkCount === MAX_CAPTURE_ROWS + 1,
     `${bulkCount}`);
 
+  // It used to go ahead regardless — under a dialog that promised "everything is
+  // captured". Now a delete that cannot be undone has to SAY it is meant to be.
+  const logBefore = await count(`select count(*)::int n from mutations`);
+  let refused: unknown;
+  try { await one({ type: 'table.delete', id: bigTable }, admin); } catch (e) { refused = e; }
+  check('without `withoutUndo` the delete is REFUSED (409)', refused instanceof MutationError && refused.status === 409, String(refused));
+  check('…saying how much would go, and that nothing did',
+    /10,003 rows \(1 table, 1 field, 10,001 records\)/.test(String((refused as Error)?.message)) && /Nothing was deleted/.test(String((refused as Error)?.message)), String((refused as Error)?.message));
+  check('…and nothing did: the table, its records, and the log are as they were',
+    await count(`select count(*)::int n from tables where id=$1`, [bigTable]) === 1
+    && await count(`select count(*)::int n from records where table_id=$1`, [bigTable]) === MAX_CAPTURE_ROWS + 1
+    && await count(`select count(*)::int n from mutations`) === logBefore);
+
+  // The same rule for ONE record with a very large cascade: a project every file
+  // belongs to. Deleting it takes 10,001 membership links with it.
+  const hubTable = randomUUID(), hub = randomUUID(), memberField = randomUUID();
+  await one({ type: 'table.create', id: hubTable, name: 'Projects', singularName: 'Project', color: '', icon: '' }, admin);
+  await one({ type: 'field.create', id: randomUUID(), tableId: hubTable, name: 'Name', key: 'name', fieldType: 'text', options: {}, required: false }, admin);
+  await one({ type: 'field.create', id: memberField, tableId: bigTable, name: 'Project', key: 'project', fieldType: 'link', options: { target_table_id: hubTable }, required: false }, admin);
+  await one({ type: 'record.create', id: hub, tableId: hubTable, data: { name: 'Duke' } }, admin);
+  await db.query(`insert into links (field_id, from_record, to_record) select $1, id, $2 from records where table_id = $3`, [memberField, hub, bigTable]);
+  let refusedRecord: unknown;
+  try { await one({ type: 'record.delete', id: hub }, editor); } catch (e) { refusedRecord = e; }
+  check('a record whose links are too many to capture is refused the same way', refusedRecord instanceof MutationError && refusedRecord.status === 409
+    && await count(`select count(*)::int n from links where to_record=$1`, [hub]) === MAX_CAPTURE_ROWS + 1, String(refusedRecord));
+  let refusedField: unknown;
+  try { await one({ type: 'field.delete', id: memberField }, admin); } catch (e) { refusedField = e; }
+  check('…and a field whose links are', refusedField instanceof MutationError && refusedField.status === 409
+    && await count(`select count(*)::int n from fields where id=$1`, [memberField]) === 1, String(refusedField));
+  await one({ type: 'field.delete', id: memberField, withoutUndo: true }, admin);
+  check('with `withoutUndo`, the field delete goes ahead', await count(`select count(*)::int n from links where to_record=$1`, [hub]) === 0);
+
   const delBig = randomUUID();
-  await send([{ id: delBig, mutation: { type: 'table.delete', id: bigTable } }], admin);
-  check('the delete still succeeded', await count(`select count(*)::int n from tables where id=$1`, [bigTable]) === 0);
+  await send([{ id: delBig, mutation: { type: 'table.delete', id: bigTable, withoutUndo: true } }], admin);
+  check('with `withoutUndo`, the table delete goes ahead', await count(`select count(*)::int n from tables where id=$1`, [bigTable]) === 0);
 
   const rawUndo = (await db.query(`select undo from mutations where id = $1`, [delBig])).rows[0].undo;
   check('capture is marked truncated', rawUndo.truncated === true, JSON.stringify(rawUndo.counts));
@@ -498,6 +530,20 @@ async function main() {
   check('B received the undo over the stream', B.state.records.has(victim),
     'undo did not propagate');
   check('no apply errors on B', B.errors.value.length === 0, B.errors.value.join(' | '));
+
+  // What WOULD a delete destroy? The dialogs ask before they promise anything.
+  const preview = async (body: unknown) => {
+    const res = await fetch(`${API}/api/capture-preview`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    return { status: res.status, body: await res.json() as { exists?: boolean; counts?: Record<string, number>; total?: number; truncated?: boolean; limit?: number } };
+  };
+  const pv = await preview({ type: 'table.delete', id: tEdits });
+  const realRecords = await count(`select count(*)::int n from records where table_id=$1`, [tEdits]);
+  check('capture-preview counts what a table.delete would take', pv.status === 200 && pv.body.exists === true && pv.body.counts?.tables === 1
+    && pv.body.counts?.records === realRecords && pv.body.truncated === false && pv.body.limit === MAX_CAPTURE_ROWS, JSON.stringify(pv.body));
+  check('…and deletes nothing', await count(`select count(*)::int n from tables where id=$1`, [tEdits]) === 1);
+  const pvNone = await preview({ type: 'table.delete', id: randomUUID() });
+  check('something that is not there: exists false, nothing to count', pvNone.body.exists === false && pvNone.body.total === 0);
+  check('a mutation that destroys nothing is not previewed', (await preview({ type: 'record.create', id: randomUUID(), tableId: tEdits, data: {} })).status === 400);
 
   // Undo of a truncated / missing capture must fail loudly, not silently.
   let rejected = false;

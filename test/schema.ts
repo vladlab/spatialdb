@@ -91,6 +91,54 @@ async function main() {
     check('the ↑ ↓ keys are still there', items()[1]!.find('.mv.prev').exists() && items()[1]!.find('.mv.next').exists());
     await w.find('.ts .x').trigger('click');
     await sleep(100);
+
+    console.log('\nS5. Deleting: the dialog says what the SERVER says will go');
+    const tSmall = randomUUID(), fSmall = randomUUID(), fTag = randomUUID();
+    await post([
+      { type: 'table.create', id: tSmall, name: 'Small', singularName: 'Small' },
+      { type: 'field.create', id: fSmall, tableId: tSmall, name: 'Name', key: 'name', fieldType: 'text' },
+      { type: 'field.create', id: fTag, tableId: tSmall, name: 'Tag', key: 'tag', fieldType: 'text' },
+      { type: 'record.create', id: randomUUID(), tableId: tSmall, data: { name: 'one', tag: 'x' } },
+      { type: 'record.create', id: randomUUID(), tableId: tSmall, data: { name: 'two', tag: 'y' } },
+      { type: 'record.create', id: randomUUID(), tableId: tSmall, data: { name: 'three' } },
+    ]);
+    await until(() => w.findAll('.tree .table-row').length === 3, 8000);
+    // The app has never opened Small: it holds none of its records. The old dialog
+    // said "its 0 loaded record(s)".
+    await nav.tableSettings(tSmall);
+    await until(() => w.find('.ts').exists());
+    const smallItems = () => w.findAll('.ts .fitem');
+    await smallItems()[1]!.find('.gear').trigger('click');
+    await until(() => smallItems()[1]!.find('.fopen').exists());
+    await smallItems()[1]!.find('.fopen .delete').trigger('click');
+    await untilDb(`select count(*)::int n from fields where table_id = '${tSmall}'`, (x) => x[0].n === 1, 8000);
+    const fieldBody = nav.dialogs.bodies[nav.dialogs.bodies.length - 1] ?? '';
+    check('a field: how many records hold a value in it, counted by the server (2 — the app had loaded none)', /2 record\(s\)/.test(fieldBody) && /captured/.test(fieldBody), fieldBody);
+    await w.find('.ts .danger').trigger('click');
+    await untilDb(`select count(*)::int n from tables where id = '${tSmall}'`, (x) => x[0].n === 0, 8000);
+    const tableBody = nav.dialogs.bodies[nav.dialogs.bodies.length - 1] ?? '';
+    check('a table: its records and fields by number, and the promise of History — which here is true',
+      /3 records/.test(tableBody) && /1 field/.test(tableBody) && /restored from History/.test(tableBody), tableBody);
+    check('…sent as an ordinary delete', (await pool.query(`select payload from mutations where type = 'table.delete' order by seq desc limit 1`)).rows[0].payload.withoutUndo === undefined);
+
+    console.log('\nS6. Too large to undo: it says so, and a click is not enough');
+    await pool.query(`insert into records (table_id, data) select $1, jsonb_build_object('name', 'bulk ' || g) from generate_series(1, 10001) g`, [tWorks]);
+    await nav.tableSettings(tWorks);
+    await until(() => w.find('.ts').exists());
+    nav.dialogs.text = 'works';                       // not the name: wrong case
+    await w.find('.ts .danger').trigger('click');
+    check('the dialog is a different one: "this cannot be undone"', await until(() => nav.dialogs.seen.some((t: string) => /Works.*cannot be undone/.test(t)), 8000), nav.dialogs.seen.slice(-1).join());
+    await sleep(400);
+    const bigBody = nav.dialogs.bodies[nav.dialogs.bodies.length - 1] ?? '';
+    check('it says how much, the limit, and that a backup is the only way back', /10,00\d rows/.test(bigBody) && /10,000/.test(bigBody) && /backup/.test(bigBody) && !/restored from History/.test(bigBody), bigBody);
+    check('OK is disabled until the table\'s name is typed — the autopilot has been clicking it',
+      w.find('.dlg').exists() && (w.find('.dlg .dlg-ok').element as HTMLButtonElement).disabled
+      && (await pool.query(`select count(*)::int n from tables where id = $1`, [tWorks])).rows[0].n === 1);
+    nav.dialogs.text = 'Works';
+    check('typed exactly, it goes', (await untilDb(`select count(*)::int n from tables where id = '${tWorks}'`, (x) => x[0].n === 0, 15000))[0].n === 0);
+    const last = (await pool.query(`select payload, undo->'truncated' as truncated from mutations where type = 'table.delete' order by seq desc limit 1`)).rows[0];
+    check('…as a delete that says it is permanent, recorded as uncaptured', last.payload.withoutUndo === true && last.truncated === true, JSON.stringify(last));
+    nav.dialogs.text = '';
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);
     await ui.close();
