@@ -270,6 +270,37 @@ async function main() {
   await key('ArrowDown'); await key('ArrowDown'); await key('ArrowDown');
   check('ArrowDown on the last row does nothing', selAt() === '2,4' && rowsNow().length === 3, selAt());
 
+  // The COLUMN the keyboard lands on is scrolled into view. happy-dom has no layout, so
+  // the geometry is handed to it: a scroller 500px wide, `#` and the primary pinned
+  // over its first 200px, then four 150px columns — two of them off to the right.
+  {
+    const sc = w.find('.gridview .scroller').element as HTMLElement;
+    const heads = w.findAll('.gridview thead th.col').map((t: any) => t.element as HTMLElement);
+    const num = sc.querySelector('thead th.num') as HTMLElement;
+    const rect = (left: number, right: number) => ({ left, right, top: 0, bottom: 0, width: right - left, height: 0, x: left, y: 0, toJSON() { return {}; } }) as DOMRect;
+    Object.defineProperty(sc, 'clientWidth', { configurable: true, get: () => 500 });
+    sc.getBoundingClientRect = () => rect(0, 500);
+    num.getBoundingClientRect = () => rect(0, 68);
+    heads.forEach((th, i) => { th.getBoundingClientRect = () => (i === 0 ? rect(68, 200) : rect(200 + (i - 1) * 150 - sc.scrollLeft, 350 + (i - 1) * 150 - sc.scrollLeft)); });
+    sc.scrollLeft = 0;
+    await key('ArrowLeft');                                   // → column 3, which sits at 500–650: off the right edge
+    check('an arrow onto a column off the RIGHT edge scrolls it in — by just enough', selAt() === '2,3' && sc.scrollLeft === 150, `${selAt()} ${sc.scrollLeft}`);
+    await key('ArrowRight');
+    check('…and again for the next one', selAt() === '2,4' && sc.scrollLeft === 300, `${selAt()} ${sc.scrollLeft}`);
+    await key('ArrowLeft');
+    check('a column already in view moves nothing', selAt() === '2,3' && sc.scrollLeft === 300, `${selAt()} ${sc.scrollLeft}`);
+    await key('ArrowLeft');                                   // → column 2, now at 50–200: UNDER the pinned columns
+    check('going back LEFT, a column hidden under the pinned `#` and primary is brought out from under them (not merely to the scroller\'s edge)', selAt() === '2,2' && sc.scrollLeft === 150, `${selAt()} ${sc.scrollLeft}`);
+    await key('ArrowLeft'); await key('ArrowLeft');
+    check('the pinned primary is always in view: landing on it scrolls nothing', selAt() === '2,0' && sc.scrollLeft === 0, `${selAt()} ${sc.scrollLeft}`);
+    await key('Tab', { shiftKey: true });                     // wraps to the LAST column of the row above
+    check('Shift+Tab wrapping to the end of the row above scrolls all the way right', selAt() === '1,4' && sc.scrollLeft === 300, `${selAt()} ${sc.scrollLeft}`);
+    await key('ArrowDown');
+    sc.scrollLeft = 0;
+    delete (sc as any).clientWidth; delete (sc as any).getBoundingClientRect; delete (num as any).getBoundingClientRect;
+    for (const th of heads) delete (th as any).getBoundingClientRect;
+  }
+
   console.log('\nU4c. What gets written, and what must not');
   await untilDb(`select data from records`, (r) => r.length === 3 && r.every((x) => x.data.status));
   const quiet = await mutationCount();

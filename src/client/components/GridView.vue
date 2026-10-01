@@ -872,7 +872,7 @@ function duplicateRows(ids: string[]) {
   void nextTick(() => {
     const ri = rowIndex.value.get(made[0]!);
     const col = sel.value?.field ?? shown.value[0]?.id;
-    if (ri !== undefined && col) { select(made[0]!, col); reveal(ri); }   // select() clears the row selection…
+    if (ri !== undefined && col) { select(made[0]!, col); reveal(ri, col); }   // select() clears the row selection…
     for (const id of made) rowSel.add(id);                                 // …so the copies are marked after
   });
 }
@@ -894,7 +894,7 @@ async function create(context: { data?: Record<string, unknown>; links?: Array<{
   const i = rows.value.findIndex((r) => r.id === id);
   const firstField = shown.value.find((f) => TYPEABLE.has(f.type) && f.type !== 'link') ?? shown.value[0];
   if (i === -1 || !firstField) return;
-  reveal(i);
+  reveal(i, firstField.id);
   await nextTick();
   startEdit(id, firstField);
 }
@@ -1112,7 +1112,7 @@ function move(dRow: number, dCol: number, wrap = false) {
   ri = Math.min(rows.value.length - 1, Math.max(0, ri + dRow));
   ci = Math.min(cols.length - 1, Math.max(0, ci));
   select(rows.value[ri].id, cols[ci].id);
-  reveal(ri);
+  reveal(ri, cols[ci].id);
 }
 
 function onGridKey(e: KeyboardEvent) {
@@ -1138,7 +1138,7 @@ function onGridKey(e: KeyboardEvent) {
     // Nothing selected yet: any arrow picks the first cell, so the keyboard works
     // from a cold start without reaching for the mouse.
     if (e.key.startsWith('Arrow') && rows.value.length && shown.value.length) {
-      e.preventDefault(); select(rows.value[0].id, shown.value[0].id); reveal(0);
+      e.preventDefault(); select(rows.value[0].id, shown.value[0].id); reveal(0, shown.value[0].id);
     }
     return;
   }
@@ -1197,14 +1197,16 @@ const padTop = computed(() => first.value * ROW_H);
 const padBottom = computed(() => (items.value.length - last.value) * ROW_H);
 
 /**
- * Scroll row `i` into view. Done by arithmetic, not scrollIntoView: the row may
- * not be in the DOM (it is windowed), and the sticky header covers the top 28px
- * of the scroller, which scrollIntoView knows nothing about.
+ * Scroll row `i` — and, when a field is named, its COLUMN — into view. Done by
+ * arithmetic, not scrollIntoView: the row may not be in the DOM (it is windowed),
+ * and the sticky header covers the top 28px of the scroller, which scrollIntoView
+ * knows nothing about.
  */
 const HEADER_H = 29;
-function reveal(ri: number) {
+function reveal(ri: number, fieldId?: string) {
   const sc = scroller.value;
   if (!sc) return;
+  if (fieldId) revealCol(fieldId);
   // `ri` counts RECORDS; the scroll position counts ITEMS (group headers take a row each).
   const i = itemIndexOfRow.value[ri] ?? ri;
   const top = i * ROW_H, bottom = top + ROW_H;
@@ -1212,6 +1214,26 @@ function reveal(ri: number) {
   else if (bottom > sc.scrollTop + sc.clientHeight - HEADER_H) {
     sc.scrollTop = bottom - sc.clientHeight + HEADER_H;
   }
+}
+
+/**
+ * Scroll a COLUMN into view — the keyboard walked onto a cell that is off to the
+ * side, or half under an edge. Measured on the column's HEADER cell, which is always
+ * in the DOM (the selected row may be windowed out), and against the PINNED columns:
+ * `#` and the primary are sticky on the left and cover whatever is scrolled under
+ * them, so "in view" starts at the primary's right edge, not the scroller's left —
+ * the same reason the row reveal subtracts the sticky header. A pinned column is
+ * always in view. A column wider than the room there is shows its left edge.
+ */
+function revealCol(fieldId: string) {
+  const sc = scroller.value, th = headerEls.get(fieldId);
+  if (!sc || !th || th.classList.contains('pin')) return;
+  const box = sc.getBoundingClientRect(), cell = th.getBoundingClientRect();
+  const pins = [...sc.querySelectorAll<HTMLElement>('thead th.pin')].map((p) => p.getBoundingClientRect().right);
+  const from = Math.max(box.left, ...pins);                       // where unpinned columns start to show
+  const to = box.left + sc.clientWidth;                           // clientWidth: not under the vertical scrollbar
+  if (cell.left < from) sc.scrollLeft -= from - cell.left;
+  else if (cell.right > to) sc.scrollLeft += Math.min(cell.right - to, cell.left - from);
 }
 
 /* The sort / filter / fields menus are <details>. A <details> only closes when its

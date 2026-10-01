@@ -688,14 +688,13 @@ body {
 .hint { color: var(--text-muted); }
 /* The empty-view placeholders ("No table open — …") wear the padding, not every hint. */
 p.hint { padding: 24px; }
-.grid { border-collapse: collapse; width: 100%; }
-.grid th, .grid td {
-  border: 1px solid var(--border-main); padding: 4px 8px; text-align: left; font-weight: 400;
-}
-.grid th { color: var(--text-muted); font-size: 11px; text-transform: uppercase; }
-.grid tr.pending { opacity: 0.5; }
-.grid tr.done { opacity: 0.4; }
-.grid td.state, .grid th.state { color: var(--text-muted); width: 80px; font-size: 11px; }
+/* (Global `.grid` table rules lived here — the phase-1 debug grid's. GridView styles
+   its own table, scoped; but `border: 1px solid` from here still reached its cells,
+   and once the grid's borders stopped collapsing (pinned columns need `separate`) the
+   top and left borders it had never asked for came back: every line between cells
+   was drawn twice, and every row was 31px where the grid's scroll arithmetic — which
+   rows to render, how far to scroll to reveal one — counts 30. Arrowing down a long
+   table fell a pixel further behind with every row.) */
 /* (A global `.grid input { width: 100% }` lived here — a leftover from the phase-1
    debug grid. The field popovers are INSIDE the grid's <table>, so it stretched
    every checkbox in them to full width: the tick drawn in the middle, its label

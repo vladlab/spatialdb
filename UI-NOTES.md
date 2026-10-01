@@ -16,6 +16,19 @@ sandbox has no browser and `test/ui.ts` cannot see layout or paint.
 
 ## When you come back — a checking order
 
+**The grid follows the keyboard (Oct 1)** — owner: "when navigating fields on a table
+with arrows the view doesn't scroll". Two things, one of them older than it looked:
+1. SIDEWAYS there was no scrolling at all. Arrows, Tab / Shift+Tab (including the wrap
+   to another row), add-record and duplicate now bring the cell's column into view —
+   out from under the pinned `#` and primary when going left, not just to the edge.
+   A mouse click on a half-visible cell does NOT scroll (nothing moves under the pointer).
+2. DOWN it scrolled, but a pixel short per row: leftover global `.grid` table rules
+   in App.vue gave every cell a top and left border the grid never asked for, so rows
+   were 31px while the scroll arithmetic counts 30. Forty rows down, the selection
+   was a row below the window. Those rules are gone — which also means the lines
+   between cells are 1px now, not 2. Say if you preferred the heavier lines; that is a
+   one-line change made on purpose rather than by accident.
+
 **Video layout — a new structured shape (Oct 1)** — a mini EDL on a record: what is
 on the file and where. Add a field → structured → "Video layout", open a record.
 1. Enter a head build the way a spec writes it: Black, type its start
