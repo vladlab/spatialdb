@@ -101,7 +101,7 @@ import RecordPill from './RecordPill.vue';
 import VideoLayoutStrip from './VideoLayoutStrip.vue';
 import type { Store } from '../store';
 import {
-  CARD_BODY_PAD, CARD_HEAD_H, CARD_RICH_H, CARD_RICH_LABEL_H, CARD_ROW_H, CARD_TITLE_H, CARD_W, effectiveHeight,
+  CARD_BODY_PAD, CARD_HEAD_H, CARD_RICH_H, CARD_RICH_LABEL_H, CARD_ROW_H, CARD_TITLE_H, CARD_W, effectiveHeight, lineCount,
 } from '../canvas/cardLayout';
 
 // TipTap's renderer is a large chunk; only a canvas that actually shows a note pays for it.
@@ -173,7 +173,7 @@ const style = computed(() => ({
   transform: `translate(${props.x}px, ${props.y}px)`,
   width: `${props.w ?? CARD_W}px`,
   // Always explicit, from the same function the arrows use — never `auto`.
-  height: `${effectiveHeight(props.h, props.rows.length, props.collapsed, props.rich?.length ?? 0)}px`,
+  height: `${effectiveHeight(props.h, lineCount(props.rows), props.collapsed, props.rich?.length ?? 0)}px`,
   zIndex: String(props.z),
   '--head-h': `${CARD_HEAD_H}px`,
   '--title-h': `${CARD_TITLE_H}px`,
