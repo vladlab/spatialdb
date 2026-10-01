@@ -938,6 +938,19 @@ export async function applyBatch(
 
   await db.query('begin');
   try {
+    // ONE WRITER AT A TIME. `mutations.seq` is assigned when a row is INSERTED, not
+    // when its transaction commits, so two overlapping batches could commit out of
+    // seq order: a 400-record file drop takes seqs 3…402 over half a second, a
+    // colleague's one-cell edit takes seq 30 in the middle and commits first. The
+    // stream delivers 30, and then — correctly, by its own rule — refuses everything
+    // at or below 30 when the drop commits. Every connected client lost 27 records
+    // of that drop, silently, and a reconnect (`since=402`) did not bring them back.
+    // The watermark logic everywhere (stream, catch-up, scene.seq, page.seq) is only
+    // sound if seq order IS commit order, and this lock is what makes it so: it is
+    // held until commit or rollback, and a waiting batch has not taken a seq yet.
+    // The cost is that batches queue behind each other, which at this scale is a
+    // few milliseconds. sql/002 named this as the fix to reach for; test/stream.ts 11.
+    await db.query(`select pg_advisory_xact_lock(hashtext('spatialdb.mutation_log'))`);
     for (const entry of req.mutations) {
       const dupe = await db.query(`select 1 from mutations where id = $1`, [entry.id]);
       if (dupe.rowCount) {

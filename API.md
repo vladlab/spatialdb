@@ -1139,6 +1139,12 @@ Last-write-wins throughout, which at 3–10 people is sufficient:
   real-world conflicts without any CRDT.
 - `placement.move` is last-write-wins per (canvas, record). Two people dragging
   the same card is a social problem, not a technical one.
+- **One batch is applied at a time** (`pg_advisory_xact_lock` at the top of
+  `applyBatch`). `seq` is assigned at insert, so without it a long batch and a
+  short one landing inside it commit out of seq order, and the stream — which
+  only moves forward — drops the long batch's earlier events for every connected
+  client. With it, seq order is commit order, which is what every watermark
+  (`?since=`, `scene.seq`, a page's `seq`) assumes. test/stream.ts 11.
 
 ## Auth
 

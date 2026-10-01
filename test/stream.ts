@@ -426,6 +426,38 @@ async function main() {
     catchingUp.errors.value.join(' | '));
   catchingUp.stop();
 
+  console.log('\n11. Overlapping batches: nobody loses the slow one');
+  // seq is assigned at INSERT, so without a single-writer lock a long batch and a
+  // short one that lands inside it commit out of seq order — and the stream, which
+  // only ever moves forward, drops the long batch's earlier events for everyone.
+  const T11 = randomUUID();
+  await mutate(other, [
+    { id: randomUUID(), mutation: { type: 'table.create', id: T11, name: 'Drop', singularName: 'Drop', color: '', icon: '' } },
+    { id: randomUUID(), mutation: { type: 'field.create', id: randomUUID(), tableId: T11, name: 'Name', key: 'name', fieldType: 'text', options: {}, required: false } },
+  ]);
+  const watcher = createStore({ baseUrl: API });
+  await watcher.hydrate();
+  watcher.start();
+  await watcher.loadTable(T11);
+  await sleep(300);
+  const head11 = (await (await fetch(`${API}/api/head`)).json()).seq as number;
+  const tap11 = await tap(head11);
+  await sleep(200);
+  const big = Array.from({ length: 400 }, (_, i) => ({ id: randomUUID(), mutation: { type: 'record.create', id: randomUUID(), tableId: T11, data: { name: `file ${i}` } } }));
+  const slow = mutate(randomUUID(), big);
+  await sleep(40);                                   // …and while that is still being applied:
+  const quick = await mutate(randomUUID(), [{ id: randomUUID(), mutation: { type: 'record.create', id: randomUUID(), tableId: T11, data: { name: 'a colleague' } } }]);
+  const slowOut = await slow;
+  check('the batch that started first has the lower seqs', slowOut.seq < quick.seq, `${slowOut.seq} vs ${quick.seq}`);
+  for (let i = 0; i < 60 && [...watcher.state.records.values()].filter((r) => r.table_id === T11).length < 401; i++) await sleep(50);
+  const seen = [...watcher.state.records.values()].filter((r) => r.table_id === T11).length;
+  check('a connected client has all 401 records', seen === 401, `${seen}`);
+  const seqs11 = tap11.events.filter((e) => e.kind === 'mutation').map((e) => (e as { seq: number }).seq);
+  check('the live stream delivered every event', seqs11.length === 401, `${seqs11.length}`);
+  check('…in seq order, with no gap', seqs11.every((s, i) => i === 0 || s === seqs11[i - 1] + 1), seqs11.slice(0, 8).join(','));
+  tap11.close();
+  watcher.stop();
+
   console.log(`\n${pass} passed, ${fail} failed\n`);
   await server?.stop();
   await pool.end();
