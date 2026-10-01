@@ -26,11 +26,16 @@
           <div class="kcard-title">{{ labelOf(r) }}<button class="kcard-open" title="Open record" @pointerdown.stop @click.stop="$emit('open-record', r.id)">⤢</button></div>
           <div v-for="f in cardFields" :key="f.id" class="kcard-row">
             <span class="kcard-name">{{ f.name }}</span>
-            <!-- Linked records are PILLS here too (RecordPill.vue): click opens; a press
-                 must not start the card drag. -->
-            <span v-if="linkedIds(r, f).length" class="kcard-val pills">
+            <!-- Linked records are PILLS here too (RecordPill.vue): the ⤢ opens; a press
+                 must not start the card drag. A field shown as a count is one pill. -->
+            <span v-if="derived.countOf(r.id, f)?.n" class="kcard-val pills">
+              <RecordPill :n="derived.countOf(r.id, f)!.n" :text="derived.countOf(r.id, f)!.noun" :title="derived.countOf(r.id, f)!.title"
+                          :back="f.type === 'backlink' && !derived.junctionOfBacklink(f)" :color="derived.pillColorOf(f)" @open="$emit('open-record', r.id)" />
+            </span>
+            <span v-else-if="!derived.countOf(r.id, f) && linkedIds(r, f).length" class="kcard-val pills">
               <RecordPill v-for="(id, i) in linkedIds(r, f)" :key="id + i" :text="linkedTexts(r, f)[i] ?? ''" :back="f.type === 'backlink' && !derived.junctionOfBacklink(f)"
-                          :junction="f.type === 'backlink' && !!derived.junctionOfBacklink(f)" @open="$emit('open-record', id)" @edit="$emit('open-record', id)" />
+                          :junction="f.type === 'backlink' && !!derived.junctionOfBacklink(f)" :status="pairStatus(f, id)" :color="derived.pillColorOf(f)"
+                          @open="$emit('open-record', id)" @edit="$emit('open-record', id)" />
             </span>
             <span v-else class="kcard-val">{{ valueText(r, f) }}</span>
             <span v-if="verdictOf(r.id, f.id)" class="kcard-verdict" :class="{ ok: verdictOf(r.id, f.id)!.ok }" :title="verdictOf(r.id, f.id)!.title">{{ verdictOf(r.id, f.id)!.ok ? '✓' : '⚠' }}</span>
@@ -86,6 +91,11 @@ function linkedIds(r: RecordRow, f: FieldRow): string[] {
   if (f.type !== 'backlink') return [];
   // A junction column's pill opens the PAIR row; a plain backlink's the record holding the link.
   return derived.backlinkOf(r.id, f) ?? [];
+}
+/** A junction column's pill is a pair: its status, drawn as the pill's second segment. */
+function pairStatus(f: FieldRow, rowId: string): string | undefined {
+  const j = f.type === 'backlink' ? derived.junctionOfBacklink(f) : null;
+  return j ? derived.junctionChip(rowId, j.side).status : undefined;
 }
 function linkedTexts(r: RecordRow, f: FieldRow): string[] {
   if (f.type === 'link') return derived.linksFrom(r.id, f.id).map((id) => derived.labelOfId(id));
@@ -174,6 +184,9 @@ function dropInto(toKey: string, records: RecordRow[]) {
 .kcard-row { display: flex; gap: 6px; font-size: 11px; line-height: 1.5; min-width: 0; }
 .kcard-name { color: var(--text-faint); flex: 0 0 auto; }
 .kcard-val { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Pills on a board card: the card's smaller line, and the row's whole width (the room a pill's floating actions use). */
+.kcard-val.pills { flex: 1; }
+.kcard-val :deep(.pill) { font-size: 11px; line-height: 16px; }
 .kcard-verdict { color: var(--warning); font-size: 11px; margin-left: auto; flex: none; cursor: help; }
 .kcard-verdict.ok { color: var(--success); opacity: 0.8; }
 .kcol-empty { margin: 0; color: var(--text-faint); font-size: 11px; text-align: center; padding: 8px; }

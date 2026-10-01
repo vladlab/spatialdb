@@ -102,6 +102,8 @@ async function main() {
     check('one row, status Uploaded, both links — one batch', rows[0].s === 'Uploaded' && rows[0].n === 2, JSON.stringify(rows));
     const chip = () => cellOf('a.mov').find('.pill.junction');
     check('the chip reads "Texted Master › Uploaded"', await until(() => chip().exists() && chip().find('.pill-text').text() === 'Texted Master › Uploaded'), chip().exists() ? chip().text() : 'no chip');
+    check('…drawn as two segments: the other end, then the status (the "›" stays in the text, undrawn)',
+      chip().classes('paired') && chip().find('.pill-main').text() === 'Texted Master' && chip().find('.pill-status').text() === 'Uploaded');
 
     console.log('\nJ3. Same pair again lands on the row; status changes in place');
     await w.find('.je .act:not(.primary):not(.danger)').trigger('click');   // Done
@@ -129,6 +131,7 @@ async function main() {
     const r2 = await untilDb(`select id from records where table_id = '${tJ}'`, (r) => r.length === 1, 8000);
     const chipB = () => cellOf('b.mov').find('.pill.junction');
     check('a row with no status reads just "Trailer"', await until(() => chipB().exists() && chipB().find('.pill-text').text() === 'Trailer'), chipB().exists() ? chipB().text() : 'no chip');
+    check('…as an ordinary pill: no status segment', !chipB().classes('paired') && !chipB().find('.pill-status').exists());
     await chipB().find('.pill-x').trigger('click');
     await untilDb(`select count(*)::int n from records where id = '${r2[0].id}'`, (r) => r[0].n === 0, 4000);
     check('× deletes the row', await until(() => !chipB().exists()));

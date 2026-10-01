@@ -21,6 +21,8 @@ import { labelFrom } from '../contract/labels';
 import { lookupOptionsOf, lookupText, lookupValues } from '../contract/lookups';
 import { backlinkRecords, backlinkSourceOf } from '../contract/backlinks';
 import { endpointOfBacklink, junctionColumnTarget, junctionLabel, junctionOf, otherEnd, type JunctionConfig } from '../contract/junction';
+import { arrowStyleOf } from '../contract/arrows';
+import { countNoun, showsCount } from '../contract/pills';
 
 const NONE: string[] = [];
 
@@ -131,6 +133,55 @@ export function useDerived(store: Store) {
       return { texts: (v ?? []).map((id) => (j ? junctionChip(id, j.side).text : labelOfId(id))), broken: v === null };
     }
     return { texts: [], broken: false };
+  }
+
+  /* ── pills (contract/pills.ts, components/RecordPill.vue) ─────────────── */
+
+  /**
+   * The colour a link-like field's pills wear: the colour of its ARROWS, so that a
+   * relationship reads the same in a grid cell as it does on a canvas. A link's own
+   * arrow colour; a backlink's is its source field's (the two ends of the same
+   * arrows); a junction's — its column, or its endpoint links — is the junction
+   * TABLE's, as its arrows are. Undefined when nobody chose one: the pill is neutral.
+   */
+  function pillColorOf(f: FieldRow): string | undefined {
+    const hex = (c: unknown) => (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c) ? c : undefined);
+    if (f.type === 'link') {
+      const t = store.state.tables.get(f.table_id);
+      return (junctionOf(t) ? hex(t?.color) : undefined) ?? arrowStyleOf(f).color;
+    }
+    if (f.type !== 'backlink') return undefined;
+    const j = junctionOfBacklink(f);
+    if (j) return hex(store.state.tables.get(j.table)?.color);
+    const src = backlinkSourceOf(f);
+    const link = src ? getField(src) : undefined;
+    return link ? arrowStyleOf(link).color : undefined;
+  }
+
+  /** The table whose records a link-like field shows: a link's target, a backlink's source table, a junction column's OTHER end. */
+  function pillTableOf(f: FieldRow): string | null {
+    if (f.type === 'link') return String(f.options?.target_table_id ?? '') || null;
+    if (f.type !== 'backlink') return null;
+    const j = junctionOfBacklink(f);
+    if (j) { const far = getField(j.side === 'a' ? j.cfg.b : j.cfg.a)?.options?.target_table_id; return typeof far === 'string' ? far : null; }
+    const src = backlinkSourceOf(f);
+    return (src && getField(src)?.table_id) || null;
+  }
+
+  /**
+   * A field shown as a COUNT (contract/pills.ts): how many, of what, and — for the
+   * tooltip — which. Null when the field shows pills, or is broken (a broken backlink
+   * says so itself). `n` may be 0: the caller draws nothing then.
+   */
+  function countOf(recordId: string, f: FieldRow): { n: number; noun: string; title: string } | null {
+    if (!showsCount(f)) return null;
+    const { texts, broken } = textOf(recordId, f);
+    if (broken) return null;
+    const table = pillTableOf(f);
+    const noun = countNoun(texts.length, table ? store.state.tables.get(table) : undefined);
+    const shown = texts.slice(0, 12);
+    const title = [...shown, ...(texts.length > shown.length ? [`…and ${texts.length - shown.length} more`] : []), '', '⤢ opens the record, where they are listed'].join('\n');
+    return { n: texts.length, noun, title };
   }
 
   /**
@@ -263,5 +314,5 @@ export function useDerived(store: Store) {
   }
 
   return { labelKeys, linksFrom, linkedTo, labelOfId, plainLabelOfId, lookupOf, backlinkOf, textOf, tablesNeededBy, referencedBy, comparisonsOf, compare, differencesOf, fieldVerdicts, compareTargetTable, compareTargets,
-    junctionCfg, junctionRow, junctionOfBacklink, junctionChip, junctionRowFor };
+    junctionCfg, junctionRow, junctionOfBacklink, junctionChip, junctionRowFor, pillColorOf, pillTableOf, countOf };
 }

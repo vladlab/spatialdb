@@ -16,6 +16,34 @@ sandbox has no browser and `test/ui.ts` cannot see layout or paint.
 
 ## When you come back — a checking order
 
+**Link pills, always visible; a count for busy fields (Oct 1)** — owner: links were
+invisible until hovered, "so all they really do is make text smaller than other fields,
+and oddly formatted at times because we leave space for the edit icons". Chosen from
+five mockups: tinted pills as in Airtable, the field's colour only where one is set,
+and "3 edits" for busy columns. Seen rendered this time (grid, tray, canvas) — except
+the board (kanban) cards, which nobody has looked at.
+1. Every link is a pill at rest: squarish and tinted — a select's chip stays round, so
+   the shape tells a record from a tag. Backlinks are the same pill in OUTLINE (no
+   longer italic). A junction pair is two segments: "Texted Master | Uploaded".
+2. Colour: a link field with an arrow colour tints its pills with it — and so does
+   the backlink that mirrors it, on the other table. A junction's column takes the
+   junction TABLE's colour (Table settings), as its arrows do. No colour set: neutral
+   blue-grey. Do the tints stay clear of the ✓ / ⚠ colours on your real fields?
+3. Hover a pill: ⤢ (✎, ×) float just past its end — over the next column when the
+   pill fills its cell. Nothing is reserved and nothing moves. Only at the window's
+   edge, or on a canvas card with no room left in the row, do they sit over the end
+   of the name instead. Is that last case tolerable on cards with long names?
+4. Field ⚙ → "count", on a link or a backlink: the grid, board cards and canvas
+   cards show one pill, "3 Edits" ("1 Edit" if the table has a singular name; nothing
+   for none). Its ⤢ opens the record; the tray always lists every one. On a
+   junction's column the + that adds a pair stays.
+5. A canvas card is now as TALL as its lines. It was drawn one line per ROW, so a
+   row listing four records pushed the rows under it out of the card (arrows already
+   aimed at the taller card). Cards that list several links are therefore taller than
+   yesterday and may overlap a neighbour placed close below — move it, or tick
+   "count" on the busy field.
+6. A cell whose pills fit exactly no longer hides the last one behind "+1".
+
 **Adding links, in the tray and in the picker (Oct 1)** — owner: a full link field
 has no good way to add more (a junction's has its "add another…" line); and in the
 picker "it's not clear what's already in and what's being searched", with the pills

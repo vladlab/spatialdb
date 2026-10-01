@@ -55,14 +55,20 @@
               @pointerdown.stop.prevent="$emit('link-start', { recordId, fieldId: r.id, e: $event })" />
         <span class="card-key"><span v-if="r.color" class="port-dot" :style="{ background: r.color }" />{{ r.name }}</span>
         <!-- Linked records (a link, a backlink, a junction column) are PILLS — the same
-             pill as the grid and the tray: hover the row and they show; drag one onto the
-             canvas to place it, click to open it. One per line, CARD_MAX_LINES of them. -->
+             pill as the grid and the tray, in the row's colour: drag one onto the canvas
+             to place it, its ⤢ opens it. One per line, CARD_MAX_LINES of them. -->
         <span v-if="r.ids && r.ids.length" class="card-val card-list pills column" :class="{ derived: r.derived }">
           <RecordPill v-for="(id, i) in r.ids.slice(0, CARD_MAX_LINES)" :key="id + i" class="card-line" :text="(r.lines ?? [r.text])[i] ?? ''" :back="!r.link" :junction="r.junction"
+                      :status="r.statuses?.[i]" :color="r.color"
                       title="Drag onto the canvas to place this record here · ⤢ opens it" drag
                       @down="$emit('drag-linked', { recordId: id, e: $event })" @open="$emit('open-linked', id)"
                       @edit="r.junction && r.rows && $emit('edit-pair', { recordId, fieldId: r.id, row: r.rows[i] })" />
           <span v-if="r.ids.length > CARD_MAX_LINES" class="card-line more">+{{ r.ids.length - CARD_MAX_LINES }} more</span>
+        </span>
+        <!-- A field shown as a COUNT (contract/pills.ts): one pill on one line, "12 Files";
+             its ⤢ opens THIS card's record, where they are listed. -->
+        <span v-else-if="r.count" class="card-val card-list pills column">
+          <RecordPill class="card-line" :n="r.count" :text="r.text" :title="r.countTitle" :back="!r.link" :color="r.color" @open="$emit('open', recordId)" />
         </span>
         <span v-else-if="r.lines && r.lines.length > 1" class="card-val card-list" :class="{ derived: r.derived }">
           <span v-for="(l, i) in r.lines.slice(0, CARD_MAX_LINES)" :key="i" class="card-line">{{ l }}</span>
@@ -118,6 +124,11 @@ export interface CardRow {
   /** A junction column's row: its pills are pairs ("Texted Master › Uploaded"); `rows` are the pair rows, one per id. */
   junction?: boolean;
   rows?: string[];
+  /** A junction column's row: each pair's status, in `rows` order — the pill draws it as its second segment. */
+  statuses?: string[];
+  /** A field shown as a COUNT: how many — `text` is then what is counted ("Files"), and the row is one line. */
+  count?: number;
+  countTitle?: string;
   /** Several values (a link to three works): shown as a vertical list, one per line. */
   lines?: string[];
   /** The linked records behind a link/backlink row, in `lines` (or `text`) order — draggable onto this canvas. */
@@ -301,6 +312,12 @@ function onPointerDown(e: PointerEvent) {
 .draggable:hover { color: var(--accent); }
 .card-line { height: var(--row-h); line-height: var(--row-h); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-line.more { color: var(--text-faint); font-size: 10px; }
+/* A PILL on a card line: two pixels shorter than the row, so consecutive pills do not
+   touch — the row's height is arithmetic (cardLayout) and stays what it was. It must
+   not clip itself (its actions float past its end); the list clips for it, and takes
+   the row's whole width so those actions have room. */
+.pill.card-line { height: calc(var(--row-h) - 2px); line-height: calc(var(--row-h) - 2px); margin: 1px 0; overflow: visible; font-size: 11px; }
+.card-list.pills { flex: 1; gap: 0; }
 .card-field { align-items: flex-start; }
 .card-warn { color: var(--warning); font-size: 11px; margin-left: 3px; flex: none; }
 .card-warn.ok { color: var(--success); opacity: 0.8; }

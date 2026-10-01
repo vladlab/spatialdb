@@ -32,6 +32,7 @@ import { validateValue } from '../contract/values.js';
 import { lookupConfigError, type LookupFieldInfo } from '../contract/lookups.js';
 import { backlinkConfigError } from '../contract/backlinks.js';
 import { arrowStyleError } from '../contract/arrows.js';
+import { countOptionError } from '../contract/pills.js';
 import { compareConfigError } from '../contract/compare.js';
 import { SYSTEM_FIELD_TYPES, isSystemKey } from '../contract/systemFields.js';
 import { assetIdsIn } from '../contract/richtext.js';
@@ -410,6 +411,7 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
       if (SYSTEM_FIELD_TYPES.has(m.fieldType)) throw new MutationError(`'${m.fieldType}' is a system field type — every table has it already`);
       if (isSystemKey(m.key)) throw new MutationError(`a field key may not start with '_' (reserved for system fields)`);
       assertArrowStyleValid(m.options);
+      { const err = countOptionError(m.fieldType, m.options); if (err) throw new MutationError(err); }
       await assertCompareValid(db, m.tableId, m.fieldType, m.options);
       if (m.fieldType === 'structured') { const err = shapeOptionError(m.options); if (err) throw new MutationError(err); }
       if (m.fieldType === 'select' || m.fieldType === 'multi_select') { const err = vocabularyOptionError(m.options); if (err) throw new MutationError(err); }
@@ -435,6 +437,7 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
         // Re-pointing an existing lookup gets the same check as creating one.
         const cur = await db.query(`select table_id, type from fields where id = $1`, [m.id]);
         if (cur.rowCount) await assertMembershipValid(db, cur.rows[0].table_id, cur.rows[0].type, m.options, m.id);
+        if (cur.rowCount) { const err = countOptionError(cur.rows[0].type, m.options); if (err) throw new MutationError(err); }
         if (cur.rows[0]?.type === 'lookup') await assertLookupConfigValid(db, cur.rows[0].table_id, m.options);
         if (cur.rows[0]?.type === 'backlink') await assertBacklinkConfigValid(db, cur.rows[0].table_id, m.options);
         if (cur.rowCount) await assertCompareValid(db, cur.rows[0].table_id, cur.rows[0].type, m.options);

@@ -306,9 +306,14 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
       : f.type === 'link' ? derived.linksFrom(rec.id, f.id)
       : j ? rows!.flatMap((row) => { const o = derived.junctionRow(row)?.[otherEnd(j.side)]; return o ? [o] : []; })
       : derived.backlinkOf(rec.id, f) ?? [];
-    return broken ? { id: f.id, name: f.name, broken: true, text: `broken ${f.type}` }
-      : { id: f.id, name: f.name, derived: true, text: texts.join(', '), lines: texts.length > 1 ? texts : undefined,
-          ids, color, link: f.type === 'link' || !!j, junction: !!j, rows };
+    if (broken) return { id: f.id, name: f.name, broken: true, text: `broken ${f.type}` };
+    // Shown as a COUNT (contract/pills.ts): ONE line, however many — still a port, in its colour.
+    const count = derived.countOf(rec.id, f);
+    if (count) return { id: f.id, name: f.name, derived: true, text: count.n ? count.noun : '', count: count.n || undefined, countTitle: count.title,
+      color, link: f.type === 'link' || !!j };
+    return { id: f.id, name: f.name, derived: true, text: texts.join(', '), lines: texts.length > 1 ? texts : undefined,
+      ids, color, link: f.type === 'link' || !!j, junction: !!j, rows,
+      statuses: j ? rows!.map((row) => derived.junctionRow(row)?.status ?? '') : undefined };
   }
   if (f.type === 'rich_text') return { id: f.id, name: f.name, text: richTextToPlain(rec.data[f.key]).split('\n', 1)[0] };
   // A structured value is a one-line SUMMARY on a card ("4 tracks / 12 ch (5.1, 2.0…)"):

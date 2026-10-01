@@ -40,7 +40,10 @@ function measure() {
   let fit = pills.length;
   for (let i = 0; i < pills.length; i++) {
     const r = pills[i]!.getBoundingClientRect();
-    if (r.right - left > width - (i + 1 < pills.length ? BADGE : 0)) { fit = i; break; }
+    // Half a pixel of grace: `clientWidth` is a whole number and a pill's edge is not, so
+    // in a column exactly as wide as its pills the last one "overflowed" by 0.4px — and
+    // was hidden behind a +1 with all the room in the world.
+    if (r.right - left > width + 0.5 - (i + 1 < pills.length ? BADGE : 0)) { fit = i; break; }
   }
   // At least one pill shows, cut if it must — an empty cell would lie.
   fit = Math.max(fit, 1);

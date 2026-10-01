@@ -785,6 +785,22 @@ old → new. `field.update` replaces `options` whole, so send the link's
 `target_table_id` along with it (the client merges; see `setArrowStyle`).
 Which relationships are SHOWN on a canvas is not stored anywhere on the server.
 
+The colour is also the colour of the relationship's **pills** — wherever its linked
+records are shown (grid, tray, cards): the link field's own, the same on a backlink
+that mirrors it, and for a junction's column the junction TABLE's colour, as its
+arrows are (`derived.pillColorOf`). No colour set: the pill is neutral.
+
+### Showing a link or backlink as a count
+
+`field.options.count = true` on a **link** or **backlink** field (a junction's
+column included): where a record gets one line — a grid cell, a board card, a canvas
+card's row — the field shows one pill, "3 Edits" ("1 Edit" with the table's singular
+name), instead of a pill per linked record; nothing at all for none. The record tray
+always lists every one. Validated on write (`src/contract/pills.ts`): a boolean, and
+a 400 on any other field type. It is display only — sorting, filtering, search,
+lookups and reports read the same links. As with `arrow`, `field.update` replaces
+`options` whole (the client merges; see `setCount`).
+
 ### Backlink fields
 
 The other end of a link, as a read-only field — seventh shared contract file,

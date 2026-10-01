@@ -720,32 +720,47 @@ p.hint { padding: 24px; }
   cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1;
 }
 .chip-x:hover { color: var(--danger); }
-/* PILLS — every linked record, everywhere (components/RecordPill.vue). At rest, a
-   name; hover the GROUP (.pills) and every name is a bordered pill; hover ONE and
-   its ⤢ / × show. Action space is always reserved, so nothing shifts. Global on
-   purpose: the grid, the tray, the cards and the kanban must not drift apart. */
-.pills { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 1px 4px; min-width: 0; max-width: 100%; }
-.pills.column { flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: 0; }
+/* PILLS — every linked record, everywhere (components/RecordPill.vue). A pill is
+   ALWAYS drawn as one: tinted for a link, in outline for a backlink, with a darker
+   status segment for a junction pair. Squarish, where a select's chip is round —
+   the shape is what tells a record from a tag. Neutral, unless the relationship has
+   a colour: then RecordPill sets the three --pill-* tints from it. The actions
+   float past the pill's end on hover (or over its tail — `.flip` — when there is no
+   room past it): no space is kept for them, and nothing shifts. Global on purpose:
+   the grid, the tray, the cards and the kanban must not drift apart. */
+.pills { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; min-width: 0; max-width: 100%; }
+.pills.column { flex-direction: column; align-items: flex-start; flex-wrap: nowrap; gap: 2px; }
 .pill {
-  display: inline-flex; align-items: center; gap: 2px; min-width: 0; box-sizing: border-box;
-  border: 1px solid transparent; border-radius: 10px; padding: 0 3px 0 6px;
-  font-size: 11px; line-height: 16px; white-space: nowrap; color: inherit;
+  --pill-bg: rgba(96, 150, 204, 0.2); --pill-edge: transparent; --pill-line: rgba(120, 160, 200, 0.45);
+  position: relative; display: inline-flex; align-items: center; min-width: 0; max-width: 100%; box-sizing: border-box;
+  border-radius: 4px; background: var(--pill-bg); box-shadow: inset 0 0 0 1px var(--pill-edge);
+  font-size: 12px; font-style: normal; line-height: 20px; white-space: nowrap; color: var(--text-primary); cursor: default;
 }
-.pill-text { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.pill.back { font-style: italic; color: var(--text-secondary); }
-.pill.junction { font-style: normal; }
-.pills:hover .pill, .pill.on { background: var(--controls-bg); border-color: var(--border-main); }
-.pill:hover { border-color: var(--accent); }
-.pill.on { border-color: var(--accent); }
-.pill-open, .pill-edit, .pill-x { visibility: hidden; background: none; border: none; cursor: pointer; font-size: 11px; line-height: 1; padding: 0 1px; }
+.pill-text { overflow: hidden; text-overflow: ellipsis; min-width: 0; padding: 0 7px; }
+.pill.back { background: none; box-shadow: inset 0 0 0 1px var(--pill-line); color: var(--text-secondary); }
+/* A pair: the other end, then its status as a segment of its own. The "›" between
+   them stays in the text (search, tests, a screen reader) and is only not drawn. */
+.pill.paired .pill-text { display: inline-flex; padding: 0; }
+.pill-main { overflow: hidden; text-overflow: ellipsis; min-width: 0; padding: 0 7px; }
+.pill-sep { display: none; }
+.pill-status { flex: none; padding: 0 7px; border-radius: 0 4px 4px 0; background: rgba(0, 0, 0, 0.3); color: var(--text-secondary); }
+/* A count ("3 Edits"): the number carries it, the noun is quieter. */
+.pill.count .pill-text { color: var(--text-secondary); }
+.pill-n { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.pill:hover, .pill.on { box-shadow: inset 0 0 0 1px var(--accent); }
+.pill-actions {
+  position: absolute; left: calc(100% - 3px); top: 50%; transform: translateY(-50%); z-index: 6;
+  display: none; align-items: center; height: 18px; box-sizing: border-box; padding: 0 2px;
+  background: var(--controls-bg); border: 1px solid var(--accent); border-radius: 4px; box-shadow: var(--card-shadow);
+}
+.pill:hover > .pill-actions { display: inline-flex; }
+.pill.flip > .pill-actions { left: auto; right: 0; }
+.pill-open, .pill-edit, .pill-x { background: none; border: none; cursor: pointer; font-size: 11px; line-height: 16px; padding: 0 3px; }
 .pill-open { color: var(--accent); }
 .pill-edit { color: var(--text-secondary); }
 .pill-edit:hover { color: var(--accent); }
 .pill-x { color: var(--text-muted); font-size: 12px; }
 .pill-x:hover { color: var(--danger); }
-.pill:hover .pill-open, .pill:hover .pill-edit, .pill:hover .pill-x { visibility: visible; }
-.pill-text { cursor: default; }
-.pill { cursor: default; }
 .pills.column .pill, .rp-value .pill { cursor: grab; }   /* draggable ones (cards, tray) */
 /* A pill you can OPEN: the whole pill is the click target; the ⤢ is only a hint,
    revealed on hover with its space always reserved so nothing shifts. */

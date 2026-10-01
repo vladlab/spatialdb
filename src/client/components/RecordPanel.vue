@@ -79,7 +79,7 @@
                  apart by movement. -->
             <span class="pills column">
               <RecordPill v-for="to in linksFrom(f.id)" :key="to" :text="labelOfId(to)" title="Drag onto a canvas to place it · ⤢ opens it"
-                          removable drag @down="dragPill(to, $event)" @open="$emit('open', to)" @remove="removeLink(f.id, to)" />
+                          :color="derived.pillColorOf(f)" removable drag @down="dragPill(to, $event)" @open="$emit('open', to)" @remove="removeLink(f.id, to)" />
             </span>
             <!-- The way IN, always there — as a junction's field has it: "add another
                  Deliverable…" under the links (a field that is full of links used to
@@ -104,6 +104,7 @@
             <template v-else-if="junctionOf(f)">
               <span class="pills column">
                 <RecordPill v-for="row in derived.backlinkOf(recordId, f) ?? []" :key="row" junction :text="derived.junctionChip(row, junctionOf(f)!.side).text"
+                            :status="derived.junctionChip(row, junctionOf(f)!.side).status" :color="derived.pillColorOf(f)"
                             :on="editingId === f.id && junctionRow === row" title="A pair: ✎ changes its status, ⤢ opens it"
                             removable remove-title="Delete this pair (undo restores it)"
                             @edit="editJunction(f, row)" @open="$emit('open', row)" @remove="store.mutate({ type: 'record.delete', id: row })" />
@@ -115,7 +116,7 @@
             </template>
             <template v-else>
               <span class="pills column">
-                <RecordPill v-for="from in derived.backlinkOf(recordId, f) ?? []" :key="from" back :text="labelOfId(from)"
+                <RecordPill v-for="from in derived.backlinkOf(recordId, f) ?? []" :key="from" back :text="labelOfId(from)" :color="derived.pillColorOf(f)"
                             title="Drag onto a canvas to place it · ⤢ opens it" drag @down="dragPill(from, $event)" @open="$emit('open', from)" />
               </span>
               <span v-if="derived.backlinkOf(recordId, f)?.length === 0" class="placeholder">nothing links here</span>
@@ -160,7 +161,7 @@
           <span class="rp-ref-via">{{ g.tableName }} · {{ g.field.name }}</span>
           <span class="pills">
             <RecordPill v-for="from in g.from" :key="from" back :text="labelOfId(from)" title="Drag onto a canvas to place it · ⤢ opens it"
-                        drag @down="dragPill(from, $event)" @open="$emit('open', from)" />
+                        :color="derived.pillColorOf(g.field)" drag @down="dragPill(from, $event)" @open="$emit('open', from)" />
           </span>
         </div>
       </div>

@@ -375,6 +375,18 @@ export function useSchemaActions(store: Store) {
     store.mutate({ type: 'field.update', id, options: on ? { ...rest, single: true } : rest });
   }
 
+  /**
+   * Show a link or backlink as a COUNT — "3 Edits" — where a record gets one line:
+   * the grid, a board card, a canvas card (contract/pills.ts). The tray still lists.
+   */
+  function setCount(id: string, on: boolean) {
+    const f = store.state.fields.get(id);
+    if (!f || (f.type !== 'link' && f.type !== 'backlink')) return;
+    const { count: _old, ...rest } = f.options ?? {};
+    void _old;
+    store.mutate({ type: 'field.update', id, options: on ? { ...rest, count: true } : rest });
+  }
+
   function setMembership(id: string, on: boolean) {
     const f = store.state.fields.get(id);
     if (!f || f.type !== 'link') return;
@@ -471,7 +483,7 @@ export function useSchemaActions(store: Store) {
     createTable, createJunction, renameTable, deleteTable, setJunction,
     draftError, createField, renameField, setChoices, moveField, reorderFields, makePrimary, isPrimary,
     canBePrimary, deleteField,
-    setArrowStyle, setMembership, setSingle, setVocabulary, setTools, enableFileDrop, disableFileDrop, addToolFields, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
+    setArrowStyle, setMembership, setSingle, setCount, setVocabulary, setTools, enableFileDrop, disableFileDrop, addToolFields, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
   };
 }
 export type SchemaActions = ReturnType<typeof useSchemaActions>;

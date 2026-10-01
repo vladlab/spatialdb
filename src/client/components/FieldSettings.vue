@@ -44,7 +44,7 @@
 
     <!-- LINK fields: how their relationships are drawn, on EVERY canvas. -->
     <span v-if="field.type === 'link'" class="arrow-style">
-      <label class="arrow-color" title="Arrow colour for this relationship — the same on every canvas">
+      <label class="arrow-color" title="The colour of this relationship — its arrows on every canvas, and its pills wherever its links are shown (here, and on the table it points at). Without one, pills are neutral.">
         arrow
         <input type="color" :value="arrow.color ?? '#8a8a8a'"
                @change="actions.setArrowStyle(field.id, { color: ($event.target as HTMLInputElement).value })" />
@@ -75,6 +75,13 @@
       compare
     </label>
     <ComparePairs v-if="(field.type === 'link' || compareTarget) && field.options?.compare !== undefined" :store="store" :field="field" />
+    <!-- LINK and BACKLINK fields: shown as a COUNT where a record gets one line (contract/pills.ts). -->
+    <label v-if="field.type === 'link' || field.type === 'backlink'" class="count-tick"
+           :title="`Tick for a busy field: the grid, board cards and canvas cards then show a count — “3 ${countedName}” — instead of a pill per record. The record tray still lists every one.`">
+      <input type="checkbox" :checked="field.options?.count === true"
+             @change="actions.setCount(field.id, ($event.target as HTMLInputElement).checked)" />
+      count
+    </label>
     <!-- LINK fields: is this the link through which records BELONG to something? -->
     <label v-if="field.type === 'link'" class="membership"
            :title="`Tick if a record of this table BELONGS to the ${targetName} record it links to — e.g. a file belongs to a project. A section scoped by ${targetName} then narrows this table to one of them, and new records made there are linked automatically. One such field per table.`">
@@ -128,6 +135,8 @@ function toggleCompare(on: boolean) {
   props.store.mutate({ type: 'field.update', id: props.field.id, options: { ...rest, compare: { pairs } } });
 }
 
+/** What a count of this field counts: the table its pills are records of. */
+const countedName = computed(() => { const t = derived.pillTableOf(props.field); return (t && props.store.state.tables.get(t)?.name) || 'records'; });
 const targetName = computed(() => {
   const id = (props.field.options?.target_table_id as string | undefined) ?? compareTarget.value ?? undefined;
   return (id && props.store.state.tables.get(id)?.name) || '(missing table)';
@@ -161,8 +170,8 @@ input:not([type='checkbox']):not([type='color']) {
 .lookup.broken { color: var(--danger); }
 .field-settings.row .lookup { width: auto; }
 input[type='checkbox'] { width: auto; flex: none; margin: 0; }
-.field-settings.stack .membership, .field-settings.stack .arrow-style { align-self: flex-start; }
-.membership, .single, .compare-tick { display: flex; gap: 4px; align-items: center; cursor: pointer; color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.field-settings.stack .membership, .field-settings.stack .arrow-style, .field-settings.stack .count-tick { align-self: flex-start; }
+.membership, .single, .compare-tick, .count-tick { display: flex; gap: 4px; align-items: center; cursor: pointer; color: var(--text-muted); font-size: 11px; white-space: nowrap; }
 .arrow-style { display: flex; gap: 6px; align-items: center; color: var(--text-muted); font-size: 11px; }
 .arrow-style label { display: flex; gap: 4px; align-items: center; cursor: pointer; }
 .arrow-style input[type='color'] { width: 22px; height: 18px; padding: 0; border: 1px solid var(--border-main); background: none; cursor: pointer; }

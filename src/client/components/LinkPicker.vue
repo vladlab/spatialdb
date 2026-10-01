@@ -45,7 +45,7 @@
   <div class="picker" :class="{ inline, field }" :style="inline || field ? undefined : pos" @keydown.stop="onKey" @mousedown.stop>
     <div v-if="!field && linked.length" class="current">
       <span class="sec">linked</span>
-      <span v-for="id in linked" :key="id" class="chip">
+      <span v-for="id in linked" :key="id" class="chip linked">
         {{ label(id) }}<button class="chip-x" tabindex="-1" :title="`Unlink ${label(id)}`"
                                @mousedown.prevent @click="$emit('remove', id)">×</button>
       </span>
@@ -251,6 +251,8 @@ onMounted(() => {
 /* ADD: the search line, and under it what it finds. */
 .find { display: flex; align-items: center; gap: 4px; padding: 4px 6px; }
 .sec.add { color: var(--success); }
+/* What is already linked: the pill look (RecordPill) — squarish and tinted — not a tag's round chip. */
+.chip.linked { border-radius: 4px; border-color: transparent; background: rgba(96, 150, 204, 0.2); font-size: 12px; margin: 0; padding: 1px 3px 1px 7px; }
 .q {
   flex: 1; min-width: 120px; background: none; border: none; outline: none;
   color: inherit; font: inherit; padding: 2px 0;

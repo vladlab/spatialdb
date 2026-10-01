@@ -105,8 +105,8 @@ const fieldName = (id: unknown) => props.store.state.fields.get(String(id ?? '')
 function summaryOf(f: FieldRow): string {
   const o = f.options ?? {};
   switch (f.type) {
-    case 'link': return `→ ${tableName(o.target_table_id)}${o.single ? ' · single' : ''}${o.membership ? ' · membership' : ''}${o.compare ? ' · compares' : ''}`;
-    case 'backlink': { const src = props.store.state.fields.get(String(o.source_field_id ?? '')); return src ? `← ${tableName(src.table_id)}.${src.name}${o.compare ? ' · compares' : ''}` : '← (broken)'; }
+    case 'link': return `→ ${tableName(o.target_table_id)}${o.single ? ' · single' : ''}${o.membership ? ' · membership' : ''}${o.compare ? ' · compares' : ''}${o.count === true ? ' · as count' : ''}`;
+    case 'backlink': { const src = props.store.state.fields.get(String(o.source_field_id ?? '')); return src ? `← ${tableName(src.table_id)}.${src.name}${o.compare ? ' · compares' : ''}${o.count === true ? ' · as count' : ''}` : '← (broken)'; }
     case 'lookup': return `${fieldName(o.via_field_id)} → ${fieldName(o.show_field_id)}`;
     case 'select': case 'multi_select': { const c = choicesOf(o); return o.vocabulary ? `built-in: ${o.vocabulary}` : c ? `${c.length} choice${c.length === 1 ? '' : 's'}${c.length ? ': ' + c.slice(0, 4).join(', ') + (c.length > 4 ? '…' : '') : ''}` : ''; }
     case 'structured': return shapeOf(f) ?? '';
