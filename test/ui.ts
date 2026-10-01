@@ -253,10 +253,19 @@ async function main() {
   }
   check('three rows, in the order they were entered', names().join() === 'reel_10,reel_2,reel_1', names().join());
   check('the count agrees', /3 records/.test(w.find('.count').text()), w.find('.count').text());
+  // What a cell IS has to show: a select's value is a round capsule, typed text is bare.
+  check('a select\'s value is drawn as a capsule; a text cell and a number cell are not',
+    cell(0, 2).find('.choice').exists() && cell(0, 2).find('.choice').text() === 'done' && !cell(0, 0).find('.choice').exists() && !cell(0, 1).find('.choice').exists(), cell(0, 2).html());
+  check('every second row is banded — by its position in the view, not by the DOM', rowsNow().map((r) => r.classes('alt')).join() === 'false,true,false', rowsNow().map((r) => r.classes('alt')).join());
+  check('the SELECTED select cell, and only it, shows the dropdown arrow', selAt() === '2,2' && w.findAll('.gridview .choice-arrow').length === 1 && cell(2, 2).find('.choice-arrow').exists(), `${selAt()}: ${w.findAll('.gridview .choice-arrow').length}`);
+  await key('Enter');
+  check('…and not while the picker is open under it', editor().exists() && !w.find('.gridview .choice-arrow').exists());
+  await editor().trigger('keydown', { key: 'Escape' });
 
   console.log('\nU4b. Moving around');
   await cell(0, 0).trigger('mousedown');
   check('a click selects without opening an editor', selAt() === '0,0' && !editor().exists(), selAt());
+  check('a selected TEXT cell gets no dropdown arrow', !w.find('.gridview .choice-arrow').exists());
   await key('ArrowDown'); await key('ArrowRight');
   check('arrows move the selection', selAt() === '1,1', selAt());
   await key('ArrowUp'); await key('ArrowUp'); await key('ArrowUp');
@@ -685,6 +694,7 @@ async function main() {
     panel().findAll('.rp-field').length === nFields + 2 && pField('Name').find('.star').exists() && panel().findAll('.rp-name').slice(-2).map((n) => n.text().trim()).join() === 'Created,Created by',
     `${panel().findAll('.rp-field').length} of ${nFields}; names: ${panel().findAll('.rp-name').map((n) => n.text()).join('|')}`);
   check('a record with data opens READING, not editing', !pEditor().exists());
+  check('the tray shows a select\'s value as the same capsule the grid does', pField('Status').find('.rp-value .choice').exists() && !pField('Name').find('.rp-value .choice').exists(), pField('Status').html());
 
   await pField('Frames').find('.rp-value').trigger('click');
   check('clicking a value opens the same editor the grid uses', pEditor().exists());
@@ -1422,6 +1432,9 @@ async function main() {
     `${JSON.stringify(headers())} vs ${JSON.stringify(expected)}`);
   check('the empty group is last', !expected.some((e) => !e.s) || headers()[headers().length - 1].label === '(empty)');
   check('every record is still there exactly once; the count in the toolbar has not changed', rowsNow().length === recordCount && new RegExp(`^\\s*${recordCount} records`).test(w.find('.gridview .count').text()), w.find('.gridview .count').text());
+  // Banding restarts under each header: the first row of a group is the plain one, then they alternate.
+  const bands = () => { const out: string[] = []; let n = 0; for (const tr of w.findAll('.gridview tbody tr')) { if (tr.classes('group-row')) n = 0; else if (tr.classes('row')) out.push(`${tr.classes('alt')}=${n++ % 2 === 1}`); } return out; };
+  check('banding counts from each group header, so no group opens on a banded row', bands().length === recordCount && bands().every((b) => b === 'true=true' || b === 'false=false'), bands().join());
   check('row numbers count RECORDS, not header rows', w.findAll('.gridview tr.row .n').map((n) => n.text()).join() === Array.from({ length: recordCount }, (_, i) => String(i + 1)).join());
   check('the grouping is part of the VIEW (saved, shared)', (await untilDb(`select config from views where table_id = '${filesId}' and jsonb_array_length(coalesce(config->'groupBy', '[]')) = 1`, (r) => r.length === 1))[0]?.config.groupBy[0] === statusField);
   check('the toolbar says what it is grouped by', /group · Status/.test(gm().find('summary').text()), gm().find('summary').text());

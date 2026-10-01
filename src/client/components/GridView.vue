@@ -300,7 +300,7 @@
                (long) body below; it always renders exactly one row. -->
           <template v-else>
           <tr v-for="r in [it.record]" :key="r.id" class="row"
-              :class="{ pending: store.unconfirmed.value.has(r.id), fresh: fresh.has(r.id), rowsel: rowSel.has(r.id) }">
+              :class="{ pending: store.unconfirmed.value.has(r.id), fresh: fresh.has(r.id), rowsel: rowSel.has(r.id), alt: banded.has(r.id) }">
             <!-- The row's HANDLE: click to select the row, drag to carry the selection
                  somewhere (a canvas). The ⤢ keeps to the right edge so it never sits
                  under a press meant for the handle. -->
@@ -356,9 +356,12 @@
                      column jump wider on Enter and snap back on commit. -->
                 <template v-else>
                   <span class="shown" :class="{ under: isSel(r.id, f.id) && editing && f.type !== 'backlink' }">
+                    <!-- SELECT / MULTI-SELECT: each choice is a round capsule (App.vue, .choice) —
+                         a value from a set list, not typed text, and not a record's pill. -->
                     <template v-if="f.type === 'multi_select'">
-                      <span v-for="c in asList(r.data[f.key])" :key="c" class="chip plain">{{ c }}</span>
+                      <span v-for="c in asList(r.data[f.key])" :key="c" class="choice many">{{ c }}</span>
                     </template>
+                    <span v-else-if="f.type === 'select' && display(r.data[f.key])" class="value choice">{{ display(r.data[f.key]) }}</span>
                     <!-- RICH TEXT / ATTACHMENT: a summary. Neither fits a 30px row, so
                          Enter (or a double-click) opens the record panel instead. -->
                     <span v-else-if="f.type === 'rich_text'" class="value note" title="Enter opens the record to read or edit this">{{ notePreview(r.data[f.key]) }}</span>
@@ -406,6 +409,11 @@
                     <!-- The comparison's verdict on this cell — the same ✓ / ⚠ as the tray and cards. -->
                     <span v-if="verdictOf(r.id, f.id)" class="cell-verdict" :class="{ ok: verdictOf(r.id, f.id)!.ok }" :title="verdictOf(r.id, f.id)!.title">{{ verdictOf(r.id, f.id)!.ok ? '✓' : '⚠' }}</span>
                   </span>
+                  <!-- The DROPDOWN ARROW, on the selected cell only: a column of arrows is noise,
+                       and beside several capsules it reads as one more of them. Laid OVER the
+                       cell's right edge, so selecting never changes a width; and it takes no
+                       press, so a click on it is the second click on the cell — which edits. -->
+                  <span v-if="(f.type === 'select' || f.type === 'multi_select') && isSel(r.id, f.id) && !editing" class="choice-arrow" aria-hidden="true" />
                   <!-- A junction column's editor. OUTSIDE .shown: the editing cell's .shown goes
                        visibility:hidden (the value hides under the editor), and a popover inside it
                        would inherit that and never appear. Not a CellEditor either: one mounting
@@ -965,6 +973,15 @@ const items = computed(() => groupRows(matched.value, allFields.value, groupBy.v
   (recId, fieldId) => derived.linksFrom(recId, fieldId), collapsed));
 const rows = computed(() => items.value.flatMap((it) => (it.kind === 'row' ? [it.record] : [])));
 const rowIndex = computed(() => new Map(rows.value.map((r, i) => [r.id, i])));
+/** BANDING: every second row is a shade lighter, so the eye can follow one across a wide
+ *  table. Counted from each group header — the first row under a header is always the
+ *  plain one — and by POSITION in the view, not by the DOM: the window renders a slice,
+ *  and `:nth-child` over a slice would re-stripe the rows as you scroll. */
+const banded = computed(() => {
+  const s = new Set<string>(); let n = 0;
+  for (const it of items.value) { if (it.kind === 'group') n = 0; else if (n++ % 2 === 1) s.add(it.record.id); }
+  return s;
+});
 /** Where record `ri` is in `items` — what `reveal` scrolls to. */
 const itemIndexOfRow = computed(() => { const m: number[] = []; items.value.forEach((it, i) => { if (it.kind === 'row') m.push(i); }); return m; });
 
@@ -1360,10 +1377,12 @@ watch(() => props.tableId, () => { activeId.value = ''; search.value = ''; });
   border-right: 1px solid var(--border-main); border-bottom: 1px solid var(--border-main);
   padding: 0 8px; text-align: left; font-weight: 400;
 }
+/* The HEADER is not a row of data: its own, lighter shade, bolder text and a firmer
+   line under it (the tokens are in App.vue). */
 .grid th {
-  position: sticky; top: 0; z-index: 10; background: var(--bg-app);
-  color: var(--text-muted); font-size: 11px; text-transform: uppercase;
-  height: 28px; white-space: nowrap; user-select: none;
+  position: sticky; top: 0; z-index: 10; background: var(--bg-head);
+  color: var(--head-text); font-size: 11px; font-weight: 600; text-transform: uppercase;
+  height: 28px; white-space: nowrap; user-select: none; border-bottom-color: var(--head-line);
 }
 .grid th.col { cursor: grab; box-sizing: border-box; }
 .grid th.col:hover { color: var(--text-primary); }
@@ -1371,7 +1390,7 @@ watch(() => props.tableId, () => { activeId.value = ''; search.value = ''; });
 .grid td.sized { box-sizing: border-box; }
 .grid td.sized .cell { min-width: 0; max-width: none; }
 .th-sort {
-  background: none; border: none; color: var(--text-faint); cursor: pointer;
+  background: none; border: none; color: var(--text-muted); cursor: pointer;
   font: inherit; font-size: 11px; padding: 0 2px; margin-left: 4px; visibility: hidden;
 }
 th:hover .th-sort, .th-sort.on { visibility: visible; }
@@ -1379,7 +1398,7 @@ th:hover .th-sort, .th-sort.on { visibility: visible; }
 .th-sort:hover { color: var(--accent); }
 .star { color: var(--warning); margin-right: 2px; }
 .th-menu, .th-add {
-  background: none; border: none; color: var(--text-faint); cursor: pointer;
+  background: none; border: none; color: var(--text-muted); cursor: pointer;
   font: inherit; padding: 0 2px; margin-left: 4px;
 }
 /* A GEAR, not a ▾: a small triangle beside the ▲/▼ sort mark read as part of the
@@ -1393,14 +1412,23 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
    is the primary's `left` offset (NUM_W below and in .num). A pinned th is sticky in
    BOTH axes; the scrolled-past cells slide under it, so it needs an opaque background
    and to sit above the unpinned ones (and the header row above all rows). */
-.grid th.pin, .grid td.pin { position: sticky; left: 0; z-index: 5; background: var(--bg-app); }
+.grid th.pin, .grid td.pin { position: sticky; left: 0; z-index: 5; }
 .grid th.pin { z-index: 12; }
 .grid th.pin:not(.num), .grid td.pin:not(.num) { left: 68px; }
-/* Every row-state colour is translucent; on a pinned cell it must sit on the app
-   background, or the cells scrolled underneath show through. */
-.row:hover td.pin { background: linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--bg-app); }
-.row.rowsel td.pin { background: linear-gradient(rgba(66, 165, 245, 0.14), rgba(66, 165, 245, 0.14)), var(--bg-app); }
-.row.fresh td.pin { background: linear-gradient(rgba(66, 165, 245, 0.05), rgba(66, 165, 245, 0.05)), var(--bg-app); }
+/* A ROW'S BACKGROUND, in two variables, so every cell of it — pinned or not — paints
+   the same thing. `--row-bg` is the row's own shade: plain, or the band's on every
+   second row. `--cell-bg` is that with the row's state tinted over it. The states are
+   translucent and a pinned cell must be OPAQUE (the cells scrolled underneath would
+   show through), so the tint is a flat gradient laid on the solid shade — for every
+   cell, not only the pinned ones: two rules for one colour is how the pinned columns
+   once hovered a different grey from the rest of their row. Later wins: a selected
+   row stays selected under the pointer. */
+.row { --row-bg: var(--bg-app); --cell-bg: var(--row-bg); }
+.row.alt { --row-bg: var(--bg-band); }
+.row.fresh { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.05), rgba(66, 165, 245, 0.05)), var(--row-bg); }
+.row:hover { --cell-bg: linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--row-bg); }
+.row.rowsel { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.14), rgba(66, 165, 245, 0.14)), var(--row-bg); }
+.row td { background: var(--cell-bg); }
 .grid td.pin:not(.num) { border-right: 2px solid var(--border-main); }
 .grid th.pin:not(.num) { border-right: 2px solid var(--border-main); }
 /* Reordering: the lifted header dims; an accent bar marks where it will land. */
@@ -1431,7 +1459,6 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 }
 .num .dup { right: 17px; color: var(--text-muted); font-size: 11px; }
 .num .dup:hover { color: var(--accent); }
-.row.rowsel td { background: rgba(66, 165, 245, 0.14); }
 .row.rowsel .num { color: var(--accent); }
 /* The view control is the first thing in the bar and reads as a LABEL + NAME, not
    as one more button: it answers "which view am I in" before it is ever opened. */
@@ -1458,7 +1485,7 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .add-group { display: block; width: 100%; text-align: left; background: none; border: none; color: var(--accent); cursor: pointer; font: inherit; padding: 5px 6px; }
 .cell-verdict { color: var(--warning); font-size: 11px; margin-left: 4px; cursor: help; flex: none; }
 .cell-verdict.ok { color: var(--success); opacity: 0.8; }
-.group-row td { padding: 0; background: var(--controls-bg); border-bottom: 1px solid var(--border-main); height: 29px; }
+.group-row td { padding: 0; background: var(--bg-group); border-bottom: 1px solid var(--border-main); height: 29px; }
 .group-row.level-1 td { background: var(--bg-app); }
 .group-head { display: flex; align-items: center; gap: 8px; height: 29px; box-sizing: border-box; white-space: nowrap; position: sticky; left: 0; max-width: 100vw; }
 .group-fold { background: none; border: none; color: var(--text-muted); cursor: pointer; width: 16px; padding: 0; font: inherit; font-size: 10px; }
@@ -1495,7 +1522,15 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .looked-up { color: var(--text-secondary); font-style: italic; }
 .broken { color: var(--danger); font-size: 11px; }
 .value.note { color: var(--text-secondary); }
-.chip.plain { padding: 1px 8px; }
+/* Capsules side by side (a multi-select): 4px apart with .shown's own 2px gap. */
+.shown .choice + .choice { margin-left: 2px; }
+/* The selected select cell's arrow. It covers the last 16px of the cell with the row's
+   own background (so a long value ends under it instead of running through it), the
+   chevron drawn on top. */
+.choice-arrow {
+  position: absolute; top: 0; bottom: 0; right: 0; width: 16px; pointer-events: none;
+  background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23b0b0b0' stroke-width='1.5'/></svg>") no-repeat right 1px center, var(--cell-bg);
+}
 /* In a cell the pills do not wrap and do not shrink: the ones that do not fit are
    hidden (CellPills measures) and the +N says so — the one thing the cell must not hide. */
 /* …and it takes the cell's whole width, so the actions that float past a pill's end
@@ -1518,8 +1553,6 @@ td:hover .junc-add, td.sel .junc-add { visibility: visible; }
   overflow: hidden; white-space: nowrap;
 }
 .row.pending { opacity: 0.55; }
-.row.fresh td { background: rgba(66, 165, 245, 0.05); }
-.row:hover td { background: var(--bg-surface-hover); }
 .hint { padding: 24px; color: var(--text-muted); }
 .foot { flex: none; padding: 6px 12px; border-top: 1px solid var(--border-main); }
 .ghost:disabled { opacity: 0.4; cursor: default; }

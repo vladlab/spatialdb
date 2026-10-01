@@ -110,7 +110,7 @@ async function main() {
     await tagsField().find('.cp-input').setValue('a');
     check('"a" fuzzily matches alpha, beta, delta (in that order: prefix first, then substring)', tagsField().findAll('.cp-item').map((i: any) => i.text()).join() === 'alpha,beta,delta', tagsField().findAll('.cp-item').map((i: any) => i.text()).join());
     await tagsField().find('.cp-input').trigger('keydown', { key: 'Escape' });
-    check('Escape closes it; what was ticked stays', await until(() => !tagsField().find('.cp').exists()) && tagsField().findAll('.chip').length === 1);
+    check('Escape closes it; what was ticked stays — as a capsule', await until(() => !tagsField().find('.cp').exists()) && tagsField().findAll('.choice').length === 1 && tagsField().find('.choice').text() === 'gamma');
     await w.find('.record-panel .rp-close').trigger('click');
 
     console.log('\nT2. Creating a structured field');

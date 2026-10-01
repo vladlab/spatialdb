@@ -51,7 +51,7 @@
                   @pick="(v) => { draft = v; if (commit()) finish('none'); }" @escape="cancelEdit()" @blur="onBlur" />
 
     <template v-else-if="field.type === 'multi_select'">
-      <span v-for="c in picked" :key="c" class="chip">
+      <span v-for="c in picked" :key="c" class="chip choice">
         {{ c }}<button class="chip-x" tabindex="-1" :title="`Remove ${c}`" @mousedown.prevent @click="toggle(c)">×</button>
       </span>
       <!-- The same picker over the REMAINING choices; each pick writes and stays open. -->

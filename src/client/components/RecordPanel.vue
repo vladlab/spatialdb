@@ -143,8 +143,10 @@
 
           <template v-else>
             <span v-if="f.type === 'multi_select'" class="chips">
-              <span v-for="c in asList(record.data[f.key])" :key="c" class="chip plain">{{ c }}</span>
+              <span v-for="c in asList(record.data[f.key])" :key="c" class="choice many">{{ c }}</span>
             </span>
+            <!-- A select's value wears the capsule here as in the grid (App.vue, .choice). -->
+            <span v-else-if="f.type === 'select' && !isEmpty(record.data[f.key])" class="text choice">{{ display(record.data[f.key]) }}</span>
             <span v-else class="text" :class="{ pre: f.type === 'long_text' }">{{ f.type === 'created_at' ? formatCreated(record.data[f.key]) : formatNumberField(f, record.data[f.key]) ?? display(record.data[f.key]) }}</span>
             <span v-if="isEmpty(record.data[f.key])" class="placeholder">empty</span>
           </template>

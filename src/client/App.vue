@@ -632,6 +632,15 @@ onUnmounted(() => store.stop());
   --card-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
   --card-shadow-drag: 0 8px 24px rgba(0, 0, 0, 0.5);
   --arrow: #6b7f8f;
+  /* The grid's own surfaces. A header is not data and must not look like a row: it is
+     the lightest of these. A group header sits between it and the band, so a folded
+     group never passes for a banded row. All SOLID — pinned cells are opaque. */
+  --bg-head: #313131;
+  --head-text: #c4c4c4;
+  --head-line: #4a4a4a;
+  --bg-band: #242424;
+  --bg-group: #2c2c2c;
+  --choice-bg: rgba(255, 255, 255, 0.11);
 }
 * { box-sizing: border-box; }
 /* Every <select> is drawn by the app, not the platform: WebKitGTK (the desktop
@@ -739,9 +748,23 @@ p.hint { padding: 24px; }
   cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1;
 }
 .chip-x:hover { color: var(--danger); }
+/* CHOICES — a select's value, one or many: a ROUND, grey capsule. It says "one of a
+   set list", where bare text says "typed in"; and it is not a pill (below), which is
+   squarish and tinted and always a RECORD. Shape and colour both differ, so the two
+   are told apart at a glance in a row that has both. Global for the same reason the
+   pills are: the grid, the tray and the cell editor must not drift apart. */
+.choice {
+  display: inline-block; flex: 0 1 auto; min-width: 0; max-width: 100%; box-sizing: border-box; vertical-align: middle;
+  height: 20px; line-height: 20px; padding: 0 9px; border-radius: 10px; background: var(--choice-bg);
+  font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary);
+}
+/* Several in one cell: none shrinks to a stub — the ones past the edge are cut whole. */
+.choice.many { flex: none; }
+/* The same capsule while it is being edited (CellEditor's multi-select): only the × is new. */
+.chip.choice { display: inline-flex; align-items: center; gap: 3px; flex: none; border: none; margin: 0; padding: 0 3px 0 9px; overflow: visible; }
 /* PILLS — every linked record, everywhere (components/RecordPill.vue). A pill is
    ALWAYS drawn as one: tinted for a link, in outline for a backlink, with a darker
-   status segment for a junction pair. Squarish, where a select's chip is round —
+   status segment for a junction pair. Squarish, where a select's capsule (.choice) is round —
    the shape is what tells a record from a tag. Neutral, unless the relationship has
    a colour: then RecordPill sets the three --pill-* tints from it. The actions
    float past the pill's end on hover (or over its tail — `.flip` — when there is no
