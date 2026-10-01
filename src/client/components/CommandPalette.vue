@@ -81,6 +81,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { Store } from '../store';
 import { tablesSorted, type RecordRow } from '../state';
 import { fuzzyRank, parsePaletteQuery } from '../fuzzy';
+import { hintFrom } from '../../contract/labels';
 
 interface Hit { record: RecordRow; label: string; inScope?: boolean }
 
@@ -127,11 +128,7 @@ const tableHints = computed(() => {
   return fuzzyRank(q, tables.value, (t) => t.name).slice(0, 3);
 });
 
-function restOf(r: Hit) {
-  return Object.values(r.record.data)
-    .filter((v) => (typeof v === 'string' || typeof v === 'number') && v !== '' && String(v) !== r.label)
-    .map(String).join(' · ');
-}
+const restOf = (r: Hit) => hintFrom(r.record.data, r.label);
 
 /* Debounced, and the LATEST request wins: results for "oev" must not land on top
    of results for "oev3" just because the network delivered them in that order. */

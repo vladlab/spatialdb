@@ -27,6 +27,8 @@
  *  which is the model this app's owner already has in his head.
  */
 
+import { isSystemKey } from './systemFields.js';
+
 /** Types whose value reads as a name. Links, checkboxes and sets do not. */
 export const LABEL_TYPES: ReadonlySet<string> =
   new Set(['text', 'long_text', 'number', 'date', 'select', 'file_path']);
@@ -56,4 +58,18 @@ export function primaryKeyOf(fields: LabelField[]): string | undefined {
 export function labelFrom(data: unknown, primaryKey: string | undefined, fallback: string): string {
   const v = primaryKey ? (data as Record<string, unknown> | null)?.[primaryKey] : undefined;
   return v === undefined || v === null || v === '' ? fallback : String(v);
+}
+
+/**
+ * The REST of a record on one line, for a search result — "ProRes 4444 XQ · UHD"
+ * beside the name it was found by: its plain values (text and numbers), without the
+ * name itself and without the SYSTEM fields. Created and Created by are in every
+ * record's data (under reserved keys), and listing them made every hint end in a raw
+ * timestamp and the same person's name — and made a search for that name match
+ * everything they ever made.
+ */
+export function hintFrom(data: Record<string, unknown>, label: string): string {
+  return Object.entries(data)
+    .filter(([k, v]) => !isSystemKey(k) && (typeof v === 'string' || typeof v === 'number') && v !== '' && String(v) !== label)
+    .map(([, v]) => String(v)).join(' · ');
 }

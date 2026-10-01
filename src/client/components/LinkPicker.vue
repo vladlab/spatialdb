@@ -96,7 +96,7 @@ import { computed, inject, nextTick, onMounted, ref, watch } from 'vue';
 import { SCOPE } from '../scope';
 import type { Store } from '../store';
 import { primaryKeys, recordsOf } from '../state';
-import { labelFrom } from '../../contract/labels';
+import { hintFrom, labelFrom } from '../../contract/labels';
 import type { EditExit } from './CellEditor.vue';
 
 const props = defineProps<{
@@ -164,9 +164,7 @@ const candidates = computed(() => {
     .filter((r) => !m || showAll.value || !anyMatch.value || m.test(r.id))
     .map((r) => {
       const name = labelFrom(r.data, labelKeys.value.get(r.table_id), r.id.slice(0, 8));
-      const rest = Object.values(r.data)
-        .filter((v) => (typeof v === 'string' || typeof v === 'number') && v !== '' && v !== name)
-        .map(String).join(' · ');
+      const rest = hintFrom(r.data, name);
       return { id: r.id, label: name, rest, hay: `${name} ${rest}`.toLowerCase() };
     });
 });

@@ -33,9 +33,9 @@ laid out differently while adding.
 4. The grid's picker (and the canvas ones) now has two sections: LINKED — darker,
    the chips — then ADD, the search line and its results. Is the pair of labels
    right, or too much?
-5. Not touched: the hint beside each result still lists every value of the record,
-   raw created-at timestamp included ("2026-10-01T16:07:55.972Z · Vlad"). Say if the
-   system fields should be left out of it.
+5. The hint beside each result (here and in the find palette) no longer ends in the
+   record's Created timestamp and creator — it is the record's own values only. Typing
+   your own name into a picker therefore no longer matches everything you made.
 
 **The grid follows the keyboard (Oct 1)** — owner: "when navigating fields on a table
 with arrows the view doesn't scroll". Two things, one of them older than it looked:

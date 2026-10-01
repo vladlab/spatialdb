@@ -402,6 +402,10 @@ async function main() {
   check('with nothing linked yet it is only the "add" line — no empty "linked" section', !picker().find('.current').exists() && picker().find('.find .sec').text() === 'add' && picker().find('.find input.q').exists());
   check('it walks the target table and lists every record',
     await until(() => options().length === 3), options().join());
+  const hints = () => picker().findAll('.list li .rest').map((x) => x.text());
+  const creator = String((await pool.query(`select name from users limit 1`)).rows[0]?.name ?? '');
+  check('the hint beside each candidate is the record\'s own values — never its Created timestamp or who made it',
+    hints().length === 3 && hints().some((h) => /XJ9/.test(h)) && !hints().some((h) => /\d{4}-\d\d-\d\dT/.test(h) || h.split(' · ').includes(creator)), `${hints().join(' | ')} (creator: ${creator})`);
   await picker().find('input').setValue('xj9');
   check('search covers the whole record, not just its label ("XJ9" is Gamma\'s code)',
     await until(() => options().join() === 'Gamma'), options().join());
