@@ -32,6 +32,14 @@ that File→Deliverable is the Delivery junction. In a report's definition:
    then on Works, count where its rollup accepted > 0 = satisfied.
 5. Layout to look at: the pair column is drawn in the primary text colour to set it
    off from the file's own (secondary) columns — enough, or does it want a header hint?
+6. **The other way round — Deliverables › Work › Files.** Root Deliverables; descend
+   via "Work.Requested Deliverables ← Work"; descend via "Files.Work ← Files". On
+   that Files level "pinned to" now offers **Deliverable ⇄ paired through File
+   Deliveries** (beside "Deliverable through Files.Deliverable Target", which is the
+   plain link — "meant for", not "delivered against"). Tick the ⇄ one and the **pair**
+   block appears on this level too, Status and all.
+7. A second level now shows "pinned to — nothing to pin to yet…" instead of no block
+   at all. Useful, or noise on every two-level report?
 
 **Grid columns (Sept 29)** — pinned, resizable, reorderable; all of it layout, none
 of it visible to `test/ui.ts`:

@@ -35,7 +35,7 @@ import type { Store } from '../store';
 import { reportFieldOf, type RecordRow } from '../state';
 import { useDerived } from '../derived';
 import { SCOPE } from '../scope';
-import { ReportDef, reportDefError, reportSchema, resolveVia, runReport, type Descent, type ReportContext, type ReportField, type RootLevel } from '../../contract/reports';
+import { ReportDef, reportDefError, reportSchema, resolvePin, resolveVia, runReport, type Descent, type ReportContext, type ReportField, type RootLevel } from '../../contract/reports';
 import ReportOutline from './ReportOutline.vue';
 
 const props = defineProps<{ store: Store; reportId: string }>();
@@ -90,8 +90,9 @@ const schema = computed(() => reportSchema(fields.value, store.state.tables.valu
 const tablesNeeded = computed(() => {
   const out = new Set<string>();
   if (!def.value) return out;
-  const walk = (l: RootLevel | Descent, tableId: string) => {
+  const walk = (l: RootLevel | Descent, tableId: string, above: { id: string; table: string }[]) => {
     out.add(tableId);
+    const here = [...above, { id: l.id, table: tableId }];
     for (const c of l.children) {
       let landing = '';
       for (const v of c.via) {
@@ -100,10 +101,16 @@ const tablesNeeded = computed(() => {
         landing ||= d.table;
         if (d.dir === 'junction') out.add(d.junction);
       }
-      if (landing) walk(c, landing);
+      if (!landing) continue;
+      for (const p of c.pins ?? []) {                      // a pin through a junction reads its pair rows too
+        const anc = here.find((a) => a.id === p.levelId);
+        const d = anc ? resolvePin(landing, anc.table, p.fieldId, schema.value) : null;
+        if (d && typeof d !== 'string' && d.dir === 'junction') out.add(d.junction);
+      }
+      walk(c, landing, here);
     }
   };
-  walk(def.value.root, def.value.root.table);
+  walk(def.value.root, def.value.root.table, []);
   return out;
 });
 watch(tablesNeeded, (ids) => { for (const id of ids) void store.loadTable(id); }, { immediate: true });

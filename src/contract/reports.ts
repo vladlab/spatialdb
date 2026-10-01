@@ -32,6 +32,12 @@
  *  read them — "accepted" is a count of files whose pair says so. Descending into
  *  the junction TABLE (via its endpoint link) still works, for a report about the
  *  pairs themselves.
+ *
+ *  A PIN may go through a junction too — the same report turned round,
+ *  Deliverables › Works › Files: Files are reached from the Work by Files.Work and
+ *  pinned to the Deliverable two levels up by "has a Delivery pair with it". A
+ *  level pinned that way reads its `pair` from the pin's junction, exactly as a
+ *  level reached that way reads it from the via's.
  */
 
 import { z } from 'zod';
@@ -84,15 +90,20 @@ export const Via = z.strictObject({
 });
 /**
  * What a level reached THROUGH A JUNCTION shows and keeps of the pair row that
- * joins each record to its parent: fields of the junction table (the status, the
- * notes), and filters on them ("only Accepted"). Explicit, like `fields`.
+ * joins each record to its parent (or, for a level PINNED through a junction, to
+ * that ancestor): fields of the junction table (the status, the notes), and
+ * filters on them ("only Accepted"). Explicit, like `fields`.
  */
 export const Pair = z.strictObject({
   fields: z.array(uuid).max(50).default([]),
   filters: z.array(FilterEntry).max(32).default([]),
 });
 export const Pin = z.strictObject({
-  /** A link field joining the child's table and the ancestor's table, either way round. */
+  /**
+   * A link field joining the child's table and the ancestor's table, either way
+   * round; or a JUNCTION COLUMN on either of them — the record must be PAIRED with
+   * the ancestor record through that junction.
+   */
   fieldId: uuid,
   /** An ancestor level's id — by id, so inserting a level never re-targets a pin. */
   levelId,
@@ -194,19 +205,64 @@ export function resolveVia(parentTable: string, via: { fieldId: string; role?: s
 }
 
 /**
- * The junction table whose pair rows a descent can show: every one of its links
- * goes through the SAME junction. Null otherwise — a level reached by a plain link
- * has no pair, and one reached through two different junctions has no single one.
+ * How a pin joins a level's table to an ancestor's:
+ *   a LINK field on the level's table, targeting the ancestor's   → link, on 'level'
+ *   a LINK field on the ancestor's table, targeting the level's   → link, on 'ancestor'
+ *   a JUNCTION COLUMN on either table, whose junction joins the two → junction: the
+ *       record must be the `levelEnd` of a pair row whose `ancestorEnd` is the ancestor
  */
-export function pairTableOf(parentTable: string, via: { fieldId: string }[], schema: ReportSchema): string | null {
-  let table: string | null = null;
-  for (const v of via) {
+export type PinDir =
+  | { dir: 'link'; on: 'level' | 'ancestor' }
+  | { dir: 'junction'; junction: string; levelEnd: string; ancestorEnd: string };
+
+export function resolvePin(levelTable: string, ancestorTable: string, fieldId: string, schema: ReportSchema): PinDir | string {
+  const f = schema.field(fieldId);
+  if (!f) return `pin field ${fieldId} does not exist`;
+  if (f.type === 'backlink') {
+    const near = String(f.options?.source_field_id ?? '');
+    const end = schema.endpoint(near);
+    if (!end) return `pin '${f.name}' is a backlink — pick the link field it mirrors instead`;
+    const far = end.cfg[otherEnd(end.side)];
+    const farTable = String(schema.field(far)?.options?.target_table_id ?? '');
+    if (f.table_id === levelTable && farTable === ancestorTable) return { dir: 'junction', junction: end.table, levelEnd: near, ancestorEnd: far };
+    if (f.table_id === ancestorTable && farTable === levelTable) return { dir: 'junction', junction: end.table, levelEnd: far, ancestorEnd: near };
+    return `pin '${f.name}' does not join this level's table to that ancestor`;
+  }
+  if (f.type !== 'link') return `pin field ${fieldId} is not a link field`;
+  const t = String(f.options?.target_table_id ?? '');
+  if (f.table_id === levelTable && t === ancestorTable) return { dir: 'link', on: 'level' };
+  if (f.table_id === ancestorTable && t === levelTable) return { dir: 'link', on: 'ancestor' };
+  return `pin '${f.name}' does not join this level's table to that ancestor`;
+}
+
+/**
+ * The junction table whose pair rows a descent can show, or null.
+ *   - every one of its `via` links goes through the SAME junction → that one: the
+ *     pair joins each record to its PARENT;
+ *   - otherwise, exactly ONE junction among its pins → that one: the pair joins each
+ *     record to the pinned ANCESTOR.
+ * The via wins when both hold; two different junctions among the pins is no single
+ * pair, so none. `ancestors` are the levels above this one, the parent last.
+ */
+export function pairTableOf(
+  parentTable: string, level: { via: { fieldId: string }[]; pins?: { fieldId: string; levelId: string }[] },
+  ancestors: { id: string; table: string }[], schema: ReportSchema,
+): string | null {
+  let landing = '', viaTable: string | null = null, plain = false;
+  for (const v of level.via) {
     const d = resolveVia(parentTable, v, schema);
     if (typeof d === 'string') continue;
-    if (d.dir !== 'junction' || (table && table !== d.junction)) return null;
-    table = d.junction;
+    landing ||= d.table;
+    if (d.dir !== 'junction' || (viaTable && viaTable !== d.junction)) plain = true; else viaTable = d.junction;
   }
-  return table;
+  if (viaTable && !plain) return viaTable;
+  const pinned = new Set<string>();
+  for (const p of level.pins ?? []) {
+    const anc = ancestors.find((a) => a.id === p.levelId);
+    const d = anc && landing ? resolvePin(landing, anc.table, p.fieldId, schema) : null;
+    if (d && typeof d !== 'string' && d.dir === 'junction') pinned.add(d.junction);
+  }
+  return pinned.size === 1 ? [...pinned][0] : null;
 }
 
 /**
@@ -251,24 +307,22 @@ export function reportDefError(raw: unknown, fields: Iterable<ReportField>, tabl
         landing = d.table;
       }
       childTables.set(c.id, landing!);
-      const pairTable = pairTableOf(table, c.via, schema);
+      const above = [...ancestors, { id: level.id, table }];
+      for (const p of c.pins ?? []) {
+        const anc = above.find((a) => a.id === p.levelId);
+        if (!anc) return `${cpath}: pin names '${p.levelId}', which is not an ancestor`;
+        const d = resolvePin(landing!, anc.table, p.fieldId, schema);
+        if (typeof d === 'string') return `${cpath}: ${d.replace('that ancestor', `'${p.levelId}'`)}`;
+      }
+      const pairTable = pairTableOf(table, c, above, schema);
       if (pairTable) childPairs.set(c.id, pairTable);
       if (c.pair && (c.pair.fields.length || c.pair.filters.length)) {
-        if (!pairTable) return `${cpath}: pair fields need every link of this level to go through one junction`;
+        if (!pairTable) return `${cpath}: pair fields need this level to go through one junction — by every one of its links, or by one pin`;
         for (const id of [...c.pair.fields, ...c.pair.filters.map((e) => e.fieldId)]) {
           const f = byId.get(id);
           if (!f) return `${cpath}: pair field ${id} does not exist`;
           if (f.table_id !== pairTable) return `${cpath}: pair field '${f.name}' is not a field of the junction this level goes through`;
         }
-      }
-      for (const p of c.pins ?? []) {
-        const anc = [...ancestors, { id: level.id, table }].find((a) => a.id === p.levelId);
-        if (!anc) return `${cpath}: pin names '${p.levelId}', which is not an ancestor`;
-        const f = byId.get(p.fieldId);
-        if (!f || f.type !== 'link') return `${cpath}: pin field ${p.fieldId} is not a link field`;
-        const t = String(f.options?.target_table_id ?? '');
-        const joins = (f.table_id === landing && t === anc.table) || (f.table_id === anc.table && t === landing);
-        if (!joins) return `${cpath}: pin '${f.name}' does not join this level's table to '${p.levelId}'`;
       }
     }
     for (const ru of level.rollups) {
@@ -361,6 +415,8 @@ export function cellText(f: ViewField, r: ViewRecord, links: LinkLabels): string
  * Through a junction: the level's records are the OTHER ENDS of the parent's pair
  * rows; a pair filter drops the records no pair of which passes; pins apply to the
  * records as anywhere; a node carries the (first passing) pair row and its cells.
+ * A pin through a junction keeps the records PAIRED with that ancestor, and — when
+ * the level's links are plain — those pair rows are the level's pairs.
  */
 export function runReport(def: ReportDef, ctx: ReportContext): ReportSection {
   const byId = new Map(ctx.fields.map((f) => [f.id, f]));
@@ -382,12 +438,13 @@ export function runReport(def: ReportDef, ctx: ReportContext): ReportSection {
   /** The pair rows of one level: its junction table, and each record's chosen row. */
   type Pairs = { table: string; of: Map<string, string>; fields: string[] };
 
+  type Step = { id: string; table: string; record: ViewRecord };
   const build = (
     level: RootLevel | Descent, tableId: string, recs: ViewRecord[], roles: Map<string, string[]>,
-    ancestors: { id: string; record: ViewRecord }[], pairs?: Pairs,
+    ancestors: Step[], pairs?: Pairs,
   ): ReportNode[] => {
     return shape(level, recs).map((r) => {
-      const path = [...ancestors, { id: level.id, record: r }];
+      const path = [...ancestors, { id: level.id, table: tableId, record: r }];
       const children = level.children.map((c) => walkDescent(c, tableId, r, path));
       const node: ReportNode = {
         levelId: level.id,
@@ -406,17 +463,20 @@ export function runReport(def: ReportDef, ctx: ReportContext): ReportSection {
   };
 
   const walkDescent = (
-    c: Descent, parentTable: string, parent: ViewRecord, path: { id: string; record: ViewRecord }[],
+    c: Descent, parentTable: string, parent: ViewRecord, path: Step[],
   ): ReportSection => {
     const roles = new Map<string, string[]>();
     let tableId: string | null = null;
     const ids: string[] = [];
     const rowsOf = new Map<string, string[]>();            // record → the pair rows that reach it
+    let allThrough: string | null | undefined;             // the one junction every via went through; null = not so
     for (const v of c.via) {
       const d = resolveVia(parentTable, v, schema);
       if (typeof d === 'string') continue;                 // a deleted or re-pointed link: skipped, as views skip
       if (tableId && tableId !== d.table) continue;
       tableId = d.table;
+      const j = d.dir === 'junction' ? d.junction : null;
+      allThrough = allThrough === undefined || allThrough === j ? j : null;
       let found: readonly string[];
       if (d.dir === 'junction') {
         // Through the pair rows: those linking the parent through `near`, each to its other end.
@@ -435,16 +495,29 @@ export function runReport(def: ReportDef, ctx: ReportContext): ReportSection {
       }
     }
     if (!tableId) return { levelId: c.id, tableId: '', nodes: [] };
-    const pairTable = pairTableOf(parentTable, c.via, schema);
+    const pairTable = pairTableOf(parentTable, c, path, schema);
+    // Whose pairs the level shows: its via's, when every via went through that one
+    // junction — else a junction pin's, and what the vias gathered is not it.
+    const viaPairs = !!pairTable && allThrough === pairTable;
+    if (!viaPairs) rowsOf.clear();
     const onPath = new Set(path.map((p) => p.record.id));
     let recs = ids.filter((id) => !onPath.has(id)).map((id) => recordOf(tableId!, id)).filter((r): r is ViewRecord => !!r);
     for (const p of c.pins ?? []) {
       const anc = path.find((a) => a.id === p.levelId);
-      const f = byId.get(p.fieldId);
-      if (!anc || !f) continue;
-      recs = f.table_id === tableId
-        ? recs.filter((r) => ctx.linksFrom(r.id, f.id).includes(anc.record.id))
-        : recs.filter((r) => ctx.linksFrom(anc.record.id, f.id).includes(r.id));
+      const d = anc ? resolvePin(tableId, anc.table, p.fieldId, schema) : null;
+      if (!anc || !d || typeof d === 'string') continue;   // a deleted or re-pointed pin: skipped
+      if (d.dir === 'junction') {
+        // Paired with the ancestor: the other ends of ITS pair rows.
+        const paired = new Map<string, string[]>();
+        for (const row of ctx.linksTo(anc.record.id, d.ancestorEnd)) {
+          const id = ctx.linksFrom(row, d.levelEnd)[0];
+          if (!id) continue;
+          const rows = paired.get(id); if (rows) rows.push(row); else paired.set(id, [row]);
+        }
+        recs = recs.filter((r) => paired.has(r.id));
+        if (!viaPairs && d.junction === pairTable) for (const [id, rows] of paired) rowsOf.set(id, rows);
+      } else if (d.on === 'level') recs = recs.filter((r) => ctx.linksFrom(r.id, p.fieldId).includes(anc.record.id));
+      else recs = recs.filter((r) => ctx.linksFrom(anc.record.id, p.fieldId).includes(r.id));
     }
     if (!pairTable) return { levelId: c.id, tableId, nodes: build(c, tableId, recs, roles, path) };
     // The pair of each record: its first row, or — under a pair filter — its first

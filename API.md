@@ -593,6 +593,14 @@ table is a report; the app makes it with a Name and a **`structured` field of sh
   `via` of the level to go through the same junction; an ordinary backlink is not
   a `via` (name the link it mirrors). Descending into the junction TABLE by its
   endpoint link still works, for a report about the pairs themselves.
+  **A pin may go through a junction too** (`resolvePin` → `dir: 'junction'`): name
+  the junction column on the level's table or on the ancestor's — both say the same
+  thing — and the record must be PAIRED with that ancestor record. That is the same
+  report turned round, `Deliverables › Works › Files`: Files reached by `Files.Work`,
+  pinned to the Deliverable by its Delivery pair. A level with plain links and ONE
+  junction among its pins reads its `pair` from that pin (the row joining the record
+  to the pinned ancestor); a via through a junction takes precedence, and two
+  different junctions among the pins give no pair.
 - **Validated twice on write.** `contract/values.ts` parses the shape (the same
   parse the record tray's JSON editor runs); then the server runs
   **`reportDefError`** against the whole schema: every table and field named must
@@ -625,8 +633,10 @@ table is a report; the app makes it with a Name and a **`structured` field of sh
   landing table once the first is ticked — a junction column is offered as
   "Delivery ⇄ Files · through Delivery", and a level reached that way gets a `pair`
   block (the junction's own fields as tick boxes, "+ pair filter"); pins offered
-  from the links joining the level's table to an ancestor above the parent; fields
-  as tick boxes; the grid's
+  from the links joining the level's table to an ancestor above the parent, and
+  from the junctions doing so ("Deliverable ⇄ paired through Delivery", once per
+  junction — a level pinned that way gets the `pair` block too); a second level
+  says it has nothing to pin to; fields as tick boxes; the grid's
   filter and sort rows; rollups over a direct child, with "where a field…" or
   "where its rollup…". Level ids come from table names (`files`, `files2`). It edits
   a draft, validates it live with `reportDefError`, and **Save writes once** (one

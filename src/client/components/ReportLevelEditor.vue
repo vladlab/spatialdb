@@ -13,7 +13,9 @@
   A level reached THROUGH A JUNCTION (its via is a junction column — "Delivery ⇄
   Files") gets one more block, `pair`: the junction's own fields, to show beside
   each record and to filter on, and its rollup-able fields are offered to the
-  parent's rollups. Nothing about it is typed either.
+  parent's rollups. Nothing about it is typed either. A level PINNED through a
+  junction ("Deliverable · paired through File Deliveries") gets the same block,
+  its pair being the row that joins each record to that ancestor.
 
   The level's table is not stored on a descent (the walk derives it from `via`), so
   it is passed in as `table` — and is '' until a via is picked, at which point the
@@ -55,18 +57,24 @@
     <div v-if="depth > 1 && table" class="rl-block">
       <span class="rl-label">pinned to</span>
       <div class="rl-rows">
-        <label v-for="p in pinChoices" :key="p.key" class="rl-via" :title="`this ${singular} must also link, through ${p.fieldName}, to the ${p.ancestorTable} above`">
+        <label v-for="p in pinChoices" :key="p.key" class="rl-via" :class="{ through: !!p.junction }" :data-pin="p.fieldId"
+               :title="p.junction ? `this ${singular} must also be PAIRED, through ${p.junction}, with the ${p.ancestorTable} above — and the pair's own fields (its status) can then be shown and filtered here` : `this ${singular} must also link, through ${p.fieldName}, to the ${p.ancestorTable} above`">
           <input type="checkbox" :checked="hasPin(p.fieldId, p.levelId)" @change="togglePin(p.fieldId, p.levelId, ($event.target as HTMLInputElement).checked)" />
           <span class="rl-via-name">{{ p.ancestorTable }}</span>
-          <span class="rl-via-dir">through {{ p.fieldName }}</span>
+          <span class="rl-via-dir">{{ p.junction ? `⇄ paired through ${p.junction}` : `through ${p.fieldName}` }}</span>
         </label>
-        <p v-if="!pinChoices.length" class="rl-note">no link joins {{ tableName }} to a level above the parent</p>
+        <p v-if="!pinChoices.length" class="rl-note">no link or junction joins {{ tableName }} to a level above the parent</p>
       </div>
+    </div>
+    <!-- On a second level there is nothing to pin to — said, so the block's absence is not a puzzle. -->
+    <div v-else-if="depth === 1 && table" class="rl-block rl-nopin">
+      <span class="rl-label">pinned to</span>
+      <p class="rl-note">nothing to pin to yet — a pin ties a level to one ABOVE its parent, and {{ parentTableName }} is the root</p>
     </div>
 
     <!-- PAIR: reached through a junction, the level can show and filter the pair row's own fields. -->
     <div v-if="depth > 0 && pairTable" class="rl-block rl-pair">
-      <span class="rl-label" :title="`${pairTableName}: the row joining each ${singular} to the ${parentSingular} above — its own fields`">pair</span>
+      <span class="rl-label" :title="`${pairTableName}: the row joining each ${singular} to the ${pairOther} above — its own fields`">pair</span>
       <div class="rl-rows">
         <div class="rl-pairfields">
           <span class="rl-note">{{ pairTableName }}:</span>
@@ -230,7 +238,7 @@ import { choicesOf as contractChoices } from '../../contract/values';
 import type { Store } from '../store';
 import { fieldsOf, type FieldRow } from '../state';
 import { opsFor, type FilterOp } from '../../contract/views';
-import { MAX_DEPTH, ROLLUP_LABELS, ROLLUP_OPS, pairTableOf, reportSchema, resolveVia, type Descent, type ReportField, type Rollup, type RollupOp, type RootLevel } from '../../contract/reports';
+import { MAX_DEPTH, ROLLUP_LABELS, ROLLUP_OPS, pairTableOf, reportSchema, resolvePin, resolveVia, type Descent, type ReportField, type Rollup, type RollupOp, type RootLevel } from '../../contract/reports';
 import { junctionOf } from '../../contract/junction';
 
 const props = defineProps<{
@@ -323,14 +331,16 @@ function toggleVia(fieldId: string, on: boolean) {
     d.value.via.splice(i, 1);
     if (!d.value.via.length) { d.value.fields = []; d.value.filters = []; d.value.sort = []; d.value.rollups = []; d.value.children = []; d.value.pins = undefined; }
   }
-  // The pair follows the vias: a level no longer reached through that one junction keeps none of its pair picks.
-  if (d.value.pair) {
-    const now = pairTableOf(props.parentTable, d.value.via, schema.value);
-    d.value.pair.fields = d.value.pair.fields.filter((id) => fieldById(id)?.table_id === now);
-    d.value.pair.filters = d.value.pair.filters.filter((e) => fieldById(e.fieldId)?.table_id === now);
-    tidyPair();
-  }
+  prunePair();
   changed();
+}
+/** The pair follows the vias and pins: a level no longer reached (or pinned) through that one junction keeps none of its pair picks. */
+function prunePair() {
+  if (!d.value.pair) return;
+  const now = pairTableOf(props.parentTable, d.value, props.ancestors, schema.value);
+  d.value.pair.fields = d.value.pair.fields.filter((id) => fieldById(id)?.table_id === now);
+  d.value.pair.filters = d.value.pair.filters.filter((e) => fieldById(e.fieldId)?.table_id === now);
+  tidyPair();
 }
 function setRole(fieldId: string, role: string) {
   const v = d.value.via[viaIndex(fieldId)];
@@ -338,8 +348,14 @@ function setRole(fieldId: string, role: string) {
   changed();
 }
 
-/* ── pair: a level reached through a junction ─────────────────────────── */
-const pairTable = computed(() => (props.depth > 0 && props.parentTable ? pairTableOf(props.parentTable, d.value.via, schema.value) ?? '' : ''));
+/* ── pair: a level reached, or pinned, through a junction ─────────────── */
+const pairTable = computed(() => (props.depth > 0 && props.parentTable ? pairTableOf(props.parentTable, d.value, props.ancestors, schema.value) ?? '' : ''));
+/** What the pair joins each record TO: the parent when the via goes through the junction, else the pinned ancestor. */
+const pairOther = computed(() => {
+  const viaIsIt = pairTableOf(props.parentTable, { via: d.value.via }, [], schema.value) === pairTable.value;
+  const pin = viaIsIt ? undefined : pinChoices.value.find((p) => !!p.junction && hasPin(p.fieldId, p.levelId));
+  return pin?.ancestorTable ?? parentSingular.value;
+});
 const pairTableName = computed(() => store.state.tables.get(pairTable.value)?.name ?? 'pair');
 /** The junction's own fields — not its two endpoint links, which ARE the parent and this record. */
 const pairFieldsOf = (tableId: string): FieldRow[] => {
@@ -361,16 +377,25 @@ function removePairFilter(i: number) { d.value.pair?.filters.splice(i, 1); tidyP
 
 /* ── pins ─────────────────────────────────────────────────────────────── */
 const pinChoices = computed(() => {
-  const out: Array<{ key: string; fieldId: string; fieldName: string; levelId: string; ancestorTable: string }> = [];
+  const out: Array<{ key: string; fieldId: string; fieldName: string; levelId: string; ancestorTable: string; junction: string }> = [];
   // Ancestors ABOVE the parent — pinning to the parent is what `via` already means.
   for (const a of props.ancestors.slice(0, -1)) {
+    const ancestorTable = store.state.tables.get(a.table)?.singular_name || store.state.tables.get(a.table)?.name || a.id;
+    const junctions = new Map<string, number>();            // junction table → its entry in `out`
     for (const f of store.state.fields.values()) {
-      if (f.type !== 'link') continue;
-      const t = String(f.options?.target_table_id ?? '');
-      const joins = (f.table_id === props.table && t === a.table) || (f.table_id === a.table && t === props.table);
-      if (!joins) continue;
+      // A link joining the two tables, either way round — or a junction doing so,
+      // named by its column on either table (contract/reports.ts resolvePin).
+      if (f.type !== 'link' && f.type !== 'backlink') continue;
+      const r = resolvePin(props.table, a.table, f.id, schema.value);
+      if (typeof r === 'string') continue;
       const owner = store.state.tables.get(f.table_id)?.name ?? '?';
-      out.push({ key: f.id + a.id, fieldId: f.id, fieldName: `${owner}.${f.name}`, levelId: a.id, ancestorTable: store.state.tables.get(a.table)?.singular_name || store.state.tables.get(a.table)?.name || a.id });
+      if (r.dir === 'link') { out.push({ key: f.id + a.id, fieldId: f.id, fieldName: `${owner}.${f.name}`, levelId: a.id, ancestorTable, junction: '' }); continue; }
+      // A junction has a column on EACH end; both say the same thing, so it is offered
+      // once — by the column a saved pin names, else the one on this level's table.
+      const entry = { key: r.junction + a.id, fieldId: f.id, fieldName: `${owner}.${f.name}`, levelId: a.id, ancestorTable, junction: store.state.tables.get(r.junction)?.name ?? '?' };
+      const at = junctions.get(r.junction);
+      if (at === undefined) { junctions.set(r.junction, out.length); out.push(entry); }
+      else if (hasPin(f.id, a.id) || (!hasPin(out[at].fieldId, a.id) && f.table_id === props.table)) out[at] = entry;
     }
   }
   return out;
@@ -382,6 +407,7 @@ function togglePin(fieldId: string, levelId: string, on: boolean) {
   if (on && i < 0) pins.push({ fieldId, levelId });
   if (!on && i >= 0) pins.splice(i, 1);
   if (!pins.length) d.value.pins = undefined;
+  prunePair();
   changed();
 }
 
@@ -423,7 +449,7 @@ const childFields = (r: Rollup): Pick[] => {
   const c = childOf(r);
   if (!c) return [];
   const own = fieldsOf(store.state, childTable(c)).map((f) => ({ id: f.id, type: f.type, label: f.name }));
-  const jt = pairTableOf(props.table, c.via, schema.value);
+  const jt = pairTableOf(props.table, c, [...props.ancestors, { id: props.level.id, table: props.table }], schema.value);
   const jn = jt ? store.state.tables.get(jt)?.name ?? 'pair' : '';
   return [...own, ...(jt ? pairFieldsOf(jt).map((f) => ({ id: f.id, type: f.type, label: `${jn} › ${f.name}` })) : [])];
 };

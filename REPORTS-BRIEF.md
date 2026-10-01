@@ -162,8 +162,26 @@ ReportSection += pairTableId?
 - CSV: pair columns sit beside the record, named by the junction
   ("Files: Delivery Status").
 
-Pinned in `test/reports.ts` R11 (pure) and `test/reportview.ts` V6 (server, outline,
-editor).
+- **A pin may go through a junction too** (Sept 30, same day). The report turned
+  round — group by deliverable, then by episode:
+
+  ```
+  Deliverables
+  └─ via backlink Work."Requested Deliverables" → Works
+       └─ via backlink Files.work → Files,
+          PINNED: paired with the Deliverable above through Delivery;  pair: Status
+  ```
+
+  `pins[].fieldId` may be the junction column on the level's table or on the
+  ancestor's (they say the same thing; the editor offers the junction once). The
+  record must have a pair row with the ancestor record. A level with plain `via`
+  links and exactly ONE junction among its pins reads `pair` from that pin; a via
+  through a junction wins; two junctions among the pins is no single pair. The
+  junction pin and a plain link between the same tables (Files."Deliverable Target")
+  are different questions — "delivered against" vs "meant for" — and both are offered.
+
+Pinned in `test/reports.ts` R11–R12 (pure) and `test/reportview.ts` V6–V7 (server,
+outline, editor).
 
 Decisions inside the shape, each agreed:
 
@@ -252,9 +270,9 @@ from the store (`test/reportview.ts`); step 4, the level editor in the tray
 (`ReportEditor.vue`, `ReportLevelEditor.vue`) — picks only, no ids typed, a draft saved
 once (`test/reportview.ts` V5). Owner to test the editor by hand.
 
-Sept 30, 2026: the walk goes THROUGH junctions (§3a) — contract, server check,
-outline and editor; `test/reports.ts` R11, `test/reportview.ts` V6. Steps 5 and 6
-are still to build.
+Sept 30, 2026: the walk goes THROUGH junctions (§3a), by `via` and by pin —
+contract, server check, outline and editor; `test/reports.ts` R11–R12,
+`test/reportview.ts` V6–V7. Steps 5 and 6 are still to build.
 
 1. `contract/reports.ts`: `ReportDef` zod, `runReport`, the flattener, tests (pure;
    red-checked, including the worked example below). **Stop for the owner's review

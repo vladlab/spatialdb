@@ -5,6 +5,7 @@
  * and the server's checks are test/structured.ts T9. V6 is the same report with
  * Files reached THROUGH A JUNCTION: accepted by the server, drawn with the pair's
  * status beside each file, and built in the level editor (the ⇄ via, the pair block).
+ * V7 turns it round — Deliverables › Works › Files — with the PIN through the junction.
  */
 import { randomUUID } from 'node:crypto';
 import { mountApp } from './uiHarness.js';
@@ -242,7 +243,42 @@ async function main() {
       && await (async () => { await ed().find('.revert-report').trigger('click'); return until(() => ed().findAll('.rl').length === 3 && filesEd().find('.rl-pair .pair-filter').exists()); })());
     await w.find('.record-panel .rp-close').trigger('click');
 
-    check('the grid of a reports table offers "open" on each row', await (async () => { await nav.openTable(tRep); await until(() => w.findAll('.gridview tr.row').length === 4); return w.find('.gridview .open-report').exists(); })());
+    console.log('\nV7. A pin through a junction: Deliverables › Works › Files');
+    const byDeliv = randomUUID();
+    const turned = await post([{ type: 'record.create', id: byDeliv, tableId: tRep, data: { name: 'By deliverable', report: { v: 1, root: { id: 'delivs', table: tDel, sort: [{ fieldId: fDName, dir: 'asc' }],
+      children: [{ id: 'works', via: [{ fieldId: fBid }, { fieldId: fAdded }], sort: [{ fieldId: fWName, dir: 'asc' }],
+        rollups: [{ id: 'accepted', label: 'accepted', op: 'countWhere', over: 'files', where: [{ fieldId: jStatus, op: 'eq', value: 'Accepted' }] }],
+        children: [{ id: 'files', via: [{ fieldId: fWork }], pins: [{ fieldId: blFiles, levelId: 'delivs' }], pair: { fields: [jStatus] }, sort: [{ fieldId: fFName, dir: 'desc' }], children: [] }] }] } } } }]);
+    check('the server accepts a pin that is a junction column, with pair fields on the pinned level', turned.status === 200, (await turned.text()).slice(0, 300));
+    await nav.openReport(byDeliv);
+    await until(() => w.find('.reportview .rv-title').text() === 'By deliverable' && w.findAll('.reportview .ro-row').length >= 5, 8000);
+    const workUnder = (deliv: string, work: string) => under(rowOf(deliv)).find((r: any) => r.attributes('data-record') === work)!;
+    const filesUnder = (deliv: string, work: string) => { const el = workUnder(deliv, work).element.nextElementSibling as HTMLElement; return w.findAll('.reportview .ro-row').filter((r: any) => el.contains(r.element)); };
+    check('no warning', !w.find('.reportview .rv-warning').exists(), w.find('.reportview .rv-warning').exists() ? w.find('.reportview .rv-warning').text() : '');
+    check('ProRes › Ep 101 › the two files paired with ProRes, each with its status; › Ep 102 › its own', await until(() => filesUnder(prores, ep1).map((r: any) => `${labelOf(r)}:${r.find('.c-pair').text()}`).join('|') === 'ep101_prores_v2.mov:Accepted|ep101_prores_v1.mov:Rejected'
+      && filesUnder(prores, ep2).map((r: any) => `${labelOf(r)}:${r.find('.c-pair').text()}`).join() === 'ep102_prores_v1.mov:Accepted', 6000), filesUnder(prores, ep1).map((r: any) => r.text()).join('|'));
+    check('DCP › its Works are listed, each with an empty Files section — nothing is paired with it', under(rowOf(dcp)).filter((r: any) => [ep1, ep2].includes(r.attributes('data-record'))).length === 2 && filesUnder(dcp, ep1).length === 0
+      && /— nothing —/.test((workUnder(dcp, ep1).element.nextElementSibling as HTMLElement).textContent ?? ''));
+    check('the Work\'s rollup reads the pair through the pin', workUnder(prores, ep1).find('.c-rollup').text() === '1' && workUnder(dcp, ep1).find('.c-rollup').text() === '0');
+
+    await w.find('.reportview .rv-def').trigger('click');
+    await until(() => w.find('.record-panel .rp-title').text() === 'By deliverable' && ed().findAll('.rl').length === 3);
+    const pinBlock = () => filesEd().findAll(':scope > .rl-block').find((b: any) => b.find('.rl-label').text() === 'pinned to')!;
+    const junctionPin = () => pinBlock().find('.rl-via.through');
+    check('"pinned to" offers the junction ONCE (it has a column on each end): "Deliverable ⇄ paired through Delivery", ticked',
+      pinBlock().findAll('.rl-via.through').length === 1 && junctionPin().find('.rl-via-name').text() === 'Deliverable' && /⇄ paired through Delivery/.test(junctionPin().text())
+      && junctionPin().attributes('data-pin') === blFiles && (junctionPin().find('input').element as HTMLInputElement).checked, pinBlock().text());
+    check('…beside the plain link this fixture also has (Files.Deliverable), which is not ticked', pinBlock().findAll('.rl-via').length === 2 && pinBlock().findAll('input:checked').length === 1);
+    check('the pinned level has the pair block, Status ticked', filesEd().find(':scope > .rl-pair').exists() && filesEd().findAll(':scope > .rl-pair .pair-field input:checked').length === 1);
+    check('the SECOND level says why it has no pins, instead of showing nothing', /nothing to pin to yet/.test(ed().findAll('.rl')[1].find(':scope > .rl-nopin').text()));
+    await junctionPin().find('input[type="checkbox"]').setValue(false);
+    check('unticking the pin takes the pair block with it, and the draft says why it cannot be saved (the rollup tests a pair that is gone)',
+      await until(() => !filesEd().find(':scope > .rl-pair').exists()) && ed().find('.save-report').attributes('disabled') !== undefined && /condition field/.test(ed().find('.re-error').text()), ed().find('.re-error').exists() ? ed().find('.re-error').text() : '(no error)');
+    await ed().find('.revert-report').trigger('click');
+    await until(() => ed().findAll('.rl').length === 3 && filesEd().find(':scope > .rl-pair').exists());
+    await w.find('.record-panel .rp-close').trigger('click');
+
+    check('the grid of a reports table offers "open" on each row', await (async () => { await nav.openTable(tRep); await until(() => w.findAll('.gridview tr.row').length === 5); return w.find('.gridview .open-report').exists(); })());
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);
     await ui.close();

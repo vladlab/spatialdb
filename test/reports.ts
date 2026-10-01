@@ -5,10 +5,11 @@
  * size, status, delivered). Every rule the brief pins is a check here. R11 is the
  * same report after Files.Deliverable became a JUNCTION ("Delivery"): the walk goes
  * through the pair rows, and the pair's status is shown, filtered and rolled up.
+ * R12 turns it round — Deliverables › Works › Files — with the PIN through the junction.
  */
 import { randomUUID } from 'node:crypto';
 import {
-  reportDefError, runReport, flattenReport, flattenGrid, toCsv, EMPTY_REPORT, resolveVia, reportSchema, pairTableOf,
+  reportDefError, runReport, flattenReport, flattenGrid, toCsv, EMPTY_REPORT, resolveVia, resolvePin, reportSchema, pairTableOf,
   type ReportDef, type ReportField, type ReportTable, type ReportContext, type ReportSection, type ReportNode,
 } from '../src/contract/reports.js';
 import type { ViewRecord } from '../src/contract/views.js';
@@ -245,7 +246,7 @@ const rows = resolveVia(T.delivs, { fieldId: jDeliv }, schema);
 check('the endpoint LINK still descends into the pair rows themselves', typeof rows !== 'string' && rows.dir === 'backlink' && rows.table === tPairs);
 check('an ordinary backlink is not a via — the link it mirrors is', String(resolveVia(T.delivs, { fieldId: plainBacklink }, schema)).includes('pick the link field it mirrors'));
 check('a junction column of another table does not connect', String(resolveVia(T.works, { fieldId: colOnDelivs }, schema)).includes('does not connect'));
-check('pairTableOf: one junction → it; a plain link → none', pairTableOf(T.delivs, [{ fieldId: colOnDelivs }], schema) === tPairs && pairTableOf(T.works, [{ fieldId: fBid }], schema) === null);
+check('pairTableOf: one junction → it; a plain link → none', pairTableOf(T.delivs, { via: [{ fieldId: colOnDelivs }] }, [], schema) === tPairs && pairTableOf(T.works, { via: [{ fieldId: fBid }] }, [], schema) === null);
 
 /** The brief's report, its Files level now reached through Delivery and still pinned to the Work. */
 const delivered: ReportDef = {
@@ -337,6 +338,62 @@ try { gone = runReport(delivered, noJunction); } catch { /* checked below */ }
 check('a via whose junction is gone is skipped: the level is empty, the rest of the report stands',
   !!gone && node(gone, 'Ep 101')!.children[0].nodes.length === 2 && section(node(section(node(gone, 'Ep 101'), 'delivs')!, 'ProRes 4444 texted'), 'files')!.nodes.length === 0);
 check('…and the validator says why', (reportDefError(delivered, fields, noJunction.tables) ?? '').includes('pick the link field it mirrors'));
+
+/* ── R12: a pin through a junction ────────────────────────────────────────────
+ * The same data grouped the other way: Deliverables › the Works that asked for
+ * each › that Work's files. Files are reached from the Work by Files.Work; what
+ * ties them to the Deliverable two levels up is a Delivery PAIR, not a link. */
+console.log('\nR12. A pin through a junction: Deliverables › Works › Files');
+const pinL = resolvePin(T.files, T.delivs, colOnFiles, schema), pinA = resolvePin(T.files, T.delivs, colOnDelivs, schema);
+check('a junction column on the LEVEL\'s table pins it to the other end', typeof pinL !== 'string' && pinL.dir === 'junction' && pinL.junction === tPairs && pinL.levelEnd === jFile && pinL.ancestorEnd === jDeliv, JSON.stringify(pinL));
+check('…and the column on the ANCESTOR\'s table says the same thing', JSON.stringify(pinA) === JSON.stringify(pinL));
+check('a link pin still resolves, either way round', JSON.stringify(resolvePin(T.files, T.works, fFileWork, schema)) === '{"dir":"link","on":"level"}'
+  && JSON.stringify(resolvePin(T.delivs, T.works, fBid, schema)) === '{"dir":"link","on":"ancestor"}');
+check('a junction that does not join the two tables is refused', String(resolvePin(T.files, T.works, colOnFiles, schema)).includes('does not join'));
+check('an ordinary backlink is not a pin', String(resolvePin(T.delivs, T.works, plainBacklink, schema)).includes('pick the link field it mirrors'));
+
+const byDeliverable = (pinField: string): ReportDef => ({
+  v: 1,
+  root: {
+    id: 'delivs', table: T.delivs, fields: [], filters: [], sort: [{ fieldId: F['Deliverables.Name'], dir: 'asc' }], rollups: [],
+    children: [{
+      id: 'works', via: [{ fieldId: fBid, role: 'bid' }, { fieldId: fAdded, role: 'added' }], fields: [], filters: [], sort: [{ fieldId: F['Works.Name'], dir: 'asc' }],
+      rollups: [{ id: 'files', label: 'files', op: 'count', over: 'files' }, { id: 'accepted', label: 'accepted', op: 'countWhere', over: 'files', where: [{ fieldId: jStatus, op: 'eq', value: 'Accepted' }] }],
+      children: [{
+        id: 'files', via: [{ fieldId: fFileWork }], pins: [{ fieldId: pinField, levelId: 'delivs' }], pair: { fields: [jStatus], filters: [] },
+        fields: [], filters: [], sort: [{ fieldId: F['Files.Name'], dir: 'desc' }], rollups: [], children: [],
+      }],
+    }],
+  },
+});
+const bd = byDeliverable(colOnFiles);
+check('the definition is acceptable', reportDefError(bd, fields, tables) === null, reportDefError(bd, fields, tables) ?? '');
+check('pairTableOf: plain links + one junction pin → the pin\'s junction', pairTableOf(T.works, bd.root.children[0].children[0], [{ id: 'delivs', table: T.delivs }, { id: 'works', table: T.works }], schema) === tPairs);
+const br = runReport(bd, ctx);
+const bProres = node(br, 'ProRes 4444 texted');
+const bFiles = (deliv: ReportNode | undefined, work: string) => section(node(section(deliv, 'works')!, work), 'files')!;
+check('a deliverable lists the Works that asked for it, by role', section(bProres, 'works')!.nodes.map((n) => `${n.record.label}[${n.roles.join()}]`).join() === 'Ep 101[bid],Ep 102[bid]');
+check('under ProRes › Ep 101: the files of Ep 101 PAIRED with ProRes — not its notes file, which has no pair', bFiles(bProres, 'Ep 101').nodes.map((n) => n.record.label).join() === 'ep101_prores_v2.mov,ep101_prores_v1.mov', bFiles(bProres, 'Ep 101').nodes.map((n) => n.record.label).join());
+check('…and under ProRes › Ep 102, only Ep 102\'s', bFiles(bProres, 'Ep 102').nodes.map((n) => n.record.label).join() === 'ep102_prores_v1.mov');
+check('the level\'s pair is the PIN\'s: each file carries its row with that deliverable', bFiles(bProres, 'Ep 101').pairTableId === tPairs
+  && bFiles(bProres, 'Ep 101').nodes.map((n) => `${n.pair?.id === (n.record.id === f2 ? pV2 : pV1)}:${n.pair?.cells[0].text}`).join() === 'true:Accepted,true:Rejected');
+check('a deliverable nobody delivered to still shows its Work, with an empty Files section', bFiles(node(br, 'DCP 2K Flat'), 'Ep 101').nodes.length === 0);
+check('rollups over the pinned level read the pair', roll(node(section(bProres, 'works')!, 'Ep 101'), 'files') === 2 && roll(node(section(bProres, 'works')!, 'Ep 101'), 'accepted') === 1
+  && roll(node(section(bProres, 'works')!, 'Ep 102'), 'accepted') === 0);
+check('naming the pin by the junction\'s OTHER column gives the same report', JSON.stringify(runReport(byDeliverable(colOnDelivs), ctx)) === JSON.stringify(br));
+const bdAccepted: ReportDef = JSON.parse(JSON.stringify(bd));
+bdAccepted.root.children[0].children[0].pair!.filters = [{ fieldId: jStatus, op: 'eq', value: 'Accepted' }];
+check('a pair filter works on a pinned level too', bFiles(node(runReport(bdAccepted, ctx), 'ProRes 4444 texted'), 'Ep 101').nodes.map((n) => n.record.label).join() === 'ep101_prores_v2.mov');
+const bdBad = (mut: (d: any) => void) => { const d = JSON.parse(JSON.stringify(bd)); mut(d); return reportDefError(d, fields, tables) ?? ''; };
+check('without the junction pin, the level has no pair to show', bdBad((d) => { delete d.root.children[0].children[0].pins; }).includes('go through one junction'));
+check('…and its parent\'s rollup can no longer test the pair', bdBad((d) => { delete d.root.children[0].children[0].pins; delete d.root.children[0].children[0].pair; }).includes('condition field'));
+check('a junction pin must join the level to THAT ancestor', bdBad((d) => { d.root.children[0].children[0].pins[0].levelId = 'works'; }).includes("does not join this level's table to 'works'"));
+check('reached through the junction and pinned by a plain link (R11): the pair is the via\'s',
+  pairTableOf(T.delivs, { via: [{ fieldId: colOnDelivs }], pins: [{ fieldId: fFileWork, levelId: 'works' }] }, [{ id: 'works', table: T.works }, { id: 'delivs', table: T.delivs }], schema) === tPairs);
+let goneB: ReportSection | null = null;
+try { goneB = runReport(bd, noJunction); } catch { /* checked below */ }
+check('read-time: a pin whose junction is gone is skipped, as any deleted pin is — the files of the Work, unpinned, no pair', !!goneB
+  && bFiles(node(goneB, 'ProRes 4444 texted'), 'Ep 101').nodes.length === 3 && bFiles(node(goneB, 'ProRes 4444 texted'), 'Ep 101').nodes.every((n) => !n.pair));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
