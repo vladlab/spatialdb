@@ -183,7 +183,7 @@ function matches(
 
   // A rich text value is a document; everything below compares its TEXT.
   const v = field.type === 'rich_text' ? richTextToPlain(rec.data[field.key])
-    : field.type === 'structured' ? summarise(shapeOf(field), rec.data[field.key])
+    : field.type === 'structured' ? summarise(shapeOf(field), rec.data[field.key], true)
     : rec.data[field.key];
 
   // A checkbox never holds "empty" as a distinct visible state in the grid — an
@@ -293,7 +293,7 @@ export function applyView<R extends ViewRecord>(
     const valueOf = (r: R, field: ViewField): unknown =>
       isDerived(field) ? links(r.id, field.id).join(', ')
         : field.type === 'rich_text' ? richTextToPlain(r.data[field.key])
-        : field.type === 'structured' ? summarise(shapeOf(field), r.data[field.key])
+        : field.type === 'structured' ? summarise(shapeOf(field), r.data[field.key], true)
         : r.data[field.key];
 
     // Decorate with the original index so ties are broken explicitly rather than
@@ -378,7 +378,7 @@ export function quickSearch<R extends ViewRecord>(
     if (isDerived(f)) return links(r.id, f.id).some((l) => l.toLowerCase().includes(q));
     const raw = r.data[f.key];
     const v = f.type === 'rich_text' ? richTextToPlain(raw) : f.type === 'attachment' ? ''
-      : f.type === 'structured' ? summarise(shapeOf(f), raw) : raw;
+      : f.type === 'structured' ? summarise(shapeOf(f), raw, true) : raw;
     if (isEmpty(v) || typeof v === 'boolean') return false;
     return (Array.isArray(v) ? v.join(' ') : String(v)).toLowerCase().includes(q);
   }));

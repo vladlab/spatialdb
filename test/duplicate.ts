@@ -71,10 +71,12 @@ async function main() {
     const links = (await pool.query(`select to_record from links where from_record = $1 and field_id = $2 order by to_record`, [copy.id, fWork])).rows.map((x: any) => x.to_record);
     check('its links are the original\'s (both episodes)', links.sort().join() === [ep1, ep2].sort().join(), links.join());
     check('the grid jumped to the copy: its Codec cell is selected, the row selected', await until(() => !!rowOf('a.mov (copy)') && rowOf('a.mov (copy)')!.classes('rowsel')) && cell('a.mov (copy)', 'Codec').classes('sel'));
-    check('the row handle has a ⧉ too', rowOf('b.mov')!.find('td.num .dup').exists());
-    await rowOf('b.mov')!.find('td.num .dup').trigger('click');
+    // The row handle used to carry a ⧉ beside its ⤢: it was hit by accident. Ctrl+D and the tray's button are the ways.
+    check('the row handle has NO ⧉ — only the ⤢ that opens the record', !w.find('.gridview td.num .dup').exists() && rowOf('b.mov')!.find('td.num .expand').exists());
+    await cell('b.mov', 'Codec').trigger('mousedown');
+    await key('d', { ctrlKey: true });
     await untilDb(`select count(*)::int n from records where table_id = '${tFiles}'`, (x) => x[0].n === 4, 8000);
-    check('⧉ on a row duplicates it', await until(() => !!rowOf('b.mov (copy)')));
+    check('Ctrl+D on another row duplicates that one', await until(() => !!rowOf('b.mov (copy)')));
 
     console.log('\nD2. Ctrl+C / Ctrl+V between cells');
     await cell('a.mov', 'Codec').trigger('mousedown');

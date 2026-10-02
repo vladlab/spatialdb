@@ -378,13 +378,13 @@ function pure() {
   let spec: Layout = { tracks: [] };
   spec = addPreset(spec, '5.1', 'Full mix'); spec = addPreset(spec, '2.0', 'Stereo'); spec = addPreset(spec, '2.0', 'M&E'); spec = addPreset(spec, '2.0', 'Dialog');
   check('5.1 + 3× stereo is 4 tracks and 12 channels, and says so', AudioLayout.safeParse(spec).success && flattenChannels(spec).length === 12
-    && summarise('audio_layout', spec) === '4 tracks / 12 ch (5.1, 2.0, 2.0, 2.0)', summarise('audio_layout', spec));
+    && summarise('audio_layout', spec) === '4 tracks / 12 ch' && summarise('audio_layout', spec, true) === '4 tracks / 12 ch (5.1, 2.0, 2.0, 2.0)', summarise('audio_layout', spec));
   let asMonos = spec;
   for (let i = 0; i < asMonos.tracks.length;) { if (asMonos.tracks[i].channels.length > 1) asMonos = splitTrack(asMonos, i); else i++; }
   check('split every track: the SAME 12 channels in the SAME order, as 12 mono tracks', asMonos.tracks.length === 12 && flattenChannels(asMonos).join() === flattenChannels(spec).join()
     && asMonos.tracks[3].name === 'Full mix LFE', asMonos.tracks.map((t) => t.name).join(' | '));
   const remerged = mergeTracks(asMonos, [0, 1, 2, 3, 4, 5], 'Full mix');
-  check('merge six monos back into one 5.1 track, in place', remerged.tracks.length === 7 && remerged.tracks[0].channels.join(' ') === 'L R C LFE Ls Rs' && summarise('audio_layout', remerged).includes('(5.1, mono'));
+  check('merge six monos back into one 5.1 track, in place', remerged.tracks.length === 7 && remerged.tracks[0].channels.join(' ') === 'L R C LFE Ls Rs' && summarise('audio_layout', remerged, true).includes('(5.1, mono') && summarise('audio_layout', remerged) === '7 tracks / 12 ch');
   check('move swaps neighbours and refuses to fall off either end', moveTrack(spec, 0, 1).tracks[1].name === 'Full mix' && moveTrack(spec, 0, -1) === spec && moveTrack(spec, 3, 1) === spec);
   check('an empty channel list, or an unknown key on a track, is refused', !!structuredError('a', 'audio_layout', { tracks: [{ name: 'x', channels: [] }] })
     && !!structuredError('a', 'audio_layout', { tracks: [{ name: 'x', channels: ['L'], lang: 'en' }] }));

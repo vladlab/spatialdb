@@ -49,7 +49,7 @@ async function main() {
 
     console.log('\nT1. The grid');
     await go(tDel);
-    check('a structured cell is a one-line SUMMARY of its value', await until(() => cellOf('Network master', 'Audio layout').text() === '2 tracks / 8 ch (5.1, 2.0)'), cellOf('Network master', 'Audio layout').text());
+    check('a structured cell is a one-line SUMMARY of its value — the counts, without the list of each track\'s format', await until(() => cellOf('Network master', 'Audio layout').text() === '2 tracks / 8 ch'), cellOf('Network master', 'Audio layout').text());
     await go(tFiles);
     check('a number field formatted as bytes reads as a size (the stored value is still a number)', cellOf('ep101.mov', 'Total size').text() === '120 GB', cellOf('ep101.mov', 'Total size').text());
 
@@ -156,7 +156,7 @@ async function main() {
     await al().find('[data-preset="2.0"]').trigger('click');
     await untilDb(`select data->'audio_layout' v from records where id = '${file1}'`, (r) => r[0].v?.tracks?.length === 2);
     check('adding presets writes the layout — one mutation per action', (await dbLayout(file1)).tracks[0].channels.join(' ') === 'L R C LFE Ls Rs' && await mutations() === before + 2, `${await mutations() - before}`);
-    check('the summary above the editor follows', await until(() => pField('Audio layout').find('.sf-summary').text() === '2 tracks / 8 ch (5.1, 2.0)'));
+    check('the summary above the editor follows', await until(() => pField('Audio layout').find('.sf-summary').text() === '2 tracks / 8 ch'));
 
     check('there is NO compare in the cell — validation will get its own place (the owner\'s call); the diff lives on in the contract and the endpoint',
       !al().find('.al-compare').exists() && !/compare/i.test(al().text()));
@@ -176,7 +176,7 @@ async function main() {
     const afterRename = await mutations();
     await nameIn(1).trigger('change');               // the same name again: must write NOTHING
     check('MERGE them back and name the tracks: a 5.1 and a stereo again', await until(() => tracks().join(' | ') === '5.1:Full mix | 2.0:stereo')
-      && pField('Audio layout').find('.sf-summary').text() === '2 tracks / 8 ch (5.1, 2.0)', tracks().join(' | '));
+      && pField('Audio layout').find('.sf-summary').text() === '2 tracks / 8 ch', tracks().join(' | '));
     await sleep(300);
     check('re-entering the same name writes nothing — no log row, no empty undo step', await mutations() === afterRename, `${await mutations() - afterRename} extra`);
     win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));

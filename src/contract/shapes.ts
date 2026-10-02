@@ -159,7 +159,19 @@ export function trackFormat(t: AudioTrack): string {
   return `${t.channels.length} ch`;
 }
 
-export function summarise(shape: Shape | null, value: unknown): string {
+/**
+ * A structured value as ONE line of text — what a grid cell, a card row, a report
+ * cell show in its place.
+ *
+ * `detail` is for where that text is MATCHED or COMPARED rather than read at a glance
+ * (a view's search, filter and sort; a comparison's "expected … found …"; the tooltip
+ * of a copied layout): an audio layout then also lists each track's format,
+ * "4 tracks / 12 ch (5.1, 2.0, 2.0, 2.0)". Shown in a cell that list is noise — ten
+ * mono tracks read "(mono, mono, mono, …)" and push everything else off the line —
+ * so the plain summary stops at "10 tracks / 10 ch". The tray's editor is where the
+ * tracks are read.
+ */
+export function summarise(shape: Shape | null, value: unknown, detail = false): string {
   if (value === undefined || value === null) return '';
   if (shape === 'manifest') {
     const r = Manifest.safeParse(value);
@@ -178,7 +190,8 @@ export function summarise(shape: Shape | null, value: unknown): string {
     if (!r.success) return 'invalid layout';
     const t = r.data.tracks;
     if (!t.length) return 'no tracks';
-    return `${t.length} track${t.length === 1 ? '' : 's'} / ${flattenChannels(r.data).length} ch (${t.map(trackFormat).join(', ')})`;
+    const counts = `${t.length} track${t.length === 1 ? '' : 's'} / ${flattenChannels(r.data).length} ch`;
+    return detail ? `${counts} (${t.map(trackFormat).join(', ')})` : counts;
   }
   if (shape === 'video_layout') {
     const r = VideoLayout.safeParse(value);

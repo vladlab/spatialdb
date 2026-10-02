@@ -303,12 +303,13 @@
               :class="{ pending: store.unconfirmed.value.has(r.id), fresh: fresh.has(r.id), rowsel: rowSel.has(r.id), alt: banded.has(r.id) }">
             <!-- The row's HANDLE: click to select the row, drag to carry the selection
                  somewhere (a canvas). The ⤢ keeps to the right edge so it never sits
-                 under a press meant for the handle. -->
+                 under a press meant for the handle. (There was a ⧉ beside it: a second
+                 small target next to the one you aim for, and it duplicated rows by
+                 accident. Ctrl+D on the selected rows and the tray's "duplicate" remain.) -->
             <td class="num pin" title="Click to select this row"
                 @pointerdown="onRowHandleDown(r.id, rowIndex.get(r.id) ?? 0, $event)">
               <span class="n">{{ (rowIndex.get(r.id) ?? 0) + 1 }}</span>
               <button class="expand" tabindex="-1" title="Open record (Space)" @pointerdown.stop @mousedown.prevent @click="$emit('open-record', r.id)">⤢</button>
-              <button v-if="!isJunction" class="dup" tabindex="-1" title="Duplicate this row (Ctrl+D duplicates the selected rows)" @pointerdown.stop @mousedown.prevent @click="duplicateRows([r.id])">⧉</button>
             </td>
             <td v-for="f in shown" :key="f.id"
                 :class="{ sel: isSel(r.id, f.id), editing: isSel(r.id, f.id) && editing, pin: f.id === primaryId, sized: colWidth(f.id) !== undefined }"
@@ -533,7 +534,6 @@ const fmtN = (n: number) => n.toLocaleString();
 /* ── table, fields, views ─────────────────────────────────────────────────*/
 
 const allFields = computed(() => fieldsOf(store.state, props.tableId));
-const isJunction = computed(() => store.state.tables.get(props.tableId)?.kind === 'junction');
 const isBoards = computed(() => store.state.tables.get(props.tableId)?.kind === 'canvas');
 const isReports = computed(() => store.state.tables.get(props.tableId)?.kind === 'report');
 const fieldById = computed(() => new Map(allFields.value.map((f) => [f.id, f])));
@@ -1452,7 +1452,7 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
    and to sit above the unpinned ones (and the header row above all rows). */
 .grid th.pin, .grid td.pin { position: sticky; left: 0; z-index: 5; }
 .grid th.pin { z-index: 12; }
-.grid th.pin:not(.num), .grid td.pin:not(.num) { left: 68px; }
+.grid th.pin:not(.num), .grid td.pin:not(.num) { left: 52px; }
 /* A ROW'S BACKGROUND, in two variables, so every cell of it — pinned or not — paints
    the same thing. `--row-bg` is the row's own shade: plain, or the band's on every
    second row. `--cell-bg` is that with the row's state tinted over it. The states are
@@ -1488,15 +1488,13 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
    cell on every hover: the column twitched and the row grew a pixel, which in a
    windowed grid (fixed ROW_H) also nudged everything below it. Absolute + a
    fixed-width cell means hovering changes paint, never layout. */
-.num { position: sticky; width: 68px; min-width: 68px; max-width: 68px; box-sizing: border-box; cursor: grab; user-select: none; padding-right: 34px !important; }
+.num { position: sticky; width: 52px; min-width: 52px; max-width: 52px; box-sizing: border-box; cursor: grab; user-select: none; padding-right: 18px !important; }
 .num:active { cursor: grabbing; }
-.num .expand, .num .dup {
+.num .expand {
   position: absolute; top: 0; bottom: 0; right: 0; width: 18px; display: flex; align-items: center; justify-content: center;
   visibility: hidden; background: none; border: none; color: var(--accent);
   cursor: pointer; padding: 0; font: inherit; line-height: 1;
 }
-.num .dup { right: 17px; color: var(--text-muted); font-size: 11px; }
-.num .dup:hover { color: var(--accent); }
 .row.rowsel .num { color: var(--accent); }
 /* The view control is the first thing in the bar and reads as a LABEL + NAME, not
    as one more button: it answers "which view am I in" before it is ever opened. */
@@ -1536,7 +1534,7 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .group-add:hover { color: var(--accent); border-color: var(--accent); }
 .scope-note { font-size: 11px; color: var(--accent); border: 1px solid var(--accent); border-radius: 3px; padding: 0 6px; white-space: nowrap; }
 .scope-note.unscoped { color: var(--warning); border-color: var(--warning); }
-.row:hover .num .expand, .row:hover .num .dup { visibility: visible; }
+.row:hover .num .expand { visibility: visible; }
 .num { color: var(--text-faint); font-size: 11px; text-align: right !important; }
 .act { width: 1%; white-space: nowrap; }
 .open-board { background: none; border: 1px solid var(--border-main); color: var(--accent); border-radius: 3px; padding: 0 6px; margin-right: 4px; cursor: pointer; font: inherit; font-size: 11px; }

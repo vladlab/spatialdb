@@ -113,8 +113,9 @@ const isEmpty = (v: unknown) => v === undefined || v === null || v === '' || (Ar
 const show = (v: unknown, shape?: string | null): string => {
   if (isEmpty(v)) return '—';
   if (Array.isArray(v)) return v.join(', ');
-  // A structured value reads as its summary ("2 tracks / 8 ch (5.1, stereo)"), never as JSON.
-  if (typeof v === 'object') return shape ? summarise(shape as never, v) : JSON.stringify(v);
+  // A structured value reads as its summary ("2 tracks / 8 ch (5.1, stereo)"), never as JSON —
+  // the DETAILED one: two layouts that differ only in their formats must not read the same.
+  if (typeof v === 'object') return shape ? summarise(shape as never, v, true) : JSON.stringify(v);
   return String(v);
 };
 

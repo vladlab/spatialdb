@@ -55,7 +55,7 @@
       <button class="al-btn merge" :disabled="picked.size < 2" title="Merge the selected tracks into one" @click="merge">merge {{ picked.size > 1 ? picked.size : '' }}</button>
       <span class="spacer" />
       <button class="al-btn copy" :disabled="!layout.tracks.length" title="Copy this layout, to paste onto another record" @click="copy">copy</button>
-      <button class="al-btn paste" :disabled="!clipboardLayout" :title="clipboardLayout ? `Replace with the copied layout: ${summarise('audio_layout', clipboardLayout)}` : 'Nothing copied yet'" @click="paste">paste</button>
+      <button class="al-btn paste" :disabled="!clipboardLayout" :title="clipboardLayout ? `Replace with the copied layout: ${summarise('audio_layout', clipboardLayout, true)}` : 'Nothing copied yet'" @click="paste">paste</button>
     </div>
 
   </div>
