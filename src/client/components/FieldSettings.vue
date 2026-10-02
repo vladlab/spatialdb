@@ -66,6 +66,9 @@
              @change="actions.setSingle(field.id, ($event.target as HTMLInputElement).checked)" />
       single
     </label>
+    <!-- LINK fields: what the PICKER narrows by (contract/match.ts) — "deliverables of
+         this file's Work first". A default filter with "show all", never a constraint. -->
+    <LinkMatch v-if="field.type === 'link'" :store="store" :actions="actions" :field="field" class="match" />
     <!-- LINK fields: a COMPARING link (COMPARE-BRIEF.md): the target is what is expected,
          this table's record what was found; pairs of fields say what is checked. Ticking
          pre-fills same-name pairs. -->
@@ -107,6 +110,7 @@ import type { Store } from '../store';
 import { fieldsOf, type FieldRow } from '../state';
 import { suggestPairs } from '../../contract/compare';
 import ComparePairs from './ComparePairs.vue';
+import LinkMatch from './LinkMatch.vue';
 import { useDerived } from '../derived';
 import { choicesOf, ownChoices, type SchemaActions } from '../schemaActions';
 import { VOCABULARIES, VOCABULARY_IDS } from '../../contract/vocab';
@@ -170,7 +174,7 @@ input:not([type='checkbox']):not([type='color']) {
 .lookup.broken { color: var(--danger); }
 .field-settings.row .lookup { width: auto; }
 input[type='checkbox'] { width: auto; flex: none; margin: 0; }
-.field-settings.stack .membership, .field-settings.stack .arrow-style, .field-settings.stack .count-tick { align-self: flex-start; }
+.field-settings.stack .membership, .field-settings.stack .arrow-style, .field-settings.stack .count-tick, .field-settings.stack .match { align-self: flex-start; }
 .membership, .single, .compare-tick, .count-tick { display: flex; gap: 4px; align-items: center; cursor: pointer; color: var(--text-muted); font-size: 11px; white-space: nowrap; }
 .arrow-style { display: flex; gap: 6px; align-items: center; color: var(--text-muted); font-size: 11px; }
 .arrow-style label { display: flex; gap: 4px; align-items: center; cursor: pointer; }

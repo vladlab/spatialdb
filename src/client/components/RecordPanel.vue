@@ -87,7 +87,7 @@
                  this line's place and the pills above stay exactly where they are. -->
             <span v-if="editingId !== f.id" class="placeholder add-link">{{ addLinkText(f) }}</span>
             <LinkPicker v-if="editingId === f.id && targetOf(f)" field :store="store" :target-table-id="targetOf(f)!"
-                        :linked="linksFrom(f.id)" :anchor="valueEls.get(f.id)"
+                        :linked="linksFrom(f.id)" :anchor="valueEls.get(f.id)" :link-field="f.id" :from-record="recordId"
                         @add="(to) => addLink(f.id, to)" @remove="(to) => removeLink(f.id, to)" @done="onDone" />
           </template>
 

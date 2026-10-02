@@ -84,6 +84,7 @@
     <div v-if="linkPick" class="link-pick" :style="{ left: linkPick.client.x + 'px', top: linkPick.client.y + 'px' }" @pointerdown.stop @keydown.stop>
       <p class="link-pick-head">Link <b>{{ derived.labelOfId(linkPick.fromRecord) }}</b> → {{ store.state.tables.get(linkPick.targetTable)?.name }}: choose, or type a new name</p>
       <LinkPicker inline allow-create :store="store" :target-table-id="linkPick.targetTable" :linked="derived.linksFrom(linkPick.fromRecord, linkPick.fieldId)"
+                  :link-field="linkPick.fieldId" :from-record="linkPick.fromRecord"
                   @add="linkPickChoose" @create="linkPickCreate" @done="linkPick = null" />
     </div>
     <!-- A JUNCTION drag (sql/016) let go: on a card of the other table, the pair's status

@@ -34,6 +34,7 @@ import { backlinkConfigError } from '../contract/backlinks.js';
 import { arrowStyleError } from '../contract/arrows.js';
 import { countOptionError } from '../contract/pills.js';
 import { compareConfigError } from '../contract/compare.js';
+import { linkMatchError } from '../contract/match.js';
 import { SYSTEM_FIELD_TYPES, isSystemKey } from '../contract/systemFields.js';
 import { assetIdsIn } from '../contract/richtext.js';
 import { membershipError } from '../contract/scope.js';
@@ -248,6 +249,28 @@ async function assertJunctionRowsWhole(db: PoolClient, touched: Array<{ recordId
   }
 }
 
+/**
+ * `options.match` on a link — the pairs of fields its picker narrows by
+ * (contract/match.ts): each pair one link-like field of the link's own table and
+ * one of its target table, leading to the same table.
+ *
+ * What is NEW must be right; pairs the field already held are left alone (the
+ * contract says why: a match can break later and is then merely inert, and must
+ * not hold the field's other settings hostage). `was` is the stored value on an
+ * update.
+ */
+async function assertLinkMatchValid(
+  db: PoolClient, link: { id: string; table_id: string; type: string; options: Record<string, unknown> | undefined }, was?: unknown,
+) {
+  if (link.options?.match === undefined) return;
+  // Every field: a pair's backlink side is resolved through its source field, on
+  // a third table. The schema is small (assertJunctionValid does the same).
+  const fields = (await db.query(`select id, table_id, type, options from fields`)).rows;
+  const byId = new Map<string, { id: string; table_id: string; type: string; options: Record<string, unknown> | null }>(fields.map((f) => [f.id, f]));
+  const err = linkMatchError({ ...link, options: link.options }, (id) => byId.get(id), was);
+  if (err) throw new MutationError(err);
+}
+
 function assertArrowStyleValid(options: Record<string, unknown> | undefined) {
   const err = arrowStyleError(options);
   if (err) throw new MutationError(err);
@@ -430,6 +453,7 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
       assertArrowStyleValid(m.options);
       { const err = countOptionError(m.fieldType, m.options); if (err) throw new MutationError(err); }
       await assertCompareValid(db, m.tableId, m.fieldType, m.options);
+      await assertLinkMatchValid(db, { id: m.id, table_id: m.tableId, type: m.fieldType, options: m.options });
       if (m.fieldType === 'structured') { const err = shapeOptionError(m.options); if (err) throw new MutationError(err); }
       if (m.fieldType === 'select' || m.fieldType === 'multi_select') { const err = vocabularyOptionError(m.options); if (err) throw new MutationError(err); }
       await assertMembershipValid(db, m.tableId, m.fieldType, m.options, m.id);
@@ -452,12 +476,13 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
       assertArrowStyleValid(m.options);
       if (m.options) {
         // Re-pointing an existing lookup gets the same check as creating one.
-        const cur = await db.query(`select table_id, type from fields where id = $1`, [m.id]);
+        const cur = await db.query(`select table_id, type, options->'match' as match from fields where id = $1`, [m.id]);
         if (cur.rowCount) await assertMembershipValid(db, cur.rows[0].table_id, cur.rows[0].type, m.options, m.id);
         if (cur.rowCount) { const err = countOptionError(cur.rows[0].type, m.options); if (err) throw new MutationError(err); }
         if (cur.rows[0]?.type === 'lookup') await assertLookupConfigValid(db, cur.rows[0].table_id, m.options);
         if (cur.rows[0]?.type === 'backlink') await assertBacklinkConfigValid(db, cur.rows[0].table_id, m.options);
         if (cur.rowCount) await assertCompareValid(db, cur.rows[0].table_id, cur.rows[0].type, m.options);
+        if (cur.rowCount) await assertLinkMatchValid(db, { id: m.id, table_id: cur.rows[0].table_id, type: cur.rows[0].type, options: m.options }, cur.rows[0].match ?? undefined);
         if (cur.rows[0]?.type === 'select' || cur.rows[0]?.type === 'multi_select') { const err = vocabularyOptionError(m.options); if (err) throw new MutationError(err); }
         if (cur.rows[0]?.type === 'structured') {
           const err = shapeOptionError(m.options);

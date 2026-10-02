@@ -803,6 +803,35 @@ a 400 on any other field type. It is display only — sorting, filtering, search
 lookups and reports read the same links. As with `arrow`, `field.update` replaces
 `options` whole (the client merges; see `setCount`).
 
+### Narrowing a link's picker: `match`
+
+`field.options.match = [[<field on this table>, <field on the target table>], …]`
+on a **link** field (max 8 pairs): what its picker offers FIRST. Each pair names two
+fields that should agree — a file's `Work`, a deliverable's `Works` — and picking a
+record for that link then lists the agreeing candidates alone, with "show all" a
+tick away. Rule and validation are `src/contract/match.ts`:
+
+- A side is **link-like**: a link, or a backlink (the fact "Works.Deliverables" lives
+  on the Work; on Deliverables it is a backlink, and either may stand in a pair). The
+  two sides must lead to the **same table**; the first is on the link's own table,
+  the second on its target; the link cannot be matched on itself. Anything else is a
+  400 — checked for pairs that are NEW in the write.
+- A candidate **agrees** when, for every pair, the two sides share at least one
+  record. A pair the starting record holds nothing for is skipped ("no opinion");
+  if no pair has an opinion the picker does not narrow at all. If nothing agrees,
+  everything is listed and the picker says so.
+- It is a **default filter, never a constraint**: `link.add` does not look at it, so
+  a script (or "show all") can link anything the field's target allows.
+- A pair whose field is later deleted is inert, shown as broken in the field's ⚙ and
+  removable there; pairs already stored are not re-validated, so the field's other
+  options still save.
+
+Set in the field's ⚙ ("match": one dropdown of the possible pairs —
+`LinkMatch.vue`, `setMatch`). Applied by `LinkPicker` wherever a link field is
+filled: the grid, the record tray, a link dropped on empty canvas. A junction's
+`match` (below) is the same rule (`agrees`) between its two endpoint tables. As
+with `arrow`, `field.update` replaces `options` whole.
+
 ### Backlink fields
 
 The other end of a link, as a read-only field — seventh shared contract file,

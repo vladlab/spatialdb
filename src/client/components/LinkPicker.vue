@@ -61,12 +61,16 @@
     <label v-if="scopeFilter" class="note scope-toggle" @mousedown.prevent>
       <input v-model="everywhere" type="checkbox" tabindex="-1" @mousedown.stop /> search all {{ scopeTableName }}, not just {{ scopeApi?.label.value }}
     </label>
-    <!-- A junction's MATCH (contract/junction.ts): candidates that agree with the
-         starting record come first and alone — a filter with a way out, never a
-         constraint. When nothing agrees the toggle is moot and everything shows. -->
-    <label v-if="match && anyMatch" class="note scope-toggle" @mousedown.prevent>
-      <input v-model="showAll" type="checkbox" tabindex="-1" @mousedown.stop /> show all {{ targetName }}, not just {{ match.label }}
+    <!-- A MATCH (contract/match.ts) — a link field's own, or a junction's: candidates
+         that agree with the starting record come first and alone — a filter with a
+         way out, never a constraint. When nothing agrees the toggle is moot and
+         everything shows. -->
+    <label v-if="rule && anyMatch" class="note scope-toggle match-toggle" @mousedown.prevent>
+      <input v-model="showAll" type="checkbox" tabindex="-1" @mousedown.stop /> show all {{ targetName }}, not just {{ rule.label }}
     </label>
+    <!-- Narrowed to nothing would be a dead end, so everything is offered — and SAID,
+         or a full list under a field that usually narrows reads as "these all agree". -->
+    <div v-else-if="rule && !loading && inScope.length" class="note no-match">no {{ targetName }} with {{ rule.label }} — showing all</div>
     <div v-if="loading" class="note">loading {{ targetName }}… {{ loadedRows.toLocaleString() }} rows — results are partial</div>
     <ul class="list">
       <li v-for="(c, i) in visible" :key="c.id" :class="{ hi: i === hi }"
@@ -97,6 +101,7 @@ import { SCOPE } from '../scope';
 import type { Store } from '../store';
 import { primaryKeys, recordsOf } from '../state';
 import { hintFrom, labelFrom } from '../../contract/labels';
+import { useDerived } from '../derived';
 import type { EditExit } from './CellEditor.vue';
 
 const props = defineProps<{
@@ -116,6 +121,13 @@ const props = defineProps<{
   seed?: string;
   /** Prefer candidates passing `test` (shown alone until "show all"); `label` names what they agree on. */
   match?: { test: (id: string) => boolean; label: string };
+  /**
+   * The LINK FIELD being filled and the record it is being filled on. Given both,
+   * the picker narrows by the field's own match (its ⚙ — contract/match.ts) without
+   * the caller doing anything else; an explicit `match` (a junction's) wins.
+   */
+  linkField?: string;
+  fromRecord?: string;
 }>();
 const emit = defineEmits<{
   add: [toRecord: string];
@@ -157,9 +169,14 @@ const inScope = computed(() => {
   const within = everywhere.value ? null : scopeFilter.value;
   return recordsOf(props.store.state, props.targetTableId).filter((r) => !taken.has(r.id) && (!within || within(r)));
 });
-const anyMatch = computed(() => !!props.match && inScope.value.some((r) => props.match!.test(r.id)));
+/** What narrows: the caller's rule, else the link field's own match for this record. */
+const derived = useDerived(props.store);
+const ownField = computed(() => (props.linkField ? props.store.state.fields.get(props.linkField) : undefined));
+const rule = computed(() => props.match
+  ?? (ownField.value && props.fromRecord ? derived.linkMatchRule(ownField.value, props.fromRecord) : undefined));
+const anyMatch = computed(() => !!rule.value && inScope.value.some((r) => rule.value!.test(r.id)));
 const candidates = computed(() => {
-  const m = props.match;
+  const m = rule.value;
   return inScope.value
     .filter((r) => !m || showAll.value || !anyMatch.value || m.test(r.id))
     .map((r) => {
@@ -234,6 +251,9 @@ function showDrop() { if (props.field) drop.value?.scrollIntoView?.({ block: 'ne
 
 onMounted(() => {
   void props.store.loadTable(props.targetTableId);   // no-op if already walked
+  // A match reads what the STARTING record holds (its Work); those links arrive with
+  // its own table — loaded already in a grid, not necessarily behind a canvas card.
+  if (ownField.value?.options?.match !== undefined) void props.store.loadTable(ownField.value.table_id);
   void nextTick(() => { input.value?.focus(); showDrop(); });
 });
 </script>

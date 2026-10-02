@@ -23,6 +23,7 @@ import { backlinkRecords, backlinkSourceOf } from '../contract/backlinks';
 import { endpointOfBacklink, junctionColumnTarget, junctionLabel, junctionOf, otherEnd, type JunctionConfig } from '../contract/junction';
 import { arrowStyleOf } from '../contract/arrows';
 import { countNoun, showsCount } from '../contract/pills';
+import { agrees, hasOpinion, usablePairs } from '../contract/match';
 
 const NONE: string[] = [];
 
@@ -228,6 +229,32 @@ export function useDerived(store: Store) {
     });
   }
 
+  /* ── picker narrowing (contract/match.ts) ────────────────────────────────── */
+
+  /** What a record HOLDS through a link-like field: a link's targets, a backlink's sources. */
+  function held(recordId: string, fieldId: string): readonly string[] {
+    const f = getField(fieldId);
+    if (!f) return NONE;
+    if (f.type === 'link') return linksFrom(recordId, fieldId);
+    if (f.type === 'backlink') return backlinkOf(recordId, f) ?? NONE;
+    return NONE;
+  }
+
+  /**
+   * A link field's MATCH, as its picker wants it: a test for a candidate, and what
+   * the agreeing ones agree on ("the same Work"). Undefined when the field has no
+   * usable pair, or the starting record holds nothing through any of them — then
+   * there is nothing to narrow by and the picker says nothing about it.
+   */
+  function linkMatchRule(f: FieldRow, from: string): { test: (id: string) => boolean; label: string } | undefined {
+    if (f.type !== 'link') return undefined;
+    const pairs = usablePairs(f, getField);
+    if (!pairs.length || !hasOpinion(pairs, from, held)) return undefined;
+    // Named after the pairs that have something to go on — the others are skipped by the rule.
+    const names = [...new Set(pairs.filter(([mine]) => held(from, mine).length).map(([mine]) => getField(mine)?.name).filter((n): n is string => !!n))];
+    return { test: (id: string) => agrees(pairs, from, id, held), label: `the same ${names.join(' / ') || 'links'}` };
+  }
+
   /* ── comparison (contract/compare.ts) — derived, never stored ────────────── */
 
   /**
@@ -314,5 +341,5 @@ export function useDerived(store: Store) {
   }
 
   return { labelKeys, linksFrom, linkedTo, labelOfId, plainLabelOfId, lookupOf, backlinkOf, textOf, tablesNeededBy, referencedBy, comparisonsOf, compare, differencesOf, fieldVerdicts, compareTargetTable, compareTargets,
-    junctionCfg, junctionRow, junctionOfBacklink, junctionChip, junctionRowFor, pillColorOf, pillTableOf, countOf };
+    junctionCfg, junctionRow, junctionOfBacklink, junctionChip, junctionRowFor, pillColorOf, pillTableOf, countOf, held, linkMatchRule };
 }

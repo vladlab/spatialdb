@@ -339,7 +339,7 @@
                   <!-- Mounted for the ONE cell being edited; see LinkPicker.vue. -->
                   <LinkPicker v-if="isSel(r.id, f.id) && editing && targetOf(f)"
                               :store="store" :target-table-id="targetOf(f)!" :linked="linksFrom(r.id, f.id)"
-                              :anchor="anchorEl" :seed="seed"
+                              :anchor="anchorEl" :seed="seed" :link-field="f.id" :from-record="r.id"
                               @add="(to) => addLink(f, r.id, to)" @remove="(to) => removeLink(f.id, r.id, to)"
                               @done="stopEdit" />
                 </template>

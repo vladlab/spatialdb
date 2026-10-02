@@ -26,6 +26,7 @@ import { vocabularyOptionError } from '../contract/vocab';
 import { REQUIRED, analyzerOf, defaultRecipe, fieldAccepts, toolsProblem, type Output, type TablesTools } from '../contract/tools';
 import { fieldsOf, recordsOf, tablesSorted, type FieldRow } from './state';
 import { junctionOf, junctionProblem, type JunctionConfig } from '../contract/junction';
+import { linkMatchError, type MatchPair } from '../contract/match';
 import type { Store } from './store';
 import { askFull, confirmDialog } from './dialogs';
 
@@ -418,6 +419,24 @@ export function useSchemaActions(store: Store) {
   }
 
   /**
+   * A link field's MATCH — the pairs of fields its picker narrows by
+   * (contract/match.ts). Checked here by the rule the server runs, so a bad pair is
+   * said in the form rather than refused on the wire. An empty list removes the
+   * option. Pairs already BROKEN (a field deleted since) are not held against the
+   * edit: removing one of them is exactly what the form is for.
+   */
+  function setMatch(id: string, pairs: MatchPair[]): string | null {
+    const f = store.state.fields.get(id);
+    if (!f || f.type !== 'link') return 'only a link field narrows its picker';
+    const { match: _old, ...rest } = f.options ?? {};
+    void _old;
+    const err = linkMatchError({ ...f, options: { ...rest, match: pairs } }, (fid) => store.state.fields.get(fid), f.options?.match);
+    if (err) return err;
+    store.mutate({ type: 'field.update', id, options: pairs.length ? { ...rest, match: pairs } : rest });
+    return null;
+  }
+
+  /**
    * Show a link or backlink as a COUNT — "3 Edits" — where a record gets one line:
    * the grid, a board card, a canvas card (contract/pills.ts). The tray still lists.
    */
@@ -534,7 +553,7 @@ export function useSchemaActions(store: Store) {
     createTable, createJunction, renameTable, deleteTable, setJunction,
     draftError, createField, renameField, setChoices, moveField, reorderFields, makePrimary, isPrimary,
     canBePrimary, deleteField,
-    setArrowStyle, setMembership, setSingle, setCount, setVocabulary, setTools, enableFileDrop, disableFileDrop, addToolFields, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
+    setArrowStyle, setMembership, setSingle, setCount, setMatch, setVocabulary, setTools, enableFileDrop, disableFileDrop, addToolFields, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
   };
 }
 export type SchemaActions = ReturnType<typeof useSchemaActions>;

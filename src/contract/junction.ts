@@ -27,6 +27,7 @@
  */
 
 import { z } from 'zod';
+import { agrees, hasOpinion, type MatchPair } from './match.js';
 
 const uuid = z.guid();
 
@@ -114,31 +115,27 @@ export function endpointOfBacklink(
 export const otherEnd = (side: 'a' | 'b'): 'a' | 'b' => (side === 'a' ? 'b' : 'a');
 
 /**
- * The picker rule for `match`: a candidate agrees when, for EVERY match pair, the
- * two sides share at least one linked record — non-empty intersection, because
- * a deliverable may belong to several Works (every episode of a show) and a file
- * to one of them. A pair on which the STARTING record links to nothing is skipped:
- * an empty side means "no opinion", not "nothing qualifies".
+ * The picker rule for `match` — THE rule is contract/match.ts's (`agrees`), shared
+ * with a plain link field's own match; here its pairs are read from the side the
+ * starting record is on. A candidate agrees when, for EVERY match pair, the two
+ * sides share at least one linked record; a pair on which the STARTING record
+ * links to nothing is skipped ("no opinion", not "nothing qualifies").
  */
+const pairsFrom = (cfg: JunctionConfig, side: 'a' | 'b'): MatchPair[] =>
+  (cfg.match ?? []).map(([fa, fb]) => (side === 'a' ? [fa, fb] : [fb, fa]));
+
 export function matches(
   cfg: JunctionConfig, side: 'a' | 'b',
   from: string, candidate: string,
   linksFrom: (recordId: string, fieldId: string) => readonly string[],
 ): boolean {
-  for (const pair of cfg.match ?? []) {
-    const [mine, theirs] = side === 'a' ? pair : [pair[1], pair[0]];
-    const have = linksFrom(from, mine);
-    if (!have.length) continue;
-    const want = linksFrom(candidate, theirs);
-    if (!want.some((id) => have.includes(id))) return false;
-  }
-  return true;
+  return agrees(pairsFrom(cfg, side), from, candidate, linksFrom);
 }
 
 /** True when the junction has at least one match pair the starting record can use. */
 export function hasMatch(cfg: JunctionConfig, side: 'a' | 'b', from: string,
   linksFrom: (recordId: string, fieldId: string) => readonly string[]): boolean {
-  return (cfg.match ?? []).some((pair) => linksFrom(from, side === 'a' ? pair[0] : pair[1]).length > 0);
+  return hasOpinion(pairsFrom(cfg, side), from, linksFrom);
 }
 
 /**
