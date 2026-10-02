@@ -241,7 +241,7 @@
     </div>
 
     <KanbanView v-if="kanban && kanbanField" :store="store" :records="matched" :field="kanbanField"
-                :card-fields="shown.filter((f) => f.id !== primaryField?.id)" :primary="primaryField"
+                :card-fields="shown.filter((f) => f.id !== primaryField?.id)" :primary="primaryField" :open-id="openRecordId"
                 @open-record="$emit('open-record', $event)" @create="createInColumn" />
     <div v-else ref="scroller" class="scroller" tabindex="0" @scroll.passive="onScroll" @keydown="onGridKey" @copy="onCopy" @paste="onPaste">
       <table class="grid">
@@ -300,7 +300,7 @@
                (long) body below; it always renders exactly one row. -->
           <template v-else>
           <tr v-for="r in [it.record]" :key="r.id" class="row"
-              :class="{ pending: store.unconfirmed.value.has(r.id), fresh: fresh.has(r.id), rowsel: rowSel.has(r.id), alt: banded.has(r.id) }">
+              :class="{ pending: store.unconfirmed.value.has(r.id), fresh: fresh.has(r.id), rowsel: rowSel.has(r.id), alt: banded.has(r.id), opened: r.id === openRecordId }">
             <!-- The row's HANDLE: click to select the row, drag to carry the selection
                  somewhere (a canvas). The ⤢ keeps to the right edge so it never sits
                  under a press meant for the handle. (There was a ⧉ beside it: a second
@@ -505,6 +505,8 @@ import { pairSlot } from '../textWidth';
 
 const props = defineProps<{
   store: Store; tableId: string;
+  /** The record open in the tray, or '' — its row (or board card) is marked. */
+  openRecordId?: string;
 }>();
 const emit = defineEmits<{ 'open-record': [recordId: string]; 'open-board': [recordId: string]; 'open-report': [recordId: string] }>();
 const store = props.store;
@@ -1465,8 +1467,16 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .row.alt { --row-bg: var(--bg-band); }
 .row.fresh { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.05), rgba(66, 165, 245, 0.05)), var(--row-bg); }
 .row:hover { --cell-bg: linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--row-bg); }
+/* The record OPEN IN THE TRAY: a bar down the row's left edge, its number lit, and a
+   faint tint — so the tray beside the grid can be matched to its row at a glance, and
+   told from a SELECTED row (a stronger tint, no bar). Paint only: the bar is an inset
+   shadow on the `#` cell, which is pinned, so it stays in view however far right the
+   grid is scrolled. Under the pointer and when selected the bar stays. */
+.row.opened { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.08), rgba(66, 165, 245, 0.08)), var(--row-bg); }
+.row.opened:hover { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.08), rgba(66, 165, 245, 0.08)), linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--row-bg); }
 .row.rowsel { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.14), rgba(66, 165, 245, 0.14)), var(--row-bg); }
 .row td { background: var(--cell-bg); }
+.row.opened td.num { box-shadow: inset 3px 0 0 var(--accent); color: var(--accent); font-weight: 600; }
 .grid td.pin:not(.num) { border-right: 2px solid var(--border-main); }
 .grid th.pin:not(.num) { border-right: 2px solid var(--border-main); }
 /* Reordering: the lifted header dims; an accent bar marks where it will land. */

@@ -80,13 +80,15 @@
         <template v-else>
           <div class="stage">
             <div class="viewport">
-              <CanvasView v-if="view === 'canvas' && canvasId" ref="canvasRef" :key="canvasId" :store="store" :canvas-id="canvasId"
+              <!-- `open-record-id`: the record in the tray — its card (and, in the grid, its
+                   row) is marked, so the tray never has to be matched to its record by name. -->
+              <CanvasView v-if="view === 'canvas' && canvasId" ref="canvasRef" :key="canvasId" :store="store" :canvas-id="canvasId" :open-record-id="openRecordId"
                           @open-record="openRecordId = $event" @open-board="openBoard" />
               <p v-else-if="view === 'canvas'" class="hint">No canvas open — pick one in the tree, or press + beside “Canvases” to make one.</p>
 
               <!-- Keyed by table so switching tables is a fresh component: scroll
                    position, search text and the "rows I just made" set all reset. -->
-              <GridView v-if="view === 'table' && tableId" :key="tableId" :store="store" :table-id="tableId"
+              <GridView v-if="view === 'table' && tableId" :key="tableId" :store="store" :table-id="tableId" :open-record-id="openRecordId"
                         @open-record="openRecordId = $event" @open-board="openBoard" @open-report="openReport" />
               <p v-else-if="view === 'table'" class="hint">No table open — pick one in the tree, or press + beside “Tables” to make one.</p>
 

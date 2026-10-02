@@ -19,7 +19,7 @@
 <template>
   <div
     class="card"
-    :class="{ selected, dragging, unconfirmed, collapsed, 'link-ok': linkTarget === 'ok', 'link-over': linkTarget === 'over' }"
+    :class="{ selected, opened, dragging, unconfirmed, collapsed, 'link-ok': linkTarget === 'ok', 'link-over': linkTarget === 'over' }"
     :style="style"
     @pointerdown="onPointerDown"
     @pointerenter="$emit('hover', recordId)"
@@ -167,6 +167,8 @@ const props = defineProps<{
   collapsed: boolean;
   x: number; y: number; w: number | null; h: number | null; z: number;
   selected: boolean;
+  /** This card's record is the one open in the tray. */
+  opened?: boolean;
   /** While a link is being dragged: 'ok' = this card could take it, 'over' = it is about to. */
   linkTarget?: 'ok' | 'over' | null;
   dragging: boolean;
@@ -241,6 +243,12 @@ function onPointerDown(e: PointerEvent) {
 }
 .card.dragging { cursor: grabbing; box-shadow: var(--card-shadow-drag); }
 .card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring); }
+/* The record OPEN IN THE TRAY: a SOLID ring, where a selected card's is faint — the
+   two are different facts (several cards can be selected; one record is open, and it
+   stays open when the selection moves on). Selected and open together is the solid
+   ring; the drag shadow is kept under it. */
+.card.opened { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.card.opened.dragging { box-shadow: 0 0 0 2px var(--accent), var(--card-shadow-drag); }
 /* Optimistic rows are faded until the server acknowledges them — the same
    convention as the grid. */
 .card.unconfirmed { opacity: 0.55; }

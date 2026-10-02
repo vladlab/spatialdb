@@ -133,6 +133,7 @@
         v-bind="c"
         :store="store"
         :selected="selected.has(c.recordId)"
+        :opened="c.recordId === openRecordId"
         :dragging="drag.draggingIds.value.has(c.recordId)"
         :unconfirmed="store.unconfirmed.value.has(c.recordId)"
         :link-target="linkTargetState(c.recordId, c.tableId)"
@@ -263,7 +264,7 @@ import { useBoxSelection, useCardResize } from '../canvas/useCardResize';
 import ArrowLayer from './ArrowLayer.vue';
 import RecordCard from './RecordCard.vue';
 
-const props = defineProps<{ store: Store; canvasId: string }>();
+const props = defineProps<{ store: Store; canvasId: string; /** The record open in the tray, or '' — its card is marked. */ openRecordId?: string }>();
 const emit = defineEmits<{ 'open-record': [recordId: string]; 'open-board': [recordId: string] }>();
 const isBoardRecord = (id: string) => store.state.tables.get(store.state.records.get(id)?.table_id ?? '')?.kind === 'canvas';
 const store = props.store;

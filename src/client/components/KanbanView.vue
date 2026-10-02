@@ -21,7 +21,7 @@
         <button class="kcol-add" :title="c.value.kind === 'empty' ? 'Add a record with nothing here' : `Add a record in “${c.label}”`" @click="$emit('create', c.value)">+</button>
       </header>
       <div class="kcol-body">
-        <article v-for="r in c.records" :key="r.id" class="kcard" :class="{ lifted: dragIds.has(r.id) && dragFrom !== null }"
+        <article v-for="r in c.records" :key="r.id" class="kcard" :class="{ lifted: dragIds.has(r.id) && dragFrom !== null, opened: r.id === openId }"
                  @pointerdown="startDrag(r, c.key, $event)" @dblclick="$emit('open-record', r.id)">
           <div class="kcard-title">{{ labelOf(r) }}<button class="kcard-open" title="Open record" @pointerdown.stop @click.stop="$emit('open-record', r.id)">⤢</button></div>
           <div v-for="f in cardFields" :key="f.id" class="kcard-row">
@@ -69,6 +69,8 @@ const props = defineProps<{
   /** The fields a card shows under its title (the view's "shown" fields, minus the primary). */
   cardFields: FieldRow[];
   primary: FieldRow | undefined;
+  /** The record open in the tray, or '' — its card is marked. */
+  openId?: string;
 }>();
 const emit = defineEmits<{ 'open-record': [id: string]; create: [value: GroupValue] }>();
 const derived = useDerived(props.store);
@@ -184,6 +186,8 @@ function dropInto(toKey: string, records: RecordRow[]) {
 .kcol-body { overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 6px; min-height: 48px; }
 .kcard { background: var(--bg-app); border: 1px solid var(--border-main); border-radius: 4px; padding: 6px 8px; cursor: grab; user-select: none; font-size: 12px; }
 .kcard.lifted { opacity: 0.4; }
+/* The record open in the tray — the same solid ring a canvas card wears (RecordCard.vue). */
+.kcard.opened { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 .kcard-title { display: flex; align-items: center; gap: 4px; font-weight: 600; margin-bottom: 2px; }
 .kcard-title span, .kcard-title { overflow: hidden; }
 .kcard-open { visibility: hidden; margin-left: auto; background: none; border: none; color: var(--accent); cursor: pointer; font-size: 11px; padding: 0 2px; }
