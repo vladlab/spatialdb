@@ -45,6 +45,9 @@ export function pairSlot(labels: Iterable<string>, px: number, cap = 260): numbe
   return w ? Math.min(Math.ceil(w) + PILL_PAD, cap) : 0;
 }
 
+/** What a jump arrow adds to a pill's width (App.vue, `.pill-jump`): the name's right padding becomes the arrow's 17px box, behind 5px. */
+export const JUMP_PAD = 15;
+
 /** A capsule's room around its text: 9px each side (App.vue, `.pill-status`), and a pixel of grace. */
 const CAPSULE_PAD = 19;
 /** The widest of `labels` as a status capsule — what a column of statuses needs to show every one whole. 0 with none. */

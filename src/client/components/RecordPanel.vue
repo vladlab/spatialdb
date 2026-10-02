@@ -74,12 +74,13 @@
              @click="startEdit(f)" @keydown.enter.prevent.stop="startEdit(f)" @copy="onCopy(f, $event)" @paste="onPaste(f, $event)">
           <!-- LINK -->
           <template v-if="f.type === 'link'">
-            <!-- DRAG a pill onto a canvas to place that record there (or jump to it, if it is
-                 already placed). A plain click still opens it. client/recordDrag.ts tells the two
-                 apart by movement. -->
+            <!-- DRAG a pill onto a canvas to place that record there. One that is ALREADY on the
+                 open canvas says so with a → and a click on that goes to its card
+                 (client/canvasJump.ts). A double-click opens it. client/recordDrag.ts tells a
+                 press from a drag by movement. -->
             <span class="pills column">
-              <RecordPill v-for="to in linksFrom(f.id)" :key="to" :text="labelOfId(to)" title="Double-click opens it · drag onto a canvas to place it"
-                          :color="derived.pillColorOf(f)" removable drag @down="dragPill(to, $event)" @open="$emit('open', to)" @remove="removeLink(f.id, to)" />
+              <RecordPill v-for="to in linksFrom(f.id)" :key="to" :text="labelOfId(to)" :title="pillTitle(to)" :jump="onCanvas(to)"
+                          :color="derived.pillColorOf(f)" removable drag @down="dragPill(to, $event)" @open="$emit('open', to)" @jump="canvasJump?.jump(to)" @remove="removeLink(f.id, to)" />
             </span>
             <!-- The way IN, always there — as a junction's field has it: "add another
                  Deliverable…" under the links (a field that is full of links used to
@@ -112,7 +113,7 @@
             <template v-else>
               <span class="pills column">
                 <RecordPill v-for="from in derived.backlinkOf(recordId, f) ?? []" :key="from" back :text="labelOfId(from)" :color="derived.pillColorOf(f)"
-                            title="Double-click opens it · drag onto a canvas to place it" drag @down="dragPill(from, $event)" @open="$emit('open', from)" />
+                            :title="pillTitle(from)" :jump="onCanvas(from)" drag @down="dragPill(from, $event)" @open="$emit('open', from)" @jump="canvasJump?.jump(from)" />
               </span>
               <span v-if="derived.backlinkOf(recordId, f)?.length === 0" class="placeholder">nothing links here</span>
             </template>
@@ -157,8 +158,8 @@
         <div v-for="g in referencedBy" :key="g.field.id" class="rp-ref">
           <span class="rp-ref-via">{{ g.tableName }} · {{ g.field.name }}</span>
           <span class="pills">
-            <RecordPill v-for="from in g.from" :key="from" back :text="labelOfId(from)" title="Double-click opens it · drag onto a canvas to place it"
-                        :color="derived.pillColorOf(g.field)" drag @down="dragPill(from, $event)" @open="$emit('open', from)" />
+            <RecordPill v-for="from in g.from" :key="from" back :text="labelOfId(from)" :title="pillTitle(from)" :jump="onCanvas(from)"
+                        :color="derived.pillColorOf(g.field)" drag @down="dragPill(from, $event)" @open="$emit('open', from)" @jump="canvasJump?.jump(from)" />
           </span>
         </div>
       </div>
@@ -175,7 +176,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, reactive, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, inject, nextTick, reactive, ref, watch } from 'vue';
+import { CANVAS_JUMP } from '../canvasJump';
 import type { Store } from '../store';
 import { fieldsOf, primaryKeys, type FieldRow } from '../state';
 import { labelFrom } from '../../contract/labels';
@@ -247,6 +249,12 @@ function onPaste(f: FieldRow, e: ClipboardEvent) {
   const err = pasteCell(store, props.recordId, f, clip);
   if (err) notice(`Not pasted: ${err}`, 'warn');
 }
+
+/* A pill whose record has a card on the OPEN canvas wears a → that goes to it
+   (client/canvasJump.ts, provided by the shell; absent — no arrow — anywhere else). */
+const canvasJump = inject(CANVAS_JUMP, null);
+const onCanvas = (id: string) => canvasJump?.placed(id) === true;
+const pillTitle = (id: string) => (onCanvas(id) ? 'Double-click opens it · → goes to its card on this canvas' : 'Double-click opens it · drag onto a canvas to place it');
 
 /** A pill: drag it onto a canvas. A still press does nothing — a double-click opens. */
 function dragPill(recordId: string, e: PointerEvent) {

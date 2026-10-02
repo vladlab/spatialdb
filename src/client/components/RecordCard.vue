@@ -19,7 +19,7 @@
 <template>
   <div
     class="card"
-    :class="{ selected, opened, dragging, unconfirmed, collapsed, 'link-ok': linkTarget === 'ok', 'link-over': linkTarget === 'over' }"
+    :class="{ selected, opened, flash, dragging, unconfirmed, collapsed, 'link-ok': linkTarget === 'ok', 'link-over': linkTarget === 'over' }"
     :style="style"
     @pointerdown="onPointerDown"
     @pointerenter="$emit('hover', recordId)"
@@ -66,9 +66,9 @@
         <span v-if="r.ids && r.ids.length" class="card-val card-list pills column" :class="{ derived: r.derived, pairs: r.junction }"
               :style="r.slot ? { '--pair-slot': r.slot + 'px', '--pair-status': (r.statusW ?? 0) + 'px' } : undefined">
           <RecordPill v-for="(id, i) in r.ids.slice(0, CARD_MAX_LINES)" :key="id + i" class="card-line" :text="(r.lines ?? [r.text])[i] ?? ''" :back="!r.link" :junction="r.junction"
-                      :status="r.statuses?.[i]" :color="r.color"
-                      title="Double-click opens it · drag it off this card to place it on the canvas" drag
-                      @down="$emit('drag-linked', { recordId: id, from: recordId, e: $event })" @open="$emit('open-linked', id)"
+                      :status="r.statuses?.[i]" :color="r.color" :jump="r.here?.[i]"
+                      :title="r.here?.[i] ? 'Double-click opens it · → goes to its card on this canvas' : 'Double-click opens it · drag it off this card to place it on the canvas'" drag
+                      @down="$emit('drag-linked', { recordId: id, from: recordId, e: $event })" @open="$emit('open-linked', id)" @jump="$emit('jump-linked', id)"
                       @edit="r.junction && r.rows && $emit('edit-pair', { recordId, fieldId: r.id, row: r.rows[i] })" />
           <span v-if="r.ids.length > CARD_MAX_LINES" class="card-line more">+{{ r.ids.length - CARD_MAX_LINES }} more</span>
         </span>
@@ -144,6 +144,8 @@ export interface CardRow {
   lines?: string[];
   /** The linked records behind a link/backlink row, in `lines` (or `text`) order — draggable onto this canvas. */
   ids?: string[];
+  /** Per id, in the same order: that record already has a card on THIS canvas — its pill wears the jump arrow. */
+  here?: boolean[];
   /** A video layout's value: the row draws its mini strip before the summary text. */
   strip?: unknown;
   /** A comparing link's verdict on this value: ✓ or ⚠, with the why. */
@@ -170,6 +172,8 @@ const props = defineProps<{
   selected: boolean;
   /** This card's record is the one open in the tray. */
   opened?: boolean;
+  /** Just jumped to (a pill's →, the palette, a drop): pulse once, so the eye lands on it. */
+  flash?: boolean;
   /** While a link is being dragged: 'ok' = this card could take it, 'over' = it is about to. */
   linkTarget?: 'ok' | 'over' | null;
   dragging: boolean;
@@ -183,6 +187,8 @@ const emit = defineEmits<{
   (e: 'drag-linked', payload: { recordId: string; from: string; e: PointerEvent }): void;
   /** A linked record's pill, double-clicked: open it (the tray). */
   (e: 'open-linked', recordId: string): void;
+  /** A linked record that is already on this canvas, its → pressed: go to its card. */
+  (e: 'jump-linked', recordId: string): void;
   /** A junction pair's ✎ on this card: edit its status (the pair editor, anchored at the card). */
   (e: 'edit-pair', payload: { recordId: string; fieldId: string; row: string }): void;
   (e: 'resize', payload: { recordId: string; handle: 'e' | 's' | 'se'; e: PointerEvent }): void;
@@ -250,6 +256,14 @@ function onPointerDown(e: PointerEvent) {
    ring; the drag shadow is kept under it. */
 .card.opened { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 .card.opened.dragging { box-shadow: 0 0 0 2px var(--accent), var(--card-shadow-drag); }
+/* Just JUMPED TO: one pulse of a wide ring that fades, over whatever ring the card has.
+   An outline, so it is paint only — nothing is measured, nothing moves. (While a link
+   is being dragged the link-target outlines below win; no jump happens mid-drag.) */
+.card.flash { animation: card-flash 0.9s ease-out 1; }
+@keyframes card-flash {
+  0% { outline: 3px solid var(--accent); outline-offset: 2px; }
+  100% { outline: 3px solid transparent; outline-offset: 14px; }
+}
 /* Optimistic rows are faded until the server acknowledges them — the same
    convention as the grid. */
 .card.unconfirmed { opacity: 0.55; }

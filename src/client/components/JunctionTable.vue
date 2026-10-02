@@ -40,8 +40,9 @@
         <tr v-for="row in rows" :key="row" class="jt-row" :data-row="row">
           <td class="other">
             <span class="pills">
-              <RecordPill v-if="otherOf(row)" :text="derived.plainLabelOfId(otherOf(row)!)" :color="color" title="Double-click opens it · drag onto a canvas to place it"
-                          drag @down="$emit('drag', otherOf(row)!, $event)" @open="$emit('open', otherOf(row)!)" />
+              <RecordPill v-if="otherOf(row)" :text="derived.plainLabelOfId(otherOf(row)!)" :color="color" :jump="onCanvas(otherOf(row)!)"
+                          :title="onCanvas(otherOf(row)!) ? 'Double-click opens it · → goes to its card on this canvas' : 'Double-click opens it · drag onto a canvas to place it'"
+                          drag @down="$emit('drag', otherOf(row)!, $event)" @open="$emit('open', otherOf(row)!)" @jump="canvasJump?.jump(otherOf(row)!)" />
             </span>
           </td>
           <td v-for="c in cols" :key="c.id" :class="{ editable: EDITABLE(c), editing: isEditing(row, c), box: c.type === 'checkbox' }"
@@ -70,7 +71,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, inject, ref } from 'vue';
+import { CANVAS_JUMP } from '../canvasJump';
 import CellEditor, { type EditExit } from './CellEditor.vue';
 import RecordPill from './RecordPill.vue';
 import type { Store } from '../store';
@@ -95,6 +97,9 @@ defineEmits<{ open: [recordId: string]; add: []; drag: [recordId: string, e: Poi
 
 const store = props.store;
 const derived = useDerived(store);
+/** The other end has a card on the open canvas: its pill wears the → that goes to it (client/canvasJump.ts). */
+const canvasJump = inject(CANVAS_JUMP, null);
+const onCanvas = (id: string) => canvasJump?.placed(id) === true;
 
 /** The pair rows, as the column lists them. */
 const rows = computed(() => derived.backlinkOf(props.recordId, props.field) ?? []);

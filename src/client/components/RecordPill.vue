@@ -37,6 +37,12 @@
 
       ✎            a junction pair's: edit its status (`edit`)
       ×            `remove`
+
+  One thing is NOT on hover: the JUMP arrow (`jump`). A pill whose record has a card
+  on the canvas you are looking at ends in a small → that is always drawn — it is
+  information ("this one is already here") as much as a button — and a click on it
+  goes to that card (`jump`). It is part of the pill, inside its box, so it takes its
+  room from the name (which ends in an ellipsis sooner), never from what is beside it.
       drag         with `drag`, the parent starts a record drag on pointerdown
                    (onto a canvas, to place the record); a still press does nothing
 
@@ -44,9 +50,14 @@
   apart again.
 -->
 <template>
-  <span ref="el" class="pill" :class="{ back, junction, on, flip, paired: !!split, count: n !== undefined }" :style="tint" :title="title ?? openTitle"
+  <span ref="el" class="pill" :class="{ back, junction, on, flip, jumps: jump, paired: !!split, count: n !== undefined }" :style="tint" :title="title ?? openTitle"
         @pointerenter="onEnter" @pointerleave="onLeave" @pointerdown.stop="onDown" @mousedown.stop.prevent @click.stop @dblclick.stop="$emit('open')">
-    <span class="pill-text"><template v-if="n !== undefined"><b class="pill-n">{{ n }}</b>{{ ' ' }}</template><template v-if="junction"><span class="pill-slot"><span class="pill-main">{{ split || text }}</span></span><template v-if="split"><span class="pill-sep">{{ ' › ' }}</span><span class="pill-status">{{ status }}</span></template></template><template v-else>{{ text }}</template></span>
+    <span class="pill-text"><template v-if="n !== undefined"><b class="pill-n">{{ n }}</b>{{ ' ' }}</template><template v-if="junction"><span class="pill-slot"><span class="pill-main"><span class="pill-label">{{ split || text }}</span><button v-if="jump" class="pill-jump" tabindex="-1" :title="jumpTitle"
+      @pointerdown.stop @mousedown.stop.prevent @dblclick.stop @click.stop="$emit('jump')"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5h7.2M5.4 1.9 8.5 5 5.4 8.1" /></svg></button></span></span><template v-if="split"><span class="pill-sep">{{ ' › ' }}</span><span class="pill-status">{{ status }}</span></template></template><template v-else>{{ text }}</template></span>
+    <!-- JUMP: the record has a card on the open canvas — go to it. Always drawn; its own
+         press, so it neither starts the pill's drag nor counts toward a double-click. -->
+    <button v-if="jump && !junction" class="pill-jump" tabindex="-1" :title="jumpTitle"
+            @pointerdown.stop @mousedown.stop.prevent @dblclick.stop @click.stop="$emit('jump')"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5h7.2M5.4 1.9 8.5 5 5.4 8.1" /></svg></button>
     <!-- Their own double-clicks stop here: two quick presses on × or ✎ are not "open". -->
     <span v-if="junction || removable" class="pill-actions" :style="escaped" @dblclick.stop>
       <button v-if="junction" class="pill-edit" tabindex="-1" :title="editTitle ?? 'Change this pair\'s status'"
@@ -86,8 +97,11 @@ const props = defineProps<{
   color?: string;
   /** A COUNT pill: this many, and `text` is what is counted ("Edits"). Opening it opens the record that lists them. */
   n?: number;
+  /** The record has a card on the canvas that is open: draw the → that goes to it (`jump`). */
+  jump?: boolean;
 }>();
-const emit = defineEmits<{ open: []; edit: []; remove: []; down: [e: PointerEvent] }>();
+const emit = defineEmits<{ open: []; edit: []; remove: []; jump: []; down: [e: PointerEvent] }>();
+const jumpTitle = computed(() => `On this canvas — go to ${split.value || props.text}`);
 function onDown(e: PointerEvent) { if (props.drag) emit('down', e); }
 /** What the pill says when the parent gives it no tooltip of its own: how it opens. */
 const openTitle = computed(() => (props.n !== undefined ? 'Double-click opens the record — they are listed there' : `Double-click opens ${props.text}`));

@@ -148,6 +148,7 @@ import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 
 import { dismiss, fileDrag, handshake, isDesktop, jobs, listenFileDrops, notice, notices } from './desktop';
 import { runFileDrop } from './tools/fileDrop';
 import { SCOPE, useScope } from './scope';
+import { CANVAS_JUMP } from './canvasJump';
 import { formatScope, parseScope } from '../contract/scope';
 import { dragGhost } from './recordDrag';
 import { createStore } from './store';
@@ -239,6 +240,13 @@ const derived = useDerived(store);
    the link picker and the palette all ask the SAME object. */
 const scopeApi = useScope(store, section, derived.labelOfId);
 provide(SCOPE, scopeApi);
+// The tray's pills ask this whether a record has a card on the open canvas, and how
+// to get to it (client/canvasJump.ts). `canvasRef` is declared further down; these
+// only run on a render or a click, long after setup.
+provide(CANVAS_JUMP, {
+  placed: (id) => view.value === 'canvas' && !!canvasRef.value?.placedIds.has(id),
+  jump: (id) => canvasRef.value?.jumpTo(id),
+});
 const scopeTableName = computed(() => store.state.tables.get(scopeApi.scopeTableId.value)?.name ?? '');
 const boardTables = computed(() => tables.value.filter(isBoardsTable));
 const canvases = computed(() => {
@@ -797,6 +805,21 @@ p.hint { padding: 24px; }
 .pill-slot { display: inline-flex; flex: 0 1 auto; width: var(--pair-slot, auto); min-width: 0; }
 .pill-main { overflow: hidden; text-overflow: ellipsis; min-width: 0; padding: 0 7px; border-radius: 4px; background: var(--pill-bg); box-shadow: inset 0 0 0 1px var(--pill-edge); }
 .pill-sep { display: none; }
+/* JUMP (RecordPill `jump`): the record is on the open canvas, and this goes to its
+   card. Inside the pill's own box, behind a hairline — a second, smaller button in
+   the same shape — and always drawn. It never shrinks: the NAME gives way. In a
+   pair the box is `.pill-main`, which becomes a row of [name][→] for it. */
+.pill-jump {
+  flex: none; align-self: stretch; display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; padding: 0; margin: 0; border: none; border-left: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0 4px 4px 0; background: none; color: var(--text-secondary); cursor: pointer; font: inherit;
+}
+.pill-jump svg { width: 9px; height: 9px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.pill-jump:hover { background: var(--accent); color: #fff; }
+.pill.jumps > .pill-text { padding-right: 5px; }
+.pill.junction.jumps > .pill-text { padding-right: 0; }
+.pill.jumps .pill-main { display: inline-flex; align-items: stretch; padding-right: 0; }
+.pill.jumps .pill-label { overflow: hidden; text-overflow: ellipsis; min-width: 0; padding-right: 5px; }
 .pill-status { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; padding: 0 9px; border-radius: 10px; background: var(--choice-bg); }
 /* A count ("3 Edits"): the number carries it, the noun is quieter. */
 .pill.count .pill-text { color: var(--text-secondary); }

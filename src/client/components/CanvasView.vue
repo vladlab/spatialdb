@@ -134,12 +134,13 @@
         :store="store"
         :selected="selected.has(c.recordId)"
         :opened="c.recordId === openRecordId"
+        :flash="flashed === c.recordId"
         :dragging="drag.draggingIds.value.has(c.recordId)"
         :unconfirmed="store.unconfirmed.value.has(c.recordId)"
         :link-target="linkTargetState(c.recordId, c.tableId)"
         @pointerdown="onCardPointerDown"
         @link-start="startLinkDrag"
-        @drag-linked="onDragLinked" @open-linked="(id) => emit('open-record', id)" @edit-pair="onEditPair"
+        @drag-linked="onDragLinked" @open-linked="(id) => emit('open-record', id)" @jump-linked="jumpTo" @edit-pair="onEditPair"
         @resize="onCardResize"
         @unplace="unplace"
         @fold="toggleFold"
@@ -229,7 +230,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import type { MutateOptions, Store } from '../store';
 import { fieldsOf, tablesSorted, type FieldRow, type RecordRow } from '../state';
 import { labelFrom } from '../../contract/labels';
@@ -255,7 +256,7 @@ import { linkKey } from '../state';
 import { bezierPath, type Point } from '../canvas/geometry';
 import { CanvasConfig, cardFieldsFor } from '../../contract/canvasConfig';
 import { CARD_W, effectiveHeight, lineCount, rowPortY } from '../canvas/cardLayout';
-import { capsuleWidth, pairSlot } from '../textWidth';
+import { capsuleWidth, JUMP_PAD, pairSlot } from '../textWidth';
 import type { CardRow } from './RecordCard.vue';
 import type { Rect } from '../canvas/geometry';
 import { useViewport } from '../canvas/useViewport';
@@ -279,6 +280,8 @@ const viewport = useViewport(containerRef);
 
 const placements = computed(() =>
   [...store.state.placements.values()].filter((p) => p.canvas_id === props.canvasId));
+/** The records that have a card here — from the placements, not from `cards` (which reads this to mark the pills that can jump). */
+const placedHere = computed(() => new Set(placements.value.map((p) => p.record_id)));
 
 /* ── what a card says ─────────────────────────────────────────────────────
 
@@ -317,11 +320,16 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
     // A junction column's pairs are lines like any link row's — the first beside the field's
     // name. `slot` is the room the other end gets, so the statuses line up under it, and
     // `statusW` what the widest status needs: on a narrow card it is the NAME that gives way.
+    // `here`: which of them already have a card on this canvas — those pills wear the jump
+    // arrow. In a column of pairs the arrow is inside the other end's box, so the slot is
+    // that much wider when any pair has one (every status still starts at the same x).
+    const here = ids?.map((id) => placedHere.value.has(id));
+    const anyHere = !!here?.some(Boolean);
     return { id: f.id, name: f.name, derived: true, text: texts.join(', '), lines: texts.length > 1 ? texts : undefined,
-      ids, color, link: f.type === 'link' || !!j, junction: !!j, rows,
+      ids, here: anyHere ? here : undefined, color, link: f.type === 'link' || !!j, junction: !!j, rows,
       statuses: j ? rows!.map((row) => derived.junctionRow(row)?.status ?? '') : undefined,
       statusW: j ? capsuleWidth(rows!.map((row) => derived.junctionRow(row)?.status ?? ''), 11) : undefined,
-      slot: j && ids!.length ? pairSlot(ids!.map((id) => derived.plainLabelOfId(id)), 11) : undefined };
+      slot: j && ids!.length ? pairSlot(ids!.map((id) => derived.plainLabelOfId(id)), 11) + (anyHere ? JUMP_PAD : 0) : undefined };
   }
   if (f.type === 'rich_text') return { id: f.id, name: f.name, text: richTextToPlain(rec.data[f.key]).split('\n', 1)[0] };
   // A structured value is a one-line SUMMARY on a card ("4 tracks / 12 ch (5.1, 2.0…)"):
@@ -1107,13 +1115,30 @@ function refreshLinksAfterPlacing() {
 let lastPointer: { x: number; y: number } | null = null;
 let cascade = 0;
 
+/**
+ * Go to a card that is on this canvas: centred (the zoom is left alone), selected, and
+ * pulsed once so the eye lands on it — after a pan every card has moved, and a faint
+ * selection ring is not much to find. One way to arrive, whatever asked: a pill's →,
+ * the palette, a pill dropped from the tray.
+ */
+const flashed = ref('');
+let flashTimer: ReturnType<typeof setTimeout> | undefined;
+function jumpTo(recordId: string): boolean {
+  const rect = cardRects.value.get(recordId);
+  if (!rect) return false;
+  viewport.centerOn([rect]);
+  menu.value = null; selectedLink.value = null;
+  selected.clear(); selected.add(recordId);
+  // Restart the pulse even when the same card is jumped to twice running.
+  flashed.value = '';
+  clearTimeout(flashTimer);
+  void nextTick(() => { flashed.value = recordId; flashTimer = setTimeout(() => { flashed.value = ''; }, 950); });
+  containerRef.value?.focus();
+  return true;
+}
+
 function placeOrJump(rec: RecordRow): 'placed' | 'jumped' {
-  const already = cardRects.value.get(rec.id);
-  if (already) {
-    viewport.centerOn([already]);
-    selected.clear(); selected.add(rec.id);
-    return 'jumped';
-  }
+  if (jumpTo(rec.id)) return 'jumped';
   store.adopt([rec]);
   const box = containerRef.value?.getBoundingClientRect();
   const at = lastPointer ?? viewport.clientToWorld((box?.left ?? 0) + (box?.width ?? 0) / 2, (box?.top ?? 0) + (box?.height ?? 0) / 2);
@@ -1168,7 +1193,7 @@ function placeMany(records: RecordRow[], clientX: number, clientY: number, optio
 const placedIds = computed(() => new Set(cardRects.value.keys()));
 /** The card under a CLIENT point, for a native file drop (client/desktop.ts). */
 const cardAtClient = (clientX: number, clientY: number) => cardAt(viewport.clientToWorld(clientX, clientY));
-defineExpose({ placeOrJump, placeMany, placedIds, cardAtClient, activeDefaults, resetCascade: () => { cascade = 0; } });
+defineExpose({ placeOrJump, placeMany, placedIds, jumpTo, cardAtClient, activeDefaults, resetCascade: () => { cascade = 0; } });
 
 /** The one place the canvas can destroy DATA, so it says so, and says it is undoable. */
 async function deleteRecord(recordId: string) {
@@ -1247,6 +1272,7 @@ watch(() => props.canvasId, async (id) => {
 });
 
 onUnmounted(() => {
+  clearTimeout(flashTimer);
   unregisterDrop?.();
   drag.cancel();
   resize.cancel();
