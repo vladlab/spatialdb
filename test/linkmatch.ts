@@ -168,6 +168,14 @@ async function main() {
     check('with a way out, named by what they agree on', picker().find('.match-toggle').exists() && /show all Deliverables, not just the same Work/.test(picker().find('.match-toggle').text()), picker().text());
     await picker().find('.match-toggle input').setValue(true);
     check('show all: every deliverable', await until(() => listed().length === 3), listed().join());
+    // In a browser, clicking the tick (or its label) moves FOCUS to the checkbox, so the
+    // search line blurs — which used to close the picker before the click landed.
+    await picker().find('input.q').trigger('blur', { relatedTarget: picker().find('.match-toggle input').element });
+    check('focus moving to the tick INSIDE the picker does not close it', picker().exists() && listed().length === 3);
+    await picker().find('.match-toggle input').setValue(false);
+    check('…and it toggles back', await until(() => listed().join() === 'Texted Master'), listed().join());
+    await picker().find('input.q').trigger('blur', { relatedTarget: w.find('.gridview .scroller').element });
+    check('focus leaving the picker still closes it', await until(() => !picker().exists()));
     await open('c.mov');
     check('c.mov (Ep 102): both of that Work\'s', await until(() => listed().sort().join() === 'Texted Master,Textless Master'), listed().join());
     await open('b.mov');

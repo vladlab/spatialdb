@@ -42,7 +42,7 @@
   dropdown (over what is below, so nothing in the tray moves when it opens).
 -->
 <template>
-  <div class="picker" :class="{ inline, field }" :style="inline || field ? undefined : pos" @keydown.stop="onKey" @mousedown.stop>
+  <div ref="root" class="picker" :class="{ inline, field }" :style="inline || field ? undefined : pos" @keydown.stop="onKey" @mousedown.stop>
     <div v-if="!field && linked.length" class="current">
       <span class="sec">linked</span>
       <span v-for="id in linked" :key="id" class="chip linked">
@@ -59,14 +59,14 @@
     <!-- In a project, candidates default to THAT project's records — with a way
          out, because reusing a file from another show is a legitimate thing to do. -->
     <label v-if="scopeFilter" class="note scope-toggle" @mousedown.prevent>
-      <input v-model="everywhere" type="checkbox" tabindex="-1" @mousedown.stop /> search all {{ scopeTableName }}, not just {{ scopeApi?.label.value }}
+      <input v-model="everywhere" type="checkbox" tabindex="-1" /> search all {{ scopeTableName }}, not just {{ scopeApi?.label.value }}
     </label>
     <!-- A MATCH (contract/match.ts) — a link field's own, or a junction's: candidates
          that agree with the starting record come first and alone — a filter with a
          way out, never a constraint. When nothing agrees the toggle is moot and
          everything shows. -->
     <label v-if="rule && anyMatch" class="note scope-toggle match-toggle" @mousedown.prevent>
-      <input v-model="showAll" type="checkbox" tabindex="-1" @mousedown.stop /> show all {{ targetName }}, not just {{ rule.label }}
+      <input v-model="showAll" type="checkbox" tabindex="-1" /> show all {{ targetName }}, not just {{ rule.label }}
     </label>
     <!-- Narrowed to nothing would be a dead end, so everything is offered — and SAID,
          or a full list under a field that usually narrows reads as "these all agree". -->
@@ -236,8 +236,25 @@ function onKey(e: KeyboardEvent) {
   }
 }
 
-/** Clicking anywhere outside closes. Clicks INSIDE never blur — they preventDefault. */
-function onBlur() { finish('none'); }
+/**
+ * Clicking anywhere outside closes: the search line loses focus, and that is the
+ * signal. Clicks INSIDE mostly never blur it — they preventDefault on mousedown —
+ * but a CHECKBOX cannot be kept from taking focus that way: clicking its label
+ * focuses it on the click, whatever mousedown did (and the box itself used to stop
+ * the mousedown before the label could prevent it). So the two toggles here — "show
+ * all…", "search all…" — closed the picker instead of toggling: the blur arrived
+ * first and the picker was gone before the click landed.
+ *
+ * Focus that moves to something INSIDE the picker is therefore not a reason to
+ * close. It is handed straight back to the search line, so typing and the arrow
+ * keys carry on, and the click still lands on what was clicked.
+ */
+const root = ref<HTMLElement>();
+function onBlur(e?: FocusEvent) {
+  const to = e?.relatedTarget;
+  if (to && root.value?.contains(to as Node)) { void nextTick(() => input.value?.focus()); return; }
+  finish('none');
+}
 
 const pos = computed(() => {
   const r = props.anchor?.getBoundingClientRect();
