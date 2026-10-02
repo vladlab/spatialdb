@@ -23,6 +23,11 @@
  *
  * A drag only BEGINS after the pointer has moved a few pixels, so a plain click
  * on a row still selects it.
+ *
+ * A source may also say where its drag does NOT count (`accepts`): a pill picked up
+ * off a canvas card is only "placed" once it has left that card — let go over the
+ * card it came from, nothing happens, and the ghost says so all the way (it is only
+ * lit where a release would do something).
  */
 
 import { reactive } from 'vue';
@@ -61,6 +66,8 @@ function targetAt(x: number, y: number): [HTMLElement, Drop] | null {
  */
 export function beginRecordDrag(
   records: () => RecordRow[], e: PointerEvent, label: (records: RecordRow[]) => string, onClick?: () => void,
+  /** Where (client px) a release counts as a drop. Absent: anywhere over a target. */
+  accepts?: (clientX: number, clientY: number) => boolean,
 ) {
   if (e.button !== 0) return;
   const x0 = e.clientX, y0 = e.clientY;
@@ -77,12 +84,13 @@ export function beginRecordDrag(
       document.body.style.userSelect = 'none';
     }
     dragGhost.x = ev.clientX; dragGhost.y = ev.clientY;
-    dragGhost.over = targetAt(ev.clientX, ev.clientY) !== null;
+    dragGhost.over = targetAt(ev.clientX, ev.clientY) !== null && (accepts?.(ev.clientX, ev.clientY) ?? true);
   };
   const up = (ev: PointerEvent) => {
     const carried = dragging;
     stop();
     if (!carried) { onClick?.(); return; }
+    if (accepts && !accepts(ev.clientX, ev.clientY)) return;
     targetAt(ev.clientX, ev.clientY)?.[1](carried, ev.clientX, ev.clientY);
   };
   const cancel = (ev: KeyboardEvent) => { if (ev.key === 'Escape') stop(); };

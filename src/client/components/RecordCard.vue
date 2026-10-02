@@ -55,9 +55,10 @@
               @pointerdown.stop.prevent="$emit('link-start', { recordId, fieldId: r.id, e: $event })" />
         <span class="card-key"><span v-if="r.color" class="port-dot" :style="{ background: r.color }" />{{ r.name }}</span>
         <!-- Linked records (a link, a backlink, a junction column) are PILLS — the same
-             pill as the grid and the tray, in the row's colour: drag one onto the canvas
-             to place it, double-click it to open it — THAT record, not this card's. One per
-             line, CARD_MAX_LINES of them. -->
+             pill as the grid and the tray, in the row's colour: drag one OFF this card
+             to place it on the canvas (let go over the card itself and nothing happens),
+             double-click it to open it — THAT record, not this card's. One per line,
+             CARD_MAX_LINES of them. -->
         <!-- A JUNCTION column's pairs sit where any link's pills do — the first beside the
              field's name, the rest under it — so every row's values start at the same x.
              Each line is the other end's pill and, in a column of its own, the pair's
@@ -66,8 +67,8 @@
               :style="r.slot ? { '--pair-slot': r.slot + 'px', '--pair-status': (r.statusW ?? 0) + 'px' } : undefined">
           <RecordPill v-for="(id, i) in r.ids.slice(0, CARD_MAX_LINES)" :key="id + i" class="card-line" :text="(r.lines ?? [r.text])[i] ?? ''" :back="!r.link" :junction="r.junction"
                       :status="r.statuses?.[i]" :color="r.color"
-                      title="Double-click opens it · drag onto the canvas to place it here" drag
-                      @down="$emit('drag-linked', { recordId: id, e: $event })" @open="$emit('open-linked', id)"
+                      title="Double-click opens it · drag it off this card to place it on the canvas" drag
+                      @down="$emit('drag-linked', { recordId: id, from: recordId, e: $event })" @open="$emit('open-linked', id)"
                       @edit="r.junction && r.rows && $emit('edit-pair', { recordId, fieldId: r.id, row: r.rows[i] })" />
           <span v-if="r.ids.length > CARD_MAX_LINES" class="card-line more">+{{ r.ids.length - CARD_MAX_LINES }} more</span>
         </span>
@@ -178,8 +179,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'pointerdown', payload: { recordId: string; e: PointerEvent }): void;
   (e: 'link-start', payload: { recordId: string; fieldId: string; e: PointerEvent }): void;
-  /** A linked record named on this card, picked up to be placed on the canvas. */
-  (e: 'drag-linked', payload: { recordId: string; e: PointerEvent }): void;
+  /** A linked record named on this card (`from`), picked up to be placed on the canvas. */
+  (e: 'drag-linked', payload: { recordId: string; from: string; e: PointerEvent }): void;
   /** A linked record's pill, double-clicked: open it (the tray). */
   (e: 'open-linked', recordId: string): void;
   /** A junction pair's ✎ on this card: edit its status (the pair editor, anchored at the card). */

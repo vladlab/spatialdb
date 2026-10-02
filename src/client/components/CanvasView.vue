@@ -477,16 +477,28 @@ const arrowStyles = computed(() => {
 });
 
 /**
- * A linked record named on a card, dragged off it: place it on this canvas where it is
+ * A linked record named on a card, dragged OFF it: place it on this canvas where it is
  * dropped, or jump to it if it is already here (the same drop path pills from the tray
  * use). It stops the press so the card itself does not start moving.
+ *
+ * OFF the card is the point. A pill is also something you double-click, and a press
+ * that wobbles a few pixels is a drag: let go anywhere over the card the pill sits on
+ * and nothing is placed (it used to land a new card on top of the one you were
+ * reading). The card's rectangle is taken when the drag starts — the card cannot move
+ * during it — and the ghost stays dim until the pointer has left it.
  */
-function onDragLinked({ recordId, e }: { recordId: string; e: PointerEvent }) {
+function onDragLinked({ recordId, from, e }: { recordId: string; from: string; e: PointerEvent }) {
   const rec = store.state.records.get(recordId);
   e.stopPropagation();
   // A press that moves places (or jumps to) the record; a still one does nothing — a double-click on the pill opens.
   if (!rec) return;
-  beginRecordDrag(() => [rec], e, () => derived.labelOfId(recordId));
+  const origin = cardRects.value.get(from);
+  const leftTheCard = (x: number, y: number) => {
+    if (!origin) return true;
+    const p = viewport.clientToWorld(x, y);
+    return !(p.x >= origin.x && p.x <= origin.x + origin.w && p.y >= origin.y && p.y <= origin.y + origin.h);
+  };
+  beginRecordDrag(() => [rec], e, () => derived.labelOfId(recordId), undefined, leftTheCard);
 }
 const isJunctionRecord = (id: string) => store.state.tables.get(store.state.records.get(id)?.table_id ?? '')?.kind === 'junction';
 /** Duplicate a placed record and place the copy just beside the original, selected. */
