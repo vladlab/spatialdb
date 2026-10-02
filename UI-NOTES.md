@@ -16,6 +16,41 @@ sandbox has no browser and `test/ui.ts` cannot see layout or paint.
 
 ## When you come back — a checking order
 
+**Five niceties about finding your place (Oct 2)** — owner's list: mark the opened
+record's row and card; do not place a linked record unless it is dragged off its card;
+a jump arrow for records already on the canvas; a right-click menu on the table;
+reset column order. Seen in a real browser (Chromium) as well as in the suite
+(`npm run test:niceties`).
+1. THE OPEN RECORD IS MARKED. Grid: a bar down the row's left edge, its number lit, a
+   faint tint — a SELECTED row is a stronger tint with no bar, so the two can be told
+   apart (and can be the same row). Canvas: a SOLID ring, where a selected card's is
+   faint. Board views: the same ring on the card. Is the grid's mark strong enough on
+   a wide table? It is the one I would turn up first.
+2. A PILL DRAGGED OFF A CARD is only placed once the pointer has LEFT that card. Let go
+   over the card and nothing happens — no card dropped on top of the one you were
+   reading, no jump. The drag ghost says which it will be: dim over the card, lit past
+   its edge. (A double-click that wobbles a few pixels was the usual way to trigger it.)
+3. THE JUMP ARROW. A pill whose record already has a card on the open canvas ends in a
+   small →, always drawn, inside the pill: on cards, and in the tray while a canvas is
+   open (not over a table — there is nothing to jump on). Click it: the view centres
+   on that card at the same zoom, selects it, and the card pulses once. Dragging such a
+   pill off its card still jumps, as before. The cost: the arrow takes 17px from the
+   NAME — in a junction row on a default-width card a name that read "Texted M…" is
+   now "Tex…". Widen the card, or say if the arrow should go somewhere else on pairs.
+4. RIGHT-CLICK A ROW: Open record · Duplicate record · Delete record… (and "Open this
+   board / report" in those tables; no Duplicate in a junction table). On one of
+   SEVERAL selected rows it is about all of them — "Delete 3 records…", one Ctrl+Z. On
+   any other row it is about that row, and the selection is left alone. Delete here
+   ASKS (the row's own × still does not). Inside a cell being edited the right-click
+   is the browser's own menu (paste, spelling). A right-click no longer moves the cell
+   selection — it used to, like any press.
+5. RESET COLUMN ORDER: at the bottom of the grid's "fields" menu. It DROPS the view's
+   own order, so the view follows the field order in Table settings again — and keeps
+   following it when that order changes. Widths and hidden fields stay; Ctrl+Z gives
+   the arrangement back. Greyed out when the view has no order of its own.
+6. Not done: a right-click menu on board (kanban) cards; the menu from the keyboard
+   (Menu key / Shift+F10).
+
 **Delete dialogs that tell the truth (Oct 1, from the code review)** — the table and
 field delete dialogs ask the server what would go before they say anything.
 1. Delete a field, then a small table: the numbers are the server's (records, links,

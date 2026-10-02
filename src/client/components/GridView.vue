@@ -222,6 +222,13 @@
               <button class="mv next" :disabled="i === columns.length - 1" title="Move right" @click="moveTo(f.id, i + 1)">↓</button>
             </template>
           </div>
+          <!-- BACK TO THE TABLE'S OWN ORDER: forget this view's arrangement, so its columns
+               follow the field order in the table's ⚙ settings again — now, and when that
+               order is changed later. Widths and hidden fields are not touched. Greyed
+               out when the view has no arrangement of its own. -->
+          <button class="ghost reset-order" :disabled="!hasOwnOrder"
+                  :title="hasOwnOrder ? 'Put this view\'s columns back in the table\'s own field order (⚙ Table settings), and keep following it. Widths and hidden fields stay. Ctrl+Z undoes it.' : 'This view already follows the table\'s own field order'"
+                  @click="resetOrder">↺ reset column order</button>
           <p class="hint-line">Order and widths are saved to this view. The default order — and which field is primary — is set in the table's ⚙ settings.</p>
         </div>
       </details>
@@ -619,6 +626,22 @@ function moveTo(fieldId: string, to: number) {
   if (next.join() !== columns.value.map((c) => c.id).join()) save({ order: next });
 }
 
+/**
+ * This view has an arrangement of its own (a column was moved in it, ever) — so there
+ * is something to reset. Not "the columns look different from the table's order right
+ * now": a view whose order happens to match today still would not follow a reorder
+ * made in Table settings tomorrow, and that is exactly when the reset is wanted.
+ */
+const hasOwnOrder = computed(() => config.value.order !== undefined);
+/**
+ * Drop the view's `order` altogether rather than save the table's order INTO it: with
+ * no order of its own the view follows Table settings from here on, so reordering the
+ * fields there later moves these columns too. One undo step, like a column move.
+ */
+function resetOrder() {
+  if (hasOwnOrder.value) save({ order: undefined });
+}
+
 /** A width being dragged right now — shown at once, saved on release. A width is the
  *  COLUMN's: th and td are border-box, so the number saved is the number measured
  *  (the first drag used to grow the column by its padding — a visible jump). */
@@ -692,6 +715,9 @@ const filterable = computed(() => allFields.value.filter((f) => opsFor(f.type).l
 /** Write the config. The built-in Grid's row is created the first time it is needed. */
 function save(patch: Partial<ViewConfig>, options: { undoable?: boolean } = {}) {
   const next = { ...config.value, ...patch };
+  // A key patched to `undefined` is REMOVED ("reset column order" drops `order`), not
+  // kept as a key holding undefined — the config that is saved is the one that is sent.
+  for (const k of Object.keys(next) as Array<keyof ViewConfig>) if (next[k] === undefined) delete next[k];
   if (active.value) {
     store.mutate({ type: 'view.update', id: active.value.id, config: next }, options);
   } else {
@@ -1603,6 +1629,7 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .fields-pop .mv { background: none; border: 1px solid transparent; border-radius: 3px; color: var(--text-muted); cursor: pointer; padding: 0 4px; font: inherit; font-size: 11px; }
 .fields-pop .mv:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
 .fields-pop .mv:disabled { opacity: 0.3; cursor: default; }
+.fields-pop .reset-order { align-self: flex-start; margin-top: 2px; }
 .hide { margin-top: 8px; width: 100%; }
 /* The ⤢ sits ON TOP of the row number rather than replacing it in the flow.
    Swapping `display` between a number and a wider, taller glyph re-measured the
