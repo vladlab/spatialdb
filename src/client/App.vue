@@ -758,6 +758,26 @@ p.hint { padding: 24px; }
   cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1;
 }
 .chip-x:hover { color: var(--danger); }
+/* CONTEXT MENUS — a canvas card's, an arrow's, a grid row's: one look, here, so they
+   cannot drift apart (it was scoped to the canvas until the grid grew a row menu).
+   Each owner positions its own (`absolute` in the canvas, `fixed` in the grid). */
+.ctx {
+  min-width: 200px; max-width: 320px; padding: 4px;
+  background: var(--controls-bg); border: 1px solid var(--border-main); border-radius: 6px;
+  box-shadow: var(--card-shadow-drag); font-size: 12px; display: flex; flex-direction: column;
+}
+.ctx button {
+  display: flex; align-items: center; gap: 6px; text-align: left;
+  background: none; border: none; color: var(--text-primary); font: inherit;
+  padding: 5px 8px; border-radius: 4px; cursor: pointer;
+}
+.ctx button:hover { background: var(--bg-surface-hover); }
+.ctx button.danger { color: var(--danger); }
+.ctx hr { border: none; border-top: 1px solid var(--border-main); margin: 4px 0; width: 100%; }
+.ctx-head { padding: 4px 10px 0; font-weight: 600; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-sub { padding: 0 10px 4px; color: var(--text-muted); font-size: 11px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-title { margin: 0; padding: 4px 8px; color: var(--text-muted); font-size: 11px; }
+.ctx-note { margin: 0; padding: 4px 8px; color: var(--text-faint); font-size: 11px; }
 /* CHOICES — a select's value, one or many: a ROUND, grey capsule. It says "one of a
    set list", where bare text says "typed in"; and it is not a pill (below), which is
    squarish and tinted and always a RECORD. Shape and colour both differ, so the two

@@ -1380,24 +1380,10 @@ onUnmounted(() => {
 .junction-anchor { position: fixed; width: 1px; height: 1px; z-index: 70; }
 .ctx .junction-status { display: inline-block; width: auto; margin: 2px 4px; padding: 2px 8px; border: 1px solid var(--border-main); border-radius: 10px; }
 .ctx .junction-status.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-.ctx-head { padding: 4px 10px 0; font-weight: 600; font-size: 12px; }
-.ctx-sub { padding: 0 10px 4px; color: var(--text-muted); font-size: 11px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.ctx {
-  position: absolute; z-index: 40; min-width: 200px; max-width: 320px; padding: 4px;
-  background: var(--controls-bg); border: 1px solid var(--border-main); border-radius: 6px;
-  box-shadow: var(--card-shadow-drag); font-size: 12px; display: flex; flex-direction: column;
-}
-.ctx button {
-  display: flex; align-items: center; gap: 6px; text-align: left;
-  background: none; border: none; color: var(--text-primary); font: inherit;
-  padding: 5px 8px; border-radius: 4px; cursor: pointer;
-}
-.ctx button:hover { background: var(--bg-surface-hover); }
-.ctx button.danger { color: var(--danger); }
-.ctx hr { border: none; border-top: 1px solid var(--border-main); margin: 4px 0; width: 100%; }
-.ctx-title { margin: 0; padding: 4px 8px; color: var(--text-muted); font-size: 11px; }
-.ctx-note { margin: 0; padding: 4px 8px; color: var(--text-faint); font-size: 11px; }
+/* The menu's LOOK is global (App.vue, `.ctx`) — the grid's row menu wears it too.
+   Here: where the canvas's sits, and the parts only it has. */
+.ctx { position: absolute; z-index: 40; }
 .ctx-check { display: flex; gap: 6px; align-items: center; padding: 3px 8px; cursor: pointer; }
 .swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
 </style>

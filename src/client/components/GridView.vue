@@ -35,6 +35,12 @@
   visible destination until split panes exist. Row selection and the drag service
   are kept for that; they are tested and cost nothing meanwhile.
 
+  RIGHT-CLICK A ROW for its menu: open, duplicate, delete. On a row that is part of a
+  row selection it acts on the whole selection ("Delete 3 records…"); on any other row,
+  on that row alone — and it does not disturb the cell or row selection either way.
+  Inside a cell that is being EDITED the right-click is the browser's own (paste,
+  spelling): the editor is a text box.
+
   Things that are deliberate rather than missing:
 
   - ROWS ARE WINDOWED. Only the rows in (and just around) the viewport are in the
@@ -300,7 +306,8 @@
                (long) body below; it always renders exactly one row. -->
           <template v-else>
           <tr v-for="r in [it.record]" :key="r.id" class="row"
-              :class="{ pending: store.unconfirmed.value.has(r.id), fresh: fresh.has(r.id), rowsel: rowSel.has(r.id), alt: banded.has(r.id), opened: r.id === openRecordId }">
+              :class="{ pending: store.unconfirmed.value.has(r.id), fresh: fresh.has(r.id), rowsel: rowSel.has(r.id), alt: banded.has(r.id), opened: r.id === openRecordId, menued: rowMenu?.ids.includes(r.id) }"
+              @contextmenu="onRowMenu(r.id, $event)">
             <!-- The row's HANDLE: click to select the row, drag to carry the selection
                  somewhere (a canvas). The ⤢ keeps to the right edge so it never sits
                  under a press meant for the handle. (There was a ⧉ beside it: a second
@@ -461,6 +468,21 @@
       </p>
     </div>
 
+    <!-- A ROW's menu (right-click). Fixed to the window at the pointer — the grid scrolls
+         under it, so a scroll closes it — and it says WHAT it is about first: the record's
+         name, or how many rows. The look is the canvas menu's (App.vue, `.ctx`). -->
+    <div v-if="rowMenu" ref="rowMenuEl" class="ctx row-menu" :style="{ left: rowMenu.x + 'px', top: rowMenu.y + 'px' }"
+         @contextmenu.prevent.stop @mousedown.stop @keydown.stop>
+      <div class="ctx-head">{{ rowMenu.ids.length > 1 ? `${rowMenu.ids.length} records` : labelFor(rowMenu.id) || 'untitled' }}</div>
+      <hr />
+      <button class="open-record" @click="rowMenuDo((m) => emit('open-record', m.id))">{{ rowMenu.ids.length > 1 ? `Open “${labelFor(rowMenu.id) || 'untitled'}”` : 'Open record' }}</button>
+      <button v-if="isBoards" class="open-board-item" @click="rowMenuDo((m) => emit('open-board', m.id))">▦ Open this board</button>
+      <button v-if="isReports" class="open-report-item" @click="rowMenuDo((m) => emit('open-report', m.id))">▤ Open this report</button>
+      <button v-if="!isJunction" class="duplicate-record" @click="rowMenuDo((m) => duplicateRows(m.ids))">{{ rowMenu.ids.length > 1 ? `Duplicate ${rowMenu.ids.length} records` : 'Duplicate record' }}</button>
+      <hr />
+      <button class="danger delete-record" @click="rowMenuDo((m) => deleteRows(m.ids))">{{ rowMenu.ids.length > 1 ? `Delete ${rowMenu.ids.length} records…` : 'Delete record…' }}</button>
+    </div>
+
     <div class="foot">
       <button class="ghost" :disabled="!allFields.length" @click="create()">+ add record</button>
     </div>
@@ -538,6 +560,7 @@ const fmtN = (n: number) => n.toLocaleString();
 const allFields = computed(() => fieldsOf(store.state, props.tableId));
 const isBoards = computed(() => store.state.tables.get(props.tableId)?.kind === 'canvas');
 const isReports = computed(() => store.state.tables.get(props.tableId)?.kind === 'report');
+const isJunction = computed(() => store.state.tables.get(props.tableId)?.kind === 'junction');
 const fieldById = computed(() => new Map(allFields.value.map((f) => [f.id, f])));
 const views = computed(() => viewsOf(store.state, props.tableId));
 const load = computed(() => store.tableLoads.get(props.tableId));
@@ -894,6 +917,56 @@ function unsetValue(id: string, key: string) {
 }
 function remove(id: string) { store.mutate({ type: 'record.delete', id }); }
 
+/* ── a row's menu (right-click) ───────────────────────────────────────────
+   `ids` is what Duplicate and Delete act on: every selected row when the row under
+   the pointer is one of several selected, otherwise just that row. `id` is the row
+   under the pointer — what Open opens. */
+interface RowMenu { x: number; y: number; id: string; ids: string[] }
+const rowMenu = ref<RowMenu | null>(null);
+const rowMenuEl = ref<HTMLElement>();
+function onRowMenu(id: string, e: MouseEvent) {
+  // In a cell that is being edited the right-click belongs to the editor (its text
+  // box, the link picker): leave the browser's own menu alone there.
+  if ((e.target as Element | null)?.closest?.('td.editing')) return;
+  e.preventDefault();
+  const ids = rowSel.has(id) && rowSel.size > 1 ? rows.value.filter((r) => rowSel.has(r.id)).map((r) => r.id) : [id];
+  rowMenu.value = { x: e.clientX, y: e.clientY, id, ids };
+  // Opened near the window's bottom or right edge, it moves back inside. (Measured
+  // once it exists; without layout — the headless suites — nothing is measured.)
+  void nextTick(() => {
+    const el = rowMenuEl.value, m = rowMenu.value;
+    if (!el || !m) return;
+    const r = el.getBoundingClientRect();
+    if (!r.width) return;
+    const x = Math.max(4, Math.min(m.x, window.innerWidth - r.width - 4));
+    const y = Math.max(4, Math.min(m.y, window.innerHeight - r.height - 4));
+    if (x !== m.x || y !== m.y) rowMenu.value = { ...m, x, y };
+  });
+}
+/** Close the menu, THEN act — handing the action the menu as it was (as the canvas's `menuDo` does, and for its reason). */
+function rowMenuDo(fn: (m: RowMenu) => void) {
+  const m = rowMenu.value;
+  rowMenu.value = null;
+  if (m) fn(m);
+}
+/**
+ * Delete from the menu: asked first, unlike the row's own × — a menu item sits a few
+ * pixels from "Duplicate", and several rows can go at once. Everything after the
+ * question is one synchronous run, so it is one Ctrl+Z however many rows it was.
+ */
+async function deleteRows(ids: string[]) {
+  const live = ids.filter((id) => store.state.records.has(id));
+  if (!live.length) return;
+  const one = live.length === 1;
+  const what = isBoards.value ? 'board' : 'record';
+  if (!await confirmDialog({
+    title: one ? `Delete “${labelFor(live[0]!) || 'this record'}” everywhere?` : `Delete ${live.length} ${what}s everywhere?`,
+    body: `${isBoards.value ? `${one ? 'The board goes' : 'The boards go'}, with everything placed on ${one ? 'it' : 'them'} (the records themselves stay). ` : `Not just from this table: ${one ? 'it disappears' : 'they disappear'} from every canvas too. `}It can be undone (Ctrl+Z), and restored from History.`,
+    danger: true, okText: one ? `Delete ${what}` : `Delete ${live.length} ${what}s`,
+  })) return;
+  for (const id of live) if (store.state.records.has(id)) store.mutate({ type: 'record.delete', id });
+}
+
 /** Ctrl+C / Ctrl+V on the selected CELL — the browser's copy/paste events on the scroller (cellClipboard.ts). */
 function onCopy(e: ClipboardEvent) {
   if (editing.value || !sel.value) return;
@@ -1121,6 +1194,10 @@ function select(rec: string, field: string) {
 }
 
 function onCellDown(rec: string, f: FieldRow, e: MouseEvent) {
+  // The LEFT button only. A right-click is a `mousedown` too, and it is the row menu's:
+  // it must not move the cell selection (which also clears the row selection the menu
+  // is about to act on), and on the already-selected cell it must not start an edit.
+  if (e.button !== 0) return;
   if (isSel(rec, f.id) && editing.value) return;   // clicks inside the open editor are its own
   // A second click on the already-selected cell edits it — the mouse equivalent
   // of Enter, and what makes a link or select cell usable without the keyboard.
@@ -1263,6 +1340,7 @@ const scrollTop = ref(0);
 const viewportH = ref(600);
 function onScroll() {
   scrollTop.value = scroller.value?.scrollTop ?? 0;
+  rowMenu.value = null;      // fixed to the window: the row it is about has just moved away from it
   // The link picker is position:fixed from its cell's rectangle, so scrolling
   // the grid under it would leave it floating over the wrong row. Close it.
   if (editing.value && fieldById.value.get(sel.value?.field ?? '')?.type === 'link') stopEdit('none');
@@ -1322,10 +1400,30 @@ function closeMenusOutside(e: Event) {
   for (const d of scrollerRoot.value?.querySelectorAll<HTMLDetailsElement>('details.menu[open]') ?? []) {
     if (!d.contains(e.target as Node)) d.open = false;
   }
+  // The row menu too — any press outside it, with either button (a right-click on
+  // another row closes this one here and opens the new one on `contextmenu`).
+  if (rowMenu.value && !rowMenuEl.value?.contains(e.target as Node)) rowMenu.value = null;
 }
+/** Escape closes the row menu wherever the focus is — and nothing else hears that Escape. */
+function closeRowMenuOnEscape(e: KeyboardEvent) {
+  if (e.key !== 'Escape' || !rowMenu.value) return;
+  rowMenu.value = null;
+  e.stopPropagation(); e.preventDefault();
+}
+const closeRowMenu = () => { rowMenu.value = null; };
 const scrollerRoot = ref<HTMLElement>();
-onMounted(() => document.addEventListener('mousedown', closeMenusOutside, true));
-onUnmounted(() => document.removeEventListener('mousedown', closeMenusOutside, true));
+onMounted(() => {
+  document.addEventListener('mousedown', closeMenusOutside, true);
+  document.addEventListener('keydown', closeRowMenuOnEscape, true);
+  window.addEventListener('blur', closeRowMenu);
+  window.addEventListener('resize', closeRowMenu);
+});
+onUnmounted(() => {
+  document.removeEventListener('mousedown', closeMenusOutside, true);
+  document.removeEventListener('keydown', closeRowMenuOnEscape, true);
+  window.removeEventListener('blur', closeRowMenu);
+  window.removeEventListener('resize', closeRowMenu);
+});
 
 let ro: ResizeObserver | undefined;
 onMounted(() => {
@@ -1359,6 +1457,14 @@ watch([rows, shown], () => {
   }
 });
 
+// A menu about rows that are gone (deleted by a peer, filtered away) closes.
+watch(rows, (now) => {
+  const m = rowMenu.value;
+  if (!m) return;
+  const alive = new Set(now.map((r) => r.id));
+  if (!alive.has(m.id) || m.ids.some((id) => !alive.has(id))) rowMenu.value = null;
+});
+
 // Switching VIEW resets the transient state. Keyed on the view actually shown,
 // and ignoring undefined → id: that transition is the placeholder "Grid" tab
 // becoming a real row on the first sort/filter/hide — same view as far as the
@@ -1366,7 +1472,7 @@ watch([rows, shown], () => {
 // just-added-rows exemption the first time anyone clicked a column header.
 watch(() => active.value?.id, (_now, was) => {
   if (was === undefined) return;
-  sel.value = null; editing.value = false;
+  sel.value = null; editing.value = false; rowMenu.value = null;
   fresh.clear();
   if (scroller.value) scroller.value.scrollTop = 0;
 });
@@ -1474,8 +1580,13 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
    grid is scrolled. Under the pointer and when selected the bar stays. */
 .row.opened { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.08), rgba(66, 165, 245, 0.08)), var(--row-bg); }
 .row.opened:hover { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.08), rgba(66, 165, 245, 0.08)), linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--row-bg); }
+/* The rows a right-click menu is about hold the hover shade while it is open. */
+.row.menued { --cell-bg: linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--row-bg); }
+.row.opened.menued { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.08), rgba(66, 165, 245, 0.08)), linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--row-bg); }
 .row.rowsel { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.14), rgba(66, 165, 245, 0.14)), var(--row-bg); }
 .row td { background: var(--cell-bg); }
+/* The row menu: at the pointer, over everything in the grid (its sticky header is z 12). */
+.row-menu { position: fixed; z-index: 60; }
 .row.opened td.num { box-shadow: inset 3px 0 0 var(--accent); color: var(--accent); font-weight: 600; }
 .grid td.pin:not(.num) { border-right: 2px solid var(--border-main); }
 .grid th.pin:not(.num) { border-right: 2px solid var(--border-main); }
