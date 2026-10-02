@@ -967,8 +967,8 @@ async function main() {
   check('and a "Referenced by" section lists EVERY incoming link, grouped by where it comes from',
     panel().find('.rp-refs').exists() && /Files · Show/.test(panel().find('.rp-refs').text()) && /reel_10/.test(panel().find('.rp-refs').text()),
     panel().find('.rp-refs').exists() ? panel().find('.rp-refs').text() : 'no section');
-  await panel().find('.rp-refs .pill.back .pill-open').trigger('click');
-  check('a referrer\'s ⤢ opens THAT record', await until(() => panel().find('.rp-title').text() === 'reel_10'), panel().find('.rp-title').text());
+  await panel().find('.rp-refs .pill.back').trigger('dblclick');
+  check('a double-click on a referrer opens THAT record', await until(() => panel().find('.rp-title').text() === 'reel_10'), panel().find('.rp-title').text());
   await panel().find('.rp-close').trigger('click');
 
   await tab('canvas').trigger('click');

@@ -338,9 +338,9 @@ async function main() {
     await pill().trigger('pointerdown', { button: 0, clientX: 900, clientY: 300 });
     win.dispatchEvent(new PE2('pointerup', { bubbles: true, clientX: 900, clientY: 300 }));
     await new Promise((r) => setTimeout(r, 150));
-    check('a still press on the pill opens nothing — only its ⤢ does', w.find('.record-panel .rp-title').text() !== 'Ep 102');
-    await pill().find('.pill-open').trigger('click');
-    check('the ⤢ opens the record', await until(() => w.find('.record-panel .rp-title').text() === 'Ep 102'));
+    check('a still press on the pill opens nothing — only a double-click does', w.find('.record-panel .rp-title').text() !== 'Ep 102');
+    await pill().trigger('dblclick');
+    check('a double-click opens the record', await until(() => w.find('.record-panel .rp-title').text() === 'Ep 102'));
     await w.find('.record-panel .rp-close').trigger('click');
     await post([{ type: 'record.delete', id: dragFile }]);
     await nav.scope(duke);

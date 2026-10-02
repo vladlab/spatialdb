@@ -55,20 +55,20 @@ async function main() {
 
     console.log('\nT1b. Following a link');
     const pill = () => cellOf('ep101.mov', 'Targets').find('.pill');
-    check('a linked record\'s pill carries the ⤢ that opens it',
-      await until(() => pill().exists()) && pill().find('.pill-open').exists() && pill().text().includes('Network master'));
-    // A click on the pill's BODY does nothing (only the ⤢ opens — like a column sorting only from its glyph).
+    check('a linked record\'s pill has no ⤢ — and says how it opens',
+      await until(() => pill().exists()) && !pill().find('.pill-open').exists() && pill().text().includes('Network master') && /Double-click opens Network master/.test(pill().attributes('title') ?? ''), pill().attributes('title'));
+    // A SINGLE click on the pill does nothing: it is text you might be selecting or dragging.
     await pill().trigger('pointerdown'); await pill().trigger('mousedown'); await pill().trigger('click');
     await new Promise((r) => setTimeout(r, 150));
     check('a click on the name itself opens nothing', !w.find('.record-panel').exists() || w.find('.record-panel .rp-title').text() !== 'Network master');
-    await pill().find('.pill-open').trigger('click');
-    check('the ⤢ opens THAT record in the tray — the deliverable, not the file', await until(() => w.find('.record-panel .rp-title').text() === 'Network master'));
-    check('…without putting the cell into edit mode', !w.find('.gridview td.editing').exists());
+    await pill().trigger('dblclick');
+    check('a double-click opens THAT record in the tray — the deliverable, not the file', await until(() => w.find('.record-panel .rp-title').text() === 'Network master'));
+    check('…and stops at the pill: the cell under it does not open its link picker', !w.find('.gridview td.editing').exists() && !w.find('.picker').exists());
     await w.find('.record-panel .rp-close').trigger('click');
     await openRecord('ep101.mov');
-    // In the tray a pill is DRAGGABLE (onto a canvas); its ⤢ walks the tray.
-    await pField('Targets').find('.pill .pill-open').trigger('click');
-    check('the ⤢ on a pill INSIDE the tray walks the tray to the linked record', await until(() => w.find('.record-panel .rp-title').text() === 'Network master'));
+    // In the tray a pill is DRAGGABLE (onto a canvas); a double-click walks the tray.
+    await pField('Targets').find('.pill').trigger('dblclick');
+    check('a double-click on a pill INSIDE the tray walks the tray to the linked record — and does not open the field\'s picker', !w.find('.picker').exists() && await until(() => w.find('.record-panel .rp-title').text() === 'Network master'));
     await w.find('.record-panel .rp-close').trigger('click');
 
     console.log('\nT1c. "Created" and "Created by": system fields on every table');

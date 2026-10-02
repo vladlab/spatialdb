@@ -202,7 +202,7 @@ async function main() {
 
     // The pair's pill on the CARD: ✎ opens the editor on that row, ⤢ opens the row itself.
     const cardPill = () => portRow('a.mov').find('.pill.junction');
-    check('the card row shows the pair as a pill "Texted Master › Accepted" with ✎ and ⤢', await until(() => cardPill().exists() && cardPill().find('.pill-text').text() === 'Texted Master › Accepted') && cardPill().find('.pill-edit').exists() && cardPill().find('.pill-open').exists(), cardPill().exists() ? cardPill().text() : 'no pill');
+    check('the card row shows the pair as a pill "Texted Master › Accepted" with a ✎ — and no ⤢: a double-click opens', await until(() => cardPill().exists() && cardPill().find('.pill-text').text() === 'Texted Master › Accepted') && cardPill().find('.pill-edit').exists() && !cardPill().find('.pill-open').exists(), cardPill().exists() ? cardPill().text() : 'no pill');
     check('…in a BLOCK row: the field\'s name on its own line, the pairs under it with a slot for the other end',
       portRow('a.mov').classes('block') && portRow('a.mov').find('.card-list').classes('pairs') && /--pair-slot:\s*\d+px/.test(portRow('a.mov').find('.card-list').attributes('style') ?? ''), portRow('a.mov').html().slice(0, 300));
     await cardPill().find('.pill-edit').trigger('click');
@@ -282,6 +282,10 @@ async function main() {
     check('the grid cell stays ONE line: the first pair, and "+1" for the other', await until(() => line().exists() && line().findAll('.pill.junction').length === 1 && line().find('.more-pairs').exists(), 8000)
       && line().find('.pill-text').text() === 'Texted Master › Uploaded' && line().find('.more-pairs').text() === '+1', line().exists() ? line().html().slice(0, 300) : 'no line');
     check('…with the same slot for the other end in every row, so statuses line up down the column', /--pair-slot:\s*\d+px/.test(line().attributes('style') ?? ''), line().attributes('style'));
+    await line().find('.pill.junction').trigger('dblclick');
+    check('a double-click on the pair\'s pill opens the record it NAMES (the deliverable) — not the pair row, and not the cell\'s "add a pair" popup',
+      await until(() => w.find('.record-panel .rp-title').exists() && w.find('.record-panel .rp-title').text() === 'Texted Master') && !w.find('.je').exists(), w.find('.record-panel').exists() ? w.find('.record-panel .rp-title').text() : 'no tray');
+    await w.find('.record-panel .rp-close').trigger('click');
 
     win.location.hash = `#/all/table/${tFiles}?r=${a}`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange'));
     const jt = () => w.find('.record-panel .jt');
@@ -311,8 +315,8 @@ async function main() {
     await until(() => !w.find('.je').exists());
     await jrow(1).find('.act.del').trigger('click');
     check('× at a row\'s end deletes that pair', (await untilDb(`select count(*)::int n from records where id = '${p2}'`, (r) => r[0].n === 0, 4000))[0].n === 0 && await until(() => jt().findAll('.jt-row').length === 1));
-    await jrow(0).find('td.other .pill-open').trigger('click');
-    check('⤢ on the pill opens the OTHER record', await until(() => w.find('.record-panel .rp-title').text() === 'Texted Master'), w.find('.record-panel .rp-title').text());
+    await jrow(0).find('td.other .pill').trigger('dblclick');
+    check('a double-click on the pill opens the OTHER record', await until(() => w.find('.record-panel .rp-title').text() === 'Texted Master'), w.find('.record-panel .rp-title').text());
     check('…where the same pair is a row too, seen from its other end', await until(() => jt().exists() && jt().findAll('th')[0].text() === 'File' && jrow(0).find('td.other .pill').text().includes('a.mov')), jt().exists() ? jt().html().slice(0, 200) : 'no table');
     await jrow(0).find('.act.open').trigger('click');
     check('⤢ at the row\'s end opens the pair row itself', await until(() => w.find('.record-panel .rp-table').text() === 'Delivery'), w.find('.record-panel .rp-table').text());

@@ -447,7 +447,7 @@ const arrowStyles = computed(() => {
 function onDragLinked({ recordId, e }: { recordId: string; e: PointerEvent }) {
   const rec = store.state.records.get(recordId);
   e.stopPropagation();
-  // A press that moves places (or jumps to) the record; a still one does nothing — the pill's ⤢ opens.
+  // A press that moves places (or jumps to) the record; a still one does nothing — a double-click on the pill opens.
   if (!rec) return;
   beginRecordDrag(() => [rec], e, () => derived.labelOfId(recordId));
 }

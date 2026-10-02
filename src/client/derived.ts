@@ -180,7 +180,7 @@ export function useDerived(store: Store) {
     const table = pillTableOf(f);
     const noun = countNoun(texts.length, table ? store.state.tables.get(table) : undefined);
     const shown = texts.slice(0, 12);
-    const title = [...shown, ...(texts.length > shown.length ? [`…and ${texts.length - shown.length} more`] : []), '', '⤢ opens the record, where they are listed'].join('\n');
+    const title = [...shown, ...(texts.length > shown.length ? [`…and ${texts.length - shown.length} more`] : []), '', 'Double-click opens the record, where they are listed'].join('\n');
     return { n: texts.length, noun, title };
   }
 

@@ -317,19 +317,21 @@
               <div class="cell">
                 <!-- LINK: rows in `links`, so edited here rather than in CellEditor. -->
                 <template v-if="f.type === 'link'">
-                  <!-- Each linked record is a PILL (RecordPill.vue): its ⤢ opens that record, its ×
-                       removes the link, and a click on the name does neither. It wears the
-                       field's arrow colour when it has one. -->
+                  <!-- Each linked record is a PILL (RecordPill.vue): a DOUBLE-CLICK opens that record
+                       in the tray — and stops at the pill, so it does not also open this cell's
+                       picker, as a double-click on the cell's empty part still does. Its × removes
+                       the link; a single click does neither. It wears the field's arrow colour
+                       when it has one. -->
                   <template v-for="c in [derived.countOf(r.id, f)]" :key="'n' + f.id">
                     <!-- A field shown as a COUNT (contract/pills.ts): one pill, "3 Edits",
-                         whose ⤢ opens THIS record — the tray lists them. -->
+                         which opens THIS record — the tray lists them. -->
                     <span v-if="c" class="pills">
                       <RecordPill v-if="c.n" :n="c.n" :text="c.noun" :title="c.title" :color="derived.pillColorOf(f)" @open="$emit('open-record', r.id)" />
                     </span>
                     <!-- The pills that fit, then an honest "+N" (CellPills measures): a cell is
                          one line, and a run of eight deliverables must not pass for three. -->
                     <CellPills v-else :total="linksFrom(r.id, f.id).length" @open="$emit('open-record', r.id)">
-                      <RecordPill v-for="to in linksFrom(r.id, f.id)" :key="to" :text="labelFor(to)" :title="`Open ${labelFor(to)}`" removable :color="derived.pillColorOf(f)"
+                      <RecordPill v-for="to in linksFrom(r.id, f.id)" :key="to" :text="labelFor(to)" :title="`Double-click opens ${labelFor(to)}`" removable :color="derived.pillColorOf(f)"
                                   @open="$emit('open-record', to)" @remove="removeLink(f.id, r.id, to)" />
                     </CellPills>
                   </template>
@@ -385,15 +387,17 @@
                                gets the same room in every row (`--pair-slot`, pairSlots below), so the
                                statuses line up down the column. The whole table of pairs, every field of
                                it, is in the record tray (JunctionTable.vue): a row here cannot grow.
-                               ✎ changes the status, ⤢ opens the row; × deletes the pair; + (or Enter)
-                               adds one. Writable, unlike a plain backlink. -->
+                               A double-click opens the OTHER record — the one the pill names, as
+                               on a card and in the tray's table; ✎ changes the status (and its popup
+                               opens the pair row); × deletes the pair; + (or Enter) adds one.
+                               Writable, unlike a plain backlink. -->
                           <template v-else-if="junctionOf(f)">
                             <template v-for="ps in [pairsOf(r.id, f)]" :key="'p' + f.id">
                               <span class="pills pairline" :style="pairSlots.get(f.id) ? { '--pair-slot': pairSlots.get(f.id) + 'px' } : undefined">
                                 <RecordPill v-for="p in ps.slice(0, 1)" :key="p.row" junction :text="p.text" :status="p.status" :color="derived.pillColorOf(f)"
-                                            :on="junctionRow === p.row && isSel(r.id, f.id) && editing" title="A pair: ✎ changes its status, ⤢ opens it"
+                                            :on="junctionRow === p.row && isSel(r.id, f.id) && editing" :title="`A pair: double-click opens ${p.name}, ✎ changes its status`"
                                             removable remove-title="Delete this pair (undo restores it)"
-                                            @edit="editJunction(r.id, f, p.row)" @open="$emit('open-record', p.row)" @remove="deleteJunctionRow(p.row)" />
+                                            @edit="editJunction(r.id, f, p.row)" @open="$emit('open-record', p.other ?? p.row)" @remove="deleteJunctionRow(p.row)" />
                                 <button v-if="ps.length > 1" class="more-pairs" tabindex="-1" :title="`${ps.length} here — open the record to see them all`"
                                         @pointerdown.stop @mousedown.stop.prevent @click.stop="$emit('open-record', r.id)">+{{ ps.length - 1 }}</button>
                               </span>
@@ -401,7 +405,7 @@
                             <button class="junc-add" tabindex="-1" :title="`Add a ${junctionName(f)}`" @pointerdown.stop @mousedown.stop.prevent @click.stop="editJunction(r.id, f)">+</button>
                           </template>
                           <CellPills v-else :total="(derived.backlinkOf(r.id, f) ?? []).length" @open="$emit('open-record', r.id)">
-                            <RecordPill v-for="from in derived.backlinkOf(r.id, f) ?? []" :key="from" back :text="labelFor(from)" :title="`Open ${labelFor(from)} — the link is edited there`" :color="derived.pillColorOf(f)"
+                            <RecordPill v-for="from in derived.backlinkOf(r.id, f) ?? []" :key="from" back :text="labelFor(from)" :title="`Double-click opens ${labelFor(from)} — the link is edited there`" :color="derived.pillColorOf(f)"
                                         @open="$emit('open-record', from)" />
                           </CellPills>
                         </template>
@@ -815,10 +819,13 @@ const targetOf = (f: FieldRow) => f.options?.target_table_id as string | undefin
    A backlink that mirrors a junction's endpoint is writable: its editor is the
    JunctionEditor, mounted for the selected cell like the link picker is. */
 const junctionOf = (f: FieldRow) => derived.junctionOfBacklink(f);
-/** A junction column's pairs for one record, each with its pill text and status (the pill draws the status as a segment). */
+/** A junction column's pairs for one record: the pair row, its pill text and status, and the record at its OTHER end (what the pill names, and opens). */
 const pairsOf = (recordId: string, f: FieldRow) => {
   const side = junctionOf(f)!.side;
-  return (derived.backlinkOf(recordId, f) ?? []).map((row) => { const c = derived.junctionChip(row, side); return { row, text: c.text, status: c.status }; });
+  return (derived.backlinkOf(recordId, f) ?? []).map((row) => {
+    const c = derived.junctionChip(row, side);
+    return { row, text: c.text, status: c.status, other: c.other, name: c.other ? derived.plainLabelOfId(c.other) : c.text };
+  });
 };
 const junctionName = (f: FieldRow) => { const j = junctionOf(f); const t = j ? store.state.tables.get(j.table) : undefined; return t?.singular_name || t?.name || 'pair'; };
 /** The existing row being edited, or undefined when adding a pair. */

@@ -8,8 +8,8 @@
   own fields in columns. It used to be a list of two-part pills ("Texted Master |
   Uploaded"), which had room for exactly one of those fields and lined nothing up.
 
-      the other end     a pill — it is a record. ⤢ opens THAT record; drag it onto a
-                        canvas to place it.
+      the other end     a pill — it is a record. Double-click opens THAT record; drag
+                        it onto a canvas to place it.
       the pair's fields each drawn as what it is — a select as a capsule, text as
                         text, a tick as a box — in the junction table's own field
                         order (Table settings), and edited IN PLACE with the same
@@ -40,7 +40,7 @@
         <tr v-for="row in rows" :key="row" class="jt-row" :data-row="row">
           <td class="other">
             <span class="pills">
-              <RecordPill v-if="otherOf(row)" :text="derived.plainLabelOfId(otherOf(row)!)" :color="color" title="Drag onto a canvas to place it · ⤢ opens it"
+              <RecordPill v-if="otherOf(row)" :text="derived.plainLabelOfId(otherOf(row)!)" :color="color" title="Double-click opens it · drag onto a canvas to place it"
                           drag @down="$emit('drag', otherOf(row)!, $event)" @open="$emit('open', otherOf(row)!)" />
             </span>
           </td>

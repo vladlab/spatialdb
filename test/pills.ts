@@ -74,7 +74,7 @@ async function main() {
     await go(tFiles);
     const workPill = () => cellOf('a.mov', 'Work').find('.pill');
     check('a link is a pill at rest, with its actions in a floating group — no room kept for them beside the name',
-      await until(() => workPill().exists()) && workPill().find('.pill-actions .pill-open').exists() && workPill().find('.pill-actions .pill-x').exists()
+      await until(() => workPill().exists()) && !workPill().find('.pill-open').exists() && workPill().find('.pill-actions .pill-x').exists()
       && workPill().element.children.length === 2 && workPill().find('.pill-text').text() === 'Ep 101');
     check('a field WITH an arrow colour tints its pills with it', /--pill-bg:\s*rgba\(255, 136, 0, 0\.22\)/.test(styleOf(workPill())), styleOf(workPill()));
     const altPill = () => cellOf('c.mov', 'Alt work').find('.pill');
@@ -83,7 +83,7 @@ async function main() {
     const backPills = () => cellOf('Ep 101', 'Files').findAll('.pill');
     check('the BACKLINK on the other table wears the same colour, in outline (.back)',
       await until(() => backPills().length === 2) && backPills().every((p: any) => p.classes('back') && /--pill-line:\s*rgba\(255, 136, 0/.test(styleOf(p))), backPills().map(styleOf).join(' | '));
-    check('…and has only the ⤢: the link is edited on the file', backPills()[0].find('.pill-open').exists() && !backPills()[0].find('.pill-x').exists());
+    check('…and nothing pops up beside it: no ⤢ (a double-click opens), no × (the link is edited on the file)', !backPills()[0].find('.pill-actions').exists() && backPills()[0].element.children.length === 1);
 
     console.log('\nP4. A busy field shown as a count');
     await th('Files').find('.th-menu').trigger('click');
@@ -101,8 +101,8 @@ async function main() {
     check('exactly one reads with the table\'s singular name: "1 File"', await until(() => countPill('Ep 101').length === 1 && countPill('Ep 101')[0].find('.pill-text').text() === '1 File'), cellOf('Ep 101', 'Files').text());
     await post([{ type: 'link.add', id: randomUUID(), fieldId: fWork, fromRecord: b, toRecord: ep101 }]);
     await until(() => countPill('Ep 101')[0]?.find('.pill-text').text() === '2 Files');
-    await countPill('Ep 101')[0].find('.pill-open').trigger('click');
-    check('its ⤢ opens THIS record — the tray is where they are listed', await until(() => w.find('.record-panel').exists() && w.find('.record-panel .rp-title').text() === 'Ep 101'));
+    await countPill('Ep 101')[0].trigger('dblclick');
+    check('a double-click on it opens THIS record — the tray is where they are listed', await until(() => w.find('.record-panel').exists() && w.find('.record-panel .rp-title').text() === 'Ep 101'));
     check('…every one, as pills: the count is for the one-line surfaces only',
       await until(() => !!pField('Files') && pField('Files').findAll('.pill.back').length === 2) && !pField('Files').find('.pill.count').exists());
     await w.find('.record-panel .rp-close').trigger('click');
@@ -117,6 +117,12 @@ async function main() {
     console.log('\nP6. Unticked, the pills are back');
     await post([{ type: 'field.update', id: fWFiles, options: { source_field_id: fWork } }]);
     check('the card row lists them again', await until(() => filesRow().findAll('.pill.back').length === 2 && !filesRow().find('.pill.count').exists()));
+    const first = filesRow().findAll('.pill.back')[0];
+    const named = first.find('.pill-text').text();
+    await first.trigger('dblclick');
+    check('a double-click on a card\'s pill opens the record it NAMES — not the card\'s own, which a double-click elsewhere on the card opens',
+      named !== 'Ep 101' && await until(() => w.find('.record-panel .rp-title').exists() && w.find('.record-panel .rp-title').text() === named), w.find('.record-panel').exists() ? w.find('.record-panel .rp-title').text() : 'no tray');
+    await w.find('.record-panel .rp-close').trigger('click');
     // A card is drawn at the height of its LINES — a row listing two records is two
     // lines — which is the height the canvas computes for its arrows. It used to be
     // drawn at one line per row, and the rows below a list were cut off.

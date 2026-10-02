@@ -26,7 +26,9 @@
           <div class="kcard-title">{{ labelOf(r) }}<button class="kcard-open" title="Open record" @pointerdown.stop @click.stop="$emit('open-record', r.id)">⤢</button></div>
           <div v-for="f in cardFields" :key="f.id" class="kcard-row">
             <span class="kcard-name">{{ f.name }}</span>
-            <!-- Linked records are PILLS here too (RecordPill.vue): the ⤢ opens; a press
+            <!-- Linked records are PILLS here too (RecordPill.vue): a double-click opens the
+                 record the pill names — not this card's, which a double-click anywhere else
+                 on the card opens; a press
                  must not start the card drag. A field shown as a count is one pill. -->
             <span v-if="derived.countOf(r.id, f)?.n" class="kcard-val pills">
               <RecordPill :n="derived.countOf(r.id, f)!.n" :text="derived.countOf(r.id, f)!.noun" :title="derived.countOf(r.id, f)!.title"
@@ -35,7 +37,7 @@
             <span v-else-if="!derived.countOf(r.id, f) && linkedIds(r, f).length" class="kcard-val pills">
               <RecordPill v-for="(id, i) in linkedIds(r, f)" :key="id + i" :text="linkedTexts(r, f)[i] ?? ''" :back="f.type === 'backlink' && !derived.junctionOfBacklink(f)"
                           :junction="f.type === 'backlink' && !!derived.junctionOfBacklink(f)" :status="pairStatus(f, id)" :color="derived.pillColorOf(f)"
-                          @open="$emit('open-record', id)" @edit="$emit('open-record', id)" />
+                          @open="$emit('open-record', namedBy(f, id))" @edit="$emit('open-record', id)" />
             </span>
             <span v-else class="kcard-val">{{ valueText(r, f) }}</span>
             <span v-if="verdictOf(r.id, f.id)" class="kcard-verdict" :class="{ ok: verdictOf(r.id, f.id)!.ok }" :title="verdictOf(r.id, f.id)!.title">{{ verdictOf(r.id, f.id)!.ok ? '✓' : '⚠' }}</span>
@@ -91,6 +93,11 @@ function linkedIds(r: RecordRow, f: FieldRow): string[] {
   if (f.type !== 'backlink') return [];
   // A junction column's pill opens the PAIR row; a plain backlink's the record holding the link.
   return derived.backlinkOf(r.id, f) ?? [];
+}
+/** What a pill NAMES, and so what it opens: for a junction's pair row, the record at its other end; else the id itself. */
+function namedBy(f: FieldRow, id: string): string {
+  const j = f.type === 'backlink' ? derived.junctionOfBacklink(f) : null;
+  return (j && derived.junctionChip(id, j.side).other) || id;
 }
 /** A junction column's pill is a pair: its status, drawn as the pill's second segment. */
 function pairStatus(f: FieldRow, rowId: string): string | undefined {

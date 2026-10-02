@@ -22,13 +22,19 @@
   (`color` — the link field's arrow colour, derived.pillColorOf): then the pill
   wears it, and "inputs are blue" means the same in a cell as on a canvas.
 
-  The ACTIONS float just past the pill's end while the pointer is over it, over
-  whatever is next — over the next column, if the pill fills its cell. No room is
-  kept for them and nothing moves. Only where they cannot go past the end (the
-  window's edge; a card on a canvas) do they sit over the pill's own tail (`flip`).
-  See `place` below.
+  DOUBLE-CLICK a pill to open its record in the tray. A single click does nothing —
+  a pill is text you might be selecting or dragging — and a double-click acts on the
+  pill itself, never on whatever holds it: it does not reach the grid cell (which
+  would open its "add" picker) or the card under it (which would open the CARD's
+  record). There used to be a ⤢ on every pill for this, in a group that popped up
+  beside it on hover; a pill that can only be opened now pops nothing up.
 
-      ⤢            opens the record — ONLY the glyph; a click on the name does nothing
+  The other ACTIONS, where a pill has any, still float just past its end while the
+  pointer is over it, over whatever is next — over the next column, if the pill fills
+  its cell. No room is kept for them and nothing moves. Only where they cannot go
+  past the end (the window's edge; a card on a canvas) do they sit over the pill's
+  own tail (`flip`). See `place` below.
+
       ✎            a junction pair's: edit its status (`edit`)
       ×            `remove`
       drag         with `drag`, the parent starts a record drag on pointerdown
@@ -38,14 +44,13 @@
   apart again.
 -->
 <template>
-  <span ref="el" class="pill" :class="{ back, junction, on, flip, paired: !!split, count: n !== undefined }" :style="tint" :title="title"
-        @pointerenter="onEnter" @pointerleave="onLeave" @pointerdown.stop="onDown" @mousedown.stop.prevent @click.stop>
+  <span ref="el" class="pill" :class="{ back, junction, on, flip, paired: !!split, count: n !== undefined }" :style="tint" :title="title ?? openTitle"
+        @pointerenter="onEnter" @pointerleave="onLeave" @pointerdown.stop="onDown" @mousedown.stop.prevent @click.stop @dblclick.stop="$emit('open')">
     <span class="pill-text"><template v-if="n !== undefined"><b class="pill-n">{{ n }}</b>{{ ' ' }}</template><template v-if="junction"><span class="pill-slot"><span class="pill-main">{{ split || text }}</span></span><template v-if="split"><span class="pill-sep">{{ ' › ' }}</span><span class="pill-status">{{ status }}</span></template></template><template v-else>{{ text }}</template></span>
-    <span class="pill-actions" :style="escaped">
+    <!-- Their own double-clicks stop here: two quick presses on × or ✎ are not "open". -->
+    <span v-if="junction || removable" class="pill-actions" :style="escaped" @dblclick.stop>
       <button v-if="junction" class="pill-edit" tabindex="-1" :title="editTitle ?? 'Change this pair\'s status'"
               @pointerdown.stop @mousedown.stop.prevent @click.stop="$emit('edit')">✎</button>
-      <button class="pill-open" tabindex="-1" :title="n !== undefined ? 'Open the record — they are listed there' : `Open ${text}`"
-              @pointerdown.stop @mousedown.stop.prevent @click.stop="$emit('open')">⤢</button>
       <button v-if="removable" class="pill-x" tabindex="-1" :title="removeTitle ?? 'Remove this link'"
               @pointerdown.stop @mousedown.stop.prevent @click.stop="$emit('remove')">×</button>
     </span>
@@ -54,11 +59,9 @@
 
 <script setup lang="ts">
 /*
-  Only the ⤢ opens the record — a click on the pill's body does nothing, the way a
-  column sorts only from its sort glyph and not from anywhere on the header. A pill
-  is text you might be selecting or dragging; an action needs its own target.
-  Every pill has the ⤢, a junction pair's also a ✎ (change its status here) — and,
-  where the link is edited here, the ×.
+  A DOUBLE-CLICK opens the record (`open`); a single click on the pill does nothing.
+  A junction pair's pill also has a ✎ (change its status here) — and, where the link
+  is edited here, the ×.
 */
 import { computed, onBeforeUnmount, ref } from 'vue';
 
@@ -70,7 +73,7 @@ const props = defineProps<{
   removeTitle?: string;
   /** A backlink's pill — the link lives on the other record (drawn in outline). */
   back?: boolean;
-  /** A junction pair's pill ("Texted Master › Uploaded"): ✎ edits its status, ⤢ opens the pair row. */
+  /** A junction pair's pill ("Texted Master › Uploaded"): ✎ edits its status. */
   junction?: boolean;
   /** A pair's status, when `text` ends with it: drawn beside the pill, as a capsule. */
   status?: string;
@@ -81,11 +84,13 @@ const props = defineProps<{
   drag?: boolean;
   /** The relationship's colour (#rrggbb) — the link field's arrow colour. None: neutral. */
   color?: string;
-  /** A COUNT pill: this many, and `text` is what is counted ("Edits"). ⤢ opens the record that lists them. */
+  /** A COUNT pill: this many, and `text` is what is counted ("Edits"). Opening it opens the record that lists them. */
   n?: number;
 }>();
 const emit = defineEmits<{ open: []; edit: []; remove: []; down: [e: PointerEvent] }>();
 function onDown(e: PointerEvent) { if (props.drag) emit('down', e); }
+/** What the pill says when the parent gives it no tooltip of its own: how it opens. */
+const openTitle = computed(() => (props.n !== undefined ? 'Double-click opens the record — they are listed there' : `Double-click opens ${props.text}`));
 
 /**
  * The pair's other end, when the text is "<other end> › <status>" — so the status
@@ -132,7 +137,8 @@ function place() {
   const r = root.getBoundingClientRect();
   if (!r.width) return;
   const scale = root.offsetWidth ? r.width / root.offsetWidth : 1;       // a canvas card is zoomed
-  const buttons = 1 + (props.junction ? 1 : 0) + (props.removable ? 1 : 0);
+  const buttons = (props.junction ? 1 : 0) + (props.removable ? 1 : 0);
+  if (!buttons) return;                                                    // nothing floats beside this pill
   const need = (8 + 17 * buttons) * scale;
   let clip = window.innerWidth, canEscape = true;
   for (let p = root.parentElement; p; p = p.parentElement) {

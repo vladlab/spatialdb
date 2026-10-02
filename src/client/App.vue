@@ -809,8 +809,7 @@ p.hint { padding: 24px; }
 }
 .pill:hover > .pill-actions { display: inline-flex; }
 .pill.flip > .pill-actions { left: auto; right: 0; }
-.pill-open, .pill-edit, .pill-x { background: none; border: none; cursor: pointer; font-size: 11px; line-height: 16px; padding: 0 3px; }
-.pill-open { color: var(--accent); }
+.pill-edit, .pill-x { background: none; border: none; cursor: pointer; font-size: 11px; line-height: 16px; padding: 0 3px; }
 .pill-edit { color: var(--text-secondary); }
 .pill-edit:hover { color: var(--accent); }
 .pill-x { color: var(--text-muted); font-size: 12px; }

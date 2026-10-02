@@ -78,7 +78,7 @@
                  already placed). A plain click still opens it. client/recordDrag.ts tells the two
                  apart by movement. -->
             <span class="pills column">
-              <RecordPill v-for="to in linksFrom(f.id)" :key="to" :text="labelOfId(to)" title="Drag onto a canvas to place it · ⤢ opens it"
+              <RecordPill v-for="to in linksFrom(f.id)" :key="to" :text="labelOfId(to)" title="Double-click opens it · drag onto a canvas to place it"
                           :color="derived.pillColorOf(f)" removable drag @down="dragPill(to, $event)" @open="$emit('open', to)" @remove="removeLink(f.id, to)" />
             </span>
             <!-- The way IN, always there — as a junction's field has it: "add another
@@ -112,7 +112,7 @@
             <template v-else>
               <span class="pills column">
                 <RecordPill v-for="from in derived.backlinkOf(recordId, f) ?? []" :key="from" back :text="labelOfId(from)" :color="derived.pillColorOf(f)"
-                            title="Drag onto a canvas to place it · ⤢ opens it" drag @down="dragPill(from, $event)" @open="$emit('open', from)" />
+                            title="Double-click opens it · drag onto a canvas to place it" drag @down="dragPill(from, $event)" @open="$emit('open', from)" />
               </span>
               <span v-if="derived.backlinkOf(recordId, f)?.length === 0" class="placeholder">nothing links here</span>
             </template>
@@ -157,7 +157,7 @@
         <div v-for="g in referencedBy" :key="g.field.id" class="rp-ref">
           <span class="rp-ref-via">{{ g.tableName }} · {{ g.field.name }}</span>
           <span class="pills">
-            <RecordPill v-for="from in g.from" :key="from" back :text="labelOfId(from)" title="Drag onto a canvas to place it · ⤢ opens it"
+            <RecordPill v-for="from in g.from" :key="from" back :text="labelOfId(from)" title="Double-click opens it · drag onto a canvas to place it"
                         :color="derived.pillColorOf(g.field)" drag @down="dragPill(from, $event)" @open="$emit('open', from)" />
           </span>
         </div>
@@ -248,7 +248,7 @@ function onPaste(f: FieldRow, e: ClipboardEvent) {
   if (err) notice(`Not pasted: ${err}`, 'warn');
 }
 
-/** A pill: drag it onto a canvas. A still press does nothing — the ⤢ opens. */
+/** A pill: drag it onto a canvas. A still press does nothing — a double-click opens. */
 function dragPill(recordId: string, e: PointerEvent) {
   const rec = store.state.records.get(recordId);
   if (!rec) return;
