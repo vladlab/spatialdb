@@ -45,7 +45,7 @@
     </div>
 
     <div v-if="!collapsed && (rows.length || rich?.length)" class="card-body">
-      <div v-for="r in rows" :key="r.id" class="card-field" :class="{ 'is-link': r.link, tall: (r.ids?.length ?? 0) > 1 || (r.lines?.length ?? 0) > 1, block: !!r.block }">
+      <div v-for="r in rows" :key="r.id" class="card-field" :class="{ 'is-link': r.link, tall: (r.ids?.length ?? 0) > 1 || (r.lines?.length ?? 0) > 1 }">
         <!-- LINK rows are OUTPUT PORTS, and the port is also where a new link starts:
              press this handle and drag to a card of the table the field points at.
              Only on a link row you can SEE — the field is never guessed (PLAN.md,
@@ -58,11 +58,12 @@
              pill as the grid and the tray, in the row's colour: drag one onto the canvas
              to place it, double-click it to open it — THAT record, not this card's. One per
              line, CARD_MAX_LINES of them. -->
-        <!-- A JUNCTION column's pairs are a small TABLE under the field's name (a BLOCK row,
-             cardLayout.rowLines): each line the other end's pill and, in a column of its
-             own, the pair's status as a capsule — `--pair-slot` is that column's start. -->
-        <span v-if="r.ids && r.ids.length" class="card-val card-list pills column" :class="{ derived: r.derived, pairs: !!r.block }"
-              :style="r.slot ? { '--pair-slot': r.slot + 'px' } : undefined">
+        <!-- A JUNCTION column's pairs sit where any link's pills do — the first beside the
+             field's name, the rest under it — so every row's values start at the same x.
+             Each line is the other end's pill and, in a column of its own, the pair's
+             status as a capsule: `--pair-slot` is where that column starts. -->
+        <span v-if="r.ids && r.ids.length" class="card-val card-list pills column" :class="{ derived: r.derived, pairs: r.junction }"
+              :style="r.slot ? { '--pair-slot': r.slot + 'px', '--pair-status': (r.statusW ?? 0) + 'px' } : undefined">
           <RecordPill v-for="(id, i) in r.ids.slice(0, CARD_MAX_LINES)" :key="id + i" class="card-line" :text="(r.lines ?? [r.text])[i] ?? ''" :back="!r.link" :junction="r.junction"
                       :status="r.statuses?.[i]" :color="r.color"
                       title="Double-click opens it · drag onto the canvas to place it here" drag
@@ -131,10 +132,10 @@ export interface CardRow {
   rows?: string[];
   /** A junction column's row: each pair's status, in `rows` order — drawn beside the pill, as a capsule. */
   statuses?: string[];
-  /** A junction column's row WITH pairs: how many — it is a block (its name, then a line per pair). */
-  block?: number;
-  /** …and the width (px) its other-end column gets, so the statuses line up. */
+  /** A junction column's row: the width (px) its other-end column gets, so the statuses line up… */
   slot?: number;
+  /** …and the width its widest status needs: the room kept for the status column on a narrow card. */
+  statusW?: number;
   /** A field shown as a COUNT: how many — `text` is then what is counted ("Files"), and the row is one line. */
   count?: number;
   countTitle?: string;
@@ -327,19 +328,14 @@ function onPointerDown(e: PointerEvent) {
    the row's whole width so those actions have room. */
 .pill.card-line { height: calc(var(--row-h) - 2px); line-height: calc(var(--row-h) - 2px); margin: 1px 0; overflow: visible; font-size: 11px; }
 .card-list.pills { flex: 1; gap: 0; }
-/* A BLOCK row: the name takes the first line to itself, the pairs the full width under
-   it. Each pair's pill spans the line, so its two parts can be columns: the other end
-   in `--pair-slot` (never more than 58% of the line — the status keeps its room on a
-   narrow card), the status after it. The heights are cardLayout's: nothing here may
-   add a line. */
-.card-field.block { flex-wrap: wrap; height: auto; row-gap: 0; }
-.card-field.block .card-key { flex: 0 0 100%; width: auto; height: var(--row-h); }
-.card-field.block .card-list { flex: 0 0 100%; box-sizing: border-box; padding-left: 8px; min-width: 0; }
-.card-field.block .port-handle { top: calc(var(--row-h) / 2); }
-.card-field.block .card-warn { position: absolute; top: 0; right: 10px; line-height: var(--row-h); }
+/* A junction column's lines: each pair's pill spans the value column, so its two parts
+   can be columns of their own — the other end in `--pair-slot`, the status after it.
+   On a card too narrow for both it is the NAME that ends in an ellipsis: the status
+   column keeps what its widest status needs (`--pair-status`, up to 60% of the line),
+   because the status is what the row is read for, and the name is one hover away. */
 .card-list.pairs .pill.junction { display: flex; width: 100%; max-width: 100%; }
 .card-list.pairs .pill.junction :deep(.pill-text) { display: flex; flex: 1 1 auto; }
-.card-list.pairs .pill.junction :deep(.pill-slot) { flex: none; width: min(var(--pair-slot), 58%); }
+.card-list.pairs .pill.junction :deep(.pill-slot) { flex: none; width: min(var(--pair-slot), calc(100% - min(var(--pair-status, 0px), 60%) - 6px)); }
 .card-field { align-items: flex-start; }
 .card-warn { color: var(--warning); font-size: 11px; margin-left: 3px; flex: none; }
 .card-warn.ok { color: var(--success); opacity: 0.8; }

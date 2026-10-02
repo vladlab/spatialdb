@@ -444,13 +444,6 @@ async function partB() {
   check(`a long list is capped at ${CARD_MAX_LINES} lines plus one "+N more" line`, rowLines(nine) === CARD_MAX_LINES + 1);
   check('the card is taller by exactly one line per extra value', cardHeight(lineCount([one, two]), false) - cardHeight(lineCount([one, one]), false) === CARD_ROW_H);
   check('a port below a two-line row sits one extra line down', rowPortY(2, 999, false, [one, two, one])! - rowPortY(2, 999, false, [one, one, one])! === CARD_ROW_H);
-  // A junction column with pairs is a BLOCK: its name on a line of its own, then a line per pair.
-  check('a junction row with pairs is its name plus a line per pair — one pair is two lines, three are four', rowLines({ block: 1 }) === 2 && rowLines({ block: 3, lines: ['a', 'b', 'c'] }) === 4);
-  check(`…capped like any list: ${CARD_MAX_LINES} pairs, then "+N more"`, rowLines({ block: 9 }) === 1 + CARD_MAX_LINES + 1);
-  check('with no pairs it is an ordinary one-line row', rowLines({ block: undefined }) === 1 && rowLines({ block: 0 }) === 1);
-  check('its port stays on its FIRST line (the name), and a row below it sits a line per pair further down',
-    rowPortY(1, 999, false, [one, { block: 2 }, one]) === rowPortY(1, 999, false, [one, one, one])
-      && rowPortY(2, 999, false, [one, { block: 2 }, one])! - rowPortY(2, 999, false, [one, one, one])! === 2 * CARD_ROW_H);
 
   console.log('\nB8b2d. Canvas defaults: which field carries the link');
   const LF = (id: string, table_id: string, target: string, extra: Record<string, unknown> = {}) => ({ id, name: id, table_id, type: 'link', options: { target_table_id: target, ...extra } });

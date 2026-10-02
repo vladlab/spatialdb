@@ -253,7 +253,7 @@ import { linkKey } from '../state';
 import { bezierPath, type Point } from '../canvas/geometry';
 import { CanvasConfig, cardFieldsFor } from '../../contract/canvasConfig';
 import { CARD_W, effectiveHeight, lineCount, rowPortY } from '../canvas/cardLayout';
-import { pairSlot } from '../textWidth';
+import { capsuleWidth, pairSlot } from '../textWidth';
 import type { CardRow } from './RecordCard.vue';
 import type { Rect } from '../canvas/geometry';
 import { useViewport } from '../canvas/useViewport';
@@ -312,12 +312,13 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
     const count = derived.countOf(rec.id, f);
     if (count) return { id: f.id, name: f.name, derived: true, text: count.n ? count.noun : '', count: count.n || undefined, countTitle: count.title,
       color, link: f.type === 'link' || !!j };
-    // A junction column WITH pairs is a BLOCK (cardLayout.rowLines): its name, then a line
-    // per pair — and `slot` is the room the other end gets, so the statuses line up.
+    // A junction column's pairs are lines like any link row's — the first beside the field's
+    // name. `slot` is the room the other end gets, so the statuses line up under it, and
+    // `statusW` what the widest status needs: on a narrow card it is the NAME that gives way.
     return { id: f.id, name: f.name, derived: true, text: texts.join(', '), lines: texts.length > 1 ? texts : undefined,
       ids, color, link: f.type === 'link' || !!j, junction: !!j, rows,
       statuses: j ? rows!.map((row) => derived.junctionRow(row)?.status ?? '') : undefined,
-      block: j && rows!.length ? rows!.length : undefined,
+      statusW: j ? capsuleWidth(rows!.map((row) => derived.junctionRow(row)?.status ?? ''), 11) : undefined,
       slot: j && ids!.length ? pairSlot(ids!.map((id) => derived.plainLabelOfId(id)), 11) : undefined };
   }
   if (f.type === 'rich_text') return { id: f.id, name: f.name, text: richTextToPlain(rec.data[f.key]).split('\n', 1)[0] };
@@ -361,6 +362,40 @@ function shownFields(tableId: string): FieldRow[] {
   const primaryKey = labelKeys.value.get(tableId);
   return cardFieldsFor(canvasConfig.value, tableId, all, all.find((f) => f.key === primaryKey)?.id);
 }
+
+/* ── what the cards READ that the scene does not bring ────────────────────────
+   A scene (server/reads.ts) is the placed records and the links BETWEEN them: enough
+   to paint the cards and draw the arrows among them. But a card's rows also show
+   what its record links to that is NOT on this canvas, and a junction column's pairs
+   are rows of a third table, which is never placed at all. Those arrive with their
+   TABLES — and nothing here asked for them, so a canvas opened cold (a reload, a
+   link) showed "—" in those rows until some other view happened to load the table:
+   the tray, in practice, which is why opening a card "fixed" it. So, as the grid and
+   the tray do for their fields, the canvas loads what its shown rows read:
+
+     a link, a lookup     the card's OWN table (a record's links, and the names of
+                          what they point at, come with its table's pages)
+     a backlink           the table the links come FROM
+     a junction column    the junction table and the table at its other end
+     and every junction between two tables that both have cards here: its pairs are
+     arrows, whether or not any card shows its column.                              */
+const tablesRead = computed(() => {
+  const placed = new Set<string>();
+  for (const p of placements.value) { const t = store.state.records.get(p.record_id)?.table_id; if (t) placed.add(t); }
+  const out = new Set<string>();
+  for (const tableId of placed) {
+    const fs = shownFields(tableId);
+    if (fs.some((f) => f.type === 'link' || f.type === 'lookup')) out.add(tableId);
+    for (const t of derived.tablesNeededBy(fs)) out.add(t);
+  }
+  const targetOf = (fieldId: string) => store.state.fields.get(fieldId)?.options?.target_table_id;
+  for (const t of store.state.tables.values()) {
+    const cfg = junctionOf(t);
+    if (cfg && placed.has(String(targetOf(cfg.a))) && placed.has(String(targetOf(cfg.b)))) out.add(t.id);
+  }
+  return [...out].sort().join();
+});
+watch(tablesRead, (joined) => { for (const t of joined.split(',').filter(Boolean)) void store.loadTable(t); }, { immediate: true });
 
 const cards = computed(() =>
   placements.value.flatMap((p) => {

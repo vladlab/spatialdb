@@ -44,3 +44,12 @@ export function pairSlot(labels: Iterable<string>, px: number, cap = 260): numbe
   for (const l of labels) w = Math.max(w, textWidth(l, px));
   return w ? Math.min(Math.ceil(w) + PILL_PAD, cap) : 0;
 }
+
+/** A capsule's room around its text: 9px each side (App.vue, `.pill-status`), and a pixel of grace. */
+const CAPSULE_PAD = 19;
+/** The widest of `labels` as a status capsule — what a column of statuses needs to show every one whole. 0 with none. */
+export function capsuleWidth(labels: Iterable<string>, px: number): number {
+  let w = 0;
+  for (const l of labels) if (l) w = Math.max(w, textWidth(l, px));
+  return w ? Math.ceil(w) + CAPSULE_PAD : 0;
+}

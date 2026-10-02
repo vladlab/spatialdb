@@ -8,6 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { mountApp, sleep } from './uiHarness.js';
+import { cardHeight } from '../src/client/canvas/cardLayout.js';
 
 let pass = 0, fail = 0;
 function check(label: string, ok: boolean, detail = '') {
@@ -203,8 +204,9 @@ async function main() {
     // The pair's pill on the CARD: ✎ opens the editor on that row, ⤢ opens the row itself.
     const cardPill = () => portRow('a.mov').find('.pill.junction');
     check('the card row shows the pair as a pill "Texted Master › Accepted" with a ✎ — and no ⤢: a double-click opens', await until(() => cardPill().exists() && cardPill().find('.pill-text').text() === 'Texted Master › Accepted') && cardPill().find('.pill-edit').exists() && !cardPill().find('.pill-open').exists(), cardPill().exists() ? cardPill().text() : 'no pill');
-    check('…in a BLOCK row: the field\'s name on its own line, the pairs under it with a slot for the other end',
-      portRow('a.mov').classes('block') && portRow('a.mov').find('.card-list').classes('pairs') && /--pair-slot:\s*\d+px/.test(portRow('a.mov').find('.card-list').attributes('style') ?? ''), portRow('a.mov').html().slice(0, 300));
+    check('…in the VALUE column like any link — the first pair beside the field\'s name, not on a line under it — with a slot for the other end so statuses line up',
+      !portRow('a.mov').classes('block') && portRow('a.mov').find('.card-key + .card-list.pairs').exists() && /--pair-slot:\s*\d+px/.test(portRow('a.mov').find('.card-list').attributes('style') ?? '')
+        && (cardBy('a.mov').attributes('style') ?? '').includes(`height: ${cardHeight(cardBy('a.mov').findAll('.card-field').length, false)}px`), portRow('a.mov').html().slice(0, 300));
     await cardPill().find('.pill-edit').trigger('click');
     check('✎ opens the pair editor on the existing row', await until(() => w.find('.junction-anchor .je').exists()) && w.find('.je .act.danger').exists() && !w.find('.je .picker').exists());
     await w.findAll('.je .st').find((b: any) => b.text() === 'Rejected').trigger('click');

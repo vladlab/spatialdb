@@ -44,15 +44,8 @@ export const CARD_RICH_H = CARD_RICH_LABEL_H + 132;
  * so `cardHeight` counts LINES, not rows. `rowLines` is the one place that rule lives.
  */
 export const CARD_MAX_LINES = 6;
-/**
- * …and a BLOCK row — a junction column with pairs — is a small table: its name on a
- * line of its own, then one line per pair across the card's whole width (the other
- * end, and its status in a column beside it), up to CARD_MAX_LINES, then "+N more".
- * `block` is how many pairs; with none the row is an ordinary one-line row.
- */
-export interface RowShape { lines?: string[]; block?: number }
+export interface RowShape { lines?: string[] }
 export function rowLines(row: RowShape): number {
-  if (row.block) return 1 + Math.min(row.block, CARD_MAX_LINES) + (row.block > CARD_MAX_LINES ? 1 : 0);
   const n = row.lines?.length ?? 1;
   return n <= 1 ? 1 : Math.min(n, CARD_MAX_LINES) + (n > CARD_MAX_LINES ? 1 : 0);
 }
