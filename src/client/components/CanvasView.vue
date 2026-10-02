@@ -253,6 +253,7 @@ import { linkKey } from '../state';
 import { bezierPath, type Point } from '../canvas/geometry';
 import { CanvasConfig, cardFieldsFor } from '../../contract/canvasConfig';
 import { CARD_W, effectiveHeight, lineCount, rowPortY } from '../canvas/cardLayout';
+import { pairSlot } from '../textWidth';
 import type { CardRow } from './RecordCard.vue';
 import type { Rect } from '../canvas/geometry';
 import { useViewport } from '../canvas/useViewport';
@@ -311,9 +312,13 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
     const count = derived.countOf(rec.id, f);
     if (count) return { id: f.id, name: f.name, derived: true, text: count.n ? count.noun : '', count: count.n || undefined, countTitle: count.title,
       color, link: f.type === 'link' || !!j };
+    // A junction column WITH pairs is a BLOCK (cardLayout.rowLines): its name, then a line
+    // per pair — and `slot` is the room the other end gets, so the statuses line up.
     return { id: f.id, name: f.name, derived: true, text: texts.join(', '), lines: texts.length > 1 ? texts : undefined,
       ids, color, link: f.type === 'link' || !!j, junction: !!j, rows,
-      statuses: j ? rows!.map((row) => derived.junctionRow(row)?.status ?? '') : undefined };
+      statuses: j ? rows!.map((row) => derived.junctionRow(row)?.status ?? '') : undefined,
+      block: j && rows!.length ? rows!.length : undefined,
+      slot: j && ids!.length ? pairSlot(ids!.map((id) => derived.plainLabelOfId(id)), 11) : undefined };
   }
   if (f.type === 'rich_text') return { id: f.id, name: f.name, text: richTextToPlain(rec.data[f.key]).split('\n', 1)[0] };
   // A structured value is a one-line SUMMARY on a card ("4 tracks / 12 ch (5.1, 2.0…)"):

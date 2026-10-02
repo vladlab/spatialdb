@@ -102,7 +102,7 @@ async function main() {
     check('one row, status Uploaded, both links — one batch', rows[0].s === 'Uploaded' && rows[0].n === 2, JSON.stringify(rows));
     const chip = () => cellOf('a.mov').find('.pill.junction');
     check('the chip reads "Texted Master › Uploaded"', await until(() => chip().exists() && chip().find('.pill-text').text() === 'Texted Master › Uploaded'), chip().exists() ? chip().text() : 'no chip');
-    check('…drawn as two segments: the other end, then the status (the "›" stays in the text, undrawn)',
+    check('…drawn as two parts: the other end as the pill, the status beside it (the "›" stays in the text, undrawn)',
       chip().classes('paired') && chip().find('.pill-main').text() === 'Texted Master' && chip().find('.pill-status').text() === 'Uploaded');
 
     console.log('\nJ3. Same pair again lands on the row; status changes in place');
@@ -203,6 +203,8 @@ async function main() {
     // The pair's pill on the CARD: ✎ opens the editor on that row, ⤢ opens the row itself.
     const cardPill = () => portRow('a.mov').find('.pill.junction');
     check('the card row shows the pair as a pill "Texted Master › Accepted" with ✎ and ⤢', await until(() => cardPill().exists() && cardPill().find('.pill-text').text() === 'Texted Master › Accepted') && cardPill().find('.pill-edit').exists() && cardPill().find('.pill-open').exists(), cardPill().exists() ? cardPill().text() : 'no pill');
+    check('…in a BLOCK row: the field\'s name on its own line, the pairs under it with a slot for the other end',
+      portRow('a.mov').classes('block') && portRow('a.mov').find('.card-list').classes('pairs') && /--pair-slot:\s*\d+px/.test(portRow('a.mov').find('.card-list').attributes('style') ?? ''), portRow('a.mov').html().slice(0, 300));
     await cardPill().find('.pill-edit').trigger('click');
     check('✎ opens the pair editor on the existing row', await until(() => w.find('.junction-anchor .je').exists()) && w.find('.je .act.danger').exists() && !w.find('.je .picker').exists());
     await w.findAll('.je .st').find((b: any) => b.text() === 'Rejected').trigger('click');
@@ -265,6 +267,55 @@ async function main() {
     // The API agrees, through the column.
     const api = await (await nodeFetchCompare(colFilesRow.id, a, texted)).json();
     check('/api/compare accepts the junction column and reports the pair', api.same === true && api.results?.length === 1, JSON.stringify(api).slice(0, 200));
+
+    console.log('\nJ7. The pairs as a table: one line in the grid, the nested table in the tray');
+    const p1 = randomUUID(), p2 = randomUUID();
+    await post([
+      { type: 'record.create', id: p1, tableId: tJ, data: { status: 'Uploaded' } },
+      { type: 'link.add', id: randomUUID(), fieldId: cfg.a, fromRecord: p1, toRecord: a },
+      { type: 'link.add', id: randomUUID(), fieldId: cfg.b, fromRecord: p1, toRecord: texted },
+      { type: 'record.create', id: p2, tableId: tJ, data: { status: 'Rejected', notes: 'reel 3 audio drift' } },
+      { type: 'link.add', id: randomUUID(), fieldId: cfg.a, fromRecord: p2, toRecord: a },
+      { type: 'link.add', id: randomUUID(), fieldId: cfg.b, fromRecord: p2, toRecord: trailer },
+    ]);
+    const line = () => cellOf('a.mov').find('.pairline');
+    check('the grid cell stays ONE line: the first pair, and "+1" for the other', await until(() => line().exists() && line().findAll('.pill.junction').length === 1 && line().find('.more-pairs').exists(), 8000)
+      && line().find('.pill-text').text() === 'Texted Master › Uploaded' && line().find('.more-pairs').text() === '+1', line().exists() ? line().html().slice(0, 300) : 'no line');
+    check('…with the same slot for the other end in every row, so statuses line up down the column', /--pair-slot:\s*\d+px/.test(line().attributes('style') ?? ''), line().attributes('style'));
+
+    win.location.hash = `#/all/table/${tFiles}?r=${a}`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange'));
+    const jt = () => w.find('.record-panel .jt');
+    const jrow = (i: number) => jt().findAll('.jt-row')[i];
+    check('the tray shows the column as a NESTED TABLE: the other end, then the pair\'s own fields',
+      await until(() => jt().exists() && jt().findAll('.jt-row').length === 2, 8000) && jt().findAll('th').map((h: any) => h.text()).join('|') === 'Deliverable|Status|Notes|', jt().exists() ? jt().findAll('th').map((h: any) => h.text()).join('|') : 'no table');
+    check('each field is drawn as what it is: a pill for the record, a capsule for the status, text for the note',
+      jrow(0).find('td.other .pill').text().includes('Texted Master') && !jrow(0).find('td.other .pill').classes('junction') && jrow(0).findAll('td')[1].find('.choice').text() === 'Uploaded'
+        && jrow(1).findAll('td')[1].find('.choice').text() === 'Rejected' && jrow(1).findAll('td')[2].find('.value').text() === 'reel 3 audio drift', jt().html().slice(0, 400));
+    await jrow(0).findAll('td')[1].trigger('click');
+    check('a click on the status edits it IN PLACE — the grid\'s picker, no popup', await until(() => jrow(0).find('td.editing .cp').exists()) && !w.find('.je').exists());
+    await jrow(0).find('td.editing .cp-input').setValue('Acc');
+    await jrow(0).find('td.editing .cp-input').trigger('keydown', { key: 'Enter' });
+    await untilDb(`select data->>'status' s from records where id = '${p1}'`, (r) => r[0]?.s === 'Accepted', 4000);
+    check('…and writes the pair row; the capsule follows', await until(() => jrow(0).findAll('td')[1].find('.choice').text() === 'Accepted' && !jt().find('td.editing').exists()));
+    await jrow(0).findAll('td')[2].trigger('click');
+    await until(() => jrow(0).find('td.editing textarea').exists());
+    await jrow(0).find('td.editing textarea').setValue('client approved');
+    await jrow(0).find('td.editing textarea').trigger('keydown', { key: 'Enter' });
+    check('a note is typed in its cell', (await untilDb(`select data->>'notes' n from records where id = '${p1}'`, (r) => r[0]?.n === 'client approved', 4000))[0]?.n === 'client approved');
+    check('Enter moves DOWN the column, to the next pair\'s note', await until(() => jrow(1).find('td.editing textarea').exists()));
+    await jrow(1).find('td.editing textarea').trigger('keydown', { key: 'Escape' });
+    check('Escape leaves the cell and keeps the tray open', await until(() => !jt().find('td.editing').exists()) && w.find('.record-panel').exists());
+    await w.find('.record-panel .jt-add').trigger('click');
+    check('the line under the table adds a pair, through the junction popup', await until(() => w.find('.je .picker').exists()));
+    await w.find('.je .picker input').trigger('keydown', { key: 'Escape' });
+    await until(() => !w.find('.je').exists());
+    await jrow(1).find('.act.del').trigger('click');
+    check('× at a row\'s end deletes that pair', (await untilDb(`select count(*)::int n from records where id = '${p2}'`, (r) => r[0].n === 0, 4000))[0].n === 0 && await until(() => jt().findAll('.jt-row').length === 1));
+    await jrow(0).find('td.other .pill-open').trigger('click');
+    check('⤢ on the pill opens the OTHER record', await until(() => w.find('.record-panel .rp-title').text() === 'Texted Master'), w.find('.record-panel .rp-title').text());
+    check('…where the same pair is a row too, seen from its other end', await until(() => jt().exists() && jt().findAll('th')[0].text() === 'File' && jrow(0).find('td.other .pill').text().includes('a.mov')), jt().exists() ? jt().html().slice(0, 200) : 'no table');
+    await jrow(0).find('.act.open').trigger('click');
+    check('⤢ at the row\'s end opens the pair row itself', await until(() => w.find('.record-panel .rp-table').text() === 'Delivery'), w.find('.record-panel .rp-table').text());
     await sleep(100);
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -44,11 +44,19 @@ export const CARD_RICH_H = CARD_RICH_LABEL_H + 132;
  * so `cardHeight` counts LINES, not rows. `rowLines` is the one place that rule lives.
  */
 export const CARD_MAX_LINES = 6;
-export function rowLines(row: { lines?: string[] }): number {
+/**
+ * …and a BLOCK row — a junction column with pairs — is a small table: its name on a
+ * line of its own, then one line per pair across the card's whole width (the other
+ * end, and its status in a column beside it), up to CARD_MAX_LINES, then "+N more".
+ * `block` is how many pairs; with none the row is an ordinary one-line row.
+ */
+export interface RowShape { lines?: string[]; block?: number }
+export function rowLines(row: RowShape): number {
+  if (row.block) return 1 + Math.min(row.block, CARD_MAX_LINES) + (row.block > CARD_MAX_LINES ? 1 : 0);
   const n = row.lines?.length ?? 1;
   return n <= 1 ? 1 : Math.min(n, CARD_MAX_LINES) + (n > CARD_MAX_LINES ? 1 : 0);
 }
-export const lineCount = (rows: Array<{ lines?: string[] }>): number => rows.reduce((n, r) => n + rowLines(r), 0);
+export const lineCount = (rows: RowShape[]): number => rows.reduce((n, r) => n + rowLines(r), 0);
 
 /** Height for `rows` LINES (see `rowLines`) — the name is historical. */
 export function cardHeight(rows: number, collapsed: boolean, rich = 0): number {
@@ -81,7 +89,7 @@ export function effectiveHeight(h: number | null, rows: number, collapsed: boole
  * has been resized shorter than its rows (the body clips). An arrow aimed at a
  * clipped row would end in mid-air, so the caller falls back to the card's edge.
  */
-export function rowPortY(index: number, cardH: number, collapsed: boolean, rows?: Array<{ lines?: string[] }>): number | null {
+export function rowPortY(index: number, cardH: number, collapsed: boolean, rows?: RowShape[]): number | null {
   if (collapsed || index < 0) return null;
   // Lines above this row (rows may be several lines tall); the port sits on its FIRST line.
   const above = rows ? lineCount(rows.slice(0, index)) : index;

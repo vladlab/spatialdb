@@ -10,8 +10,10 @@
 
       a LINK        a tinted pill
       a BACKLINK    the same pill in outline: the link lives on the other record
-      a PAIR        a junction row's — the other end, then its status as a darker
-                    segment ("Texted Master | Uploaded")
+      a PAIR        a junction row's — the other end as the pill, and its status
+                    beside it as a round capsule, the way a select's value is drawn
+                    ("[Texted Master] (Uploaded)"). The room the other end gets is
+                    `--pair-slot` when a column of pairs sets it, so statuses line up.
       a COUNT       `n` set: "3 Edits" — a field shown as a count
                     (contract/pills.ts) is one pill, however many it links to
 
@@ -38,7 +40,7 @@
 <template>
   <span ref="el" class="pill" :class="{ back, junction, on, flip, paired: !!split, count: n !== undefined }" :style="tint" :title="title"
         @pointerenter="onEnter" @pointerleave="onLeave" @pointerdown.stop="onDown" @mousedown.stop.prevent @click.stop>
-    <span class="pill-text"><template v-if="n !== undefined"><b class="pill-n">{{ n }}</b>{{ ' ' }}</template><template v-if="split"><span class="pill-main">{{ split }}</span><span class="pill-sep">{{ ' › ' }}</span><span class="pill-status">{{ status }}</span></template><template v-else>{{ text }}</template></span>
+    <span class="pill-text"><template v-if="n !== undefined"><b class="pill-n">{{ n }}</b>{{ ' ' }}</template><template v-if="junction"><span class="pill-slot"><span class="pill-main">{{ split || text }}</span></span><template v-if="split"><span class="pill-sep">{{ ' › ' }}</span><span class="pill-status">{{ status }}</span></template></template><template v-else>{{ text }}</template></span>
     <span class="pill-actions" :style="escaped">
       <button v-if="junction" class="pill-edit" tabindex="-1" :title="editTitle ?? 'Change this pair\'s status'"
               @pointerdown.stop @mousedown.stop.prevent @click.stop="$emit('edit')">✎</button>
@@ -70,7 +72,7 @@ const props = defineProps<{
   back?: boolean;
   /** A junction pair's pill ("Texted Master › Uploaded"): ✎ edits its status, ⤢ opens the pair row. */
   junction?: boolean;
-  /** A pair's status, when `text` ends with it: drawn as its own segment. */
+  /** A pair's status, when `text` ends with it: drawn beside the pill, as a capsule. */
   status?: string;
   editTitle?: string;
   /** Highlighted — the pair being edited. */

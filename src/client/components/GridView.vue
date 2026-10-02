@@ -380,16 +380,24 @@
                             </span>
                             <button v-if="junctionOf(f)" class="junc-add" tabindex="-1" :title="`Add a ${junctionName(f)}`" @pointerdown.stop @mousedown.stop.prevent @click.stop="editJunction(r.id, f)">+</button>
                           </template>
-                          <!-- A JUNCTION's column (sql/016): each pill is a pair with its status,
-                               "Texted Master › Uploaded". ✎ changes its status, ⤢ opens the row; × deletes
-                               the pair; + (or Enter) adds one. Writable, unlike a plain backlink. -->
+                          <!-- A JUNCTION's column (sql/016), on ONE line: the FIRST pair — the other end
+                               as a pill, its status as a capsule — and "+N" for the rest. The other end
+                               gets the same room in every row (`--pair-slot`, pairSlots below), so the
+                               statuses line up down the column. The whole table of pairs, every field of
+                               it, is in the record tray (JunctionTable.vue): a row here cannot grow.
+                               ✎ changes the status, ⤢ opens the row; × deletes the pair; + (or Enter)
+                               adds one. Writable, unlike a plain backlink. -->
                           <template v-else-if="junctionOf(f)">
-                            <CellPills :total="(derived.backlinkOf(r.id, f) ?? []).length" @open="$emit('open-record', r.id)">
-                              <RecordPill v-for="p in pairsOf(r.id, f)" :key="p.row" junction :text="p.text" :status="p.status" :color="derived.pillColorOf(f)"
-                                          :on="junctionRow === p.row && isSel(r.id, f.id) && editing" title="A pair: ✎ changes its status, ⤢ opens it"
-                                          removable remove-title="Delete this pair (undo restores it)"
-                                          @edit="editJunction(r.id, f, p.row)" @open="$emit('open-record', p.row)" @remove="deleteJunctionRow(p.row)" />
-                            </CellPills>
+                            <template v-for="ps in [pairsOf(r.id, f)]" :key="'p' + f.id">
+                              <span class="pills pairline" :style="pairSlots.get(f.id) ? { '--pair-slot': pairSlots.get(f.id) + 'px' } : undefined">
+                                <RecordPill v-for="p in ps.slice(0, 1)" :key="p.row" junction :text="p.text" :status="p.status" :color="derived.pillColorOf(f)"
+                                            :on="junctionRow === p.row && isSel(r.id, f.id) && editing" title="A pair: ✎ changes its status, ⤢ opens it"
+                                            removable remove-title="Delete this pair (undo restores it)"
+                                            @edit="editJunction(r.id, f, p.row)" @open="$emit('open-record', p.row)" @remove="deleteJunctionRow(p.row)" />
+                                <button v-if="ps.length > 1" class="more-pairs" tabindex="-1" :title="`${ps.length} here — open the record to see them all`"
+                                        @pointerdown.stop @mousedown.stop.prevent @click.stop="$emit('open-record', r.id)">+{{ ps.length - 1 }}</button>
+                              </span>
+                            </template>
                             <button class="junc-add" tabindex="-1" :title="`Add a ${junctionName(f)}`" @pointerdown.stop @mousedown.stop.prevent @click.stop="editJunction(r.id, f)">+</button>
                           </template>
                           <CellPills v-else :total="(derived.backlinkOf(r.id, f) ?? []).length" @open="$emit('open-record', r.id)">
@@ -487,6 +495,8 @@ import { beginRecordDrag } from '../recordDrag';
 import { duplicateRecords } from '../duplicate';
 import { clipFromPaste, clipOf, copyCell, pasteCell } from '../cellClipboard';
 import { notice } from '../desktop';
+import { otherEnd } from '../../contract/junction';
+import { pairSlot } from '../textWidth';
 
 const props = defineProps<{
   store: Store; tableId: string;
@@ -973,6 +983,27 @@ const items = computed(() => groupRows(matched.value, allFields.value, groupBy.v
   (recId, fieldId) => derived.linksFrom(recId, fieldId), collapsed));
 const rows = computed(() => items.value.flatMap((it) => (it.kind === 'row' ? [it.record] : [])));
 const rowIndex = computed(() => new Map(rows.value.map((r, i) => [r.id, i])));
+/**
+ * A junction column's SLOT: the room its other end gets, the same in every row, so the
+ * statuses beside it line up down the column — the widest first-pair name among the
+ * rows of the view, as a pill (client/textWidth.ts). Over ALL the view's rows, not the
+ * rendered window: a width that followed the window would shift as you scroll.
+ */
+const pairSlots = computed(() => {
+  const m = new Map<string, number>();
+  for (const f of shown.value) {
+    const j = f.type === 'backlink' ? junctionOf(f) : null;
+    if (!j) continue;
+    const labels: string[] = [];
+    for (const r of rows.value) {
+      const row = derived.backlinkOf(r.id, f)?.[0];
+      const other = row ? derived.junctionRow(row)?.[otherEnd(j.side)] : undefined;
+      if (other) labels.push(derived.plainLabelOfId(other));
+    }
+    m.set(f.id, pairSlot(labels, 12));
+  }
+  return m;
+});
 /** BANDING: every second row is a shade lighter, so the eye can follow one across a wide
  *  table. Counted from each group header — the first row under a header is always the
  *  plain one — and by POSITION in the view, not by the DOM: the window renders a slice,
@@ -1539,6 +1570,16 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .cell .cellpills :deep(.pill) { flex: none; }
 .cell .cellpills :deep(.pill.cut) { visibility: hidden; }
 .cell .cellpills:not(.measured) :deep(.pill) { visibility: hidden; }   /* no flash of the wrong count */
+/* A junction column's one line (see the template): the pair may shrink — its name, then
+   its status, end in an ellipsis — but the "+N" never does: it is the one thing the
+   cell must not hide. */
+.cell .pairline { flex: 1 1 auto; flex-wrap: nowrap; min-width: 0; max-width: 100%; gap: 6px; }
+.cell .pairline :deep(.pill) { flex: 0 1 auto; min-width: 0; }
+.more-pairs {
+  flex: none; margin-left: auto; background: var(--controls-bg); border: 1px solid var(--accent); color: var(--accent); border-radius: 10px;
+  font: inherit; font-size: 10px; font-weight: 600; line-height: 16px; padding: 0 6px; cursor: pointer;
+}
+.more-pairs:hover { background: var(--accent); color: #fff; }
 .junc-add { background: none; border: 1px dashed var(--border-main); border-radius: 10px; color: var(--text-muted); cursor: pointer; font: inherit; line-height: 1; padding: 0 6px; visibility: hidden; }
 td:hover .junc-add, td.sel .junc-add { visibility: visible; }
 .junc-add:hover { color: var(--accent); border-color: var(--accent); }

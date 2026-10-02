@@ -763,8 +763,8 @@ p.hint { padding: 24px; }
 /* The same capsule while it is being edited (CellEditor's multi-select): only the × is new. */
 .chip.choice { display: inline-flex; align-items: center; gap: 3px; flex: none; border: none; margin: 0; padding: 0 3px 0 9px; overflow: visible; }
 /* PILLS — every linked record, everywhere (components/RecordPill.vue). A pill is
-   ALWAYS drawn as one: tinted for a link, in outline for a backlink, with a darker
-   status segment for a junction pair. Squarish, where a select's capsule (.choice) is round —
+   ALWAYS drawn as one: tinted for a link, in outline for a backlink, and for a
+   junction pair the other end's pill with the status beside it as a capsule. Squarish, where a select's capsule (.choice) is round —
    the shape is what tells a record from a tag. Neutral, unless the relationship has
    a colour: then RecordPill sets the three --pill-* tints from it. The actions
    float past the pill's end on hover (or over its tail — `.flip` — when there is no
@@ -780,16 +780,28 @@ p.hint { padding: 24px; }
 }
 .pill-text { overflow: hidden; text-overflow: ellipsis; min-width: 0; padding: 0 7px; }
 .pill.back { background: none; box-shadow: inset 0 0 0 1px var(--pill-line); color: var(--text-secondary); }
-/* A pair: the other end, then its status as a segment of its own. The "›" between
-   them stays in the text (search, tests, a screen reader) and is only not drawn. */
-.pill.paired .pill-text { display: inline-flex; padding: 0; }
-.pill-main { overflow: hidden; text-overflow: ellipsis; min-width: 0; padding: 0 7px; }
+/* A PAIR (a junction row, seen from one of its ends) is drawn as what its two parts
+   ARE: the other end is a record — a pill — and its status is a choice — a capsule
+   (.choice's look). The pair's own box carries nothing: it is the two side by side,
+   and the "›" between them stays in the text (search, tests, a screen reader) and is
+   only not drawn. `--pair-slot`, set by whoever lays a COLUMN of pairs out (a grid
+   column, a card), is the room given to the other end, so every status under it
+   starts at the same x (client/textWidth.ts); unset, the status simply follows. */
+.pill.junction { background: none; box-shadow: none; }
+.pill.junction .pill-text { display: inline-flex; align-items: center; gap: 6px; padding: 0; }
+/* (`width`, not a flex-basis: a flex container's own width is the sum of its items'
+   WIDTHS — a basis wider than the name was taken out of the status, which then ended
+   in an ellipsis with the whole cell free beside it.) */
+.pill-slot { display: inline-flex; flex: 0 1 auto; width: var(--pair-slot, auto); min-width: 0; }
+.pill-main { overflow: hidden; text-overflow: ellipsis; min-width: 0; padding: 0 7px; border-radius: 4px; background: var(--pill-bg); box-shadow: inset 0 0 0 1px var(--pill-edge); }
 .pill-sep { display: none; }
-.pill-status { flex: none; padding: 0 7px; border-radius: 0 4px 4px 0; background: rgba(0, 0, 0, 0.3); color: var(--text-secondary); }
+.pill-status { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; padding: 0 9px; border-radius: 10px; background: var(--choice-bg); }
 /* A count ("3 Edits"): the number carries it, the noun is quieter. */
 .pill.count .pill-text { color: var(--text-secondary); }
 .pill-n { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-primary); }
 .pill:hover, .pill.on { box-shadow: inset 0 0 0 1px var(--accent); }
+.pill.junction:hover, .pill.junction.on { box-shadow: none; }
+.pill.junction:hover .pill-main, .pill.junction.on .pill-main { box-shadow: inset 0 0 0 1px var(--accent); }
 .pill-actions {
   position: absolute; left: calc(100% - 3px); top: 50%; transform: translateY(-50%); z-index: 6;
   display: none; align-items: center; height: 18px; box-sizing: border-box; padding: 0 2px;

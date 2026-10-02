@@ -69,7 +69,7 @@
                           @set="setRich" @unset="unsetRich" />
         </div>
 
-        <div v-else :ref="(el) => setValueEl(f.id, el)" class="rp-value" :class="{ readonly: READONLY(f) }"
+        <div v-else :ref="(el) => setValueEl(f.id, el)" class="rp-value" :class="{ readonly: READONLY(f), nested: f.type === 'backlink' && !!junctionOf(f) }"
              :tabindex="READONLY(f) ? -1 : 0"
              @click="startEdit(f)" @keydown.enter.prevent.stop="startEdit(f)" @copy="onCopy(f, $event)" @paste="onPaste(f, $event)">
           <!-- LINK -->
@@ -99,19 +99,14 @@
                chip opens the record that holds the link. -->
           <template v-else-if="f.type === 'backlink'">
             <span v-if="derived.backlinkOf(recordId, f) === null" class="broken">broken backlink</span>
-            <!-- A JUNCTION's column (sql/016): writable. Chips are pairs with their status;
-                 click one to change it, × deletes the pair, the box itself adds one. -->
+            <!-- A JUNCTION's column (sql/016): the pairs as a NESTED TABLE (JunctionTable.vue) —
+                 the other end, then the pair's own fields in columns, edited in place. The line
+                 under it (or Enter on the box) adds a pair, through the junction popup. -->
             <template v-else-if="junctionOf(f)">
-              <span class="pills column">
-                <RecordPill v-for="row in derived.backlinkOf(recordId, f) ?? []" :key="row" junction :text="derived.junctionChip(row, junctionOf(f)!.side).text"
-                            :status="derived.junctionChip(row, junctionOf(f)!.side).status" :color="derived.pillColorOf(f)"
-                            :on="editingId === f.id && junctionRow === row" title="A pair: ✎ changes its status, ⤢ opens it"
-                            removable remove-title="Delete this pair (undo restores it)"
-                            @edit="editJunction(f, row)" @open="$emit('open', row)" @remove="store.mutate({ type: 'record.delete', id: row })" />
-              </span>
-              <span v-if="editingId !== f.id" class="placeholder">add {{ derived.backlinkOf(recordId, f)?.length ? 'another' : 'a' }} {{ junctionName(f) }}…</span>
+              <JunctionTable :store="store" :record-id="recordId" :field="f" :table="junctionOf(f)!.table" :cfg="junctionOf(f)!.cfg" :side="junctionOf(f)!.side"
+                             @open="(id: string) => $emit('open', id)" @add="startEdit(f)" @drag="dragPill" />
               <JunctionEditor v-if="editingId === f.id" :store="store" :table="junctionOf(f)!.table" :cfg="junctionOf(f)!.cfg"
-                              :side="junctionOf(f)!.side" :from="recordId" :row-id="junctionRow" :anchor="valueEls.get(f.id)"
+                              :side="junctionOf(f)!.side" :from="recordId" :anchor="valueEls.get(f.id)"
                               @done="onDone('none')" @open="(id: string) => { onDone('none'); $emit('open', id); }" />
             </template>
             <template v-else>
@@ -201,6 +196,7 @@ import { beginRecordDrag } from '../recordDrag';
 import { compareOf, seedValues } from '../../contract/compare';
 import { SYSTEM_FIELD_TYPES, formatCreated, isSystemKey } from '../../contract/systemFields';
 import SideBySide from './SideBySide.vue';
+import JunctionTable from './JunctionTable.vue';
 
 // Loaded ON DEMAND. TipTap + ProseMirror are most of a megabyte of source, and
 // nothing needs them until a record with a rich_text field is opened — so they
@@ -333,9 +329,6 @@ function addLinkText(f: FieldRow): string {
 const referencedBy = computed(() => derived.referencedBy(props.recordId));
 /** A backlink mirroring a junction's endpoint is WRITABLE (contract/junction.ts) — the one backlink that is. */
 const junctionOf = (f: FieldRow) => derived.junctionOfBacklink(f);
-const junctionName = (f: FieldRow) => { const j = junctionOf(f); const t = j ? store.state.tables.get(j.table) : undefined; return t?.singular_name || t?.name || 'pair'; };
-const junctionRow = ref<string>();
-function editJunction(f: FieldRow, row?: string) { junctionRow.value = row; editingId.value = f.id; }
 const READONLY = (f: FieldRow) => f.type === 'lookup' || (f.type === 'backlink' && !junctionOf(f)) || SYSTEM_FIELD_TYPES.has(f.type);
 
 /* ── editing ──────────────────────────────────────────────────────────── */
@@ -350,7 +343,6 @@ const EDITABLE = (f: FieldRow) => !READONLY(f) && !['checkbox', 'attachment', 'r
 
 function startEdit(f: FieldRow) {
   if (!EDITABLE(f) || editingId.value === f.id) return;
-  if (f.type === 'backlink') junctionRow.value = undefined;   // the box itself: add a pair
   editingId.value = f.id;
 }
 
@@ -479,6 +471,8 @@ watch(() => props.recordId, () => {
   background: var(--controls-bg);
 }
 .rp-value.readonly { cursor: default; }
+/* A junction's nested table fills the box edge to edge: its own cells carry the padding. */
+.rp-value.nested { display: block; padding: 0; overflow: hidden; }
 /* Links one per LINE in the tray: the vertical room is there, and a long deliverable
    name is readable only when it has the whole line. (The "referenced by" list below
    the fields stays a flow — short names, many of them.) */
