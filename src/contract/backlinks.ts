@@ -34,6 +34,29 @@ export function backlinkSourceOf(f: { options?: Record<string, unknown> | null }
   return typeof id === 'string' && id ? id : null;
 }
 
+/**
+ * The table a LINK-LIKE field leads to — whose records it holds: a link's target,
+ * a backlink's source table (the records linking in). Null for any other field,
+ * or a backlink whose source field is gone. What a lookup following the field
+ * reads from (lookups.ts), and what the two sides of a match must share (match.ts).
+ */
+export function leadsTo(
+  f: { type: string; table_id: string; options?: Record<string, unknown> | null } | undefined,
+  getField: (id: string) => { type: string; table_id: string } | undefined,
+): string | null {
+  if (!f) return null;
+  if (f.type === 'link') {
+    const t = f.options?.target_table_id;
+    return typeof t === 'string' && t ? t : null;
+  }
+  if (f.type === 'backlink') {
+    const src = backlinkSourceOf(f);
+    const link = src ? getField(src) : undefined;
+    return link && link.type === 'link' ? link.table_id : null;
+  }
+  return null;
+}
+
 /** Why this backlink configuration is not acceptable, or null. */
 export function backlinkConfigError(
   tableId: string,

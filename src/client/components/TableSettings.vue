@@ -100,14 +100,13 @@ const upd = (patch: { icon?: string; color?: string; singularName?: string }) =>
 /* ── the list ──────────────────────────────────────────────────────────── */
 const openId = ref<string | null>(null);
 const tableName = (id: unknown) => props.store.state.tables.get(String(id ?? ''))?.name ?? '?';
-const fieldName = (id: unknown) => props.store.state.fields.get(String(id ?? ''))?.name ?? '?';
 /** One line of what makes this field what it is. */
 function summaryOf(f: FieldRow): string {
   const o = f.options ?? {};
   switch (f.type) {
     case 'link': return `→ ${tableName(o.target_table_id)}${o.single ? ' · single' : ''}${o.membership ? ' · membership' : ''}${o.compare ? ' · compares' : ''}${o.count === true ? ' · as count' : ''}`;
     case 'backlink': { const src = props.store.state.fields.get(String(o.source_field_id ?? '')); return src ? `← ${tableName(src.table_id)}.${src.name}${o.compare ? ' · compares' : ''}${o.count === true ? ' · as count' : ''}` : '← (broken)'; }
-    case 'lookup': return `${fieldName(o.via_field_id)} → ${fieldName(o.show_field_id)}`;
+    case 'lookup': return actions.describeLookup(f).text;
     case 'select': case 'multi_select': { const c = choicesOf(o); return o.vocabulary ? `built-in: ${o.vocabulary}` : c ? `${c.length} choice${c.length === 1 ? '' : 's'}${c.length ? ': ' + c.slice(0, 4).join(', ') + (c.length > 4 ? '…' : '') : ''}` : ''; }
     case 'structured': return shapeOf(f) ?? '';
     case 'number': return typeof o.format === 'string' ? o.format : '';

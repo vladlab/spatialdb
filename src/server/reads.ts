@@ -392,6 +392,9 @@ export async function loadUnplaced(
  *  A `lookup` field carries { via_field_id, target_field_id }: follow the link,
  *  read a field off the far record. This is resolved server-side at read time
  *  rather than stored, so it can never go stale.
+ *
+ *  UNUSED, and LINK-ONLY: the client computes lookups (contract/lookups.ts), and
+ *  that rule also follows backlinks, which this query does not.
  * ──────────────────────────────────────────────────────────────────────────*/
 
 export async function resolveLookup(

@@ -208,31 +208,44 @@ config; ids that no longer resolve are skipped at render time. Per-card things
 ### Lookup fields
 
 A `lookup` field has no value of its own. It follows one of its table's link
-fields and shows one field from the records at the far end:
+fields — or one of its **backlinks** — and shows one field from the records at the
+far end:
 
 ```jsonc
 { "type": "field.create", "fieldType": "lookup",
-  "options": { "via_field_id": "<a link field on THIS table>",
-               "target_field_id": "<a field on the table that link points at>" } }
+  "options": { "via_field_id": "<a link OR backlink field on THIS table>",
+               "target_field_id": "<a field on the table it leads to>" } }
 ```
+
+Through a link the far end is what the record links TO (the file's deliverable);
+through a backlink it is what links to IT (the deliverable's files) — the same
+links, read from the other end. The table a field leads to is `leadsTo` in
+`src/contract/backlinks.ts`: a link's target, a backlink's source table. For a
+junction's column that is the junction table: the lookup reads the PAIR rows (their
+status, their notes), not the record at the other end of them.
 
 The rule is the sixth shared contract file, **`src/contract/lookups.ts`**.
 
 - **Configuration is validated on write**, by the same function the field form
-  runs: `via` must be a link field on the lookup's own table; `target` must be on
-  the table that link points at, and must not itself be a `link` or `lookup` (no
-  second hops, no chains). Applies to `field.create` and to `field.update` with
-  `options`. Works in the same batch as the link field it follows.
+  runs: `via` must be a link or backlink field on the lookup's own table (a
+  backlink whose own link field is gone cannot be followed); `target` must be on
+  the table it leads to, and must not itself be a `link`, `backlink` or `lookup` —
+  ONE hop, in either direction, no chains. Applies to `field.create` and to
+  `field.update` with `options`. Works in the same batch as the field it follows.
 - **Values are computed on the client**, which holds whole tables. Nothing is
   stored in `records.data` under a lookup's key, and writing to it is a 400.
   A lookup yields a LIST (one value per linked record, in link order, empty far
   cells skipped); the grid shows it comma-separated and sorts/filters by that
   text. Rollups (sum/min/max) are deliberately not an option on this type.
 - **A lookup can BREAK and that is not an error.** Deleting the link field or the
-  far field does not rewrite or delete lookups that depend on it; they resolve to
+  far field — or, through a backlink, the link that backlink mirrors — does not
+  rewrite or delete lookups that depend on it; they resolve to
   "broken" until the delete is undone or the lookup is removed. Same reasoning as
   view configs.
-- `resolveLookup` in `reads.ts` predates client-side tables and is unused.
+- **Loading.** The far table has to be on the client for values to show. The grid,
+  the record tray, canvas cards and report levels each load what their shown
+  lookups (and backlinks) read — `derived.tablesNeededBy`.
+- `resolveLookup` in `reads.ts` predates client-side tables, is link-only, and is unused.
 
 ### Health, version, and how the app is served
 

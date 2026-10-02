@@ -624,7 +624,7 @@ async function main() {
   check('a lookup with nothing chosen is refused in the form',
     /needs a link field/.test(gridPop().find('.error').text()), gridPop().find('.error').text());
   check('"follow which link" offers this table\'s link fields',
-    gridPop().find('select.via').findAll('option').map((o) => o.text()).includes('Show'));
+    gridPop().find('select.via').findAll('option').map((o) => o.text()).some((t) => /^Show → /.test(t)));
   await gridPop().find('select.via').setValue(linkField);
   const showOpts = () => gridPop().find('select.show').findAll('option').map((o) => o.text());
   check('"show which field" then offers the FAR table\'s fields', await until(() => showOpts().includes('Code') && showOpts().includes('Name')), showOpts().join());

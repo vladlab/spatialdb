@@ -16,7 +16,7 @@
 import { FIELD_TYPES } from '../contract/mutations';
 import { LABEL_TYPES } from '../contract/labels';
 import { LOOKUP_TARGET_TYPES, lookupConfigError, lookupOptionsOf } from '../contract/lookups';
-import { backlinkConfigError, backlinkSourceOf } from '../contract/backlinks';
+import { backlinkConfigError, backlinkSourceOf, leadsTo } from '../contract/backlinks';
 import { arrowStyleOf, type ArrowStyle } from '../contract/arrows';
 import { isMembership } from '../contract/scope';
 import { shapeOptionError } from '../contract/shapes';
@@ -81,12 +81,29 @@ export function useSchemaActions(store: Store) {
 
   /* ── lookups ─────────────────────────────────────────────────────────── */
 
-  /** Link fields on this table — what a lookup here can follow. */
+  /** Link fields on this table. */
   const linkFieldsOf = (tableId: string) => fields(tableId).filter((f) => f.type === 'link');
+  const fieldById = (id: string) => store.state.fields.get(id);
+  /**
+   * What a lookup here can FOLLOW (contract/lookups.ts): this table's links, and its
+   * backlinks — the same relationships read from the other end. Each with the table
+   * it leads to, which is where the field to show is picked from. A broken backlink
+   * leads nowhere and is not offered.
+   */
+  function lookupViasOf(tableId: string): Array<{ field: FieldRow; far: string; label: string }> {
+    const out: Array<{ field: FieldRow; far: string; label: string }> = [];
+    for (const f of fields(tableId)) {
+      const far = leadsTo(f, fieldById);
+      if (!far) continue;
+      const farName = store.state.tables.get(far)?.name ?? '?';
+      out.push({ field: f, far, label: f.type === 'link' ? `${f.name} → ${farName}` : `${f.name} ← ${farName} (backlink)` });
+    }
+    return out;
+  }
   /** Fields a lookup following `viaFieldId` can show: readable fields of the far table. */
   function lookupTargetsOf(viaFieldId: string): FieldRow[] {
-    const far = store.state.fields.get(viaFieldId)?.options?.target_table_id;
-    return typeof far === 'string' ? fields(far).filter((f) => LOOKUP_TARGET_TYPES.has(f.type)) : [];
+    const far = leadsTo(fieldById(viaFieldId), fieldById);
+    return far ? fields(far).filter((f) => LOOKUP_TARGET_TYPES.has(f.type)) : [];
   }
   /** "Deliverable → Required codec", or why it is broken. For the settings panel. */
   function describeLookup(f: FieldRow): { text: string; broken: boolean } {
@@ -97,7 +114,10 @@ export function useSchemaActions(store: Store) {
       return { broken: true, text: !via ? 'broken — the link field it followed was deleted'
         : 'broken — the field it showed was deleted' };
     }
-    return { broken: false, text: `${via.name} → ${show.name}` };
+    // Through a backlink whose own link is gone: the backlink is still there, and leads nowhere.
+    if (!leadsTo(via, fieldById)) return { broken: true, text: `broken — “${via.name}” is itself broken (the link it is the other end of was deleted)` };
+    // "Files ← Status": the arrow says which way the relationship is read.
+    return { broken: false, text: `${via.name} ${via.type === 'backlink' ? '←' : '→'} ${show.name}` };
   }
 
   /* ── backlinks ───────────────────────────────────────────────────────── */
@@ -553,7 +573,7 @@ export function useSchemaActions(store: Store) {
     createTable, createJunction, renameTable, deleteTable, setJunction,
     draftError, createField, renameField, setChoices, moveField, reorderFields, makePrimary, isPrimary,
     canBePrimary, deleteField,
-    setArrowStyle, setMembership, setSingle, setCount, setMatch, setVocabulary, setTools, enableFileDrop, disableFileDrop, addToolFields, linkFieldsOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
+    setArrowStyle, setMembership, setSingle, setCount, setMatch, setVocabulary, setTools, enableFileDrop, disableFileDrop, addToolFields, linkFieldsOf, lookupViasOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
   };
 }
 export type SchemaActions = ReturnType<typeof useSchemaActions>;

@@ -19,7 +19,7 @@ import { compareOf, compareRecords, type ComparePair, type CompareResult, type P
 import { primaryKeys, type FieldRow } from './state';
 import { labelFrom } from '../contract/labels';
 import { lookupOptionsOf, lookupText, lookupValues } from '../contract/lookups';
-import { backlinkRecords, backlinkSourceOf } from '../contract/backlinks';
+import { backlinkRecords, backlinkSourceOf, leadsTo } from '../contract/backlinks';
 import { endpointOfBacklink, junctionColumnTarget, junctionLabel, junctionOf, otherEnd, type JunctionConfig } from '../contract/junction';
 import { arrowStyleOf } from '../contract/arrows';
 import { countNoun, showsCount } from '../contract/pills';
@@ -114,7 +114,7 @@ export function useDerived(store: Store) {
 
   /** Lookup values as text, or null when the lookup is broken. */
   function lookupOf(recordId: string, f: FieldRow): string[] | null {
-    const vals = lookupValues(f, recordId, getField, linksFrom, getData);
+    const vals = lookupValues(f, recordId, getField, linksFrom, getData, linkedTo);
     return vals === null ? null : lookupText(vals);
   }
   /** Ids of the records pointing here through a backlink's source, or null if broken. */
@@ -194,9 +194,10 @@ export function useDerived(store: Store) {
     const out = new Set<string>();
     for (const f of fields) {
       if (f.type === 'lookup') {
+        // …or, through a backlink, the table its links come FROM (contract/backlinks.ts).
         const via = lookupOptionsOf(f)?.via_field_id;
-        const far = via ? getField(via)?.options?.target_table_id : undefined;
-        if (typeof far === 'string') out.add(far);
+        const far = via ? leadsTo(getField(via), getField) : null;
+        if (far) out.add(far);
       } else if (f.type === 'backlink') {
         const src = backlinkSourceOf(f);
         const t = src ? getField(src)?.table_id : undefined;

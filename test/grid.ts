@@ -209,6 +209,25 @@ function pure() {
   check('filtering by one works too', viaView({ filters: [{ fieldId: lkField.id, op: 'contains', value: '38' }] }) === 'b'
     && viaView({ filters: [{ fieldId: lkField.id, op: 'empty' }] }) === 'c');
 
+  // THROUGH A BACKLINK (the same links, read from the other end): Specs.used_by is
+  // the other end of Files.spec, so a lookup on Specs can show a field of the FILES.
+  all.push(fld('used_by', T2, 'backlink', { source_field_id: 'spec' }), fld('orphan', T2, 'backlink', { source_field_id: 'gone' }), fld('files_back', T1, 'lookup'));
+  const cfgErr2 = (via: string, target: string) => lookupConfigError(T2, { via_field_id: via, target_field_id: target }, get);
+  check('a lookup may follow a BACKLINK and show a field of the table its links come from', cfgErr2('used_by', 'title') === null, String(cfgErr2('used_by', 'title')));
+  check('…not a field of its own table, or of anywhere else', /links come from/.test(cfgErr2('used_by', 'codec') ?? ''));
+  check('…and still one hop: not a lookup, a link or a backlink on the far side',
+    /cannot show a lookup/.test(cfgErr2('used_by', 'files_back') ?? '') && /cannot show a link/.test(cfgErr2('used_by', 'spec') ?? ''));
+  check('a backlink whose own link is gone cannot be followed', /broken/.test(cfgErr2('orphan', 'title') ?? ''));
+  const back = { ...fld('back', T2, 'lookup', { via_field_id: 'used_by', target_field_id: 'title' }) };
+  const intoSpec = (rec: string, src: string) => (rec === 's1' && src === 'spec' ? ['f1', 'f9', 'f3'] : []);
+  const fileData: Record<string, Record<string, unknown>> = { f1: { title: 'reel_1' }, f3: { title: 'reel_3' } };
+  check('its values are read off the records that link IN, through the link the backlink mirrors',
+    JSON.stringify(lookupValues(back, 's1', get, () => [], (id) => fileData[id], intoSpec)) === '["reel_1","reel_3"]'
+    && JSON.stringify(lookupValues(back, 's2', get, () => [], (id) => fileData[id], intoSpec)) === '[]');
+  check('broken (null) when that link is gone — or when the caller cannot read links backwards',
+    lookupValues({ ...back, options: { via_field_id: 'orphan', target_field_id: 'title' } }, 's1', get, () => [], (id) => fileData[id], intoSpec) === null
+    && lookupValues(back, 's1', get, () => [], (id) => fileData[id]) === null);
+
   console.log('\nG1f. Backlinks (contract/backlinks.ts)');
   const bErr = (src: string, table = T2) => backlinkConfigError(table, { source_field_id: src }, get);
   check('a backlink on the table a link POINTS AT is accepted', bErr('spec') === null, String(bErr('spec')));
@@ -725,6 +744,15 @@ async function main() {
   check('re-pointing an existing lookup at the wrong table is refused too', bad4.status === 400, `${bad4.status}`);
   check('and none of them created a field',
     (await pool.query(`select count(*)::int n from fields where key like 'bad%'`)).rows[0].n === 0);
+  // Through a BACKLINK: on the far table, the other end of `Spec` — and a field of THIS table shown there.
+  const viaBackF = randomUUID(), backLook = randomUUID();
+  const okViaBack = await mutate([
+    { type: 'field.create', id: viaBackF, tableId: farT, name: 'Spec of', key: 'spec_of', fieldType: 'backlink', options: { source_field_id: linkF } },
+    { type: 'field.create', id: backLook, tableId: farT, name: 'Spec of (name)', key: 'spec_of_name', fieldType: 'lookup', options: { via_field_id: viaBackF, target_field_id: fName } },
+  ]);
+  check('a lookup through a backlink is accepted, in the same batch as the backlink', okViaBack.status === 200, JSON.stringify(okViaBack.body).slice(0, 200));
+  const bad5 = await mutate([{ type: 'field.create', id: randomUUID(), tableId: farT, name: 'Bad', key: 'bad5', fieldType: 'lookup', options: { via_field_id: viaBackF, target_field_id: farF } }]);
+  check('…showing a field of the wrong table is a 400 that says why', bad5.status === 400 && /links come from/.test(JSON.stringify(bad5.body)), JSON.stringify(bad5.body).slice(0, 160));
   const writeTo = await mutate([{ type: 'record.create', id: randomUUID(), tableId, data: { spec_codec: 'x' } }]);
   check('a lookup cannot be WRITTEN — it is computed', writeTo.status === 400, `${writeTo.status}`);
 

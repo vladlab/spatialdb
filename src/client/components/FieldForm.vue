@@ -29,12 +29,13 @@
       <option value="" disabled>{{ linksIn.length ? 'other end of which link…' : 'no link field points at this table yet' }}</option>
       <option v-for="l in linksIn" :key="l.field.id" :value="l.field.id">{{ l.label }}</option>
     </select>
-    <!-- LOOKUP: follow one of THIS table's link fields, show one field from the far
+    <!-- LOOKUP: follow one of THIS table's link fields — or its backlinks, the same
+         relationships read from the other end — and show one field from the far
          table. The second list depends on the first. -->
     <template v-if="d.type === 'lookup'">
       <select v-model="d.via" class="via" @change="d.show = ''">
-        <option value="" disabled>{{ linkFields.length ? 'follow which link…' : 'this table has no link fields yet' }}</option>
-        <option v-for="f in linkFields" :key="f.id" :value="f.id">{{ f.name }}</option>
+        <option value="" disabled>{{ lookupVias.length ? 'follow which link or backlink…' : 'this table has no link or backlink fields yet' }}</option>
+        <option v-for="v in lookupVias" :key="v.field.id" :value="v.field.id">{{ v.label }}</option>
       </select>
       <select v-model="d.show" class="show" :disabled="!d.via">
         <option value="" disabled>show which field…</option>
@@ -80,7 +81,7 @@ const nameInput = ref<HTMLInputElement>();
 const tables = computed(() => tablesSorted(props.store.state));
 const derived = computed(() => deriveKey(d.name));
 const linksIn = computed(() => props.actions.linkFieldsInto(props.tableId));
-const linkFields = computed(() => props.actions.linkFieldsOf(props.tableId));
+const lookupVias = computed(() => props.actions.lookupViasOf(props.tableId));
 const lookupTargets = computed(() => props.actions.lookupTargetsOf(d.via));
 
 function submit() {

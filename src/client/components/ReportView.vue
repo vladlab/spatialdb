@@ -97,6 +97,12 @@ const tablesNeeded = computed(() => {
   const walk = (l: RootLevel | Descent, tableId: string, above: { id: string; table: string }[]) => {
     out.add(tableId);
     levelTables.set(l.id, tableId);
+    // A column, filter or sort that is a LOOKUP or a BACKLINK reads a table the walk
+    // may never land in — a lookup's far table (through a link, or a backlink), the
+    // table a backlink's links come from. Unloaded, the column is blank and says nothing.
+    const read = [...l.fields, ...l.filters.map((f) => f.fieldId), ...l.sort.map((x) => x.fieldId)]
+      .map((id) => store.state.fields.get(id)).filter((f): f is NonNullable<typeof f> => !!f);
+    for (const t of derived.tablesNeededBy(read)) out.add(t);
     const here = [...above, { id: l.id, table: tableId }];
     for (const c of l.children) {
       let landing = '';

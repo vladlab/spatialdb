@@ -36,6 +36,7 @@
  */
 
 import { z } from 'zod';
+import { leadsTo } from './backlinks.js';
 
 const uuid = z.guid();
 
@@ -49,24 +50,8 @@ export interface MatchFieldLike {
 }
 type GetField = (id: string) => MatchFieldLike | undefined;
 
-/**
- * The table a link-like field LEADS TO — whose records it holds: a link's target,
- * a backlink's source table. Null for anything else, or a backlink whose source
- * is gone.
- */
-export function leadsTo(f: MatchFieldLike | undefined, getField: GetField): string | null {
-  if (!f) return null;
-  if (f.type === 'link') {
-    const t = f.options?.target_table_id;
-    return typeof t === 'string' && t ? t : null;
-  }
-  if (f.type === 'backlink') {
-    const src = f.options?.source_field_id;
-    const link = typeof src === 'string' ? getField(src) : undefined;
-    return link && link.type === 'link' ? link.table_id : null;
-  }
-  return null;
-}
+// The table a link-like field LEADS TO: contract/backlinks.ts. Re-exported — it is half of this rule.
+export { leadsTo };
 
 /** The pairs stored on a link field; empty when there are none (or they do not parse). */
 export function linkMatchOf(f: { options?: Record<string, unknown> | null } | undefined): MatchPair[] {

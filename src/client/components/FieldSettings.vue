@@ -23,7 +23,7 @@
     <span v-if="field.type === 'backlink'" class="meta lookup" :class="{ broken: backlink.broken }"
           title="A backlink shows links made on other records, pointing here. It stores nothing; edit the link on the record that holds it.">{{ backlink.text }}</span>
     <span v-if="field.type === 'lookup'" class="meta lookup" :class="{ broken: lookup.broken }"
-          title="A lookup is computed: it follows a link field and shows a field from the far record. To re-point it, delete it and add another — it stores no data of its own.">{{ lookup.text }}</span>
+          title="A lookup is computed: it follows a link field — or a backlink, the same links read from the other end — and shows a field from the far records. To re-point it, delete it and add another — it stores no data of its own.">{{ lookup.text }}</span>
 
     <!-- A select's choices: typed here, OR from a built-in list (contract/vocab.ts) —
          then they live in the code, every bound select agrees, and nobody can add

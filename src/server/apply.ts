@@ -138,8 +138,13 @@ async function assertLookupConfigValid(
   const ids = [options?.via_field_id, options?.target_field_id].filter((x): x is string => typeof x === 'string');
   // Not uuids → not fields. Asking Postgres would be a 500 (invalid uuid syntax).
   const valid = ids.filter((x) => /^[0-9a-f-]{36}$/i.test(x));
+  // …and, when the field followed is a BACKLINK, the link it is the other end of:
+  // that link's table is where the lookup reads from.
   const { rows } = valid.length
-    ? await db.query(`select id, table_id, key, type, options from fields where id = any($1::uuid[])`, [valid])
+    ? await db.query(
+      `select id, table_id, key, type, options from fields
+        where id = any($1::uuid[])
+           or id::text in (select options->>'source_field_id' from fields where id = any($1::uuid[]) and type = 'backlink')`, [valid])
     : { rows: [] as LookupFieldInfo[] };
   const err = lookupConfigError(tableId, options, (id) => rows.find((r) => r.id === id));
   if (err) throw new MutationError(`lookup: ${err}`);
