@@ -27,6 +27,10 @@ import { REQUIRED, analyzerOf, defaultRecipe, fieldAccepts, toolsProblem, type O
 import { fieldsOf, recordsOf, tablesSorted, type FieldRow } from './state';
 import { junctionOf, junctionProblem, type JunctionConfig } from '../contract/junction';
 import { linkMatchError, type MatchPair } from '../contract/match';
+import {
+  addSection as arrAddSection, appendFields, arrangementOf, fieldFirst, fieldSectionsOf, fieldSectionsProblem, flatOrder,
+  removeSection as arrRemoveSection, sameSections, stepField, updateSection as arrUpdateSection, type Arrangement,
+} from '../contract/fieldSections';
 import type { Store } from './store';
 import { askFull, confirmDialog } from './dialogs';
 
@@ -192,10 +196,13 @@ export function useSchemaActions(store: Store) {
       let k = base; for (let i = 2; have.has(k); i++) k = `${base}_${i}`;
       return k;
     };
-    store.mutate({ type: 'field.create', id: crypto.randomUUID(), tableId: tableA, name, key: columnKey(tableA), fieldType: 'backlink', options: { source_field_id: a }, required: false });
+    const colA = crypto.randomUUID(), colB = crypto.randomUUID();
+    store.mutate({ type: 'field.create', id: colA, tableId: tableA, name, key: columnKey(tableA), fieldType: 'backlink', options: { source_field_id: a }, required: false });
     // Same table on both ends (a file derived from a file): one column per end, told apart by name.
     const nameB = tableA === tableB ? `${name} (other end)` : name;
-    store.mutate({ type: 'field.create', id: crypto.randomUUID(), tableId: tableB, name: nameB, key: columnKey(tableB), fieldType: 'backlink', options: { source_field_id: b }, required: false });
+    store.mutate({ type: 'field.create', id: colB, tableId: tableB, name: nameB, key: columnKey(tableB), fieldType: 'backlink', options: { source_field_id: b }, required: false });
+    if (tableA === tableB) joinLastSection(tableA, [colA, colB]);
+    else { joinLastSection(tableA, [colA]); joinLastSection(tableB, [colB]); }
     return id;
   }
 
@@ -306,6 +313,7 @@ export function useSchemaActions(store: Store) {
     store.mutate({ type: 'field.create', id, tableId, name: d.name.trim(),
       key: d.key || deriveKey(d.name), fieldType: d.type, options, required: false });
     store.mutate({ type: 'field.update', id, position: pos });
+    joinLastSection(tableId, [id]);
     return { id };
   }
 
@@ -390,6 +398,7 @@ export function useSchemaActions(store: Store) {
       made[out.key] = id;
       have.add(out.key);
     }
+    joinLastSection(tableId, Object.values(made));
     return made;
   }
 
@@ -522,22 +531,88 @@ export function useSchemaActions(store: Store) {
     reorder(ordered);
   }
 
+  /* ── sections: the fields, grouped for the record tray (contract/fieldSections.ts) ──
+
+     The schema editor shows ONE list: the unsectioned fields, then each section's
+     bar with its fields under it. That list is an ARRANGEMENT, and every change to
+     it — a field dragged, a bar dragged, a section made, renamed or removed, a new
+     field — goes through `setArrangement`, which writes both halves in one run (one
+     Ctrl+Z): the fields' positions, in the order shown, and the sections. */
+
+  /** The table's fields as the editor shows them. */
+  function arrangement(tableId: string): Arrangement {
+    return arrangementOf(fields(tableId).map((f) => f.id), fieldSectionsOf(store.state.tables.get(tableId)));
+  }
+
+  /**
+   * Write an arrangement: the fields' positions in the order shown, and the sections.
+   * Each half only if IT changed — renaming a section must not renumber the fields
+   * (positions name the primary; an edit that is not about order has no business near
+   * them). `renumber` writes the positions regardless. Returns the problem, or null.
+   */
+  function setArrangement(tableId: string, a: Arrangement, renumber = false): string | null {
+    const t = store.state.tables.get(tableId);
+    if (!t) return 'no such table';
+    const err = fieldSectionsProblem(a.sections);
+    if (err) return err;
+    if (renumber || flatOrder(a).join() !== flatOrder(arrangement(tableId)).join()) reorderFields(tableId, flatOrder(a));
+    // Compared with what is STORED, not with how it reads: an edit also lists the fields a
+    // section held only by position, and drops the ids of fields long gone.
+    if (!sameSections(a.sections, fieldSectionsOf(t))) {
+      store.mutate({ type: 'table.update', id: tableId, fieldSections: a.sections });
+    }
+    return null;
+  }
+
+  /**
+   * New fields go where the list ENDS — which, on a table with sections, is the end
+   * of its last section. Said explicitly: left unlisted, a new field would be drawn
+   * with the field before it (contract/fieldSections.ts), and so miss a last section
+   * that is still EMPTY — the one just made to hold it.
+   */
+  function joinLastSection(tableId: string, fieldIds: string[]) {
+    const a = arrangement(tableId);
+    if (!a.sections.length || !fieldIds.length) return;
+    const next = appendFields(a, fieldIds);
+    // Against what is STORED: a field already drawn there by position is still to be LISTED there.
+    if (!sameSections(next.sections, fieldSectionsOf(store.state.tables.get(tableId)))) store.mutate({ type: 'table.update', id: tableId, fieldSections: next.sections });
+  }
+
+  /** A new, empty section at the end of the list. Returns its id. */
+  function addSection(tableId: string, rawName: string): string | null {
+    const name = rawName.trim();
+    if (!name) return null;
+    const id = crypto.randomUUID();
+    return setArrangement(tableId, arrAddSection(arrangement(tableId), { id, name })) === null ? id : null;
+  }
+  /** Rename a section, or set whether it STARTS folded in the record tray. */
+  function updateSection(tableId: string, sectionId: string, patch: { name?: string; folded?: boolean }) {
+    const a = arrangement(tableId), next = arrUpdateSection(a, sectionId, patch);
+    if (next !== a) setArrangement(tableId, next);
+  }
+  /** Remove a section's bar. Its fields stay: they join the group above. */
+  function removeSection(tableId: string, sectionId: string) {
+    const a = arrangement(tableId), next = arrRemoveSection(a, sectionId);
+    if (next !== a) setArrangement(tableId, next);
+  }
+
+  /** One step up or down the list as shown — across a section's bar at its edge. */
   function moveField(id: string, dir: -1 | 1) {
     const f = store.state.fields.get(id);
     if (!f) return;
-    const fs = fields(f.table_id);
-    const i = fs.findIndex((x) => x.id === id), j = i + dir;
-    if (i === -1 || j < 0 || j >= fs.length) return;
-    [fs[i], fs[j]] = [fs[j], fs[i]];
-    reorder(fs);
+    const a = arrangement(f.table_id), next = stepField(a, id, dir);
+    if (next !== a) setArrangement(f.table_id, next);
   }
 
-  /** "Records in this table are named by this field" = move it first. See contract/labels.ts. */
+  /**
+   * "Records in this table are named by this field" = move it first (contract/
+   * labels.ts) — and first of all is first of the UNSECTIONED, so it leaves its section.
+   */
   function makePrimary(id: string) {
     const f = store.state.fields.get(id);
     if (!f || !LABEL_TYPES.has(f.type)) return;
-    const fs = fields(f.table_id);
-    reorder([f, ...fs.filter((x) => x.id !== id)]);
+    // Renumbered whatever the list says: this is THE act about which field is first.
+    setArrangement(f.table_id, fieldFirst(arrangement(f.table_id), id), true);
   }
 
   /** Is this the field that names the table's records? */
@@ -572,6 +647,7 @@ export function useSchemaActions(store: Store) {
   return {
     createTable, createJunction, renameTable, deleteTable, setJunction,
     draftError, createField, renameField, setChoices, moveField, reorderFields, makePrimary, isPrimary,
+    arrangement, setArrangement, addSection, updateSection, removeSection,
     canBePrimary, deleteField,
     setArrowStyle, setMembership, setSingle, setCount, setMatch, setVocabulary, setTools, enableFileDrop, disableFileDrop, addToolFields, linkFieldsOf, lookupViasOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
   };
