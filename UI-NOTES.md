@@ -16,6 +16,27 @@ sandbox has no browser and `test/ui.ts` cannot see layout or paint.
 
 ## When you come back — a checking order
 
+**Field sections (Oct 12)** — owner's ask: sections for fields, defined in the schema
+editor, drawn in the full record view as foldable wells; the Files table's attributes
+had become a wall. Seen in a real browser (Chromium) as well as in the suite
+(`npm run test:fieldsections`). Needs `./scripts/db.sh migrate` (sql/017).
+1. TABLE SETTINGS → "+ add section" puts a BAR at the end of the field list, its name
+   ready to type. Fields under a bar are in its section; fields above the first bar
+   are in none. Drag a field across a bar to change its section; drag a BAR to move
+   the whole section. Does dragging a tall section feel right? It moves as a block,
+   past the middle of the block it is passing.
+2. A bar's ▾ folds it IN THE DIALOG only (a field dropped under a folded bar goes to
+   that section's end). Its ⚙: rename, "starts folded in the record panel", remove —
+   which keeps the fields (they join the group above).
+3. New fields join the LAST section — the "+" in the grid and the desktop tool's
+   fields too. Is that where you look for them? (A field made by a script, listed in
+   no section, is drawn after the field before it — so also at the end, not on top.)
+4. THE RECORD TRAY: unsectioned fields in the top well, then a fold row and a well per
+   section, then "Created". Folding is remembered per browser, per section, and holds
+   from record to record. A fold row shows ⚠ n when comparisons fail inside it.
+5. Not done: sections in the grid or on canvas cards; hiding empty fields; a count of
+   FILLED fields on a folded row.
+
 **Five niceties about finding your place (Oct 2)** — owner's list: mark the opened
 record's row and card; do not place a linked record unless it is dragged off its card;
 a jump arrow for records already on the canvas; a right-click menu on the table;

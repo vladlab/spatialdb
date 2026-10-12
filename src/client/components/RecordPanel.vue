@@ -47,9 +47,22 @@
          strip; the record's own fields), and "Referenced by" — automatic, not the
          record's data — sits outside, below. The darker well behind the fields is
          what makes them read without a font change. -->
+    <!-- SECTIONS (contract/fieldSections.ts): a table whose schema groups its fields gets
+         one well PER GROUP — the unsectioned fields first, with no header, then each
+         section under a fold row like the tree's (▾ name, how many fields, and how many
+         of them fail a comparison — so folding a section cannot hide a QC problem).
+         "Created" and "Created by" belong to no one's schema and close the list as a
+         section of their own. A table with no sections is ONE well, as it always was. -->
     <div class="rp-body">
-      <div class="rp-well rp-fields">
-      <div v-for="f in fields" :key="f.id" class="rp-field" :class="{ editing: editingId === f.id, block: f.type === 'rich_text', readonly: READONLY(f) }">
+      <template v-for="g in groups" :key="g.key">
+      <button v-if="g.head" class="rp-sec" :class="{ folded: !g.open }" :data-section="g.key" :aria-expanded="g.open"
+              :title="g.open ? 'Fold this section (remembered in this browser)' : 'Unfold this section'" @click="toggleGroup(g)">
+        <span class="tw">{{ g.open ? '▾' : '▸' }}</span><span class="rp-sec-name">{{ g.name }}</span>
+        <span class="rp-sec-count">{{ g.fields.length }}</span>
+        <span v-if="g.warn" class="rp-sec-warn" :title="`${g.warn} field${g.warn === 1 ? '' : 's'} in this section differ${g.warn === 1 ? 's' : ''} from what ${g.warn === 1 ? 'it is' : 'they are'} compared with`">⚠ {{ g.warn }}</span>
+      </button>
+      <div v-if="g.open" class="rp-well rp-fields" :class="{ sectioned: g.head }">
+      <div v-for="f in g.fields" :key="f.id" class="rp-field" :class="{ editing: editingId === f.id, block: f.type === 'rich_text', readonly: READONLY(f) }">
         <label class="rp-name">
           <span v-if="f.id === primaryId" class="star" title="Primary field — this record's name">★</span>{{ f.name }}
           <span v-if="verdicts.get(f.id)" class="cmp-badge" :class="{ ok: verdicts.get(f.id)!.ok }" :title="verdicts.get(f.id)!.title">{{ verdicts.get(f.id)!.ok ? '✓' : '⚠' }}</span>
@@ -149,6 +162,7 @@
         </div>
       </div>
       </div>
+      </template>
       <!-- EVERYTHING that points at this record, whether or not the table has a
            backlink field for it. A record's role — output of what, input to what —
            is the set of links pointing at it, so this is never hidden behind
@@ -199,6 +213,8 @@ import { compareOf, seedValues } from '../../contract/compare';
 import { SYSTEM_FIELD_TYPES, formatCreated, isSystemKey } from '../../contract/systemFields';
 import SideBySide from './SideBySide.vue';
 import JunctionTable from './JunctionTable.vue';
+import { fieldSectionsOf, groupFields } from '../../contract/fieldSections';
+import { isFolded, setFolded } from '../sectionFolds';
 
 // Loaded ON DEMAND. TipTap + ProseMirror are most of a megabyte of source, and
 // nothing needs them until a record with a rich_text field is opened — so they
@@ -230,6 +246,36 @@ watch(() => derived.comparisonsOf(props.recordId).map((c) => derived.compareTarg
 const verdicts = computed(() => derived.fieldVerdicts(props.recordId));
 const sideBySide = ref<{ linkId: string; target: string } | null>(null);
 watch(() => props.recordId, () => { sideBySide.value = null; });
+
+/* ── sections ─────────────────────────────────────────────────────────────
+   The fields as the tray draws them: groups, each a well. `open` is this person's
+   own folding (client/sectionFolds.ts) over the schema's "starts folded". */
+interface Group { key: string; head: boolean; name: string; startsFolded: boolean; open: boolean; fields: FieldRow[]; warn: number }
+const groups = computed<Group[]>(() => {
+  const all = fields.value;
+  const sections = fieldSectionsOf(table.value);
+  if (!sections.length) return [{ key: 'all', head: false, name: '', startsFolded: false, open: true, fields: all, warn: 0 }];
+  const warnIn = (fs: FieldRow[]) => fs.filter((f) => { const v = verdicts.value.get(f.id); return !!v && !v.ok; }).length;
+  const out: Group[] = [];
+  for (const g of groupFields(all.filter((f) => !SYSTEM_FIELD_TYPES.has(f.type)), sections)) {
+    if (!g.fields.length) continue;                      // an empty section is the editor's business, not the reader's
+    if (!g.section) { out.push({ key: 'top', head: false, name: '', startsFolded: false, open: true, fields: g.fields, warn: 0 }); continue; }
+    const startsFolded = g.section.folded === true;
+    out.push({ key: g.section.id, head: true, name: g.section.name, startsFolded, open: !isFolded(g.section.id, startsFolded), fields: g.fields, warn: warnIn(g.fields) });
+  }
+  const system = all.filter((f) => SYSTEM_FIELD_TYPES.has(f.type));
+  if (system.length) {
+    const key = `created:${record.value?.table_id ?? ''}`;
+    out.push({ key, head: true, name: 'Created', startsFolded: false, open: !isFolded(key, false), fields: system, warn: 0 });
+  }
+  return out;
+});
+/** The fields on screen, in the order they are on screen: what Enter and Tab walk. */
+const shownFields = computed(() => groups.value.filter((g) => g.open).flatMap((g) => g.fields));
+function toggleGroup(g: Group) {
+  if (g.open && g.fields.some((f) => f.id === editingId.value)) editingId.value = '';   // its editor is about to go
+  setFolded(g.key, g.open, g.startsFolded);
+}
 
 /** ⧉: the copy opens in this tray in the original's place. */
 function duplicate() {
@@ -358,7 +404,7 @@ function startEdit(f: FieldRow) {
 function onDone(exit: EditExit) {
   const from = editingId.value;
   editingId.value = '';
-  const list = fields.value.filter(EDITABLE);
+  const list = shownFields.value.filter(EDITABLE);   // (a folded section's fields are not there to move to)
   const i = list.findIndex((f) => f.id === from);
   const next = exit === 'down' || exit === 'right' ? list[i + 1] : exit === 'left' ? list[i - 1] : undefined;
   if (next) void nextTick(() => startEdit(next));
@@ -403,7 +449,10 @@ watch(() => props.recordId, () => {
   void nextTick(() => {
     const r = record.value;
     if (!r || Object.keys(r.data).some((k) => !isSystemKey(k))) return;   // (the folded-in system keys do not count as data)
-    const first = fields.value.find((f) => f.id === primaryId.value) ?? fields.value.find(EDITABLE);
+    // Straight to its NAME — and if the name's section is folded here, nowhere: the next
+    // field along is not where a new record's name should land.
+    const named = fields.value.some((f) => f.id === primaryId.value);
+    const first = shownFields.value.find((f) => f.id === primaryId.value) ?? (named ? undefined : shownFields.value.find(EDITABLE));
     if (first) startEdit(first);
   });
 }, { immediate: true });
@@ -438,6 +487,21 @@ watch(() => props.recordId, () => {
 .rp-well { background: rgba(0, 0, 0, 0.28); border-radius: 6px; border-left: 2px solid var(--accent); padding: 6px 10px 8px; }
 .rp-compare { margin: 8px 10px 0; }
 .rp-fields { }
+/* A SECTION's fold row — the tree's row (NavTree.vue): a ▾, the name, and the well of
+   what is inside directly under it. Folded, the row is all there is. */
+.rp-sec {
+  display: flex; align-items: center; gap: 4px; width: 100%; box-sizing: border-box; margin-top: 8px; padding: 3px 6px 3px 2px;
+  background: none; border: none; border-radius: 4px; cursor: pointer; font: inherit; font-weight: 600; text-align: left;
+  color: var(--text-primary); user-select: none;
+}
+.rp-sec:hover { background: var(--bg-surface-hover); }
+.rp-sec:focus-visible { outline: 1px solid var(--accent); }
+.rp-sec .tw { width: 14px; flex: none; color: var(--text-faint); font-size: 10px; text-align: center; }
+.rp-sec.folded { color: var(--text-secondary); }
+.rp-sec-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-sec-count { color: var(--text-faint); font-weight: 400; font-size: 11px; margin-left: 4px; }
+.rp-sec-warn { color: var(--warning); font-weight: 600; font-size: 11px; margin-left: 6px; white-space: nowrap; }
+.rp-fields.sectioned { margin-top: 2px; }
 .rp-cmp { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 3px 0; }
 .rp-cmp-verdict { font-weight: 700; color: var(--danger); width: 14px; }
 .rp-cmp.same .rp-cmp-verdict { color: var(--success); }
