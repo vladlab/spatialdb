@@ -124,6 +124,13 @@ const TableUpdate = z.strictObject({
    * needs the fields of three tables and runs in apply.
    */
   junction: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * The table's fields grouped into SECTIONS for the record tray (sql/017, rules in
+   * contract/fieldSections.ts): `[{ id, name, folded?, fields: [fieldId] }]`.
+   * Replaced WHOLE, like `tools`, and loosely typed here for the same reason; the
+   * real check (unique ids, a field in one section only) runs in apply.
+   */
+  fieldSections: z.array(z.unknown()).optional(),
 });
 
 const TableDelete = z.strictObject({

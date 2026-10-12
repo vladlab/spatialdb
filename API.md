@@ -760,6 +760,60 @@ through "Everything" (`#/all/…`), the palette, and any link.
   "Boards" below), so a section's canvases are simply the boards in its tables.
   (`config.sectionId`, which existed for one day in 009, was removed by 010.)
 
+### Field sections: a table's fields, grouped for the record tray
+
+`sql/017`, **`src/contract/fieldSections.ts`**, `test/fieldsections.ts`. Not the
+navigation's sections above (those group TABLES in the tree): these group the
+FIELDS of one table, for the full record view.
+
+```jsonc
+// tables.field_sections — written by table.update { fieldSections }, replaced WHOLE, admin-only
+[
+  { "id": "<uuid>", "name": "Video", "fields": ["<field id>", "…"] },
+  { "id": "<uuid>", "name": "File system and raw", "folded": true, "fields": ["…"] }
+]
+```
+
+- A field is in **at most one** section. Sections are shown in list order, a
+  section's fields in ITS list order. The *unsectioned* fields are shown first,
+  with no header.
+- **A field no section lists goes with the field before it** in the schema's order
+  (`fields.position`): at the start of that order, before any sectioned field, it
+  is unsectioned; further down it is drawn in the section of the field before it,
+  right after it (`groupFields`). So a field made by a script — last position,
+  listed nowhere — shows at the end of the last section, not above everything, and
+  the order drawn stays the order stored.
+- `folded: true` is how the section **starts** in the tray for someone who has
+  never touched it (absent = open; `false` is refused). Each person's own folding
+  is kept in their browser (`client/sectionFolds.ts`, localStorage), not here.
+- **Validated on write** by shape only (`fieldSectionsProblem`): unique section
+  ids, a name, no field listed twice. **400** otherwise. It is deliberately NOT
+  checked against the table's fields: like `tools`, a view's `order` and a
+  navigation section's `table_ids`, there are no foreign keys — an id that resolves
+  to no field of the table is skipped on read, `field.delete` does not rewrite the
+  list, and undoing the delete puts the field back in its section. The schema
+  editor writes only ids that exist, so a later edit drops stale ones.
+- `GET /api/schema` returns `field_sections` on every table (`[]` when none).
+- **`fields.position` is still THE field order** (primary, grid columns, cards).
+  The schema editor keeps the two in step: an arrangement it writes lists every
+  sectioned field and sets positions to the order shown — unsectioned, then section
+  by section — in the same run as the `table.update`, so it is one Ctrl+Z. An edit
+  that is not about order (a rename, "starts folded") writes no positions. It also
+  appends a NEW field to the last section and takes a field made primary out of
+  its section. **A script that writes `fieldSections` should set positions to
+  match** (top first, then section by section): where the lists and the positions
+  disagree about which plain-valued field is first, the stored position still names
+  the primary, and Table settings warns that its next reorder would change it.
+- **Where it shows**: Table settings (bars in the field list — add, rename, "starts
+  folded", drag a field across a bar, drag a bar to move the section, remove) and
+  the record tray (the unsectioned fields in a well, then a fold row and a well per
+  non-empty section, then "Created"; a fold row counts the failing comparisons
+  inside it, so folding cannot hide one; Enter and Tab walk the fields on screen).
+  The grid and canvas cards do not draw sections. A table with none looks exactly
+  as before.
+- A custom layout of the full view (per view or per person) would be this same
+  shape stored elsewhere, with this list as what "reset" returns to. Not built.
+
 ### Addresses
 
 Client-side hash routes (`src/client/router.ts`) — nothing the server sees:

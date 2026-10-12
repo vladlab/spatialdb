@@ -62,6 +62,8 @@ export interface TableRow {
   tools?: Record<string, unknown>;
   /** A junction's endpoints, status and match pairs (contract/junction.ts). */
   junction?: Record<string, unknown>;
+  /** The fields grouped into sections for the record tray (contract/fieldSections.ts). */
+  field_sections?: unknown[];
 }
 export interface FieldRow {
   id: string; table_id: string; name: string; key: string; type: string;
@@ -257,6 +259,7 @@ export function applyMutation(state: State, m: Mutation): void {
       if (m.position !== undefined) t.position = m.position;
       if (m.tools !== undefined) t.tools = m.tools;
       if (m.junction !== undefined) t.junction = m.junction;
+      if (m.fieldSections !== undefined) t.field_sections = m.fieldSections;
       return;
     }
     case 'table.delete':

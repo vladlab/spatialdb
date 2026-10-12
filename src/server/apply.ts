@@ -43,6 +43,7 @@ import { reportDefError } from '../contract/reports.js';
 import { toolsProblem } from '../contract/tools.js';
 import { vocabularyOptionError } from '../contract/vocab.js';
 import { junctionColumnTarget, junctionOf, junctionProblem } from '../contract/junction.js';
+import { fieldSectionsProblem } from '../contract/fieldSections.js';
 import { captureFor, JUNCTION_ROWS_OF, uncapturableMessage, type Capture } from './capture.js';
 
 export class MutationError extends Error {
@@ -429,6 +430,7 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
     case 'table.update':
       if (m.tools !== undefined) await assertToolsValid(db, m.id, m.tools);
       if (m.junction !== undefined) await assertJunctionValid(db, m.id, m.junction);
+      if (m.fieldSections !== undefined) { const err = fieldSectionsProblem(m.fieldSections); if (err) throw new MutationError(`fieldSections: ${err}`); }
       await db.query(
         `update tables set
            name          = coalesce($2, name),
@@ -437,11 +439,13 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
            icon          = coalesce($5, icon),
            position      = coalesce($6, position),
            tools         = coalesce($7::jsonb, tools),
-           junction      = coalesce($8::jsonb, junction)
+           junction      = coalesce($8::jsonb, junction),
+           field_sections = coalesce($9::jsonb, field_sections)
          where id = $1`,
         [m.id, m.name ?? null, m.singularName ?? null, m.color ?? null, m.icon ?? null,
          m.position ?? null, m.tools === undefined ? null : JSON.stringify(m.tools),
-         m.junction === undefined ? null : JSON.stringify(m.junction)],
+         m.junction === undefined ? null : JSON.stringify(m.junction),
+         m.fieldSections === undefined ? null : JSON.stringify(m.fieldSections)],
       );
       return;
 

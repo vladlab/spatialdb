@@ -152,6 +152,9 @@ export function inverseOf(state: State, m: Mutation, queuedId: string): Inverse 
         ...(m.color !== undefined ? { color: t.color ?? '' } : {}),
         ...(m.icon !== undefined ? { icon: t.icon ?? '' } : {}),
         ...(m.position !== undefined ? { position: t.position ?? 0 } : {}),
+        // The sections its fields are grouped into (contract/fieldSections.ts): replaced
+        // whole, so the inverse is the whole previous list.
+        ...(m.fieldSections !== undefined ? { fieldSections: t.field_sections ?? [] } : {}),
       });
     }
 
