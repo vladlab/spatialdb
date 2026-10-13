@@ -19,3 +19,18 @@ export function addLink(store: Store, fieldId: string, fromRecord: string, toRec
   }
   store.mutate({ type: 'link.add', id: crypto.randomUUID(), fieldId, fromRecord, toRecord });
 }
+
+/**
+ * Making a junction PAIR, the one way (sql/016): the row and its two endpoint links,
+ * in one synchronous run — one batch (whole or nothing, apply.ts checks) and one
+ * Ctrl+Z. `from` is the record on `side`; `other` the record at the other end.
+ * Returns the new row's id. The caller has already made sure the pair has no row.
+ */
+export function addPair(store: Store, table: string, cfg: { a: string; b: string; status?: string }, side: 'a' | 'b', from: string, other: string, status = ''): string {
+  const id = crypto.randomUUID();
+  const key = cfg.status ? store.state.fields.get(cfg.status)?.key : undefined;
+  store.mutate({ type: 'record.create', id, tableId: table, data: key && status ? { [key]: status } : {} });
+  store.mutate({ type: 'link.add', id: crypto.randomUUID(), fieldId: side === 'a' ? cfg.a : cfg.b, fromRecord: id, toRecord: from });
+  store.mutate({ type: 'link.add', id: crypto.randomUUID(), fieldId: side === 'a' ? cfg.b : cfg.a, fromRecord: id, toRecord: other });
+  return id;
+}

@@ -62,6 +62,7 @@ import type { Store } from '../store';
 import { useDerived } from '../derived';
 import { choicesOf } from '../../contract/values';
 import { hasMatch, matches, otherEnd, type JunctionConfig } from '../../contract/junction';
+import { addPair } from '../links';
 import type { EditExit } from './CellEditor.vue';
 
 const props = defineProps<{
@@ -83,7 +84,6 @@ const emit = defineEmits<{ done: []; open: [rowId: string]; created: [rowId: str
 const derived = useDerived(props.store);
 const rowId = ref(props.rowId);
 const junctionName = computed(() => props.store.state.tables.get(props.table)?.singular_name || props.store.state.tables.get(props.table)?.name || 'pair');
-const mine = computed(() => (props.side === 'a' ? props.cfg.a : props.cfg.b));
 const theirs = computed(() => (props.side === 'a' ? props.cfg.b : props.cfg.a));
 const otherTable = computed(() => String(props.store.state.fields.get(theirs.value)?.options?.target_table_id ?? ''));
 const otherSingular = computed(() => { const t = props.store.state.tables.get(otherTable.value); return t?.singular_name || t?.name || 'a record'; });
@@ -135,13 +135,8 @@ function setStatus(c: string) {
 /** The row, its two links: one run, one batch, one Ctrl+Z. */
 function create() {
   if (!picked.value || rowId.value) return;
-  const id = crypto.randomUUID();
-  const key = statusField.value?.key;
-  const data = key && draft.value ? { [key]: draft.value } : {};
-  props.store.mutate({ type: 'record.create', id, tableId: props.table, data });
-  props.store.mutate({ type: 'link.add', id: crypto.randomUUID(), fieldId: mine.value, fromRecord: id, toRecord: props.from });
-  props.store.mutate({ type: 'link.add', id: crypto.randomUUID(), fieldId: theirs.value, fromRecord: id, toRecord: picked.value });
   const other = picked.value;
+  const id = addPair(props.store, props.table, props.cfg, props.side, props.from, other, draft.value);
   rowId.value = id;
   picked.value = undefined;
   emit('created', id, other);
