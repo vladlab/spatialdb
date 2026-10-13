@@ -297,7 +297,7 @@ async function main() {
       'card-rich', 'card-rich-body',
       // arrows are only clickable because `.arrow-hit` opts back into pointer events, and a
       // link can only be dragged from a handle that is positioned and visible
-      'arrow-hit', 'port-handle'];
+      'arrow-hit', 'link-handle'];
     const unstyled = LAYOUT.filter((c) => !new RegExp(`\\.${c}(?![\\w-])[^{}]*\\{`).test(css));
     check('every class the layout depends on still has a CSS rule', css.length > 1000 && unstyled.length === 0, `no rule for: ${unstyled.join(', ') || '—'} (css ${css.length} bytes)`);
     const usedInApp = [...w.find('.app').element.querySelectorAll('[class]')].flatMap((el: any) => [...el.classList]);

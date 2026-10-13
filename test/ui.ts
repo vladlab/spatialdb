@@ -1312,8 +1312,8 @@ async function main() {
   // reel_2 —Show→ Alpha already exists. reel_1 links to nothing yet.
   const linkCount = async () => Number((await pool.query(`select count(*)::int n from links where field_id = $1`, [linkField])).rows[0].n);
   const arrowFor = (from: string, to: string) => w.find(`.arrow-layer .arrow[data-key="${linkField}|${from}|${to}"]`);
-  check('a LINK row carries a handle to drag a new link from; an ordinary row does not',
-    cardBy('reel_1').findAll('.card-field').filter((r) => r.find('.port-handle').exists()).map((r) => r.find('.card-key').text()).join() === 'Show');
+  check('a card whose table links to something has ONE handle to drag a new link from — on the card, not on its rows',
+    cardBy('reel_1').findAll('.link-handle').length === 1 && !cardBy('reel_1').find('.card-field .link-handle').exists() && !w.find('.port-handle').exists());
 
   await arrowFor(r2, showIds[0]).find('.arrow-hit').trigger('pointerdown', { button: 0 });
   check('clicking an arrow selects it', await until(() => arrowFor(r2, showIds[0]).classes('selected')) && w.findAll('.arrow.selected').length === 1);
@@ -1344,7 +1344,7 @@ async function main() {
   check('Delete with an arrow selected asks the same question — it never just deletes', await until(() => nav.dialogs.seen.length > seenBefore) && await linkCount() === linksBefore);
   await sleep(250);
 
-  // ── dragging a new link out of a port ──
+  // ── dragging a new link out of the card's handle (the rule itself: test/canvaslink.ts) ──
   // happy-dom has no layout, so the container's box is at the origin; world → client is
   // just the viewport transform, read from the world layer's own style.
   const toClient = (wx: number, wy: number) => {
@@ -1353,23 +1353,23 @@ async function main() {
   };
   const gammaId = await recId('Gamma');       // (showIds is in creation order; Gamma is not its second entry)
   const pGamma = await place(gammaId), pReel2 = await place(r2);
-  const handle = () => cardBy('reel_1').find('.port-handle');
+  const handle = () => cardBy('reel_1').find('.link-handle');
   await handle().trigger('pointerdown', { button: 0, ...toClient(1100, 80) });
   winEv('pointermove', toClient(pGamma.x + 30, pGamma.y + 20));
-  check('dragging from the handle draws a line from the port', await until(() => w.find('.arrow-layer .rubber').exists()));
+  check('dragging from the handle draws a line from it', await until(() => w.find('.arrow-layer .rubber').exists()));
   check('cards that COULD take this link are marked — the Shows cards, and only them',
     await until(() => cardBy('Gamma').classes('link-over')) && cardBy('Alpha').classes('link-ok') && !cardBy('reel_2').classes('link-ok') && !cardBy('reel_1').classes('link-ok'));
   check('over one, the line goes solid', w.find('.arrow-layer .rubber').classes('valid'));
   winEv('pointerup', toClient(pGamma.x + 30, pGamma.y + 20));
   const linkMade = await untilDb(`select 1 from links where field_id = '${linkField}' and from_record = '${r1}' and to_record = '${gammaId}'`, (r) => r.length === 1);
-  check('dropping on a card of the RIGHT table makes the link — through the field you dragged from', linkMade.length === 1
+  check('dropping on a card of the RIGHT table makes the link — through the one field that leads there', linkMade.length === 1
     && await until(() => arrowFor(r1, gammaId).exists() && !w.find('.rubber').exists()));
   check('the card\'s own row shows it', await until(() => rowsOf(cardBy('reel_1')).Show === 'Gamma'), JSON.stringify(rowsOf(cardBy('reel_1'))));
 
   const afterAdd = await linkCount();
   await handle().trigger('pointerdown', { button: 0, ...toClient(1100, 80) });
   winEv('pointermove', toClient(pReel2.x + 30, pReel2.y + 10));
-  check('over a card of the WRONG table the line stays dashed and nothing lights up', await until(() => w.find('.rubber').exists()) && !w.find('.rubber').classes('valid') && !cardBy('reel_2').classes('link-over'));
+  check('over a card of the WRONG table the line stays dashed and the card is marked as one that cannot take it', await until(() => w.find('.rubber').exists()) && !w.find('.rubber').classes('valid') && !cardBy('reel_2').classes('link-over') && cardBy('reel_2').classes('link-no'));
   winEv('pointerup', toClient(pReel2.x + 30, pReel2.y + 10));
   await sleep(300);
   check('dropping there does NOTHING: no link, no error, the line is gone', await linkCount() === afterAdd && !w.find('.rubber').exists() && !w.find('.errors').exists());
@@ -1382,13 +1382,20 @@ async function main() {
   check('Escape abandons the drag', await until(() => !w.find('.rubber').exists()) && await linkCount() === afterAdd);
   winEv('pointerup', toClient(pGamma.x + 30, pGamma.y + 20));
 
-  // Drop on EMPTY canvas: a picker at that spot — choose an existing record, or make one.
+  // Drop on EMPTY canvas: a menu of the card's link fields at that spot; "find…" on one
+  // is a picker — choose an existing record, or make one.
   const emptySpot = toClient(2200, 900);
+  const findVia = async (field: string) => {
+    await until(() => ctx().exists() && ctx().findAll('.way-row').some((r) => r.find('.way-name').text() === field));
+    await ctx().findAll('.way-row').find((r) => r.find('.way-name').text() === field)!.find('.way-find').trigger('click');
+  };
   await handle().trigger('pointerdown', { button: 0, ...toClient(1100, 80) });
   winEv('pointermove', emptySpot);
   winEv('pointerup', emptySpot);
   const lp = () => w.find('.link-pick');
-  check('dropping a link on EMPTY canvas opens a picker there (the same search as a link cell), naming the link', await until(() => lp().exists()) && /reel_1/.test(lp().text()) && /Shows/.test(lp().text()), lp().text());
+  check('dropping a link on EMPTY canvas offers the card\'s link fields there', await until(() => ctx().exists()) && ctx().findAll('.way-row .way-name').map((n) => n.text()).includes('Show'), ctx().exists() ? ctx().text() : 'no menu');
+  await findVia('Show');
+  check('…and "find…" on one opens a picker (the same search as a link cell), naming the link', await until(() => lp().exists()) && /reel_1/.test(lp().text()) && /Shows/.test(lp().text()), lp().text());
   await lp().find('.picker input').setValue('Beta');
   await until(() => lp().findAll('.picker .list li').some((li) => li.find('.name').text() === 'Beta'));
   const betaId = (await pool.query(`select id from records where data->>'name' = 'Beta'`)).rows[0].id;
@@ -1398,6 +1405,7 @@ async function main() {
   await handle().trigger('pointerdown', { button: 0, ...toClient(1100, 80) });
   winEv('pointermove', toClient(2200, 1300));
   winEv('pointerup', toClient(2200, 1300));
+  await findVia('Show');
   await until(() => lp().exists());
   await lp().find('.picker input').setValue('Zeta (new)');
   check('a name that matches nothing offers "+ new"', await until(() => lp().find('.picker .create').exists()) && /Zeta \(new\)/.test(lp().find('.picker .create').text()));

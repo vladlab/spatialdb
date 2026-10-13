@@ -1027,6 +1027,53 @@ that visibly does nothing.
 - **The tray as wells**, like the tree: the comparison strip and the record's fields
   each in a recessed well; "Referenced by" outside, below.
 
+### One handle (Oct 13): linking from the card, not from its rows
+
+**This retires the per-row ports** kept on Sept 28 (item 7 below). The owner, after
+living with them: "the canvas linking UI is too finicky… having those origin dots next
+to other mouse context aware tools, it gets crowded." His replacement: ONE origin
+point per card, and work out the field when the drag lands. He named the risk
+himself — "context aware behavior worries me in that it might miss edge cases" — so
+the build is organised around containing it.
+
+- **The rule is one pure module, `contract/canvasLink.ts`**, on one promise: *what a
+  drag can do depends only on the two TABLES involved* — never on which fields a card
+  shows, its fold, or what the canvas hides. `linkWays(table)` lists the ways a record
+  of a table can be linked (its own link fields; the junctions it is an end of);
+  `dropVerdict` turns "these two cards" into exactly one of: `none` (refuse) · `linked`
+  (say so) · `link` (make it) · `pair` (a junction: ask its status) · `choose` (ask
+  which). `test/canvaslink.ts` C1 pins every case and walks every ordered pair of
+  tables.
+- **Several ways always ask** — even when all but one are already made (those are shown
+  ticked). "Auto-link the one that is left" would make the same two cards behave
+  differently on Tuesday than on Monday.
+- **A single link says what it replaces** — before letting go ("Work · replaces Ep 101")
+  and after. `addLink` has always replaced on a single field; with the field no longer
+  chosen by hand, it has to be said.
+- **Nobody has to release to find out.** While a link is held: cards that cannot take
+  it dim, cards that can are outlined, and a label by the pointer names what letting go
+  would do. After: a label where it landed ("✓ Outputs") and a pulse on the arrow —
+  the label is the whole confirmation when arrows are switched off.
+- **Empty canvas, or the ⊕ clicked:** a menu of every way the table has — the fields
+  the card shows first (the focus the ports gave), the rest under "Not shown on this
+  card", nothing left out. A row makes a NEW record there through that field (blank,
+  opened to be named, like a double-click); its "find…" is the Sept 28 picker (choose
+  one, or type a new name). A junction's row picks the other end, then the status.
+- **The handle** hangs just OUTSIDE the bottom-right corner (`linkHandleAt`): inside
+  that corner is the resize handle, and the two must not fight. So `.card` no longer
+  clips its overflow — the head rounds its own corners, the body clips its rows. Shown
+  on hover and selection; only on a card whose table has a way at all; never smaller
+  than ~15px on screen (it is scaled back up when zoomed out — `--zoom` on the world).
+- **Forward only, for now** (his call: "I don't want to deal with that logic yet"):
+  a link is written on the record the drag STARTS from. A File dragged onto the Edit
+  it is an input of is refused like any other no-way pair. Junctions work from both
+  ends — a pair is the same row either way. When backlink dragging comes, it is more
+  ways out of `linkWays`, and the pitfalls already listed for him stand: a same-table
+  link then always has two readings; the arrow is drawn in the FIELD's direction, not
+  the drag's; and "one way" must count both directions.
+- Not built, on purpose: dragging from a multi-card selection.
+- `rowPortY` is no longer called by the app; kept with its tests (see its comment).
+
 ### Canvas pass (Sept 28): arrows from the card, focus dimming, vertical link lists
 
 The owner's list of eight, done in dependency order. This step is the canvas half:

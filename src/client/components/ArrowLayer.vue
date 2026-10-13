@@ -1,21 +1,15 @@
 <!--
   Relationship arrows: one per link whose two records are both on the canvas.
 
-  WHERE AN ARROW ATTACHES depends on the card, and this is the node-editor idea:
+  WHERE AN ARROW ATTACHES: the CARD's edge, on whichever sides give the shortest
+  run (`bestSides`) — folded or not, whatever fields it shows. An arrow is a
+  relationship between two records, not two cells. (Arrows once left from the link
+  field's ROW, as in a node editor; the owner retired that, and later the per-row
+  link handles too — a link now starts from the card's one handle.) WHICH
+  relationship an arrow is, is said by its colour, and by its label when selected.
 
-  - A FOLDED card (or one not showing the field) takes the arrow at its EDGE, on
-    whichever side gives the shortest run (`bestSides`).
-  - An UNFOLDED card showing the link field has the arrow leave from that field's
-    ROW — an output port. If the card at the other end shows a BACKLINK field
-    mirroring the same link, the arrow lands on THAT row — an input port.
-
-  So a folded board reads as "what connects to what", and unfolding a card tells
-  you WHICH relationship each arrow is, because its inputs, outputs and version
-  links leave from different rows. Ports are on the left or right edge only (a
-  row has no top or bottom), picked by which way the other card lies.
-
-  Row positions are arithmetic — `rowPortY` in canvas/cardLayout.ts — so none of
-  this measures the DOM, same as the rest of the canvas.
+  Card rectangles are arithmetic (canvas/cardLayout.ts), so none of this measures
+  the DOM, same as the rest of the canvas.
 
   COLOUR and DIRECTION come from the link FIELD (contract/arrows.ts), so they mean
   the same on every canvas. `reversed` puts the arrowhead at the record that holds
@@ -30,7 +24,7 @@
         v-for="a in arrows"
         :key="a.key"
         class="arrow"
-        :class="{ dimmed: focusIds && focusIds.size > 0 && !a.touches.some((t) => focusIds!.has(t)) && a.key !== selectedKey, selected: a.key === selectedKey }"
+        :class="{ dimmed: focusIds && focusIds.size > 0 && !a.touches.some((t) => focusIds!.has(t)) && a.key !== selectedKey && !pulseKeys?.has(a.key), selected: a.key === selectedKey, pulse: pulseKeys?.has(a.key) }"
         :style="a.color ? { '--arrow': a.color } : undefined"
         :data-field="a.fieldId"
         :data-key="a.key"
@@ -50,7 +44,7 @@
         <text y="4" text-anchor="middle">{{ selectedArrow.label }}</text>
       </g>
 
-      <!-- Dragging a new link out of a port (CanvasView drives this). -->
+      <!-- Dragging a new link out of a card's handle (CanvasView drives this). -->
       <g v-if="rubber" class="rubber" :class="{ valid: rubber.valid }" :style="rubber.color ? { '--rubber': rubber.color } : undefined">
         <path :d="rubber.path" class="arrow-line" />
       </g>
@@ -65,14 +59,6 @@ import {
 } from '../canvas/geometry';
 import type { ArrowStyle } from '../../contract/arrows';
 
-/** For one card: the y-offset (from its top) of each row that can act as a port. */
-export interface CardPorts {
-  /** link field id → row y. Arrows for that field LEAVE here. */
-  out: Map<string, number>;
-  /** SOURCE link field id (of a backlink row) → row y. Arrows for that field LAND here. */
-  in: Map<string, number>;
-}
-
 const props = defineProps<{
   transform: { x: number; y: number; scale: number };
   links: Array<{ field_id: string; from_record: string; to_record: string; label?: string }>;
@@ -84,7 +70,9 @@ const props = defineProps<{
   selectedKey?: string | null;
   /** field id → its name, for the selected arrow's label. */
   fieldNames?: Map<string, string>;
-  /** A link being dragged out of a port: from the port to the pointer, world coordinates. */
+  /** Arrows to PULSE once (same keys as `selectedKey`): a link just made by a drag, or the one a drag found already there. */
+  pulseKeys?: ReadonlySet<string> | null;
+  /** A link being dragged out of a card's handle: from the handle to the pointer, world coordinates. */
   rubber?: { path: string; valid: boolean; color?: string } | null;
 }>();
 defineEmits<{
@@ -105,9 +93,7 @@ const arrows = computed(() => {
     if (!from || !to) continue;   // endpoint not on this canvas
 
     // Every arrow anchors to the CARD, on whichever sides face each other — never to a
-    // field's row. (Arrows once left from the link's row and landed on the backlink's
-    // row; the owner retired that: ports still START a link, but a drawn arrow is a
-    // relationship between two records, not two cells.)
+    // field's row (see the header).
     const edge = bestSides(from, to);
     const a = { side: edge.from, p: anchorPoint(from, edge.from) };
     const b = { side: edge.to, p: anchorPoint(to, edge.to) };
@@ -178,5 +164,12 @@ const labelW = computed(() => Math.max(40, (selectedArrow.value?.label.length ??
 .rubber.valid .arrow-line { stroke: var(--rubber, var(--accent)); stroke-dasharray: none; }
 .arrow.dimmed {
   opacity: 0.15;
+}
+/* "THIS one": a link a drag just made, or the one it found already there. A thick
+   stroke that settles back — stroke only, so nothing is measured and nothing moves. */
+.arrow.pulse .arrow-line { animation: arrow-pulse 1.1s ease-out 1; }
+@keyframes arrow-pulse {
+  0%, 30% { stroke-width: 4; }
+  100% { stroke-width: 1.5; }
 }
 </style>

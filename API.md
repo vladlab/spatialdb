@@ -474,11 +474,19 @@ FOLLOW-UP writes (the probe facts and hash that arrive after a drop). They are n
 Ctrl+Z steps of their own, so undoing a drop deletes the records it created, probe
 results and all, in one step (`test/tools.ts` T4).
 
-### Canvas: arrows and ports
+### Canvas: arrows and linking
 
-A drawn arrow anchors to the CARD (whichever edges face), never to a field's row. A
-link row's port is only the handle to start a link from. Arrow display modes (always /
-focus / off) and the per-relationship list are browser-local, never written.
+A drawn arrow anchors to the CARD (whichever edges face), never to a field's row. Arrow
+display modes (always / focus / off) and the per-relationship list are browser-local,
+never written.
+
+Linking from a card's ⊕ handle is a CLIENT convention over the ordinary mutations —
+nothing new on the wire. Which field a drag writes is decided by
+`src/contract/canvasLink.ts` from the two records' tables: one link field between them
+→ `link.add` on it (a `single` field: `link.remove` of the old one in the same batch);
+several → the user is asked; a junction → `record.create` + two `link.add` in one batch,
+as its column does. A new record made from the handle's menu is `record.create` +
+`link.add` + `placement.add` in one batch.
 
 ### Canvas defaults
 

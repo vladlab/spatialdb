@@ -37,6 +37,18 @@ export const CARD_BORDER = 2;      // 1px top + 1px bottom
 export const CARD_RICH_LABEL_H = 16;
 export const CARD_RICH_H = CARD_RICH_LABEL_H + 132;
 
+/**
+ * THE LINK HANDLE — the one ⊕ a new link is dragged from. A circle whose CENTRE sits
+ * `LINK_HANDLE_OUT` px diagonally outside the card's bottom-right corner: outside,
+ * because inside that corner is the resize handle. RecordCard's CSS draws it from
+ * these numbers and the canvas starts the drag line at `linkHandleAt`, so the line
+ * leaves the dot whatever the card's size or fold.
+ */
+export const LINK_HANDLE_SIZE = 18;
+export const LINK_HANDLE_OUT = 5;
+export const linkHandleAt = (r: { x: number; y: number; w: number; h: number }) =>
+  ({ x: r.x + r.w + LINK_HANDLE_OUT, y: r.y + r.h + LINK_HANDLE_OUT });
+
 /** Height of a card showing `rows` field lines. Folded: title only. */
 /**
  * A row is usually one line. A link/backlink/lookup row with SEVERAL values is a
@@ -72,15 +84,15 @@ export function effectiveHeight(h: number | null, rows: number, collapsed: boole
 }
 
 /**
- * PORTS. On an unfolded card, a link field's arrows leave from that field's ROW
- * and incoming arrows land on the matching backlink row — link fields are output
- * ports, backlink fields input ports, as in a node editor. This is the vertical
- * centre of row `index`, measured from the card's top edge; it is only possible
- * because rows are fixed-height (see the header).
+ * WHERE A ROW IS: the vertical centre of row `index`, measured from the card's top
+ * edge — possible only because rows are fixed-height (see the header). Null when
+ * the row is not actually visible: the card is folded, or it has been resized
+ * shorter than its rows (the body clips).
  *
- * Returns null when the row is not actually visible: the card is folded, or it
- * has been resized shorter than its rows (the body clips). An arrow aimed at a
- * clipped row would end in mid-air, so the caller falls back to the card's edge.
+ * This was what arrows and link handles hung on while rows were PORTS. Neither does
+ * any more — arrows meet the card's edge, and a link starts from the card's one
+ * handle (`linkHandleAt`) — so nothing in the app calls it today. Kept, with its
+ * tests, as the row arithmetic anything row-anchored will need again.
  */
 export function rowPortY(index: number, cardH: number, collapsed: boolean, rows?: RowShape[]): number | null {
   if (collapsed || index < 0) return null;

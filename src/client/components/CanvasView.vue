@@ -80,7 +80,13 @@
       </div>
     </div>
 
-    <!-- A link dragged onto EMPTY canvas: pick the other end here, or make it. -->
+    <!-- LINKING SAYS WHAT IT IS DOING. While a link is held: what letting go right here
+         would do ("Outputs", "Inputs or Outputs…", "no link from Edits to Works"). Just
+         after: what happened ("✓ Outputs"), which is all there is to see when arrows are
+         switched off. One small label by the pointer; it takes no pointer events. -->
+    <div v-if="linkHint" class="link-note live" :class="linkHint.tone" :style="{ left: linkHint.x + 'px', top: linkHint.y + 'px' }">{{ linkHint.text }}</div>
+    <div v-else-if="linkNote" :key="linkNote.n" class="link-note said" :class="linkNote.tone" :style="{ left: linkNote.x + 'px', top: linkNote.y + 'px' }">{{ linkNote.text }}</div>
+    <!-- "find…" in the new-link menu: pick the other end here, or name a new one. -->
     <div v-if="linkPick" class="link-pick" :style="{ left: linkPick.client.x + 'px', top: linkPick.client.y + 'px' }" @pointerdown.stop @keydown.stop>
       <p class="link-pick-head">Link <b>{{ derived.labelOfId(linkPick.fromRecord) }}</b> → {{ store.state.tables.get(linkPick.targetTable)?.name }}: choose, or type a new name</p>
       <LinkPicker inline allow-create :store="store" :target-table-id="linkPick.targetTable" :linked="derived.linksFrom(linkPick.fromRecord, linkPick.fieldId)"
@@ -122,11 +128,12 @@
       :selected-key="selectedLinkKey"
       :field-names="linkFieldNames"
       :rubber="rubber"
+      :pulse-keys="pulsed"
       @select="selectLink"
       @menu="onLinkMenu"
     />
 
-    <div class="canvas-world" :style="{ transform: viewport.transformCSS.value }">
+    <div class="canvas-world" :style="{ transform: viewport.transformCSS.value, '--zoom': viewport.transform.scale }">
       <RecordCard
         v-for="c in cards"
         :key="c.recordId"
@@ -137,7 +144,9 @@
         :flash="flashed === c.recordId"
         :dragging="drag.draggingIds.value.has(c.recordId)"
         :unconfirmed="store.unconfirmed.value.has(c.recordId)"
-        :link-target="linkTargetState(c.recordId, c.tableId)"
+        :can-link="waysOf(c.tableId).length > 0"
+        :link-target="linkTargetState(c.recordId)"
+        :refused="refused === c.recordId"
         @pointerdown="onCardPointerDown"
         @link-start="startLinkDrag"
         @drag-linked="onDragLinked" @open-linked="(id) => emit('open-record', id)" @jump-linked="jumpTo" @edit-pair="onEditPair"
@@ -164,7 +173,7 @@
 
     <!-- Context menu / table chooser / card-fields chooser: one floating panel,
          screen-space, closed by any click outside it. -->
-    <div v-if="menu" class="ctx" :style="{ left: `${menu.x}px`, top: `${menu.y}px` }"
+    <div v-if="menu" ref="menuRef" class="ctx" :style="{ left: `${menu.x}px`, top: `${menu.y}px` }"
          @pointerdown.stop @dblclick.stop @contextmenu.prevent.stop @keydown.stop>
       <!-- AN ARROW. Removing a link from the canvas is deliberately three steps — select,
            right-click, confirm — because an arrow is a thin thing to hit by accident and
@@ -187,6 +196,45 @@
         <div class="ctx-sub">{{ derived.labelOfId(menu.link.from_record) }} → {{ derived.labelOfId(menu.link.to_record) }}</div>
         <hr />
         <button class="danger remove-link" @click="menuDo((m) => removeLink(m.link!))">Remove this link…</button>
+      </template>
+      <!-- A LINK DROPPED ON A CARD THAT CAN TAKE IT SEVERAL WAYS (an Edit onto a File:
+           input, or output?). Always asked, never guessed; a way already made between
+           these two is shown ticked and cannot be made twice. -->
+      <template v-else-if="menu.kind === 'link-choose'">
+        <div class="ctx-head">Link through…</div>
+        <div class="ctx-sub">{{ derived.labelOfId(menu.recordId!) }} → {{ derived.labelOfId(menu.toRecord!) }}</div>
+        <hr />
+        <button v-for="o in menu.options" :key="o.way.kind + o.way.key + ('side' in o.way ? o.way.side : '')" class="way" :class="{ made: o.linked }" :disabled="o.linked"
+                @click="menuDo((m) => chooseWay(m, o.way))">
+          <span class="way-dot" :style="{ background: wayColor(o.way) }" />
+          <span class="way-name">{{ o.way.name }}</span>
+          <span class="way-note">{{ o.linked ? '✓ linked' : wayNote(o.way, menu.recordId!, menu.toRecord!) }}</span>
+        </button>
+      </template>
+      <!-- A LINK LET GO ON EMPTY CANVAS (or the ⊕ clicked): every way a record of this
+           table can be linked. A row makes a NEW record at that spot, linked through
+           that field; its "find…" links one that already exists. The fields this card
+           shows come first — the same focus the old per-row handles gave — but nothing
+           is left out for not being shown. -->
+      <template v-else-if="menu.kind === 'link-new'">
+        <div class="ctx-head">{{ derived.labelOfId(menu.recordId!) }}</div>
+        <template v-for="g in menuWays" :key="g.title">
+          <p class="ctx-title">{{ g.title }}</p>
+          <div v-for="w in g.ways" :key="w.kind + w.key + ('side' in w ? w.side : '')" class="way-row">
+            <button v-if="w.kind === 'link'" class="way new-via" :title="`Make a new ${singularOf(w.toTable)} here, linked through “${w.name}”`" @click="menuDo((m) => createLinked(m, w))">
+              <span class="way-dot" :style="{ background: wayColor(w) }" />
+              <span class="way-name">{{ w.name }}</span>
+              <span class="way-note">new {{ singularOf(w.toTable) }}</span>
+            </button>
+            <button v-if="w.kind === 'link'" class="way-find" :title="`Link a ${singularOf(w.toTable)} that already exists (or type a name for a new one)`" @click="menuDo((m) => findLinked(m, w))">find…</button>
+            <!-- A junction makes a PAIR: its other end is picked, then its status. -->
+            <button v-else class="way pair-via" :title="`Pick a ${singularOf(w.toTable)}, then the pair's status`" @click="menuDo((m) => pairVia(m, w))">
+              <span class="way-dot" :style="{ background: wayColor(w) }" />
+              <span class="way-name">{{ w.name }}</span>
+              <span class="way-note">pick a {{ singularOf(w.toTable) }}…</span>
+            </button>
+          </div>
+        </template>
       </template>
       <template v-else-if="menu.kind === 'card'">
         <!-- A board placed on a board: this is how you walk from one canvas to another. -->
@@ -239,7 +287,8 @@ import { defaultLinkField } from '../../contract/canvasConfig';
 import LinkPicker from './LinkPicker.vue';
 import JunctionEditor from './JunctionEditor.vue';
 import { duplicateRecords } from '../duplicate';
-import { addLink } from '../links';
+import { addLink, addPair } from '../links';
+import { dropVerdict, linkWays, verdictHint, waysBetween, type DropVerdict, type JunctionWay, type LinkFieldWay, type LinkWay } from '../../contract/canvasLink';
 import { canvasDefaultsOff } from '../prefs';
 import { confirmDialog } from '../dialogs';
 import { SCOPE } from '../scope';
@@ -251,11 +300,11 @@ import { arrowStyleOf, type ArrowStyle } from '../../contract/arrows';
 import { backlinkSourceOf } from '../../contract/backlinks';
 import { junctionOf, otherEnd, type JunctionConfig } from '../../contract/junction';
 import { choicesOf } from '../../contract/values';
-import type { ArrowLink, CardPorts } from './ArrowLayer.vue';
+import type { ArrowLink } from './ArrowLayer.vue';
 import { linkKey } from '../state';
-import { bezierPath, type Point } from '../canvas/geometry';
+import { bezierPath, rectsIntersect, type AnchorSide, type Point } from '../canvas/geometry';
 import { CanvasConfig, cardFieldsFor } from '../../contract/canvasConfig';
-import { CARD_W, effectiveHeight, lineCount, rowPortY } from '../canvas/cardLayout';
+import { CARD_W, effectiveHeight, lineCount, linkHandleAt } from '../canvas/cardLayout';
 import { capsuleWidth, JUMP_PAD, pairSlot } from '../textWidth';
 import type { CardRow } from './RecordCard.vue';
 import type { Rect } from '../canvas/geometry';
@@ -299,11 +348,11 @@ const labelOf = (r: RecordRow) => labelFrom(r.data, labelKeys.value.get(r.table_
 function rowFor(rec: RecordRow, f: FieldRow): CardRow {
   if (f.type === 'link' || f.type === 'lookup' || f.type === 'backlink') {
     const { texts, broken } = derived.textOf(rec.id, f);
-    // A port row wears its relationship's colour (a backlink wears the colour of
-    // the link field it mirrors — they are the two ends of the same arrows).
-    // A JUNCTION's column (sql/016) is a port too — arrows and drags key on the
-    // junction TABLE — and what it names, and what can be dragged off it, is the
-    // other end of each pair, not the pair rows themselves.
+    // A relationship's row wears that relationship's colour (a backlink wears the
+    // colour of the link field it mirrors — they are the two ends of the same arrows).
+    // A JUNCTION's column (sql/016) is one too — its arrows key on the junction
+    // TABLE — and what it names, and what can be dragged off it, is the other end of
+    // each pair, not the pair rows themselves.
     const j = f.type === 'backlink' ? derived.junctionOfBacklink(f) : null;
     const styleField = f.type === 'link' ? f.id : j ? j.table : f.type === 'backlink' ? backlinkSourceOf(f) : null;
     const color = styleField ? arrowStyles.value.get(styleField)?.color : undefined;
@@ -313,7 +362,7 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
       : j ? rows!.flatMap((row) => { const o = derived.junctionRow(row)?.[otherEnd(j.side)]; return o ? [o] : []; })
       : derived.backlinkOf(rec.id, f) ?? [];
     if (broken) return { id: f.id, name: f.name, broken: true, text: `broken ${f.type}` };
-    // Shown as a COUNT (contract/pills.ts): ONE line, however many — still a port, in its colour.
+    // Shown as a COUNT (contract/pills.ts): ONE line, however many — still in its colour.
     const count = derived.countOf(rec.id, f);
     if (count) return { id: f.id, name: f.name, derived: true, text: count.n ? count.noun : '', count: count.n || undefined, countTitle: count.title,
       color, link: f.type === 'link' || !!j };
@@ -356,8 +405,8 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
 /**
  * A card's fields come in two kinds (canvas/cardLayout.ts):
  *   ROWS    every shown field except rich text — one fixed-height line each. The same
- *           list for every card of a table, so a field's row INDEX (what ports are
- *           computed from) never depends on the record.
+ *           list for every card of a table, so a field's row INDEX never depends on
+ *           the record.
  *   BLOCKS  shown rich_text fields THAT HAVE A NOTE, under the rows: formatted, with
  *           images, in a fixed-height window. A record without a note gets no block
  *           — and no empty 150px hole — which only changes its height, not its rows.
@@ -388,7 +437,13 @@ function shownFields(tableId: string): FieldRow[] {
      a backlink           the table the links come FROM
      a junction column    the junction table and the table at its other end
      and every junction between two tables that both have cards here: its pairs are
-     arrows, whether or not any card shows its column.                              */
+     arrows, whether or not any card shows its column.
+
+   And what a card can LINK through, shown or not (contract/canvasLink.ts): a drag
+   from its handle may write any link field of its table, so the canvas has to know
+   what those fields hold already — a single link's current value is replaced, not
+   added to, and a pair that exists must not be made twice. So: the own table of
+   every card that has a link field, and every junction its table is an end of.    */
 const tablesRead = computed(() => {
   const placed = new Set<string>();
   for (const p of placements.value) { const t = store.state.records.get(p.record_id)?.table_id; if (t) placed.add(t); }
@@ -402,6 +457,9 @@ const tablesRead = computed(() => {
   for (const t of store.state.tables.values()) {
     const cfg = junctionOf(t);
     if (cfg && placed.has(String(targetOf(cfg.a))) && placed.has(String(targetOf(cfg.b)))) out.add(t.id);
+  }
+  for (const tableId of placed) {
+    for (const way of linkWays(store.state.fields.values(), store.state.tables.values(), tableId)) out.add(way.kind === 'link' ? tableId : way.table);
   }
   return [...out].sort().join();
 });
@@ -440,40 +498,7 @@ const cardRects = computed(() => {
   return m;
 });
 
-/* ── ports and arrow styles ───────────────────────────────────────────────
-   See ArrowLayer.vue for what a port is. Computed per TABLE-on-this-canvas, not
-   per card: every card of a table shows the same rows in the same order, so the
-   row index of a field is the same for all of them; only fold and height differ. */
-
-const portRowsByTable = computed(() => {
-  const m = new Map<string, { out: Array<[string, number]>; in: Array<[string, number]> }>();
-  for (const tableId of new Set(cards.value.map((c) => c.tableId))) {
-    const entry = { out: [] as Array<[string, number]>, in: [] as Array<[string, number]> };
-    rowFields(tableId).forEach((f, i) => {      // ROW fields: indices must match what the card draws
-      if (f.type === 'link') entry.out.push([f.id, i]);
-      else if (f.type === 'backlink' && derived.junctionOfBacklink(f)) entry.out.push([f.id, i]);   // a pair starts here too
-      const src = f.type === 'backlink' ? backlinkSourceOf(f) : null;
-      if (src) entry.in.push([src, i]);
-    });
-    m.set(tableId, entry);
-  }
-  return m;
-});
-
-const cardPorts = computed(() => {
-  const m = new Map<string, CardPorts>();
-  for (const c of cards.value) {
-    const rows = portRowsByTable.value.get(c.tableId);
-    const rect = cardRects.value.get(c.recordId);
-    if (!rows || !rect || (!rows.out.length && !rows.in.length)) continue;
-    const at = (pairs: Array<[string, number]>) => new Map(pairs.flatMap(([id, i]) => {
-      const y = rowPortY(i, rect.h, c.collapsed, c.rows);
-      return y === null ? [] : [[id, y] as [string, number]];
-    }));
-    m.set(c.recordId, { out: at(rows.out), in: at(rows.in) });
-  }
-  return m;
-});
+/* ── arrow styles ────────────────────────────────────────────────────────── */
 
 /** Colour and direction per link field — from the FIELD, so the same on every canvas. */
 const arrowStyles = computed(() => {
@@ -529,14 +554,17 @@ function onEditPair({ recordId, fieldId, row }: { recordId: string; fieldId: str
   junctionPick.value = { table: j.table, cfg: j.cfg, side: j.side, fromRecord: recordId, rowId: row, client: { x: c.x, y: c.y }, world: { x: rect.x + rect.w, y: rect.y } };
 }
 
-/* ── a link dragged onto empty canvas: choose or create the other end ── */
+/* ── "find…" in the new-link menu: choose the other end, or name a new one ──
+   Opened at the spot the link was let go; whichever it is lands THERE (`world` is the
+   drop point — the card's top edge sits 24px above it, centred, as for a new record). */
 const linkPick = ref<{ fieldId: string; fromRecord: string; targetTable: string; client: { x: number; y: number }; world: { x: number; y: number } } | null>(null);
 function linkPickChoose(recordId: string) {
   const p = linkPick.value; if (!p) return;
   linkPick.value = null;
   const rec = store.state.records.get(recordId);
   addLink(store, p.fieldId, p.fromRecord, recordId);
-  if (rec) placeMany([rec], p.client.x, p.client.y);
+  if (rec) placeAtDrop(rec, p.world);
+  pulse([`${p.fieldId}|${p.fromRecord}|${recordId}`]);
 }
 function linkPickCreate(name: string) {
   const p = linkPick.value; if (!p) return;
@@ -625,14 +653,7 @@ const defaultAmbiguities = computed(() => {
 
 /* ── arrows you can select, and links you can make and remove here ─────────
 
-   This REVERSES an earlier decision ("an arrow from a link field is never created
-   by a canvas gesture"). What was rejected then was dragging a card onto a card and
-   letting the app guess which field you meant. What is built is narrower, and has
-   none of that ambiguity (PLAN.md, "Linking from the canvas"):
-
-     ADD     drag from the handle on a VISIBLE link row — so the field is chosen by
-             you, never guessed — onto a card of the table that field points at.
-             Any other card, or empty canvas: nothing happens, the line vanishes.
+     ADD     drag from a card's ⊕ handle (below: "one handle per card").
      SEE     click an arrow: it is selected and labelled with its field's name.
      REMOVE  right-click an arrow → "Remove this link…" → confirm. (Delete, with an
              arrow selected, asks the same question.) An arrow is thin; what goes is
@@ -685,25 +706,101 @@ async function removeLink(l: ArrowLink) {
   selectedLink.value = null;
 }
 
-/* Dragging a new link out of a port. */
-interface LinkDrag {
-  fromRecord: string; fieldId: string; targetTable: string; from: Point; to: Point; over: string | null;
-  /** Set when the port is a junction column: the drag makes a PAIR, not a link (sql/016). */
-  junction?: { table: string; cfg: JunctionConfig; side: 'a' | 'b' };
-}
-const linkDrag = ref<LinkDrag | null>(null);
+/* ── linking: ONE handle per card ──────────────────────────────────────────
 
-/** Could `recordId` take the link being dragged? Right table, not itself, not already linked (or paired). */
-function canTakeLink(d: LinkDrag, recordId: string, tableId: string) {
-  if (tableId !== d.targetTable || recordId === d.fromRecord) return false;
-  if (d.junction) return !derived.junctionRowFor(d.junction.cfg, d.junction.side, d.fromRecord, recordId);
-  return !store.state.links.has(linkKey(d.fieldId, d.fromRecord, recordId));
+   Every card whose table can link to anything has one ⊕, off its bottom-right
+   corner. Drag it; what the drag makes is decided when it lands, by the two TABLES
+   involved and nothing else (contract/canvasLink.ts is the rule, and says why):
+
+     on a card, ONE way between the tables     the link is made (a junction's pair:
+                                               its status is asked first)
+     on a card, SEVERAL ways                   a menu of them — always
+     on a card, NO way                         the card flashes red; nothing happens
+     on a card it is already linked to         said, and the arrow pulses
+     on empty canvas, or the ⊕ just clicked    a menu of every way this table has:
+                                               a new record through it, or "find…"
+
+   This replaced a handle on every visible link row (PLAN.md, "One handle"): those
+   chose the field up front, which was unambiguous but put a column of small targets
+   beside everything else a row does. Forward links only for now — dragging a File
+   onto the Edit it is an input OF (the backlink reading) is not offered yet.
+
+   Nobody has to let go to find out: while the link is held, cards that cannot take
+   it dim, cards that can are outlined, and a label by the pointer names what
+   releasing would do. */
+
+/** Which tables have a card here — as a string, so it only changes when the SET does (not on every card move). */
+const placedTables = computed(() => [...new Set(cards.value.map((c) => c.tableId))].sort().join());
+/** The ways a record of each of those tables can be linked. Per TABLE: the same for every card of it, shown fields or not. */
+const waysByTable = computed(() => {
+  const m = new Map<string, LinkWay[]>();
+  for (const tableId of placedTables.value.split(',').filter(Boolean)) m.set(tableId, linkWays(store.state.fields.values(), store.state.tables.values(), tableId));
+  return m;
+});
+const waysOf = (tableId: string) => waysByTable.value.get(tableId) ?? [];
+
+/** Is this way already made between these two records? */
+const wayMade = (way: LinkWay, from: string, to: string) =>
+  (way.kind === 'link' ? store.state.links.has(linkKey(way.fieldId, from, to)) : !!derived.junctionRowFor(way.cfg, way.side, from, to));
+/** The key its arrow is drawn under (ArrowLayer): a pair's runs A → B whichever end made it. */
+const arrowKeyOf = (way: LinkWay, from: string, to: string) =>
+  (way.kind === 'link' ? `${way.fieldId}|${from}|${to}` : way.side === 'a' ? `${way.table}|${from}|${to}` : `${way.table}|${to}|${from}`);
+const wayColor = (way: LinkWay) => arrowStyles.value.get(way.key)?.color || 'var(--arrow)';
+const singularOf = (tableId: string) => { const t = store.state.tables.get(tableId); return t?.singular_name || t?.name || 'record'; };
+
+const verdictFor = (from: string, fromTable: string, to: string, toTable: string): DropVerdict =>
+  dropVerdict(waysBetween(waysOf(fromTable), toTable), from === to, (w) => wayMade(w, from, to));
+/** What a single link holds now and would lose: making it REPLACES that (client/links.ts). */
+const replacedBy = (way: LinkWay, from: string, to: string) =>
+  (way.kind === 'link' && way.single ? derived.linksFrom(from, way.fieldId).find((id) => id !== to) : undefined);
+function hintFor(v: DropVerdict, from: string, to: string) {
+  const names = { from: tableNameOf(from), to: tableNameOf(to) };
+  const was = v.kind === 'link' ? replacedBy(v.way, from, to) : undefined;
+  return verdictHint(v, names, was ? derived.labelOfId(was) : undefined);
 }
-function linkTargetState(recordId: string, tableId: string): 'ok' | 'over' | null {
-  const d = linkDrag.value;
-  if (!d || !canTakeLink(d, recordId, tableId)) return null;
-  return d.over === recordId ? 'over' : 'ok';
+/** Beside a way in the "several ways" menu: what choosing it involves beyond the link itself. */
+function wayNote(way: LinkWay, from: string, to: string) {
+  if (way.kind === 'junction') return junctionStatusChoices(way.table).length ? 'status…' : '';
+  const was = replacedBy(way, from, to);
+  return was ? `replaces ${derived.labelOfId(was)}` : '';
 }
+
+/* The drag, in two parts: where it STARTED (fixed for its whole life — the verdicts
+   below are computed once from it) and where the pointer IS (changes every move). */
+const linkFrom = ref<{ recordId: string; tableId: string; at: Point } | null>(null);
+const linkTo = ref<{ world: Point; client: { x: number; y: number }; over: string | null; moved: boolean } | null>(null);
+/** A press that moves less than this is a CLICK on the handle, not a drag. */
+const LINK_DRAG_SLOP = 5;
+
+/** For every card here: what letting the link go on it would do. */
+const dragVerdicts = computed(() => {
+  const m = new Map<string, DropVerdict>();
+  const d = linkFrom.value;
+  if (d) for (const c of cards.value) m.set(c.recordId, verdictFor(d.recordId, d.tableId, c.recordId, c.tableId));
+  return m;
+});
+function linkTargetState(recordId: string): 'from' | 'ok' | 'over' | 'dim' | 'no' | 'linked' | null {
+  if (!linkFrom.value) return null;
+  const over = linkTo.value?.over === recordId;
+  switch (dragVerdicts.value.get(recordId)?.kind) {
+    case 'self': return 'from';
+    case 'none': return over ? 'no' : 'dim';
+    case 'linked': return 'linked';
+    case 'link': case 'pair': case 'choose': return over ? 'over' : 'ok';
+    default: return null;
+  }
+}
+/** The label by the pointer while a link is held. */
+const linkHint = computed(() => {
+  const d = linkFrom.value, p = linkTo.value;
+  if (!d || !p || !p.moved) return null;
+  const at = { x: p.client.x + 14, y: p.client.y + 16 };
+  if (!p.over) return { text: 'new or existing record…', tone: 'idle', ...at };
+  const v = dragVerdicts.value.get(p.over);
+  if (!v || v.kind === 'self') return null;
+  return { text: hintFor(v, d.recordId, p.over), tone: v.kind === 'none' ? 'no' : v.kind === 'linked' ? 'info' : 'ok', ...at };
+});
+
 /** The topmost card under a world point. */
 function cardAt(p: Point): { recordId: string; tableId: string } | null {
   let best: { recordId: string; tableId: string; z: number } | null = null;
@@ -714,49 +811,37 @@ function cardAt(p: Point): { recordId: string; tableId: string } | null {
   return best;
 }
 
-function startLinkDrag({ recordId, fieldId, e }: { recordId: string; fieldId: string; e: PointerEvent }) {
-  const field = store.state.fields.get(fieldId);
-  // A junction column's port: the target is the OTHER endpoint's table.
-  const j = field?.type === 'backlink' ? derived.junctionOfBacklink(field) : null;
-  const junction = j ? { table: j.table, cfg: j.cfg, side: j.side } : undefined;
-  const targetTable = field?.type === 'link' ? String(field.options?.target_table_id ?? '')
-    : j ? String(store.state.fields.get(j.side === 'a' ? j.cfg.b : j.cfg.a)?.options?.target_table_id ?? '') : '';
+function startLinkDrag({ recordId, e }: { recordId: string; e: PointerEvent }) {
   const rect = cardRects.value.get(recordId);
-  const portY = cardPorts.value.get(recordId)?.out.get(fieldId);
-  if (!targetTable || !rect || portY === undefined) return;
-  selected.clear(); selectedLink.value = null; menu.value = null;
-  const from = { x: rect.x + rect.w, y: rect.y + portY };
-  linkDrag.value = { fromRecord: recordId, fieldId, targetTable, from, to: viewport.clientToWorld(e.clientX, e.clientY), over: null, junction };
+  const rec = store.state.records.get(recordId);
+  if (e.button > 0 || !rect || !rec || !waysOf(rec.table_id).length) return;
+  menu.value = null; linkPick.value = null; junctionPick.value = null; selectedLink.value = null;
+  // The card being linked FROM is the selection: its handle stays up for the next
+  // link, and in "focus" its own arrows are the ones left lit.
+  selected.clear(); selected.add(recordId);
+  // The handle swallows its press (or the card would drag), so the canvas does not get
+  // focus by itself — and without it Escape reaches neither the drag's menu nor Delete.
+  containerRef.value?.focus();
+  const down = { x: e.clientX, y: e.clientY };
+  linkFrom.value = { recordId, tableId: rec.table_id, at: linkHandleAt(rect) };
+  linkTo.value = { world: viewport.clientToWorld(down.x, down.y), client: down, over: null, moved: false };
 
-  const lastClient = { x: e.clientX, y: e.clientY };
   const move = (ev: PointerEvent) => {
-    const d = linkDrag.value;
-    if (!d) return;
-    lastClient.x = ev.clientX; lastClient.y = ev.clientY;
-    const to = viewport.clientToWorld(ev.clientX, ev.clientY);
-    const hit = cardAt(to);
-    linkDrag.value = { ...d, to, over: hit && canTakeLink(d, hit.recordId, hit.tableId) ? hit.recordId : null };
+    const p = linkTo.value;
+    if (!linkFrom.value || !p) return;
+    // `!(… <= slop)`, not `> slop`: a pointer event with no coordinates must not read as "never moved".
+    const moved = p.moved || !(Math.hypot(ev.clientX - down.x, ev.clientY - down.y) <= LINK_DRAG_SLOP);
+    const world = viewport.clientToWorld(ev.clientX, ev.clientY);
+    linkTo.value = { world, client: { x: ev.clientX, y: ev.clientY }, over: moved ? cardAt(world)?.recordId ?? null : null, moved };
   };
   const up = () => {
-    const d = linkDrag.value;
+    const d = linkFrom.value, p = linkTo.value;
     end();
-    // Dropped on a card that can take it: the link exists. Dropped on EMPTY canvas: a
-    // picker opens there — choose a record (it is linked and placed at that point) or
-    // type a name for a new one (created, linked, placed). The wrong table, itself, a
-    // record already linked: nothing.
-    if (!d) return;
-    if (d.junction) {
-      // A pair: on a card, pick its status here and make it; on empty canvas, pick the
-      // other end first. Either way the JunctionEditor writes the row — one batch.
-      if (d.over || !cardAt(d.to)) junctionPick.value = { ...d.junction, fromRecord: d.fromRecord, picked: d.over ?? undefined, client: { ...lastClient }, world: d.to };
-      return;
-    }
-    if (d.over) { addLink(store, d.fieldId, d.fromRecord, d.over); return; }
-    if (!cardAt(d.to)) linkPick.value = { fieldId: d.fieldId, fromRecord: d.fromRecord, targetTable: d.targetTable, client: { ...lastClient }, world: d.to };
+    if (d && p) dropLink(d.recordId, d.tableId, p);
   };
   const cancel = (ev: KeyboardEvent) => { if (ev.key === 'Escape') end(); };
   function end() {
-    linkDrag.value = null;
+    linkFrom.value = null; linkTo.value = null;
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', up);
     window.removeEventListener('keydown', cancel, true);
@@ -766,28 +851,152 @@ function startLinkDrag({ recordId, fieldId, e }: { recordId: string; fieldId: st
   window.addEventListener('keydown', cancel, true);
 }
 
-/** The line being dragged, for ArrowLayer: from the port to the pointer (or to the card it would land on). */
+/** The link is let go. Everything it can do is one of `dropVerdict`'s cases. */
+function dropLink(from: string, fromTable: string, p: { world: Point; client: { x: number; y: number }; moved: boolean }) {
+  // The ⊕ clicked, not dragged: the same menu as an empty-canvas drop, the new record going beside the card.
+  if (!p.moved) { openNewLinkMenu(from, p.client, spotBeside(from)); return; }
+  const hit = cardAt(p.world);
+  if (!hit) { openNewLinkMenu(from, p.client, p.world); return; }
+  const v = verdictFor(from, fromTable, hit.recordId, hit.tableId);
+  switch (v.kind) {
+    case 'self': return;
+    case 'none': refuse(hit.recordId); say(hintFor(v, from, hit.recordId), 'no', p.client); return;
+    case 'linked': pulse(v.ways.map((w) => arrowKeyOf(w, from, hit.recordId))); say(hintFor(v, from, hit.recordId), 'info', p.client); return;
+    case 'link': makeLink(v.way, from, hit.recordId, p.client); return;
+    case 'pair': makePair(v.way, from, hit.recordId, p.client, p.world); return;
+    case 'choose': menu.value = { kind: 'link-choose', ...menuAt(p.client), wx: p.world.x, wy: p.world.y, recordId: from, toRecord: hit.recordId, options: v.options, client: { ...p.client } };
+  }
+}
+
+function makeLink(way: LinkFieldWay, from: string, to: string, client: { x: number; y: number }) {
+  const was = replacedBy(way, from, to);
+  const wasLabel = was ? derived.labelOfId(was) : '';
+  addLink(store, way.fieldId, from, to);
+  pulse([arrowKeyOf(way, from, to)]);
+  say(was ? `✓ ${way.name} · replaced ${wasLabel}` : `✓ ${way.name}`, 'ok', client);
+}
+/** A pair has a status to pick — unless its junction has none to offer, and then it is simply made. */
+function makePair(way: JunctionWay, from: string, to: string, client: { x: number; y: number }, world: Point) {
+  if (!junctionStatusChoices(way.table).length) {
+    addPair(store, way.table, way.cfg, way.side, from, to);
+    pulse([arrowKeyOf(way, from, to)]);
+    say(`✓ ${way.name}`, 'ok', client);
+    return;
+  }
+  junctionPick.value = { table: way.table, cfg: way.cfg, side: way.side, fromRecord: from, picked: to, client: { ...client }, world };
+}
+function chooseWay(m: Menu, way: LinkWay) {
+  if (!m.recordId || !m.toRecord || wayMade(way, m.recordId, m.toRecord)) return;   // (a peer may have made it while the menu was up)
+  const client = m.client ?? { x: 0, y: 0 };
+  if (way.kind === 'link') makeLink(way, m.recordId, m.toRecord, client);
+  else makePair(way, m.recordId, m.toRecord, client, { x: m.wx, y: m.wy });
+}
+
+/* The new-link menu (empty canvas, or the ⊕ clicked). */
+const menuAt = (client: { x: number; y: number }) => {
+  const box = containerRef.value?.getBoundingClientRect();
+  return { x: client.x - (box?.left ?? 0), y: client.y - (box?.top ?? 0) };
+};
+function openNewLinkMenu(from: string, client: { x: number; y: number }, world: Point) {
+  menu.value = { kind: 'link-new', ...menuAt(client), wx: world.x, wy: world.y, recordId: from, client: { ...client } };
+}
+/** Its rows: the ways whose field this card SHOWS first, then the rest — all of them, always. */
+const menuWays = computed(() => {
+  const m = menu.value;
+  const tableId = m?.kind === 'link-new' ? store.state.records.get(m.recordId ?? '')?.table_id : undefined;
+  if (!tableId) return [];
+  const on = new Set(shownFields(tableId).map((f) => f.id));
+  const ways = waysOf(tableId);
+  const shown = ways.filter((w) => w.column && on.has(w.column)), rest = ways.filter((w) => !(w.column && on.has(w.column)));
+  return [
+    { title: 'New record, linked through…', ways: shown.length ? shown : rest },
+    ...(shown.length && rest.length ? [{ title: 'Not shown on this card', ways: rest }] : []),
+  ];
+});
+/** A drop point for "beside this card": the first free spot down its right-hand side. */
+function spotBeside(recordId: string): Point {
+  const r = cardRects.value.get(recordId);
+  if (!r) return lastPointer ?? { x: 0, y: 0 };
+  const probe = { x: r.x + r.w + 64, y: r.y, w: CARD_W, h: 96 };
+  const taken = [...cardRects.value.values()];
+  for (let i = 0; i < 16 && taken.some((o) => rectsIntersect(probe, o)); i++) probe.y += probe.h + DROP_GAP;
+  return { x: probe.x + CARD_W / 2, y: probe.y + 24 };
+}
+/** A new, blank record of the way's table at the drop point, linked FROM the card — one run, one Ctrl+Z — and opened, to be named. */
+function createLinked(m: Menu, way: LinkFieldWay) {
+  if (!m.recordId) return;
+  const id = crypto.randomUUID();
+  const z = placements.value.reduce((n, q) => Math.max(n, q.z), 0) + 1;
+  if (scopeApi) scopeApi.createRecord(way.toTable, {}, id, { defaults: activeDefaults.value });
+  else store.mutate({ type: 'record.create', id, tableId: way.toTable, data: {} });
+  addLink(store, way.fieldId, m.recordId, id);
+  store.mutate({ type: 'placement.add', id: crypto.randomUUID(), canvasId: props.canvasId, recordId: id, x: Math.round(m.wx - CARD_W / 2), y: Math.round(m.wy - 24), w: null, h: null, z });
+  selected.clear(); selected.add(id);
+  emit('open-record', id);
+}
+const findLinked = (m: Menu, way: LinkFieldWay) => {
+  if (m.recordId) linkPick.value = { fieldId: way.fieldId, fromRecord: m.recordId, targetTable: way.toTable, client: m.client ?? { x: 0, y: 0 }, world: { x: m.wx, y: m.wy } };
+};
+const pairVia = (m: Menu, way: JunctionWay) => {
+  if (m.recordId) junctionPick.value = { table: way.table, cfg: way.cfg, side: way.side, fromRecord: m.recordId, client: m.client ?? { x: 0, y: 0 }, world: { x: m.wx, y: m.wy } };
+};
+/** An existing record, put where a link was let go (centred under the drop point, like a new one). */
+function placeAtDrop(rec: RecordRow, world: Point) {
+  const c = viewport.worldToClient(world.x - CARD_W / 2, world.y - 24);
+  placeMany([rec], c.x, c.y);
+}
+
+/* What the canvas SAYS about a link, for a moment: a label where it was let go, a
+   red flash on a card that refused it, a pulse on the arrow it made or found. Each
+   restarts cleanly when the same thing happens twice running. */
+const linkNote = ref<{ text: string; tone: 'ok' | 'info' | 'no'; x: number; y: number; n: number } | null>(null);
+let noteTimer: ReturnType<typeof setTimeout> | undefined, noteN = 0;
+function say(text: string, tone: 'ok' | 'info' | 'no', client: { x: number; y: number }) {
+  clearTimeout(noteTimer);
+  linkNote.value = { text, tone, x: client.x + 14, y: client.y + 16, n: ++noteN };
+  noteTimer = setTimeout(() => { linkNote.value = null; }, 2000);
+}
+const refused = ref('');
+let refuseTimer: ReturnType<typeof setTimeout> | undefined;
+function refuse(recordId: string) {
+  refused.value = '';
+  clearTimeout(refuseTimer);
+  void nextTick(() => { refused.value = recordId; refuseTimer = setTimeout(() => { refused.value = ''; }, 750); });
+}
+const pulsed = ref<ReadonlySet<string>>(new Set());
+let pulseTimer: ReturnType<typeof setTimeout> | undefined;
+function pulse(keys: string[]) {
+  pulsed.value = new Set();
+  clearTimeout(pulseTimer);
+  void nextTick(() => { pulsed.value = new Set(keys); pulseTimer = setTimeout(() => { pulsed.value = new Set(); }, 1200); });
+}
+
+/** The line being dragged, for ArrowLayer: from the handle to the pointer, leaving the way the pointer went. */
 const rubber = computed(() => {
-  const d = linkDrag.value;
-  if (!d) return null;
-  const goingRight = d.to.x >= d.from.x;
-  const rect = cardRects.value.get(d.fromRecord)!;
-  const start = goingRight ? d.from : { x: rect.x, y: d.from.y };
-  return { path: bezierPath(start, goingRight ? 'right' : 'left', d.to, goingRight ? 'left' : 'right', 0),
-    valid: d.over !== null, color: arrowStyles.value.get(d.junction?.table ?? d.fieldId)?.color };
+  const d = linkFrom.value, p = linkTo.value;
+  if (!d || !p || !p.moved) return null;
+  const dx = p.world.x - d.at.x, dy = p.world.y - d.at.y;
+  const side: AnchorSide = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : (dy >= 0 ? 'bottom' : 'top');
+  const facing: Record<AnchorSide, AnchorSide> = { right: 'left', left: 'right', top: 'bottom', bottom: 'top' };
+  const v = p.over ? dragVerdicts.value.get(p.over) : undefined;
+  // Solid when letting go here would make (or ask about) a link; in the field's colour when it is known which.
+  const valid = !!v && (v.kind === 'link' || v.kind === 'pair' || v.kind === 'choose');
+  const color = v && (v.kind === 'link' || v.kind === 'pair') ? arrowStyles.value.get(v.way.key)?.color : undefined;
+  return { path: bezierPath(d.at, side, p.world, facing[side], 0), valid, color };
 });
 
-/* ── a junction drag let go (sql/016) ─────────────────────────────────────── */
+/* ── a pair being made or edited (sql/016): the JunctionEditor, anchored at a point ── */
 const junctionPick = ref<{ table: string; cfg: JunctionConfig; side: 'a' | 'b'; fromRecord: string; picked?: string; rowId?: string;
   client: { x: number; y: number }; world: { x: number; y: number } } | null>(null);
 const junctionAnchor = ref<HTMLElement | null>(null);
-/** The row is made: if its other end was chosen from the picker (empty-canvas drop), place it at the drop. */
+/** The row is made: if its other end was chosen from the picker (the new-link menu), place it at the drop. */
 function junctionPickCreated(_rowId: string, other: string) {
   const p = junctionPick.value; if (!p) return;
   if (!p.picked && !cardRects.value.has(other)) {
     const rec = store.state.records.get(other);
-    if (rec) placeMany([rec], p.client.x, p.client.y);
+    if (rec) placeAtDrop(rec, p.world);
   }
+  pulse([p.side === 'a' ? `${p.table}|${p.fromRecord}|${other}` : `${p.table}|${other}|${p.fromRecord}`]);
 }
 const junctionStatusChoices = (junctionTable: string) => {
   const cfg = junctionOf(store.state.tables.get(junctionTable));
@@ -1023,8 +1232,26 @@ function toggleFold(recordId: string) {
    table is assumed (hold Alt to be asked anyway). Laying out ten File cards is
    ten double-clicks, not ten double-clicks and ten menu picks. */
 
-interface Menu { kind: 'card' | 'canvas' | 'create' | 'fields' | 'link'; x: number; y: number; wx: number; wy: number; recordId?: string; link?: ArrowLink }
+interface Menu {
+  kind: 'card' | 'canvas' | 'create' | 'fields' | 'link' | 'link-choose' | 'link-new';
+  x: number; y: number; wx: number; wy: number; recordId?: string; link?: ArrowLink;
+  /** The two link menus: the card the link landed on and the ways to choose from (`link-choose`); where the pointer was, on screen. */
+  toRecord?: string; options?: Array<{ way: LinkWay; linked: boolean }>; client?: { x: number; y: number };
+}
 const menu = ref<Menu | null>(null);
+/* A menu opened near the canvas's bottom or right edge would be cut off by it (the
+   canvas clips). Once it is drawn and has a size, it is moved back inside — up and
+   left only, and once per menu, so it never chases the pointer. */
+const menuRef = ref<HTMLElement | null>(null);
+watch(menu, (m, was) => {
+  if (!m || (was && was.x === m.x && was.y === m.y)) return;
+  void nextTick(() => {
+    const el = menuRef.value, box = containerRef.value?.getBoundingClientRect();
+    if (!el || !box || menu.value !== m || !el.offsetWidth) return;
+    const x = Math.max(4, Math.min(m.x, box.width - el.offsetWidth - 4)), y = Math.max(4, Math.min(m.y, box.height - el.offsetHeight - 4));
+    if (x !== m.x || y !== m.y) menu.value = { ...m, x, y };
+  });
+});
 const lastCreateTable = ref('');
 
 const tablesForCreate = computed(() => tablesSorted(store.state));
@@ -1272,7 +1499,7 @@ watch(() => props.canvasId, async (id) => {
 });
 
 onUnmounted(() => {
-  clearTimeout(flashTimer);
+  clearTimeout(flashTimer); clearTimeout(noteTimer); clearTimeout(refuseTimer); clearTimeout(pulseTimer);
   unregisterDrop?.();
   drag.cancel();
   resize.cancel();
@@ -1375,6 +1602,17 @@ onUnmounted(() => {
 }
 .defaults-table { background: var(--bg-app); border: 1px solid var(--border-main); color: inherit; border-radius: 4px; padding: 4px 6px; font: inherit; }
 
+.link-note {
+  position: fixed; z-index: 80; pointer-events: none; white-space: nowrap;
+  padding: 2px 8px; border-radius: 10px; font-size: 11px; line-height: 16px;
+  background: var(--controls-bg); border: 1px solid var(--border-main); color: var(--text-secondary);
+  box-shadow: var(--card-shadow);
+}
+.link-note.ok { border-color: var(--accent); color: var(--text-primary); }
+.link-note.info { color: var(--text-primary); }
+.link-note.no { border-color: var(--danger); color: var(--danger); }
+.link-note.said { animation: link-note-out 2s ease-out 1 forwards; }
+@keyframes link-note-out { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
 .link-pick { position: fixed; z-index: 70; width: 340px; padding: 8px; background: var(--controls-bg); border: 1px solid var(--accent); border-radius: 6px; box-shadow: var(--card-shadow-drag); }
 .link-pick-head { margin: 0 0 6px; font-size: 12px; color: var(--text-secondary); }
 .junction-anchor { position: fixed; width: 1px; height: 1px; z-index: 70; }
@@ -1385,5 +1623,17 @@ onUnmounted(() => {
    Here: where the canvas's sits, and the parts only it has. */
 .ctx { position: absolute; z-index: 40; }
 .ctx-check { display: flex; gap: 6px; align-items: center; padding: 3px 8px; cursor: pointer; }
+/* The two link menus: a WAY is a row — its colour, its name, and (right-aligned,
+   quieter) what choosing it does. In the new-link menu "find…" sits beside it. */
+.ctx { max-height: calc(100% - 8px); overflow-y: auto; }
+.way-row { display: flex; align-items: stretch; gap: 2px; }
+.ctx .way { flex: 1; min-width: 0; }
+.way-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.way-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.way-note { flex: none; color: var(--text-muted); font-size: 11px; margin-left: 12px; }
+.ctx .way.made { cursor: default; color: var(--text-muted); }
+.ctx .way.made:hover { background: none; }
+.ctx .way-find { flex: none; color: var(--text-secondary); font-size: 11px; padding: 3px 8px; margin: 2px 2px 2px 4px; border: 1px solid var(--border-main); }
+.ctx .way-find:hover { color: var(--accent); border-color: var(--accent); }
 .swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
 </style>

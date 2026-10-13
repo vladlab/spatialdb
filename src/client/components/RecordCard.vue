@@ -19,7 +19,7 @@
 <template>
   <div
     class="card"
-    :class="{ selected, opened, flash, dragging, unconfirmed, collapsed, 'link-ok': linkTarget === 'ok', 'link-over': linkTarget === 'over' }"
+    :class="[{ selected, opened, flash, refused, dragging, unconfirmed, collapsed }, linkTarget ? `link-${linkTarget}` : '']"
     :style="style"
     @pointerdown="onPointerDown"
     @pointerenter="$emit('hover', recordId)"
@@ -46,13 +46,6 @@
 
     <div v-if="!collapsed && (rows.length || rich?.length)" class="card-body">
       <div v-for="r in rows" :key="r.id" class="card-field" :class="{ 'is-link': r.link, tall: (r.ids?.length ?? 0) > 1 || (r.lines?.length ?? 0) > 1 }">
-        <!-- LINK rows are OUTPUT PORTS, and the port is also where a new link starts:
-             press this handle and drag to a card of the table the field points at.
-             Only on a link row you can SEE — the field is never guessed (PLAN.md,
-             "Linking from the canvas"). It stops the press, or the card would drag. -->
-        <span v-if="r.link" class="port-handle" :style="r.color ? { '--port': r.color } : undefined"
-              :title="`Drag to a card to link it through “${r.name}”`"
-              @pointerdown.stop.prevent="$emit('link-start', { recordId, fieldId: r.id, e: $event })" />
         <span class="card-key"><span v-if="r.color" class="port-dot" :style="{ background: r.color }" />{{ r.name }}</span>
         <!-- Linked records (a link, a backlink, a junction column) are PILLS — the same
              pill as the grid and the tray, in the row's colour: drag one OFF this card
@@ -103,6 +96,19 @@
     <div class="handle handle-e" @pointerdown.stop="$emit('resize', { recordId, handle: 'e', e: $event })" />
     <div v-if="!collapsed" class="handle handle-s" @pointerdown.stop="$emit('resize', { recordId, handle: 's', e: $event })" />
     <div v-if="!collapsed" class="handle handle-se" @pointerdown.stop="$emit('resize', { recordId, handle: 'se', e: $event })" />
+
+    <!-- THE LINK HANDLE: one per card, hung off its bottom-right corner — where a new
+         link starts, whichever field it turns out to be (contract/canvasLink.ts decides
+         that when the drag lands; PLAN.md, "One handle"). It replaced a handle on every
+         link row, which crowded the rows. Outside the corner on purpose: inside it is
+         the resize corner. Only on a card whose table can link to anything at all. It
+         stops the press, or the card would drag. -->
+    <button v-if="canLink" class="link-handle" type="button" tabindex="-1"
+            title="Drag onto a card to link it · drop on empty canvas, or click, for a new or existing record"
+            @pointerdown.stop.prevent="$emit('link-start', { recordId, e: $event })"
+            @click.stop @dblclick.stop @contextmenu.prevent.stop>
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4.2v7.6M4.2 8h7.6" /></svg>
+    </button>
   </div>
 </template>
 
@@ -114,7 +120,7 @@ import RecordPill from './RecordPill.vue';
 import VideoLayoutStrip from './VideoLayoutStrip.vue';
 import type { Store } from '../store';
 import {
-  CARD_BODY_PAD, CARD_HEAD_H, CARD_RICH_H, CARD_RICH_LABEL_H, CARD_ROW_H, CARD_TITLE_H, CARD_W, effectiveHeight, lineCount,
+  CARD_BODY_PAD, CARD_HEAD_H, CARD_RICH_H, CARD_RICH_LABEL_H, CARD_ROW_H, CARD_TITLE_H, CARD_W, LINK_HANDLE_OUT, LINK_HANDLE_SIZE, effectiveHeight, lineCount,
 } from '../canvas/cardLayout';
 
 // TipTap's renderer is a large chunk; only a canvas that actually shows a note pays for it.
@@ -126,7 +132,7 @@ export interface CardRow {
   /** A link or lookup: computed from elsewhere, shown in italics as in the grid. */
   derived?: boolean;
   broken?: boolean;
-  /** A LINK field's row (or a junction column's): an output port, with a handle to drag a new link from. */
+  /** A LINK field's row (or a junction column's): what it names is what this record links TO (its pills are not "back" pills). */
   link?: boolean;
   /** A junction column's row: its pills are pairs ("Texted Master › Uploaded"); `rows` are the pair rows, one per id. */
   junction?: boolean;
@@ -174,15 +180,25 @@ const props = defineProps<{
   opened?: boolean;
   /** Just jumped to (a pill's →, the palette, a drop): pulse once, so the eye lands on it. */
   flash?: boolean;
-  /** While a link is being dragged: 'ok' = this card could take it, 'over' = it is about to. */
-  linkTarget?: 'ok' | 'over' | null;
+  /** This card's table can link to something: it gets the ⊕ link handle. */
+  canLink?: boolean;
+  /**
+   * While a link is being dragged out of some card's handle — what THIS card is to it:
+   *   from    the card it started from          ok    it could take a link (over: and is about to)
+   *   dim     nothing links its table that way   no    …and the pointer is on it: letting go is refused
+   *   linked  every way there is, is made already
+   */
+  linkTarget?: 'from' | 'ok' | 'over' | 'dim' | 'no' | 'linked' | null;
+  /** A link was just dropped here that cannot be made: flash red, once. */
+  refused?: boolean;
   dragging: boolean;
   unconfirmed: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'pointerdown', payload: { recordId: string; e: PointerEvent }): void;
-  (e: 'link-start', payload: { recordId: string; fieldId: string; e: PointerEvent }): void;
+  /** The ⊕ handle, pressed: a link is being dragged out of this card. */
+  (e: 'link-start', payload: { recordId: string; e: PointerEvent }): void;
   /** A linked record named on this card (`from`), picked up to be placed on the canvas. */
   (e: 'drag-linked', payload: { recordId: string; from: string; e: PointerEvent }): void;
   /** A linked record's pill, double-clicked: open it (the tray). */
@@ -211,6 +227,8 @@ const style = computed(() => ({
   '--body-pad': `${CARD_BODY_PAD / 2}px`,
   '--rich-h': `${CARD_RICH_H}px`,
   '--rich-label-h': `${CARD_RICH_LABEL_H}px`,
+  '--link-handle': `${LINK_HANDLE_SIZE}px`,
+  '--link-handle-out': `${LINK_HANDLE_OUT}px`,
 }));
 
 /** Scroll the note instead of the canvas — but only on a selected card, and only if there is more to see. */
@@ -242,7 +260,8 @@ function onPointerDown(e: PointerEvent) {
   border: 1px solid var(--card-border);
   border-radius: 6px;
   box-shadow: var(--card-shadow);
-  overflow: hidden;
+  /* NOT `overflow: hidden`: the link handle hangs off the corner. The parts clip
+     themselves instead — the head rounds its own top corners, the body clips its rows. */
   display: flex;
   flex-direction: column;
   font-size: 12px;
@@ -274,6 +293,7 @@ function onPointerDown(e: PointerEvent) {
   padding: 0 6px 0 8px;
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--card-head-text);
+  border-radius: 5px 5px 0 0;   /* the card no longer clips for it */
 }
 .card-table { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-unplace, .card-fold {
@@ -298,22 +318,43 @@ function onPointerDown(e: PointerEvent) {
   display: flex; flex-direction: column;
 }
 .card-field { flex: none; position: relative; }
-/* The handle sits at the row's right end, INSIDE the card: `.card` and `.card-body`
-   both clip their overflow, so anything hung outside the edge would simply not be
-   drawn. The body has 8px of side padding; the handle lives in it (-7px … +3px of the
-   row's content edge). Hidden until the row (or a selected card) invites it, so an
-   unfolded card is not a column of dots. */
-.port-handle {
-  /* A touch inside the card edge (it sat astride it and read as clipped). */
-  position: absolute; right: -3px; top: 50%; width: 10px; height: 10px; margin-top: -5px;
-  border-radius: 50%; box-sizing: border-box; cursor: crosshair; z-index: 3;
-  background: var(--card-bg); border: 2px solid var(--port, var(--accent));
+/* THE LINK HANDLE. Its centre is `--link-handle-out` px diagonally outside the card's
+   bottom-right corner (cardLayout.ts has the two numbers; the canvas starts the drag
+   line from the same point). Shown while the card is hovered or selected — it is a
+   child of the card, so the pointer moving onto it is still "over the card".
+   It never gets smaller than about 15px ON SCREEN: zoomed out it is scaled back up
+   (`--zoom` is the canvas's scale, set on the world layer), because a handle you
+   cannot hit is the finicky thing this replaced. */
+.link-handle {
+  position: absolute; box-sizing: border-box; padding: 0; margin: 0;
+  width: var(--link-handle); height: var(--link-handle);
+  right: calc(-1 * (var(--link-handle) / 2 + var(--link-handle-out) + 1px));
+  bottom: calc(-1 * (var(--link-handle) / 2 + var(--link-handle-out) + 1px));
+  scale: max(1, calc(0.85 / var(--zoom, 1)));
+  border-radius: 50%; border: 1.5px solid var(--accent);
+  background: var(--card-bg); color: var(--accent);
+  display: grid; place-items: center; cursor: crosshair; z-index: 4;
   opacity: 0; transition: opacity 0.1s ease;
 }
-.card-field.is-link:hover .port-handle, .card.selected .port-handle { opacity: 1; }
-.port-handle:hover { background: var(--port, var(--accent)); }
+.link-handle svg { width: 100%; height: 100%; display: block; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; pointer-events: none; }
+.card:hover .link-handle, .card.selected .link-handle, .card.link-from .link-handle { opacity: 1; }
+.link-handle:hover, .card.link-from .link-handle { background: var(--accent); color: #fff; }
+/* While a link is being dragged, only the card it started from keeps its handle. */
+.card.link-ok .link-handle, .card.link-over .link-handle, .card.link-dim .link-handle,
+.card.link-no .link-handle, .card.link-linked .link-handle { opacity: 0; pointer-events: none; }
+
+/* WHILE A LINK IS BEING DRAGGED, every card says what it is to that drag. */
 .card.link-ok { outline: 1px dashed var(--accent); outline-offset: 2px; }
 .card.link-over { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card.link-dim { opacity: 0.4; }
+.card.link-no { opacity: 0.75; outline: 2px solid var(--danger); outline-offset: 2px; }
+/* Dropped where no link can be made: one red flash over the card, and nothing else
+   happens. Paint only (an inset shadow and an outline) — nothing moves. */
+.card.refused { animation: card-refused 0.7s ease-out 1; }
+@keyframes card-refused {
+  0%, 35% { outline: 2px solid var(--danger); outline-offset: 2px; box-shadow: inset 0 0 0 999px rgba(220, 60, 60, 0.38); }
+  100% { outline: 2px solid transparent; outline-offset: 2px; box-shadow: inset 0 0 0 999px rgba(220, 60, 60, 0); }
+}
 /* At the card's default height each block is exactly --rich-h (the arithmetic in
    cardLayout.ts). Resize the card and `flex: 1` shares the difference among them. */
 .card-rich { flex: 1 1 var(--rich-h); min-height: 0; display: flex; flex-direction: column; }

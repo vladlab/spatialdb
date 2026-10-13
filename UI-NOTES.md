@@ -16,6 +16,29 @@ sandbox has no browser and `test/ui.ts` cannot see layout or paint.
 
 ## When you come back — a checking order
 
+**One link handle per card (Oct 13)** — owner's ask: the per-row origin dots were
+finicky and crowded the rows; one origin point, and context decides the field. Seen in
+a real browser (Chromium only — the handle's zoom compensation is plain CSS `scale` /
+`max()`, worth one look in Firefox) as well as in the suite (`npm run test:canvaslink`).
+No migration.
+1. THE HANDLE: a ⊕ just outside a card's bottom-right corner, on hover and on a
+   selected card. Cards whose table links to nothing have none. Is it far enough out
+   of the way of the resize corner (which is still there, just inside)? Zoomed out it
+   stays about 15px on screen — is that the right floor?
+2. DRAG IT ONTO A CARD. One field leads there → linked at once, "✓ Work" where you let
+   go. Several → a menu ("Inputs / Outputs"), every time, with what is already linked
+   ticked. None → the card flashes red. Already linked → it says so and pulses the arrow.
+3. WHILE YOU HOLD IT: cards that cannot take the link dim; a label by the pointer says
+   what letting go would do, including "Work · replaces Ep 101" for a single link.
+   Too much? The dashed outline on every possible card is the part I would thin first.
+4. EMPTY CANVAS, OR CLICK THE ⊕: a menu of every link field — a row makes a new record
+   there, "find…" links an existing one. Fields the card shows come first. From a click
+   the new card lands beside the one you clicked, in the first free spot.
+5. A junction (File ↔ Deliverable) works from either end and asks for the status; with
+   no status choices it is just made.
+6. Not done: dragging "backwards" (a File onto the Edit it is an input of) is refused
+   for now — say when you want it; dragging from several selected cards.
+
 **Field sections (Oct 12)** — owner's ask: sections for fields, defined in the schema
 editor, drawn in the full record view as foldable wells; the Files table's attributes
 had become a wall. Seen in a real browser (Chromium) as well as in the suite

@@ -150,9 +150,8 @@ async function main() {
     await until(() => w.findAll('.gridview tr.row').length === 1, 8000);
     check('and the client dropped the junction row with it', await until(() => !w.findAll('.pill.junction').length) && !w.find('.errors').exists());
 
-    console.log('\nJ5. On the canvas: a pair is dragged out of a port, drawn as an arrow, and worked from it');
-    // a.mov and Texted Master on a board. Texted Master's card must show its Delivery
-    // row (the port); it is the deliverables table's third field, within the default five.
+    console.log('\nJ5. On the canvas: a pair is dragged out of a card\'s handle, drawn as an arrow, and worked from it');
+    // a.mov and Texted Master on a board (the linking rule itself: test/canvaslink.ts).
     await nav.newCanvas('Board');
     const board = (await untilDb(`select id from records where data->>'name' = 'Board'`, (r) => r.length === 1))[0].id as string;
     await post([
@@ -165,14 +164,15 @@ async function main() {
     const cardBy = (t: string) => cards().find((c: any) => c.find('.card-label').text() === t)!;
     check('the cards are up', await until(() => cards().length === 3, 8000));
     const portRow = (t: string) => cardBy(t).findAll('.card-field').find((r: any) => r.find('.card-key').text() === 'Delivery')!;
-    check('a.mov\'s Delivery row is a PORT, like a link row', await until(() => !!portRow('a.mov') && portRow('a.mov').find('.port-handle').exists()));
+    const linkHandle = (t: string) => cardBy(t).find('.link-handle');
+    check('a.mov\'s card has the link handle — and its Delivery row has none of its own', await until(() => !!portRow('a.mov') && linkHandle('a.mov').exists()) && !w.find('.port-handle').exists());
     const PE = (win as any).PointerEvent ?? (win as any).MouseEvent;
     const winEv = (type: string, init: Record<string, unknown>) => win.dispatchEvent(new PE(type, { bubbles: true, ...init }));
     const toClient = (wx: number, wy: number) => {
       const m = /translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)\s*scale\(([\d.]+)\)/.exec(w.find('.canvas-world').attributes('style') ?? '')!;
       return { clientX: wx * Number(m[3]) + Number(m[1]), clientY: wy * Number(m[3]) + Number(m[2]) };
     };
-    await portRow('a.mov').find('.port-handle').trigger('pointerdown', { button: 0, ...toClient(300, 80) });
+    await linkHandle('a.mov').trigger('pointerdown', { button: 0, ...toClient(300, 80) });
     winEv('pointermove', toClient(630, 60));
     check('dragging from it draws the rubber line; the deliverable cards light up, the file does not',
       await until(() => w.find('.arrow-layer .rubber').exists() && cardBy('Texted Master').classes('link-over')) && cardBy('Trailer').classes('link-ok') && !cardBy('a.mov').classes('link-ok'));
@@ -215,8 +215,8 @@ async function main() {
     await w.find('.je .act:not(.primary):not(.danger)').trigger('click');
     await until(() => !w.find('.je').exists());
 
-    // Same pair again from the port: lands on the existing row.
-    await portRow('a.mov').find('.port-handle').trigger('pointerdown', { button: 0, ...toClient(300, 80) });
+    // Same pair again: it exists, so there is nothing to make.
+    await linkHandle('a.mov').trigger('pointerdown', { button: 0, ...toClient(300, 80) });
     winEv('pointermove', toClient(630, 60));
     check('the pair already exists: Texted Master no longer lights up', await until(() => w.find('.rubber').exists()) && !cardBy('Texted Master').classes('link-over') && cardBy('Trailer').classes('link-ok'));
     winEv('pointerup', toClient(630, 60));
