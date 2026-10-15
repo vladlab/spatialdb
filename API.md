@@ -446,15 +446,35 @@ grid editor, filters, reports and the compare engine), so every bound select —
 Files, on Deliverables — agrees and grows with the list, and nobody can add a
 near-duplicate through the UI. Values are validated against the list at write.
 
-The first vocabulary, **`video_codec`**, is a lookup table from what ffprobe reports
-(`codec_name`, `profile`) to one canonical spelling: an entry constrains only the raw
-fields it lists, may give several spellings, and the MOST SPECIFIC match wins — so
-`{ codec: 'h264' }` gathers every H.264 profile while `{ codec: 'prores', profile:
-'4444 XQ' }` keeps ProRes profiles apart. `ambiguities()` must be empty (tested). The
-ffprobe analyzer's `codec` output is derived through it ON THE CLIENT
-(`withVocabulary` in fileDrop.ts, so the table exists once); an unknown pair writes
-nothing and is reported with the raw pair, which is how the table learns. That
-output maps only into a select bound to the same vocabulary, or a text field.
+Six vocabularies (Oct 15), one machine (`lookup(vocabulary, raw)`): an entry names
+the RAW keys it constrains with the spellings it accepts for each (case-insensitive;
+a trailing `*` matches a prefix, `""` matches the key being absent); an unlisted key
+is a wildcard; the MOST SPECIFIC match (most listed keys) wins — so `{ codec: 'h264'
+}` gathers every H.264 profile while `{ codec: 'prores', profile: '4444 XQ' }` keeps
+ProRes profiles apart. No match → nothing, never a guess. `ambiguities()` must be
+empty across every list (tested).
+
+| vocabulary | raw keys (ffprobe) | e.g. |
+|---|---|---|
+| `video_codec` | `codec_name`, `profile` | prores / 4444 XQ → "ProRes 4444 XQ" |
+| `audio_codec` | `codec_name` of the first audio stream | pcm_s24le → "PCM"; eac3 → "Dolby Digital Plus (E-AC-3)" |
+| `container` | `format_name`, the ftyp `major_brand`, the extension | the QuickTime family + "qt  " → "QuickTime", + isom/mp42 → "MP4"; matroska,webm + .mkv → "Matroska" |
+| `color_primaries` | `color_primaries` | bt2020 → "Rec. 2020", smpte432 → "P3-D65" |
+| `color_transfer` | `color_transfer` | smpte2084 → "PQ (SMPTE 2084)", arib-std-b67 → "HLG" |
+| `color_matrix` | `color_space` | bt2020nc → "Rec. 2020 (non-constant)" |
+
+The ffprobe analyzer's canonical outputs (`codec`, `audio_codec`, `container`,
+`color_primaries`, `color_transfer`, `color_matrix`) are derived ON THE CLIENT
+(`withVocabulary` in fileDrop.ts, so each table exists once) from the raw outputs
+(`video_codec` + `codec_profile`, `audio_codec_raw`, `container_raw` + `major_brand`
++ the unit's extension, `color_*_raw`); an unknown value writes nothing canonical
+and is reported with the raw values — only to a table that maps the canonical
+output — which is how a list learns. A canonical output maps only into a select
+bound to the same vocabulary, or a text field. Two ffprobe selects are inline
+lists, not vocabularies: `chroma` (4:4:4 / 4:2:2 / 4:2:0 / 4:1:1 / RGB /
+Monochrome) and `color_range` (`legal` / `full` — ffprobe's tv / pc, named as a
+spec names them; a Range field made before Oct 15 has choices tv / pc and refuses
+the new names until its choices are edited).
 
 **`via` — who wrote a batch.** `MutationRequest.via` is an optional tag
 (`^[a-z][a-z0-9_]{1,39}$`, e.g. `file_drop`) stored on the log row

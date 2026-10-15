@@ -94,7 +94,10 @@ pub fn probe(unit: &Unit) -> Result<Probed, String> {
     // As ffprobe says it, WHOLE: "mov,mp4,m4a,3gp,3g2,mj2" for the QuickTime family.
     // Trimming to "mov" claimed something the demuxer never said; the extension
     // output is the honest way to tell a .mov from a .mp4.
-    if let Some(name) = format["format_name"].as_str() { o.insert("container".into(), json!(name)); }
+    // RAW, as ffprobe says it; the canonical "Container" is looked up on the web
+    // side (contract/vocab.ts) from the format name, the ftyp brand and the extension.
+    if let Some(name) = format["format_name"].as_str() { o.insert("container_raw".into(), json!(name)); }
+    if let Some(brand) = format["tags"]["major_brand"].as_str() { if !brand.trim().is_empty() { o.insert("major_brand".into(), json!(brand)); } }
 
     if let Some(s) = first_stream(&v, "video") {
         video(&mut o, s, format, unit.kind == "sequence");
@@ -148,10 +151,12 @@ fn video(o: &mut Map<String, Value>, s: &Value, format: &Value, is_sequence: boo
         o.insert("bit_depth".into(), json!(bit_depth(pix, s)));
         o.insert("chroma".into(), json!(chroma(pix)));
     }
-    for (key, tag) in [("color_primaries", "color_primaries"), ("color_transfer", "color_transfer"), ("color_matrix", "color_space")] {
+    // Raw colour signals; the canonical names are vocabulary lookups on the web side.
+    for (key, tag) in [("color_primaries_raw", "color_primaries"), ("color_transfer_raw", "color_transfer"), ("color_matrix_raw", "color_space")] {
         if let Some(x) = s[tag].as_str() { if x != "unknown" { o.insert(key.into(), json!(x)); } }
     }
-    if let Some(r) = s["color_range"].as_str() { if r == "tv" || r == "pc" { o.insert("color_range".into(), json!(r)); } }
+    // ffprobe's "tv" is legal (video) range and "pc" full — named as a spec names them.
+    if let Some(r) = s["color_range"].as_str() { let range = match r { "tv" => Some("legal"), "pc" => Some("full"), _ => None }; if let Some(x) = range { o.insert("color_range".into(), json!(x)); } }
     // Field dominance by which field is DISPLAYED first: tt/bt → top, bb/tb → bottom
     // (ffprobe's two letters are coded-first then displayed-first).
     if let Some(f) = s["field_order"].as_str() {
@@ -175,7 +180,7 @@ fn video(o: &mut Map<String, Value>, s: &Value, format: &Value, is_sequence: boo
 }
 
 fn audio_basics(o: &mut Map<String, Value>, s: &Value, _v: &Value) {
-    if let Some(c) = s["codec_name"].as_str() { o.insert("audio_codec".into(), json!(c)); }
+    if let Some(c) = s["codec_name"].as_str() { o.insert("audio_codec_raw".into(), json!(c)); }
     if let Some(r) = num(&s["sample_rate"]) { o.insert("sample_rate".into(), json!(r as u64)); }
     let depth = s["bits_per_raw_sample"].as_u64().or_else(|| num(&s["bits_per_raw_sample"]).map(|x| x as u64))
         .or_else(|| s["bits_per_sample"].as_u64().filter(|b| *b > 0))
@@ -202,7 +207,7 @@ fn bit_depth(pix: &str, s: &Value) -> u64 {
 fn chroma(pix: &str) -> &'static str {
     if pix.starts_with("rgb") || pix.starts_with("bgr") || pix.starts_with("gbr") { "RGB" }
     else if pix.contains("444") { "4:4:4" } else if pix.contains("422") { "4:2:2" } else if pix.contains("420") { "4:2:0" }
-    else if pix.contains("411") { "4:1:1" } else if pix.starts_with("gray") { "Y" } else { "" }
+    else if pix.contains("411") { "4:1:1" } else if pix.starts_with("gray") { "Monochrome" } else { "" }
 }
 
 /// HH:MM:SS:FF, non-drop, at the file's rate. A duration, not a wall-clock timecode.

@@ -1224,8 +1224,11 @@ a table anyone can read (`contract/vocab.ts`), not at compare time. Chosen shape
 regular select with one optional setting, "choices from a built-in list", so the
 field-type list stays short and no utility tables confuse people. `choicesOf` in
 values.ts is now the one place choices are read. The ffprobe analyzer gains a
-canonical `Codec` output; the raw name and profile stay as separate outputs. Next
-vocabularies when needed, same pattern: container, primaries, transfer.
+canonical `Codec` output; the raw name and profile stay as separate outputs.
+Oct 15: the same machine generalised (`lookup(vocabulary, raw)`) and five more lists
+added — audio codec, container (the QuickTime family split by the ftyp brand),
+primaries, transfer, matrix — each with a raw output beside the canonical one;
+chroma and range became inline selects (range as legal / full).
 
 ### Recipes — BUILT (Sept 27, after the first real drops)
 

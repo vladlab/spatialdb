@@ -32,7 +32,7 @@ export type { Step };
 import { fieldsOf, recordsOf } from '../state';
 import { validateValue } from '../../contract/values';
 import { analyzerOf, resolveMap, stepApplies, type Recipe, type Step, type TablesTools } from '../../contract/tools';
-import { lookupCodec } from '../../contract/vocab';
+import { lookup } from '../../contract/vocab';
 import { invoke, jobs, notice } from '../desktop';
 import { confirmDialog, askFull } from '../dialogs';
 
@@ -78,17 +78,41 @@ export function immediateOutputs(analyzer: string, u: Unit): Record<string, unkn
 }
 
 /**
- * Outputs an analyzer reports RAW, normalised through the contract's vocabularies
- * (contract/vocab.ts) — here, not in Rust, so the lookup table exists once. An
- * unknown pair yields no `codec`; the raw pair stays, and the caller reports it.
+ * The canonical outputs: each is looked up in a vocabulary (contract/vocab.ts) from
+ * the RAW outputs the analyzer reported — here, not in Rust, so the lookup table
+ * exists once. The `extension` the container lookup reads is the unit's.
  */
-export function withVocabulary(analyzer: string, outputs: Record<string, unknown>): { outputs: Record<string, unknown>; unknown: string[] } {
+const CANONICAL: ReadonlyArray<{ key: string; name: string; vocabulary: string; raw: Record<string, string> }> = [
+  { key: 'codec',           name: 'Codec',       vocabulary: 'video_codec',     raw: { codec: 'video_codec', profile: 'codec_profile' } },
+  { key: 'audio_codec',     name: 'Audio codec', vocabulary: 'audio_codec',     raw: { codec: 'audio_codec_raw' } },
+  { key: 'container',       name: 'Container',   vocabulary: 'container',       raw: { format: 'container_raw', brand: 'major_brand', extension: 'extension' } },
+  { key: 'color_primaries', name: 'Primaries',   vocabulary: 'color_primaries', raw: { primaries: 'color_primaries_raw' } },
+  { key: 'color_transfer',  name: 'Transfer',    vocabulary: 'color_transfer',  raw: { transfer: 'color_transfer_raw' } },
+  { key: 'color_matrix',    name: 'Matrix',      vocabulary: 'color_matrix',    raw: { matrix: 'color_matrix_raw' } },
+];
+
+/**
+ * Outputs an analyzer reports RAW, normalised through the contract's vocabularies.
+ * An unknown raw value yields no canonical output; the raw value stays, and the
+ * caller reports it (`unknown`, keyed by the canonical output so only a table that
+ * WANTED the canonical name hears about it).
+ */
+export function withVocabulary(analyzer: string, outputs: Record<string, unknown>, unit?: { extension?: string }): { outputs: Record<string, unknown>; unknown: Array<{ key: string; message: string }> } {
   const out = { ...outputs };
-  const unknown: string[] = [];
-  if (analyzer === 'ffprobe' && typeof out.video_codec === 'string') {
-    const hit = lookupCodec(out.video_codec, typeof out.codec_profile === 'string' ? out.codec_profile : undefined);
-    if (hit) out.codec = hit.name;
-    else unknown.push(`Codec: ${out.video_codec}${out.codec_profile ? ' / ' + String(out.codec_profile) : ''} is not in the vocabulary (contract/vocab.ts)`);
+  const unknown: Array<{ key: string; message: string }> = [];
+  if (analyzer !== 'ffprobe') return { outputs: out, unknown };
+  for (const c of CANONICAL) {
+    const raw: Record<string, string | undefined> = {};
+    for (const [k, from] of Object.entries(c.raw)) {
+      const v = from === 'extension' ? unit?.extension : out[from];
+      if (typeof v === 'string' && v !== '') raw[k] = v;
+    }
+    // Nothing raw to look up (an audio-only file has no primaries): nothing to say.
+    const primary = Object.keys(c.raw)[0];
+    if (raw[primary] === undefined) continue;
+    const hit = lookup(c.vocabulary, raw);
+    if (hit) out[c.key] = hit.name;
+    else unknown.push({ key: c.key, message: `${c.name}: ${Object.entries(raw).map(([k, v]) => `${k} ${v}`).join(' / ')} is not in the ${c.vocabulary} vocabulary (contract/vocab.ts)` });
   }
   return { outputs: out, unknown };
 }
@@ -230,12 +254,12 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
       jobs.set(id, a?.program ?? a?.name ?? step.analyzer);
       try {
         const raw = await invoke<{ outputs: Record<string, unknown> }>('analyze', { unit, analyzer: step.analyzer });
-        const { outputs, unknown } = withVocabulary(step.analyzer, raw.outputs);
+        const { outputs, unknown } = withVocabulary(step.analyzer, raw.outputs, unit);
         const { data, skipped } = mappedData(outputs, map, fields);
         if (Object.keys(data).length && store.state.records.has(id)) store.mutate({ type: 'record.update', id, set: data, unset: [] }, FOLLOW_UP);
         for (const sk of skipped) notice(`${unit.name}: not written — ${sk}`, 'warn');
         // Only worth saying when the table wanted the canonical name.
-        if (map.has('codec')) for (const u of unknown) notice(`${unit.name}: not written — ${u}`, 'warn');
+        for (const u of unknown) if (map.has(u.key)) notice(`${unit.name}: not written — ${u.message}`, 'warn');
       } catch (e) { notice(`${unit.name}: ${a?.name ?? step.analyzer} — ${String(e)}`, 'error'); }
       jobs.delete(id);
     }

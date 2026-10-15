@@ -12,10 +12,11 @@ import { randomUUID } from 'node:crypto';
 import { mountApp, sleep } from './uiHarness.js';
 import { ANALYZERS, MEDIA, TablesTools, Via, describe, fieldAccepts, resolveMap, stepApplies, toolsProblem } from '../src/contract/tools.js';
 import { MutationRequest } from '../src/contract/mutations.js';
-import { VIDEO_CODECS, VOCABULARIES, ambiguities, lookupCodec, vocabularyOptionError } from '../src/contract/vocab.js';
+import { VIDEO_CODECS, VOCABULARIES, VOCABULARY_TABLES, ambiguities, lookup, lookupCodec, vocabularyOptionError } from '../src/contract/vocab.js';
 import { choicesOf, validateValue } from '../src/contract/values.js';
 import { StreamEvent } from '../src/contract/events.js';
 
+const VOCABULARY_IDS_SORTED = () => Object.keys(VOCABULARIES).sort().join();
 let pass = 0, fail = 0;
 function check(label: string, ok: boolean, detail = '') {
   if (ok) { pass++; console.log(`  PASS  ${label}`); }
@@ -83,7 +84,8 @@ async function main() {
     /* ── T1b. The video-codec vocabulary ────────────────────────────────── */
     console.log('\nT1b. contract/vocab.ts — raw ffprobe pair → one canonical name');
     check('the table is unambiguous: no two entries can match one input without one being strictly more specific', ambiguities().length === 0, JSON.stringify(ambiguities()));
-    check('entry ids and names are unique', new Set(VIDEO_CODECS.map((c) => c.id)).size === VIDEO_CODECS.length && new Set(VIDEO_CODECS.map((c) => c.name)).size === VIDEO_CODECS.length);
+    check('entry ids and names are unique, in every list', Object.values(VOCABULARY_TABLES).every((v) => new Set(v.entries.map((c) => c.id)).size === v.entries.length && new Set(v.entries.map((c) => c.name)).size === v.entries.length));
+    check('every list reads only the raw keys it declares', Object.values(VOCABULARY_TABLES).every((v) => v.entries.every((e) => Object.keys(e.raw).every((k) => v.keys.includes(k)))));
     check('ProRes keeps its profiles apart: prores / 4444 XQ → "ProRes 4444 XQ", prores / HQ → "ProRes 422 HQ"', lookupCodec('prores', '4444 XQ')?.name === 'ProRes 4444 XQ' && lookupCodec('prores', 'HQ')?.name === 'ProRes 422 HQ');
     check('H.264 gathers EVERY profile into one name — the rare spec that cares rules on the raw profile', lookupCodec('h264', 'High')?.name === 'H.264' && lookupCodec('h264', 'Main')?.name === 'H.264' && lookupCodec('h264', 'High 4:2:2')?.name === 'H.264' && lookupCodec('h264', undefined)?.name === 'H.264');
     check('the MOST SPECIFIC entry wins: dnxhd / DNxHR HQX → "DNxHR HQX", dnxhd / anything else → "DNxHD"', lookupCodec('dnxhd', 'DNxHR HQX')?.name === 'DNxHR HQX' && lookupCodec('dnxhd', 'DNxHD 145')?.name === 'DNxHD' && lookupCodec('dnxhd', undefined)?.name === 'DNxHD');
@@ -93,6 +95,23 @@ async function main() {
     check('an unknown pair yields NOTHING — never a guess', lookupCodec('prores', '4444 XQ HDR-ish') === undefined && lookupCodec('some_new_codec', undefined) === undefined && lookupCodec(undefined, 'High') === undefined);
     check('a ProRes with an unknown profile does NOT fall back to some other ProRes', lookupCodec('prores', 'Something New') === undefined);
     check('the vocabulary\'s choices ARE the canonical names, in table order', JSON.stringify(VOCABULARIES.video_codec.choices) === JSON.stringify(VIDEO_CODECS.map((c) => c.name)));
+
+    console.log('\nT1c. The other lists — audio codec, container, colour');
+    check('six vocabularies a select may bind to', VOCABULARY_IDS_SORTED() === 'audio_codec,color_matrix,color_primaries,color_transfer,container,video_codec');
+    check('audio: every pcm_* is PCM (the depth is its own output); eac3 → Dolby Digital Plus; dts in every flavour → DTS; an unknown codec → nothing',
+      lookup('audio_codec', { codec: 'pcm_s24le' })?.name === 'PCM' && lookup('audio_codec', { codec: 'pcm_f32be' })?.name === 'PCM' && lookup('audio_codec', { codec: 'eac3' })?.name === 'Dolby Digital Plus (E-AC-3)'
+      && lookup('audio_codec', { codec: 'dts' })?.name === 'DTS' && lookup('audio_codec', { codec: 'pcmish' }) === undefined && lookup('audio_codec', {}) === undefined);
+    const qt = 'mov,mp4,m4a,3gp,3g2,mj2';
+    check('container: the QuickTime family is split by the ftyp BRAND — "qt  " (as ffprobe pads it) → QuickTime, isom/mp42 → MP4 — and a MOV with no ftyp at all is QuickTime',
+      lookup('container', { format: qt, brand: 'qt  ', extension: 'mov' })?.name === 'QuickTime' && lookup('container', { format: qt, brand: 'mp42', extension: 'mp4' })?.name === 'MP4'
+      && lookup('container', { format: qt, brand: 'isom', extension: 'mov' })?.name === 'MP4' && lookup('container', { format: qt, extension: 'mov' })?.name === 'QuickTime');
+    check('…an unknown brand in that family matches NOTHING — never a guess', lookup('container', { format: qt, brand: 'XAVC', extension: 'mp4' }) === undefined);
+    check('…Matroska and WebM share a format name and are told apart by extension; mxf, wav, image pipes', lookup('container', { format: 'matroska,webm', extension: 'mkv' })?.name === 'Matroska' && lookup('container', { format: 'matroska,webm', extension: 'webm' })?.name === 'WebM'
+      && lookup('container', { format: 'mxf' })?.name === 'MXF' && lookup('container', { format: 'wav', extension: 'wav' })?.name === 'WAV' && lookup('container', { format: 'exr_pipe', extension: 'exr' })?.name === 'Image file(s)' && lookup('container', { format: 'matroska,webm' }) === undefined);
+    check('colour: primaries, transfer and matrix are three lists, named as a spec names them', lookup('color_primaries', { primaries: 'bt2020' })?.name === 'Rec. 2020' && lookup('color_primaries', { primaries: 'smpte432' })?.name === 'P3-D65'
+      && lookup('color_transfer', { transfer: 'smpte2084' })?.name === 'PQ (SMPTE 2084)' && lookup('color_transfer', { transfer: 'arib-std-b67' })?.name === 'HLG' && lookup('color_transfer', { transfer: 'bt709' })?.name === 'Rec. 709'
+      && lookup('color_matrix', { matrix: 'bt2020nc' })?.name === 'Rec. 2020 (non-constant)' && lookup('color_matrix', { matrix: 'smpte170m' })?.name === 'Rec. 601' && lookup('color_matrix', { matrix: 'bt709' })?.name === 'Rec. 709');
+    check('a lookup in a list that does not exist is nothing', lookup('colours', { x: 'y' }) === undefined);
     check('vocabularyOptionError: unknown list refused by name; a bound select may not also carry typed choices; unbound passes', /unknown vocabulary 'colours'/.test(String(vocabularyOptionError({ vocabulary: 'colours' }))) && vocabularyOptionError({ vocabulary: 'video_codec', choices: ['x'] }) !== null && vocabularyOptionError({ vocabulary: 'video_codec' }) === null && vocabularyOptionError({ choices: ['a'] }) === null && vocabularyOptionError({}) === null);
     check('choicesOf resolves a bound select to the vocabulary, a typed select to its own list, and an empty select to null', JSON.stringify(choicesOf({ vocabulary: 'video_codec' })) === JSON.stringify(VOCABULARIES.video_codec.choices) && JSON.stringify(choicesOf({ choices: ['a', 'b'] })) === '["a","b"]' && choicesOf({}) === null);
     const bound = { key: 'codec', type: 'select' as const, options: { vocabulary: 'video_codec' } };
@@ -356,7 +375,7 @@ async function main() {
     const th = (name: string) => w.findAll('.gridview thead th').find((t: any) => t.find('.th-name').exists() && t.find('.th-name').text() === name)!;
     const pop = () => w.find('.gridview .popover');
     await th('Codec').find('.th-menu').trigger('click');
-    check('a select\'s settings offer where its choices come from: typed, or a built-in list', await until(() => pop().find('select.vocab').exists()) && pop().findAll('select.vocab option').map((o: any) => o.text()).join('|') === 'typed choices|built-in: Video codec' && pop().find('input.choices').exists());
+    check('a select\'s settings offer where its choices come from: typed, or a built-in list', await until(() => pop().find('select.vocab').exists()) && pop().findAll('select.vocab option').map((o: any) => o.text()).join('|') === 'typed choices|built-in: Video codec|built-in: Audio codec|built-in: Container|built-in: Colour primaries|built-in: Transfer function|built-in: Colour matrix' && pop().find('input.choices').exists());
     await pop().find('select.vocab').setValue('video_codec');
     const boundOpts = await ui.untilDb(`select options from fields where id = '${cSel}'`, (x) => x[0]?.options?.vocabulary === 'video_codec');
     check('binding writes options.vocabulary and DROPS the typed choices', boundOpts[0].options.vocabulary === 'video_codec' && boundOpts[0].options.choices === undefined, JSON.stringify(boundOpts[0].options));
