@@ -90,7 +90,8 @@
             <option v-for="op in opsOf(f.fieldId)" :key="op" :value="op">{{ OP_LABEL[op] }}</option>
           </select>
           <template v-if="f.op !== 'empty' && f.op !== 'notEmpty'">
-            <select v-if="choicesOf(f.fieldId).length" :value="String(f.value ?? '')" @change="patchFilterValue(i, val($event), d.pair!.filters)">
+            <RecordSelect v-if="f.op === 'is' && targetOf(f.fieldId)" :store="store" :table-id="targetOf(f.fieldId)!" :model-value="typeof f.value === 'string' ? f.value : undefined" @update:model-value="patchFilter(i, { value: $event }, d.pair!.filters)" />
+            <select v-else-if="choicesOf(f.fieldId).length" :value="String(f.value ?? '')" @change="patchFilterValue(i, val($event), d.pair!.filters)">
               <option value=""></option>
               <option v-for="c in choicesOf(f.fieldId)" :key="c" :value="c">{{ c }}</option>
             </select>
@@ -129,7 +130,8 @@
               <option v-for="op in opsOf(f.fieldId)" :key="op" :value="op">{{ OP_LABEL[op] }}</option>
             </select>
             <template v-if="f.op !== 'empty' && f.op !== 'notEmpty'">
-              <select v-if="choicesOf(f.fieldId).length" :value="String(f.value ?? '')" @change="patchFilterValue(i, val($event))">
+              <RecordSelect v-if="f.op === 'is' && targetOf(f.fieldId)" :store="store" :table-id="targetOf(f.fieldId)!" :model-value="typeof f.value === 'string' ? f.value : undefined" @update:model-value="patchFilter(i, { value: $event })" />
+              <select v-else-if="choicesOf(f.fieldId).length" :value="String(f.value ?? '')" @change="patchFilterValue(i, val($event))">
                 <option value=""></option>
                 <option v-for="c in choicesOf(f.fieldId)" :key="c" :value="c">{{ c }}</option>
               </select>
@@ -195,7 +197,8 @@
                     <option v-for="op in opsForId(r.where[0].fieldId)" :key="op" :value="op">{{ OP_LABEL[op] }}</option>
                   </select>
                   <template v-if="r.where[0].op !== 'empty' && r.where[0].op !== 'notEmpty'">
-                    <select v-if="choicesOf(r.where[0].fieldId).length" :value="String(r.where[0].value ?? '')" @change="r.where[0].value = val($event) || undefined; changed()">
+                    <RecordSelect v-if="r.where[0].op === 'is' && targetOf(r.where[0].fieldId)" :store="store" :table-id="targetOf(r.where[0].fieldId)!" :model-value="typeof r.where[0].value === 'string' ? r.where[0].value : undefined" @update:model-value="r.where[0].value = $event; changed()" />
+                    <select v-else-if="choicesOf(r.where[0].fieldId).length" :value="String(r.where[0].value ?? '')" @change="r.where[0].value = val($event) || undefined; changed()">
                       <option value=""></option>
                       <option v-for="c in choicesOf(r.where[0].fieldId)" :key="c" :value="c">{{ c }}</option>
                     </select>
@@ -237,7 +240,8 @@ import { computed } from 'vue';
 import { choicesOf as contractChoices } from '../../contract/values';
 import type { Store } from '../store';
 import { fieldsOf, type FieldRow } from '../state';
-import { opsFor, type FilterOp } from '../../contract/views';
+import { OP_LABEL, linkTargetOf, opsFor, type FilterOp } from '../../contract/views';
+import RecordSelect from './RecordSelect.vue';
 import { MAX_DEPTH, ROLLUP_LABELS, ROLLUP_OPS, pairTableOf, reportSchema, resolvePin, resolveVia, type Descent, type ReportField, type Rollup, type RollupOp, type RootLevel } from '../../contract/reports';
 import { junctionOf } from '../../contract/junction';
 
@@ -256,7 +260,6 @@ const emit = defineEmits<{ change: []; remove: [] }>();
 const changed = () => emit('change');
 const val = (e: Event) => (e.target as HTMLInputElement | HTMLSelectElement).value;
 
-const OP_LABEL: Record<FilterOp, string> = { contains: 'contains', eq: 'is', neq: 'is not', gt: '>', gte: '≥', lt: '<', lte: '≤', has: 'has', empty: 'is empty', notEmpty: 'is not empty' };
 
 const store = props.store;
 const d = computed(() => props.level as Descent);
@@ -272,6 +275,7 @@ const filterable = computed(() => tableFields.value.filter((f) => opsFor(f.type)
 const fieldById = (id: string) => store.state.fields.get(id);
 const typeOf = (id: string) => fieldById(id)?.type ?? 'text';
 const opsOf = (id: string) => opsFor(typeOf(id));
+const targetOf = (id: string) => { const f = store.state.fields.get(id); return f ? linkTargetOf(f) : undefined; };
 const opsForId = opsOf;
 const choicesOf = (id: string): string[] => contractChoices(fieldById(id)?.options) ?? [];
 

@@ -132,31 +132,7 @@
           filter<template v-if="config.filters.length"> · {{ config.filters.length }}</template>
         </summary>
         <div class="pop">
-          <div v-for="(f, i) in config.filters" :key="i" class="line">
-            <select :value="f.fieldId" @change="changeFilterField(i, val($event))">
-              <option v-for="fl in filterable" :key="fl.id" :value="fl.id">{{ fl.name }}</option>
-            </select>
-            <select :value="f.op" @change="patchFilter(i, { op: val($event) as FilterOp })">
-              <option v-for="op in opsOf(f.fieldId)" :key="op" :value="op">{{ OP_LABEL[op] }}</option>
-            </select>
-            <template v-if="f.op !== 'empty' && f.op !== 'notEmpty'">
-              <select v-if="choicesOf(f.fieldId).length" :value="String(f.value ?? '')"
-                      @change="patchFilter(i, { value: val($event) })">
-                <option value=""></option>
-                <option v-for="c in choicesOf(f.fieldId)" :key="c" :value="c">{{ c }}</option>
-              </select>
-              <select v-else-if="typeOf(f.fieldId) === 'checkbox'" :value="String(f.value === true)"
-                      @change="patchFilter(i, { value: val($event) === 'true' })">
-                <option value="true">ticked</option>
-                <option value="false">not ticked</option>
-              </select>
-              <input v-else :type="inputType(f.fieldId)" :value="f.value ?? ''"
-                     placeholder="value…" @change="patchFilterValue(i, val($event))" />
-            </template>
-            <button class="x" @click="save({ filters: config.filters.filter((_, j) => j !== i) })">×</button>
-          </div>
-          <button v-if="filterable.length" class="ghost" @click="addFilter">+ filter…</button>
-          <p class="note">All conditions must match.</p>
+          <FilterLines :store="store" :table-id="tableId" :filters="config.filters" @update:filters="save({ filters: $event })" />
         </div>
       </details>
 
@@ -497,13 +473,12 @@
 </template>
 
 <script setup lang="ts">
-import { choicesOf as contractChoices } from '../../contract/values';
 import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { SCOPE } from '../scope';
 import type { Store } from '../store';
 import { fieldsOf, recordsOf, viewsOf, type FieldRow } from '../state';
 import {
-  applyView, quickSearch, opsFor, ViewConfig, EMPTY_VIEW, type FilterOp,
+  applyView, quickSearch, ViewConfig, EMPTY_VIEW,
   orderFields, moveColumn, MIN_COL_W, MAX_COL_W,
 } from '../../contract/views';
 import { LABEL_TYPES } from '../../contract/labels';
@@ -515,6 +490,7 @@ import CellPills from './CellPills.vue';
 import Popover from './Popover.vue';
 import FieldForm from './FieldForm.vue';
 import FieldSettings from './FieldSettings.vue';
+import FilterLines from './FilterLines.vue';
 import { useSchemaActions } from '../schemaActions';
 import { useDerived } from '../derived';
 import { ancestorsOf, canMakeColumns, groupRows, type GroupHeader, type GroupValue } from '../../contract/views';
@@ -552,12 +528,6 @@ const headerEls = reactive(new Map<string, HTMLElement>());
 function setHeaderEl(id: string, el: unknown) {
   if (el instanceof HTMLElement) headerEls.set(id, el); else headerEls.delete(id);
 }
-
-const OP_LABEL: Record<FilterOp, string> = {
-  contains: 'contains', eq: 'is', neq: 'is not',
-  gt: '>', gte: '≥', lt: '<', lte: '≤',
-  has: 'has', empty: 'is empty', notEmpty: 'is not empty',
-};
 
 const val = (e: Event) => (e.target as HTMLInputElement | HTMLSelectElement).value;
 const fmtN = (n: number) => n.toLocaleString();
@@ -710,7 +680,6 @@ function onHeaderDown(f: FieldRow, e: PointerEvent) {
   window.addEventListener('pointerup', onUp);
 }
 const sortable = computed(() => allFields.value);
-const filterable = computed(() => allFields.value.filter((f) => opsFor(f.type).length));
 
 /** Write the config. The built-in Grid's row is created the first time it is needed. */
 function save(patch: Partial<ViewConfig>, options: { undoable?: boolean } = {}) {
@@ -796,46 +765,8 @@ function sortMark(fieldId: string) {
   return (config.value.sort[i].dir === 'asc' ? '▲' : '▼') + (config.value.sort.length > 1 ? i + 1 : '');
 }
 
-/* ── filter ───────────────────────────────────────────────────────────────*/
+/* ── filter: the lines themselves are FilterLines.vue (shared with canvas stacks) ──*/
 
-const typeOf = (fieldId: string) => fieldById.value.get(fieldId)?.type ?? 'text';
-const opsOf = (fieldId: string) => opsFor(typeOf(fieldId));
-function choicesOf(fieldId: string): string[] {
-  const f = fieldById.value.get(fieldId);
-  if (!f || (f.type !== 'select' && f.type !== 'multi_select')) return [];
-  return contractChoices(f.options) ?? [];
-}
-const inputType = (fieldId: string) =>
-  ({ number: 'number', date: 'date' } as Record<string, string>)[typeOf(fieldId)] ?? 'text';
-
-function addFilter() {
-  const f = filterable.value[0];
-  save({ filters: [...config.value.filters, { fieldId: f.id, op: opsFor(f.type)[0] }] });
-}
-function patchFilter(i: number, p: Partial<ViewConfig['filters'][number]>) {
-  save({ filters: config.value.filters.map((f, j) => (j === i ? { ...f, ...p } : f)) });
-}
-/** A new field may not support the old op, and the old value is for the old type. */
-function changeFilterField(i: number, fieldId: string) {
-  save({ filters: config.value.filters.map((f, j) =>
-    (j === i ? { fieldId, op: opsOf(fieldId)[0] } : f)) });
-}
-/** The filter value keeps the field's type, so `> 100` compares numbers. */
-function patchFilterValue(i: number, raw: string) {
-  const f = config.value.filters[i];
-  if (raw === '') {
-    // Clearing the box removes the value rather than storing '' — a filter with
-    // no value is inert (see `matches`), which is what an empty box should mean.
-    const { fieldId, op } = f;
-    return save({ filters: config.value.filters.map((x, j) => (j === i ? { fieldId, op } : x)) });
-  }
-  if (typeOf(f.fieldId) === 'number') {
-    const n = Number(raw);
-    if (!Number.isFinite(n)) return;
-    return patchFilter(i, { value: n });
-  }
-  patchFilter(i, { value: raw });
-}
 function toggleHidden(fieldId: string) {
   if (fieldId === primaryId.value) return;      // never hidden — see the header comment
   const h = config.value.hidden;
@@ -917,7 +848,7 @@ const total = computed(() => all.value.length);
 
 /** Every record the view, the search and the scope let through — before grouping. */
 const matched = computed(() => {
-  let viewed = applyView(all.value, allFields.value, config.value, linkLabels);
+  let viewed = applyView(all.value, allFields.value, config.value, linkLabels, derived.linksFrom);
   // Just-created rows are exempt from the view's FILTER (a blank row matches
   // nothing, and would vanish before you could type in it)…
   if (fresh.size) {

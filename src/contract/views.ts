@@ -59,9 +59,21 @@ export const FILTER_OPS = [
   'eq', 'neq',  // text, number, date, select, checkbox
   'gt', 'gte', 'lt', 'lte',   // number, date
   'has',        // multi_select: includes this choice
+  'is',         // link: linked to THIS record (value = its id). Identity, where
+                // `contains` is text: "Work is Episode 101" cannot also catch 1010.
   'empty', 'notEmpty',        // everything, links included
 ] as const;
 export type FilterOp = typeof FILTER_OPS[number];
+
+/** How each op reads in a filter line — one copy, for every filter editor. */
+export const OP_LABEL: Record<FilterOp, string> = {
+  contains: 'contains', eq: 'is', neq: 'is not',
+  gt: '>', gte: '≥', lt: '<', lte: '≤',
+  has: 'has', is: 'is', empty: 'is empty', notEmpty: 'is not empty',
+};
+/** The target table of a link field's `is` value — what a RecordSelect lists. */
+export const linkTargetOf = (f: { type: string; options?: Record<string, unknown> | null }): string | undefined =>
+  (f.type === 'link' && typeof f.options?.target_table_id === 'string' ? f.options.target_table_id : undefined);
 
 export const FilterEntry = z.strictObject({
   fieldId: uuid,
@@ -136,6 +148,12 @@ export interface ViewRecord { id: string; data: Record<string, unknown> }
  * legal and just makes them "empty".
  */
 export type LinkLabels = (recordId: string, fieldId: string) => string[];
+/**
+ * For a link / backlink field: the IDS behind the labels. Grouping needs both; the
+ * `is` op compares records, not text, so it needs these — optional, and without
+ * them `is` is inert (filters nothing), as a half-built filter is, never "hide all".
+ */
+export type LinkIds = (recordId: string, fieldId: string) => readonly string[];
 
 /** Which ops make sense for which type — the filter builder reads this too. */
 export function opsFor(type: string): FilterOp[] {
@@ -145,7 +163,7 @@ export function opsFor(type: string): FilterOp[] {
     case 'checkbox':     return ['eq'];
     case 'select':       return ['eq', 'neq', 'empty', 'notEmpty'];
     case 'multi_select': return ['has', 'empty', 'notEmpty'];
-    case 'link':
+    case 'link':         return ['is', 'contains', 'empty', 'notEmpty'];
     case 'lookup':
     case 'backlink':
     case 'rich_text':    return ['contains', 'empty', 'notEmpty'];
@@ -168,12 +186,16 @@ const lower = (v: unknown) => String(v).toLowerCase();
 
 function matches(
   rec: ViewRecord, field: ViewField,
-  f: z.infer<typeof FilterEntry>, links: LinkLabels,
+  f: z.infer<typeof FilterEntry>, links: LinkLabels, linkIds?: LinkIds,
 ): boolean {
   if (isDerived(field)) {
     const labels = links(rec.id, field.id);
     if (f.op === 'empty') return labels.length === 0;
     if (f.op === 'notEmpty') return labels.length > 0;
+    if (f.op === 'is') {
+      if (field.type !== 'link' || !linkIds || typeof f.value !== 'string') return true;
+      return linkIds(rec.id, field.id).includes(f.value);
+    }
     if (f.op === 'contains') {
       const needle = lower(f.value ?? '');
       return labels.some((l) => lower(l).includes(needle));
@@ -196,6 +218,7 @@ function matches(
 
   if (f.op === 'empty') return isEmpty(v);
   if (f.op === 'notEmpty') return !isEmpty(v);
+  if (f.op === 'is') return true;   // means nothing off a link field
 
   // Every remaining op compares against a value. An empty cell has none, so it
   // fails all of them EXCEPT neq — "status is not done" should include rows
@@ -274,7 +297,7 @@ function compare(a: unknown, b: unknown, field: ViewField): number {
  */
 export function applyView<R extends ViewRecord>(
   records: R[], fields: ViewField[], config: ViewConfig,
-  links: LinkLabels = () => [],
+  links: LinkLabels = () => [], linkIds?: LinkIds,
 ): R[] {
   const byId = new Map(fields.map((f) => [f.id, f]));
 
@@ -286,7 +309,7 @@ export function applyView<R extends ViewRecord>(
     .filter((x): x is { s: typeof x.s; field: ViewField } => !!x.field);
 
   let out = filters.length
-    ? records.filter((r) => filters.every(({ f, field }) => matches(r, field, f, links)))
+    ? records.filter((r) => filters.every(({ f, field }) => matches(r, field, f, links, linkIds)))
     : records.slice();
 
   if (sorts.length) {
@@ -425,9 +448,6 @@ export interface GroupHeader {
 }
 export interface GroupedRow<R> { kind: 'row'; record: R; /** Headers this row sits under, outermost first. */ path: string }
 export type GridItem<R> = GroupHeader | GroupedRow<R>;
-
-/** For a link / backlink field: the ids behind the labels (grouping needs both). */
-export type LinkIds = (recordId: string, fieldId: string) => string[];
 
 const EMPTY_LABEL = '(empty)';
 

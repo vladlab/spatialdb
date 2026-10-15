@@ -430,10 +430,10 @@ export function runReport(def: ReportDef, ctx: ReportContext): ReportSection {
   };
 
   const shape = (level: RootLevel | Descent, recs: ViewRecord[]): ViewRecord[] =>
-    applyView(recs, ctx.fields, { sort: level.sort, filters: level.filters, hidden: [] }, links);
+    applyView(recs, ctx.fields, { sort: level.sort, filters: level.filters, hidden: [] }, links, ctx.linksFrom);
   /** Which of these records pass these filters — the grid's own reading of them. */
   const passing = (recs: ViewRecord[], filters: z.infer<typeof FilterEntry>[]): Set<string> =>
-    new Set(applyView(recs, ctx.fields, { sort: [], filters, hidden: [] }, links).map((r) => r.id));
+    new Set(applyView(recs, ctx.fields, { sort: [], filters, hidden: [] }, links, ctx.linksFrom).map((r) => r.id));
 
   /** The pair rows of one level: its junction table, and each record's chosen row. */
   type Pairs = { table: string; of: Map<string, string>; fields: string[] };
