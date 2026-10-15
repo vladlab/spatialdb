@@ -10,19 +10,20 @@
   right edge resizes; a double-click on that edge fits the width to the cards.
 -->
 <template>
-  <div class="stack" :class="[{ selected, collapsed, over: dropState === 'over', refused: dropState === 'refused', empty: !count && !stale }]"
+  <div class="stack" :class="[{ selected, collapsed, named: !!name, over: dropState === 'over', refused: dropState === 'refused', empty: !count && !stale }]"
        :style="{ transform: `translate(${rect.x}px, ${rect.y}px)`, width: `${rect.w}px`, height: `${rect.h}px` }"
        @contextmenu.prevent.stop="$emit('menu', { stackId: id, x: $event.clientX, y: $event.clientY })">
     <header class="stack-head" :style="{ '--table-color': color }" @pointerdown="onHeadDown" @dblclick.stop="$emit('edit', id)">
       <button class="stack-fold" :title="collapsed ? 'Unfold' : 'Fold'" @pointerdown.stop @dblclick.stop @click.stop="$emit('fold', id)">{{ collapsed ? '▸' : '▾' }}</button>
+      <!-- NAMED: the bar is the name, one line — the table and the filter are a right-click
+           away. UNNAMED: the table, the filter read aloud, and a second line for the rest. -->
       <div class="stack-text">
         <div class="stack-name">
-          <span class="stack-table">{{ tableName }}</span>
-          <span class="stack-label" :class="{ auto: !name }">{{ name || description }}</span>
+          <span v-if="!name" class="stack-table">{{ tableName }}</span>
+          <span class="stack-label" :class="{ auto: !name }" :title="name ? `${tableName} · ${description}` : description">{{ name || description }}</span>
           <span class="stack-n" :title="`${count} card${count === 1 ? '' : 's'} match`">{{ count }}</span>
         </div>
-        <div class="stack-sub">
-          <span v-if="name" class="stack-filter" :title="description">{{ description }}</span>
+        <div v-if="!name || overCap || stale || elsewhere" class="stack-sub">
           <span v-if="overCap" class="stack-warn" :title="`${total} records match — only the first ${count} are placed. Narrow the filter.`">⚠ {{ total }} match, {{ count }} placed</span>
           <span v-if="stale" class="stack-stale" title="Cards whose records no longer match the filter — dimmed, at the bottom">{{ stale }} no longer match</span>
           <!-- Matching cards that are ON the canvas but not in here: said, never moved on their own. -->
@@ -97,6 +98,11 @@ function onHeadDown(e: PointerEvent) { emit('pointerdown', { stackId: props.id, 
   border-left: 4px solid var(--table-color, var(--border-main));
 }
 .stack.collapsed .stack-head { border-bottom: none; border-radius: 7px; }
+/* A named stack's bar is one line (STACK_NAMED_HEAD_H); its badges sit beside the name. */
+.stack.named .stack-head { height: 28px; }
+.stack.named .stack-text { flex-direction: row; align-items: center; gap: 10px; }
+.stack.named .stack-name { min-width: 0; flex: 0 1 auto; }
+.stack.named .stack-sub { flex: 1 0 auto; }
 .stack-fold { border: none; background: none; color: var(--text-secondary); cursor: pointer; font: inherit; font-size: 10px; width: 14px; padding: 0; flex: none; }
 .stack-text { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 1px; }
 .stack-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-weight: 600; font-size: 13px; color: var(--text-primary); }

@@ -109,6 +109,16 @@
          link row, which crowded the rows. Outside the corner on purpose: inside it is
          the resize corner. Only on a card whose table can link to anything at all. It
          stops the press, or the card would drag. -->
+    <!-- THE PATH HANDLE (desktop app only): a folder off the TOP-right corner of a card
+         whose record has a file path — the ⊕ link handle's twin. Click: the file is
+         selected in the file manager. Its colour is what the last click found: green
+         until told otherwise; ORANGE when the file was gone but its folder opened;
+         RED when neither exists on this machine. -->
+    <button v-if="path" class="path-handle" :class="pathState ?? 'ok'" type="button" tabindex="-1"
+            :title="pathState === 'missing' ? `Not on this machine: ${path}` : pathState === 'folder' ? `The file is gone; its folder opens: ${path}` : `Show in folder: ${path}`"
+            @pointerdown.stop @click.stop.prevent="$emit('reveal', { recordId, path })" @dblclick.stop @contextmenu.prevent.stop>
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h3.5l1.5 1.5h6v6.5h-11z" /></svg>
+    </button>
     <button v-if="canLink" class="link-handle" type="button" tabindex="-1"
             title="Drag onto a card to link it · drop on empty canvas, or click, for a new or existing record"
             @pointerdown.stop.prevent="$emit('link-start', { recordId, e: $event })"
@@ -188,6 +198,10 @@ const props = defineProps<{
   flash?: boolean;
   /** This card's table can link to something: it gets the ⊕ link handle. */
   canLink?: boolean;
+  /** The record's file path, when the desktop app can show it: the card gets the folder handle. */
+  path?: string;
+  /** What the last click on that handle found (see the template). */
+  pathState?: 'ok' | 'folder' | 'missing' | null;
   /**
    * While a link is being dragged out of some card's handle — what THIS card is to it:
    *   from    the card it started from          ok    it could take a link (over: and is about to)
@@ -209,6 +223,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'pointerdown', payload: { recordId: string; e: PointerEvent }): void;
+  /** The folder handle clicked: show the record's file in the file manager. */
+  (e: 'reveal', payload: { recordId: string; path: string }): void;
   /** The ⊕ handle, pressed: a link is being dragged out of this card. */
   (e: 'link-start', payload: { recordId: string; e: PointerEvent }): void;
   /** A linked record named on this card (`from`), picked up to be placed on the canvas. */
@@ -356,6 +372,25 @@ function onPointerDown(e: PointerEvent) {
   opacity: 0; transition: opacity 0.1s ease;
 }
 .link-handle svg { width: 100%; height: 100%; display: block; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; pointer-events: none; }
+/* The path handle: the link handle's geometry, mirrored to the top-right corner, in a
+   colour that is a verdict — green / orange / red (--success / --warning / --danger). */
+.path-handle {
+  position: absolute; box-sizing: border-box; padding: 3px; margin: 0;
+  width: var(--link-handle); height: var(--link-handle);
+  right: calc(-1 * (var(--link-handle) / 2 + var(--link-handle-out) + 1px));
+  top: calc(-1 * (var(--link-handle) / 2 + var(--link-handle-out) + 1px));
+  scale: max(1, calc(0.85 / var(--zoom, 1)));
+  border-radius: 50%; border: 1.5px solid var(--handle-color, var(--success));
+  background: var(--card-bg); color: var(--handle-color, var(--success));
+  display: grid; place-items: center; cursor: pointer; z-index: 4;
+  opacity: 0; transition: opacity 0.1s ease;
+}
+.path-handle.folder { --handle-color: var(--warning); }
+.path-handle.missing { --handle-color: var(--danger); }
+.path-handle svg { width: 100%; height: 100%; display: block; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; pointer-events: none; }
+.card:hover .path-handle, .card.selected .path-handle { opacity: 1; }
+.path-handle:hover { background: var(--handle-color, var(--success)); color: #fff; }
+.card.link-ok .path-handle, .card.link-over .path-handle, .card.link-dim .path-handle, .card.link-no .path-handle, .card.link-linked .path-handle { opacity: 0; pointer-events: none; }
 .card:hover .link-handle, .card.selected .link-handle, .card.link-from .link-handle { opacity: 1; }
 .link-handle:hover, .card.link-from .link-handle { background: var(--accent); color: #fff; }
 /* While a link is being dragged, only the card it started from keeps its handle. */

@@ -210,9 +210,10 @@ async fn analyze(allowed: State<'_, Allowed>, unit: tools::classify::Unit, analy
     }).await.map_err(|e| e.to_string())?
 }
 
-/// Select the file in the platform's file manager. Executes nothing.
+/// Select the file in the platform's file manager. Executes nothing. Says what it
+/// found: `"file"` (selected), `"folder"` (the file is gone; its folder was opened).
 #[tauri::command]
-fn reveal(path: String) -> Result<(), String> { tools::reveal::reveal(&path) }
+fn reveal(path: String) -> Result<String, String> { tools::reveal::reveal(&path) }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

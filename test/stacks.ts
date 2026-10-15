@@ -259,6 +259,15 @@ async function main() {
     check('a Work dropped on the Deliverables stack is refused — the frame flashes, the card is placed where it fell',
       await until(() => frame().classes('refused'), 2000) && await until(() => !cardOf('Ep 102').classes('stacked') && rectOf(cardOf('Ep 102')).x === fr3.x + 20, 4000) && await stackIs(ep102, null));
 
+    // Several cards selected: no ⊕ on any of them (a link cannot be dragged from "several").
+    await cardOf('DCP').trigger('pointerdown', { button: 0, clientX: 5, clientY: 5 }); winEv('pointerup', { clientX: 5, clientY: 5 });
+    await until(() => cardOf('DCP').classes('selected'));
+    check('one card selected: it has its ⊕', cardOf('DCP').find('.link-handle').exists());
+    await cardOf('ProRes').trigger('pointerdown', { button: 0, shiftKey: true, clientX: 5, clientY: 5 }); winEv('pointerup', { clientX: 5, clientY: 5 });
+    check('two selected: neither has one', await until(() => cardOf('ProRes').classes('selected') && cardOf('DCP').classes('selected')) && !cardOf('DCP').find('.link-handle').exists() && !cardOf('ProRes').find('.link-handle').exists());
+    await w.find('.canvas-container').trigger('keydown', { key: 'Escape' });
+    check('…and back when the selection is one again', await until(() => !cardOf('DCP').classes('selected')) && cardOf('DCP').find('.link-handle').exists());
+
     /* ───────────────────────────────────────────────────────────────────── */
     console.log('\nS5. The editor');
     await w.find('.canvas-controls .new-stack').trigger('click');
@@ -283,7 +292,11 @@ async function main() {
     await ed().find('.gather-check input').setValue(true);
     await ed().find('.stack-name').setValue('Ep 102 masters');
     await ed().find('.stack-ok').trigger('click');
-    check('Make stack: a second frame, named, with its filter under the name', await until(() => frames().length === 2, 4000) && frames()[1].find('.stack-label').text() === 'Ep 102 masters' && frames()[1].find('.stack-filter').text() === 'Work is Ep 102', frames()[1]?.text());
+    check('Make stack: a second frame whose bar is just the name — no table, no filter on it', await until(() => frames().length === 2, 4000) && frames()[1].find('.stack-label').text() === 'Ep 102 masters' && !frames()[1].find('.stack-table').exists() && !frames()[1].text().includes('Work is Ep 102'), frames()[1]?.text());
+    check('…a named bar is the short one', rectOf(frames()[1]).h < rectOf(frames()[0]).h);
+    await frames()[1].trigger('contextmenu', { clientX: 20, clientY: 20 });
+    check('…its menu has the table and the filter, read aloud', await until(() => menu().exists()) && menu().find('.stack-ctx-table').text().startsWith('Deliverables') && menu().find('.stack-ctx-filter').text() === 'Work is Ep 102', menu()?.text());
+    await w.find('.canvas-container').trigger('keydown', { key: 'Escape' });
     check('…gathered on request: the Trailer is in it', await until(() => cardOf('Trailer').classes('stacked'), 4000) && await (async () => { const t = Date.now(); while (Date.now() - t < 5000) { const v = await stackOf(trailer); if (v && v !== stackId) return true; await sleep(100); } return false; })());
     // Z fits the selection (the second stack, selected by its bar); Shift+Z fits everything.
     const barOf = (i: number) => frames()[i].find('.stack-head');

@@ -155,7 +155,10 @@
         :flash="flashed === c.recordId"
         :dragging="drag.draggingIds.value.has(c.recordId)"
         :unconfirmed="store.unconfirmed.value.has(c.recordId)"
-        :can-link="waysOf(c.tableId).length > 0"
+        :can-link="!multiSelected && waysOf(c.tableId).length > 0"
+        :path="multiSelected ? undefined : pathOf(c.recordId)"
+        :path-state="pathState.get(c.recordId)"
+        @reveal="revealPath"
         :link-target="linkTargetState(c.recordId)"
         :refused="refused === c.recordId"
         :stacked="c.stacked"
@@ -285,7 +288,9 @@
            it out is the other thing, offered, never the default. -->
       <template v-else-if="menu.kind === 'stack' && menu.stackId">
         <div class="ctx-head">{{ stackFrameOf(menu.stackId)?.name || stackFrameOf(menu.stackId)?.description }}</div>
-        <div class="ctx-sub">{{ stackFrameOf(menu.stackId)?.tableName }} · {{ stackFrameOf(menu.stackId)?.count }} card{{ stackFrameOf(menu.stackId)?.count === 1 ? '' : 's' }}</div>
+        <!-- The whole story, whatever the bar shows: the table, the filter read aloud, the count. -->
+        <div class="ctx-sub stack-ctx-table">{{ stackFrameOf(menu.stackId)?.tableName }} · {{ stackFrameOf(menu.stackId)?.count }} card{{ stackFrameOf(menu.stackId)?.count === 1 ? '' : 's' }}</div>
+        <div v-if="stackFrameOf(menu.stackId)?.name" class="ctx-sub stack-ctx-filter" :title="stackFrameOf(menu.stackId)?.description">{{ stackFrameOf(menu.stackId)?.description }}</div>
         <hr />
         <button class="stack-edit-item" @click="menuDo((m) => editStack(m.stackId!))">Edit filter, order, name…</button>
         <button @click="menuDo((m) => toggleStackFold(m.stackId!))">{{ stackFrameOf(menu.stackId)?.collapsed ? 'Unfold' : 'Fold' }}</button>
@@ -331,6 +336,7 @@ import { isEmptyRichText, richTextToPlain } from '../../contract/richtext';
 import { formatNumberField, shapeOf, summarise } from '../../contract/shapes';
 import { formatCreated } from '../../contract/systemFields';
 import { beginRecordDrag, registerDropTarget } from '../recordDrag';
+import { invoke, isDesktop, notice } from '../desktop';
 import { arrowStyleOf, type ArrowStyle } from '../../contract/arrows';
 import { backlinkSourceOf } from '../../contract/backlinks';
 import { junctionOf, otherEnd, type JunctionConfig } from '../../contract/junction';
@@ -584,7 +590,7 @@ const stackLayouts = computed(() => {
       return c ? [{ recordId: id, h: effectiveHeight(c.h, lineCount(c.rows), c.collapsed, c.rich.length), w: c.w }] : [];
     });
     const live = stackLive.get(st.id);
-    m.set(st.id, stackLayout({ x: live?.x ?? st.x, y: live?.y ?? st.y, w: live?.w !== undefined ? live.w : st.w, collapsed: st.collapsed }, members));
+    m.set(st.id, stackLayout({ x: live?.x ?? st.x, y: live?.y ?? st.y, w: live?.w !== undefined ? live.w : st.w, collapsed: st.collapsed, name: st.name }, members));
   }
   return m;
 });
@@ -1146,6 +1152,34 @@ const linkHint = computed(() => {
   if (!v || v.kind === 'self') return null;
   return { text: hintFor(v, d.recordId, p.over), tone: v.kind === 'none' ? 'no' : v.kind === 'linked' ? 'info' : 'ok', ...at };
 });
+
+/* ── the handles and a MULTI-selection ──
+   Several cards selected would show several ⊕ (and several folders): a link cannot
+   be dragged from "several", so none is offered — the handles come back when one
+   card is selected again. (Hover still shows them on the card under the pointer
+   only when nothing is multi-selected.) */
+const multiSelected = computed(() => selected.size > 1);
+
+/* ── the path handle (desktop app only): show the record's file in the file manager ──
+   A card whose table has a `file_path` field with a value gets the folder; the first
+   such field is the path. What a click finds is kept per card, for this session:
+   'folder' (file gone, folder opened) and 'missing' (neither) colour the handle. */
+const desktop = isDesktop();
+function pathOf(recordId: string): string | undefined {
+  if (!desktop) return undefined;
+  const rec = store.state.records.get(recordId);
+  if (!rec) return undefined;
+  for (const f of fieldsOf(store.state, rec.table_id)) {
+    if (f.type === 'file_path' && typeof rec.data[f.key] === 'string' && rec.data[f.key]) return rec.data[f.key] as string;
+  }
+  return undefined;
+}
+const pathState = reactive(new Map<string, 'ok' | 'folder' | 'missing'>());
+function revealPath({ recordId, path }: { recordId: string; path: string }) {
+  invoke<string>('reveal', { path })
+    .then((r) => { pathState.set(recordId, r === 'folder' ? 'folder' : 'ok'); if (r === 'folder') notice('The file is not there any more — its folder was opened.', 'info'); })
+    .catch((e) => { pathState.set(recordId, 'missing'); notice(String(e), 'error'); });
+}
 
 /** The topmost card under a world point. */
 function cardAt(p: Point): { recordId: string; tableId: string } | null {

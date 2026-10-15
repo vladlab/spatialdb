@@ -66,7 +66,9 @@ export type StackDef = z.infer<typeof StackDef>;
 
 /* ── geometry ──────────────────────────────────────────────────────────────── */
 
-export const STACK_HEAD_H = 40;   // the label bar: name, then what it filters for
+export const STACK_HEAD_H = 40;   // the label bar of an UNNAMED stack: its table, then what it filters for
+export const STACK_NAMED_HEAD_H = 28;   // a NAMED stack's bar is its name, one line — the filter is in its menu
+export const headHeightOf = (stack: { name?: string }) => (stack.name ? STACK_NAMED_HEAD_H : STACK_HEAD_H);
 export const STACK_PAD = 8;       // around the column of cards
 export const STACK_GAP = 8;       // between cards
 export const STACK_EMPTY_H = 36;  // the "nothing matches" line, when there are no cards
@@ -80,13 +82,14 @@ export interface StackLayout { rect: { x: number; y: number; w: number; h: numbe
  * stale), all at the stack's card width. Pure arithmetic over the cards' heights,
  * like cardLayout.ts: arrows and selection work from these numbers.
  */
-export function stackLayout(stack: Pick<StackDef, 'x' | 'y' | 'w' | 'collapsed'>, cards: StackCard[]): StackLayout {
+export function stackLayout(stack: Pick<StackDef, 'x' | 'y' | 'w' | 'collapsed'> & { name?: string }, cards: StackCard[]): StackLayout {
   const w = Math.max(STACK_MIN_W, stack.w ?? Math.max(STACK_MIN_W, ...cards.map((c) => c.w + 2 * STACK_PAD)));
   const cardW = w - 2 * STACK_PAD;
   const out = new Map<string, { x: number; y: number; w: number }>();
-  let y = stack.y + STACK_HEAD_H;
-  if (stack.collapsed) return { rect: { x: stack.x, y: stack.y, w, h: STACK_HEAD_H }, cardW, cards: out };
-  if (!cards.length) return { rect: { x: stack.x, y: stack.y, w, h: STACK_HEAD_H + STACK_EMPTY_H }, cardW, cards: out };
+  const headH = headHeightOf(stack);
+  let y = stack.y + headH;
+  if (stack.collapsed) return { rect: { x: stack.x, y: stack.y, w, h: headH }, cardW, cards: out };
+  if (!cards.length) return { rect: { x: stack.x, y: stack.y, w, h: headH + STACK_EMPTY_H }, cardW, cards: out };
   y += STACK_PAD;
   for (const c of cards) {
     out.set(c.recordId, { x: stack.x + STACK_PAD, y, w: cardW });

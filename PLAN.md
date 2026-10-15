@@ -1070,6 +1070,13 @@ contract, no second query language, the preview before the commit.
   title is 13px; a double-click on an edge fits the card to its content, saved like a
   hand resize. `placement.update { w: null }` now reaches the server as "auto" —
   `coalesce` had been dropping it.
+- **Named stacks (Oct 15, later):** a stack with a name wears ONLY its name on a one-line
+  bar; the table and the filter read aloud are in its right-click menu. Unnamed stacks
+  keep the two-line bar. Also that day: **fit** — Z fits the selection (cards, a stack,
+  or both; never past 125%), Shift+Z everything (down to 2%); the **path handle** on
+  desktop — a folder off a card's top-right corner for a record with a `file_path`,
+  green until a click finds the file gone (orange: its folder opened) or nothing at all
+  (red); and no ⊕ / folder handles while SEVERAL cards are selected.
 - **Known edge:** Ctrl+Z on *making* a stack removes the definition but not the cards
   it auto-placed (they were not undo steps); they stay, by hand, in the column where
   the stack was. "Remove stack" is the clean way back.

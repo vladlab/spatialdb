@@ -222,7 +222,9 @@ import { isFolded, setFolded } from '../sectionFolds';
 const RichTextEditor = defineAsyncComponent(() => import('./RichTextEditor.vue'));
 
 const desktop = isDesktop();
-const reveal = (path: string) => invoke('reveal', { path }).catch((e) => notice(String(e), 'error'));
+const reveal = (path: string) => invoke<string>('reveal', { path })
+  .then((r) => { if (r === 'folder') notice('The file is not there any more — its folder was opened.', 'info'); })
+  .catch((e) => notice(String(e), 'error'));
 
 const props = defineProps<{ store: Store; recordId: string }>();
 const emit = defineEmits<{ close: []; open: [recordId: string]; 'open-board': [recordId: string]; 'open-report': [recordId: string] }>();
