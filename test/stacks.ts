@@ -251,6 +251,9 @@ async function main() {
     await w.find('.canvas-controls .new-stack').trigger('click');
     const ed = () => w.find('.stack-editor');
     check('"+ stack" opens the editor', await until(() => ed().exists()));
+    // A table nothing has loaded yet (Works): the editor loads it itself — the preview must not sit on "loading…".
+    await ed().find('.stack-table').setValue(tWorks);
+    check('a table the canvas has not loaded: the preview counts it anyway', await until(() => ed().find('.preview-line').text().includes('2 records match'), 8000), ed().find('.preview-line')?.text());
     await ed().find('.stack-table').setValue(tDelivs);
     await until(() => ed().find('.add-filter').exists());
     await ed().find('.add-filter').trigger('click');

@@ -83,7 +83,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import type { Store } from '../store';
 import { fieldsOf, placementKey, recordsOf, tablesSorted } from '../state';
 import { useDerived } from '../derived';
@@ -104,6 +104,15 @@ const tableName = computed(() => store.state.tables.get(draft.tableId)?.name ?? 
 const fields = computed(() => fieldsOf(store.state, draft.tableId));
 const sortable = computed(() => fields.value.filter((f) => f.type !== 'attachment' && f.type !== 'rich_text'));
 const loaded = computed(() => store.tableLoads.get(draft.tableId)?.state === 'loaded');
+// The PREVIEW needs the whole table — and what its filter reads (a link's labels come
+// with the far table). The canvas loads these for stacks that EXIST; a stack being
+// made has to ask for itself, or on a fresh page the preview said "loading…" until
+// the stack was saved and the canvas loaded the table for it.
+watch(() => draft.tableId, (t) => {
+  if (!t) return;
+  void store.loadTable(t);
+  for (const u of derived.tablesNeededBy(fieldsOf(store.state, t))) void store.loadTable(u);
+}, { immediate: true });
 const labelOf = (id: string) => derived.plainLabelOfId(id);
 const description = computed(() => describeFilters(draft.filters, (id) => store.state.fields.get(id)?.name, labelOf));
 
