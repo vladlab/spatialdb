@@ -240,7 +240,7 @@ import { computed } from 'vue';
 import { choicesOf as contractChoices } from '../../contract/values';
 import type { Store } from '../store';
 import { fieldsOf, type FieldRow } from '../state';
-import { OP_LABEL, linkTargetOf, opsFor, type FilterOp } from '../../contract/views';
+import { OP_LABEL, relationTargetOf, opsFor, type FilterOp } from '../../contract/views';
 import RecordSelect from './RecordSelect.vue';
 import { MAX_DEPTH, ROLLUP_LABELS, ROLLUP_OPS, pairTableOf, reportSchema, resolvePin, resolveVia, type Descent, type ReportField, type Rollup, type RollupOp, type RootLevel } from '../../contract/reports';
 import { junctionOf } from '../../contract/junction';
@@ -275,7 +275,7 @@ const filterable = computed(() => tableFields.value.filter((f) => opsFor(f.type)
 const fieldById = (id: string) => store.state.fields.get(id);
 const typeOf = (id: string) => fieldById(id)?.type ?? 'text';
 const opsOf = (id: string) => opsFor(typeOf(id));
-const targetOf = (id: string) => { const f = store.state.fields.get(id); return f ? linkTargetOf(f) : undefined; };
+const targetOf = (id: string) => { const f = store.state.fields.get(id); return f ? relationTargetOf(f, (x) => store.state.fields.get(x)) : undefined; };
 const opsForId = opsOf;
 const choicesOf = (id: string): string[] => contractChoices(fieldById(id)?.options) ?? [];
 

@@ -360,8 +360,10 @@
                     <span v-else-if="f.type === 'rich_text'" class="value note" title="Enter opens the record to read or edit this">{{ notePreview(r.data[f.key]) }}</span>
                     <span v-else-if="f.type === 'structured'" class="value note" title="Enter opens the record to view or edit this"><VideoLayoutStrip v-if="r.data[f.key] !== undefined && shapeOf(f) === 'video_layout'" mini :value="r.data[f.key]" />{{ summariseValue(shapeOf(f), r.data[f.key]) }}</span>
                     <span v-else-if="f.type === 'attachment'" class="value note" title="Enter opens the record">{{ attachSummary(r.data[f.key]) }}</span>
-                    <!-- BACKLINK: the other end of a link made elsewhere. Read-only here —
-                         the link belongs to the record that holds it. -->
+                    <!-- BACKLINK: the other face of a link held on the far table — and WRITTEN here
+                         the same way: a pill's × removes the row, the picker adds one (client/links.ts
+                         `addLinkThrough`). The row is still held on the far record; this is just
+                         the other side of it. -->
                     <template v-else-if="f.type === 'backlink'">
                       <span v-if="derived.backlinkOf(r.id, f) === null" class="broken" title="This backlink is broken: the link field it mirrored was deleted.">broken backlink</span>
                       <template v-else>
@@ -396,8 +398,8 @@
                             <button class="junc-add" tabindex="-1" :title="`Add a ${junctionName(f)}`" @pointerdown.stop @mousedown.stop.prevent @click.stop="editJunction(r.id, f)">+</button>
                           </template>
                           <CellPills v-else :total="(derived.backlinkOf(r.id, f) ?? []).length" @open="$emit('open-record', r.id)">
-                            <RecordPill v-for="from in derived.backlinkOf(r.id, f) ?? []" :key="from" back :text="labelFor(from)" :title="`Double-click opens ${labelFor(from)} — the link is edited there`" :color="derived.pillColorOf(f)"
-                                        @open="$emit('open-record', from)" />
+                            <RecordPill v-for="from in derived.backlinkOf(r.id, f) ?? []" :key="from" back :text="labelFor(from)" :title="`Double-click opens ${labelFor(from)}`" removable :color="derived.pillColorOf(f)"
+                                        @open="$emit('open-record', from)" @remove="removeLinkThrough(store, f, r.id, from)" />
                           </CellPills>
                         </template>
                       </template>
@@ -421,6 +423,11 @@
                        visibility:hidden (the value hides under the editor), and a popover inside it
                        would inherit that and never appear. Not a CellEditor either: one mounting
                        beside this would take the focus and close it. -->
+                  <!-- A plain backlink's picker: the far table's records, as a link cell's. -->
+                  <LinkPicker v-if="isSel(r.id, f.id) && editing && f.type === 'backlink' && !junctionOf(f) && backTarget(f)"
+                              :store="store" :target-table-id="backTarget(f)!" :linked="derived.backlinkOf(r.id, f) ?? []"
+                              :anchor="anchorEl" :seed="seed"
+                              @add="(o) => addLinkThrough(store, f, r.id, o)" @remove="(o) => removeLinkThrough(store, f, r.id, o)" @done="stopEdit" />
                   <JunctionEditor v-if="isSel(r.id, f.id) && editing && f.type === 'backlink' && junctionOf(f)" :store="store" :table="junctionOf(f)!.table" :cfg="junctionOf(f)!.cfg"
                                   :side="junctionOf(f)!.side" :from="r.id" :row-id="junctionRow" :anchor="anchorEl"
                                   @done="stopEdit('none')" @open="(id: string) => { stopEdit('none'); $emit('open-record', id); }" />
@@ -498,7 +505,8 @@ import { ask, confirmDialog } from '../dialogs';
 import { richTextToPlain } from '../../contract/richtext';
 import { formatNumberField, shapeOf, summarise as summariseValue } from '../../contract/shapes';
 import VideoLayoutStrip from './VideoLayoutStrip.vue';
-import { addLink as addLinkVia } from '../links';
+import { addLink as addLinkVia, addLinkThrough, removeLinkThrough } from '../links';
+import { leadsTo } from '../../contract/backlinks';
 import { SYSTEM_FIELD_TYPES, formatCreated } from '../../contract/systemFields';
 import KanbanView from './KanbanView.vue';   // (`summarise` here is the VIEW's summary)
 import { beginRecordDrag } from '../recordDrag';
@@ -796,6 +804,8 @@ watch(() => derived.tablesNeededBy(allFields.value).join(), (joined) => {
 }, { immediate: true });
 
 const targetOf = (f: FieldRow) => f.options?.target_table_id as string | undefined;
+/** The table a backlink's records come from — its source link's table (anywhere in the schema). */
+const backTarget = (f: FieldRow) => leadsTo(f, (id) => store.state.fields.get(id)) ?? undefined;
 
 /* ── junction columns (contract/junction.ts) ──────────────────────────────
    A backlink that mirrors a junction's endpoint is writable: its editor is the
@@ -848,7 +858,7 @@ const total = computed(() => all.value.length);
 
 /** Every record the view, the search and the scope let through — before grouping. */
 const matched = computed(() => {
-  let viewed = applyView(all.value, allFields.value, config.value, linkLabels, derived.linksFrom);
+  let viewed = applyView(all.value, allFields.value, config.value, linkLabels, derived.idsOf);
   // Just-created rows are exempt from the view's FILTER (a blank row matches
   // nothing, and would vanish before you could type in it)…
   if (fresh.size) {
@@ -971,7 +981,7 @@ async function create(context: { data?: Record<string, unknown>; links?: Array<{
   // go there and start typing — adding a row is almost always followed by
   // filling it in.
   const i = rows.value.findIndex((r) => r.id === id);
-  const firstField = shown.value.find((f) => TYPEABLE.has(f.type) && f.type !== 'link') ?? shown.value[0];
+  const firstField = shown.value.find((f) => TYPEABLE.has(f.type) && f.type !== 'link' && f.type !== 'backlink') ?? shown.value[0];
   if (i === -1 || !firstField) return;
   reveal(i, firstField.id);
   await nextTick();
@@ -1143,7 +1153,7 @@ const notePreview = (v: unknown) => richTextToPlain(v).split('\n', 1)[0];
 const attachSummary = (v: unknown) => { const n = Array.isArray(v) ? v.length : 0; return n ? `📎 ${n} file${n === 1 ? '' : 's'}` : ''; };
 const asList = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 /** Types with a text-like editor, where typing a character can start the edit. */
-const TYPEABLE = new Set(['text', 'long_text', 'number', 'file_path', 'link']);   // link: the character seeds the picker's search
+const TYPEABLE = new Set(['text', 'long_text', 'number', 'file_path', 'link', 'backlink']);   // link, backlink: the character seeds the picker's search
 
 function select(rec: string, field: string) {
   rowSel.clear();
@@ -1169,7 +1179,8 @@ function onCellDown(rec: string, f: FieldRow, e: MouseEvent) {
 
 function startEdit(rec: string, f: FieldRow, withSeed?: string) {
   if (f.type === 'backlink' && junctionOf(f)) return editJunction(rec, f);   // add a pair
-  if (f.type === 'lookup' || f.type === 'backlink' || SYSTEM_FIELD_TYPES.has(f.type)) return;
+  if (f.type === 'backlink' && derived.backlinkOf(rec, f) === null) return;   // broken: nothing to write through
+  if (f.type === 'lookup' || SYSTEM_FIELD_TYPES.has(f.type)) return;
   select(rec, f.id);
   // No room for these in a row: their editor is the record panel.
   if (f.type === 'rich_text' || f.type === 'attachment' || f.type === 'structured') { emit('open-record', rec); return; }

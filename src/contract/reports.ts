@@ -388,6 +388,8 @@ export interface ReportContext {
   labelOf: (recordId: string) => string;
   /** Text for link / lookup / backlink fields, as the grid gets it. */
   links?: LinkLabels;
+  /** The ids a link OR backlink holds (the `is` filter). Absent: links only, through `linksFrom`. */
+  idsOf?: (recordId: string, fieldId: string) => readonly string[];
   /** Scope filters the ROOT only (brief §3): descendants are reached by links. */
   inScope?: (record: ViewRecord) => boolean;
 }
@@ -430,10 +432,10 @@ export function runReport(def: ReportDef, ctx: ReportContext): ReportSection {
   };
 
   const shape = (level: RootLevel | Descent, recs: ViewRecord[]): ViewRecord[] =>
-    applyView(recs, ctx.fields, { sort: level.sort, filters: level.filters, hidden: [] }, links, ctx.linksFrom);
+    applyView(recs, ctx.fields, { sort: level.sort, filters: level.filters, hidden: [] }, links, ctx.idsOf ?? ctx.linksFrom);
   /** Which of these records pass these filters — the grid's own reading of them. */
   const passing = (recs: ViewRecord[], filters: z.infer<typeof FilterEntry>[]): Set<string> =>
-    new Set(applyView(recs, ctx.fields, { sort: [], filters, hidden: [] }, links, ctx.linksFrom).map((r) => r.id));
+    new Set(applyView(recs, ctx.fields, { sort: [], filters, hidden: [] }, links, ctx.idsOf ?? ctx.linksFrom).map((r) => r.id));
 
   /** The pair rows of one level: its junction table, and each record's chosen row. */
   type Pairs = { table: string; of: Map<string, string>; fields: string[] };

@@ -40,7 +40,7 @@ import { computed } from 'vue';
 import type { Store } from '../store';
 import { fieldsOf } from '../state';
 import { choicesOf as contractChoices } from '../../contract/values';
-import { OP_LABEL, linkTargetOf, opsFor, type FilterOp, type ViewConfig } from '../../contract/views';
+import { OP_LABEL, relationTargetOf, opsFor, type FilterOp, type ViewConfig } from '../../contract/views';
 import RecordSelect from './RecordSelect.vue';
 
 type Filters = ViewConfig['filters'];
@@ -53,7 +53,7 @@ const filterable = computed(() => fields.value.filter((f) => opsFor(f.type).leng
 const fieldById = (id: string) => props.store.state.fields.get(id);
 const typeOf = (id: string) => fieldById(id)?.type ?? 'text';
 const opsOf = (id: string) => opsFor(typeOf(id));
-const targetOf = (id: string) => { const f = fieldById(id); return f ? linkTargetOf(f) : undefined; };
+const targetOf = (id: string) => { const f = fieldById(id); return f ? relationTargetOf(f, (x) => props.store.state.fields.get(x)) : undefined; };
 function choicesOf(id: string): string[] {
   const f = fieldById(id);
   if (!f || (f.type !== 'select' && f.type !== 'multi_select')) return [];

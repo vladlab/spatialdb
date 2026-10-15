@@ -21,6 +21,23 @@ export function addLink(store: Store, fieldId: string, fromRecord: string, toRec
 }
 
 /**
+ * A relation edited from EITHER FACE. A link field: the row is held on `recordId`.
+ * A backlink: the row is held on `other`, through the backlink's source link — the
+ * same row, the same undo, the same "single" rule (a single link on `other` is
+ * replaced). A junction column is a pair, not a link: nothing here (JunctionEditor).
+ */
+export function addLinkThrough(store: Store, field: { id: string; type: string; options?: Record<string, unknown> | null }, recordId: string, other: string) {
+  if (field.type === 'link') return addLink(store, field.id, recordId, other);
+  const src = field.type === 'backlink' ? field.options?.source_field_id : undefined;
+  if (typeof src === 'string') addLink(store, src, other, recordId);
+}
+export function removeLinkThrough(store: Store, field: { id: string; type: string; options?: Record<string, unknown> | null }, recordId: string, other: string) {
+  if (field.type === 'link') { store.mutate({ type: 'link.remove', fieldId: field.id, fromRecord: recordId, toRecord: other }); return; }
+  const src = field.type === 'backlink' ? field.options?.source_field_id : undefined;
+  if (typeof src === 'string') store.mutate({ type: 'link.remove', fieldId: src, fromRecord: other, toRecord: recordId });
+}
+
+/**
  * Making a junction PAIR, the one way (sql/016): the row and its two endpoint links,
  * in one synchronous run — one batch (whole or nothing, apply.ts checks) and one
  * Ctrl+Z. `from` is the record on `side`; `other` the record at the other end.

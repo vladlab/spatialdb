@@ -83,7 +83,7 @@ async function main() {
     const backPills = () => cellOf('Ep 101', 'Files').findAll('.pill');
     check('the BACKLINK on the other table wears the same colour, in outline (.back)',
       await until(() => backPills().length === 2) && backPills().every((p: any) => p.classes('back') && /--pill-line:\s*rgba\(255, 136, 0/.test(styleOf(p))), backPills().map(styleOf).join(' | '));
-    check('…and nothing pops up beside it: no ⤢ (a double-click opens), no × (the link is edited on the file)', !backPills()[0].find('.pill-actions').exists() && backPills()[0].element.children.length === 1);
+    check('…and no ⤢ pops up beside it (a double-click opens) — a × does: the link is the same row from either face', backPills()[0].find('.pill-actions').exists() && backPills()[0].find('.pill-x').exists(), backPills()[0].html());
 
     console.log('\nP4. A busy field shown as a count');
     await th('Files').find('.th-menu').trigger('click');

@@ -17,9 +17,11 @@
  *  A WAY is one relationship a record of the starting table can make:
  *
  *      link      one of that table's own LINK fields — written on the record the
- *                drag starts from, pointing at where it lands. Forward only: the
- *                backlink reading (drag a File onto the Edit whose input it is) is
- *                deliberately not here yet.
+ *                drag starts from, pointing at where it lands. OR one of its BACKLINK
+ *                fields (`back`): the same relation from the other end — a File
+ *                dragged onto the Edit it is an input of writes the Edit's "Inputs"
+ *                link, pointing at the File. One relation, two faces; which face the
+ *                drag started from decides which record the link row is written on.
  *      junction  a junction table (sql/016) the starting table is an end of. A pair
  *                is the same row whichever end it is made from, so this works from
  *                both ends — as its column does in the grid.
@@ -65,7 +67,12 @@ export interface LinkFieldWay extends WayBase {
   kind: 'link'; fieldId: string;
   /** A "single" link holds one record: making it REPLACES what is there. */
   single: boolean;
+  /** Through a BACKLINK: the link field is on the far table — the row is written on the record the drag LANDS on, pointing back at the starter. */
+  back?: boolean;
 }
+/** The ends of a link row for this way: on which record it is held, and which it points at. */
+export const linkEnds = (way: LinkFieldWay, from: string, to: string): { holder: string; target: string } =>
+  (way.back ? { holder: to, target: from } : { holder: from, target: to });
 export interface JunctionWay extends WayBase {
   kind: 'junction'; table: string; cfg: JunctionConfig;
   /** Which end of the junction the STARTING record is. */
@@ -97,12 +104,22 @@ export function linkWays(fields: Iterable<WayField>, tables: Iterable<WayTable>,
   const ownCfg = junctionOf(tableList.find((t) => t.id === fromTable));
 
   const out: Array<{ way: LinkWay; at?: WayField }> = [];
+  const junctionEnds = new Set<string>();
+  for (const t of tableList) { const cfg = junctionOf(t); if (cfg) { junctionEnds.add(cfg.a); junctionEnds.add(cfg.b); } }
   for (const f of own) {
-    if (f.type !== 'link') continue;
-    const to = targetOf(f);
-    if (!to || !tableIds.has(to)) continue;
-    if (ownCfg && (f.id === ownCfg.a || f.id === ownCfg.b)) continue;
-    out.push({ way: { kind: 'link', key: f.id, fieldId: f.id, name: f.name, toTable: to, column: f.id, single: f.options?.single === true }, at: f });
+    if (f.type === 'link') {
+      const to = targetOf(f);
+      if (!to || !tableIds.has(to)) continue;
+      if (ownCfg && (f.id === ownCfg.a || f.id === ownCfg.b)) continue;
+      out.push({ way: { kind: 'link', key: f.id, fieldId: f.id, name: f.name, toTable: to, column: f.id, single: f.options?.single === true }, at: f });
+    } else if (f.type === 'backlink') {
+      // The other face of a link held on the far table. A junction's column is not one
+      // (that way is the junction's, below); a backlink whose link is gone is nothing.
+      const srcId = f.options?.source_field_id;
+      const src = typeof srcId === 'string' ? byId.get(srcId) : undefined;
+      if (!src || src.type !== 'link' || targetOf(src) !== fromTable || junctionEnds.has(src.id) || !tableIds.has(src.table_id)) continue;
+      out.push({ way: { kind: 'link', key: src.id, fieldId: src.id, name: f.name, toTable: src.table_id, column: f.id, single: src.options?.single === true, back: true }, at: f });
+    }
   }
   for (const t of tableList) {
     const cfg = junctionOf(t);

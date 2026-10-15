@@ -140,6 +140,7 @@ const ctx = computed<ReportContext>(() => {
     recordsOf: (t) => byTable.get(t) ?? [],
     linksFrom: derived.linksFrom,
     linksTo: derived.linkedTo,
+    idsOf: derived.idsOf,
     labelOf: derived.labelOfId,
     links: (recordId, fieldId) => { const f = store.state.fields.get(fieldId); return f ? derived.textOf(recordId, f).texts : []; },
     inScope: inScope ? (r) => inScope(r as RecordRow) : undefined,

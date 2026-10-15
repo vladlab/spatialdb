@@ -48,13 +48,15 @@ export interface FieldDraft {
   vocabulary: string;
   /** lookup: the link field to follow, and the far field to show. */
   via: string; show: string;
+  /** link: also make its other face — a backlink on the target table, named after this table. Default on (Airtable's two-way). */
+  pair?: boolean;
   /** backlink: the link field (anywhere) this is the other end of. */
   source: string;
   /** structured: which shape its values take (contract/shapes.ts). */
   shape: string;
 }
 export const emptyDraft = (): FieldDraft =>
-  ({ name: '', key: '', type: 'text', target: '', choices: '', vocabulary: '', via: '', show: '', source: '', shape: '' });
+  ({ name: '', key: '', type: 'text', target: '', choices: '', vocabulary: '', via: '', show: '', source: '', shape: '', pair: true });
 
 /**
  * name → key, the way a person would: "Frame Rate" → frame_rate. A convenience,
@@ -314,7 +316,27 @@ export function useSchemaActions(store: Store) {
       key: d.key || deriveKey(d.name), fieldType: d.type, options, required: false });
     store.mutate({ type: 'field.update', id, position: pos });
     joinLastSection(tableId, [id]);
+    // A link's OTHER FACE: a backlink on the target, named after this table ("Deliverables"
+    // on Works for Works.Deliverables → "Work"... on Deliverables), in the same run — one
+    // Ctrl+Z makes both. One relation, two faces (contract/backlinks.ts); a link to its own
+    // table gets "<name> (other end)", as a junction on one table does.
+    if (d.type === 'link' && d.pair !== false) pairLink(id, tableId, d.target, d.name.trim());
     return { id };
+  }
+
+  /** The backlink that is the other face of link `linkId` — made unless the target already has one for it. */
+  function pairLink(linkId: string, tableId: string, targetId: string, linkName: string) {
+    if (fields(targetId).some((f) => f.type === 'backlink' && f.options?.source_field_id === linkId)) return;
+    const own = store.state.tables.get(tableId);
+    const name = targetId === tableId ? `${linkName} (other end)` : (own?.name ?? 'Links');
+    const have = new Set(fields(targetId).map((f) => f.key));
+    const base = deriveKey(name) || 'links';
+    let key = base; for (let i = 2; have.has(key); i++) key = `${base}_${i}`;
+    const id = crypto.randomUUID();
+    const pos = Math.max(0, ...fields(targetId).map((f) => f.position)) + 1;
+    store.mutate({ type: 'field.create', id, tableId: targetId, name, key, fieldType: 'backlink', options: { source_field_id: linkId }, required: false });
+    store.mutate({ type: 'field.update', id, position: pos });
+    joinLastSection(targetId, [id]);
   }
 
   /* ── the desktop client's tools on a table (contract/tools.ts) ──────────── */
@@ -626,7 +648,10 @@ export function useSchemaActions(store: Store) {
     const f = store.state.fields.get(id);
     if (!f) return false;
     const n = recordsOf(store.state, f.table_id).filter((r) => f.key in r.data).length;
-    const naming = isPrimary(id) ? '\nIt is the PRIMARY field: records will be named by the next field instead.' : '';
+    // A link's other faces go with it: a backlink with no link is a broken column.
+    const faces = f.type === 'link' ? [...store.state.fields.values()].filter((x) => x.type === 'backlink' && x.options?.source_field_id === id) : [];
+    const naming = (isPrimary(id) ? '\nIt is the PRIMARY field: records will be named by the next field instead.' : '')
+      + (faces.length ? `\nIts other side${faces.length > 1 ? 's' : ''} — ${faces.map((x) => `“${x.name}” on ${store.state.tables.get(x.table_id)?.name ?? '?'}`).join(', ')} — go${faces.length > 1 ? '' : 'es'} with it.` : '');
     const p = await previewOf({ type: 'field.delete', id });
     if (p?.truncated) {
       if (!await typeToDelete('field', f.name, p, naming)) return false;
@@ -640,6 +665,7 @@ export function useSchemaActions(store: Store) {
           : (held ? `Its value on ${num(held)} record(s) is removed, but captured — restorable from History.` : 'No record has a value in it. The field itself can be restored from History.');
       if (!await confirmDialog({ title: `Delete the field “${f.name}”?`, body: `${values}${naming}`, danger: true, okText: 'Delete field' })) return false;
     }
+    for (const x of faces) store.mutate({ type: 'field.delete', id: x.id });
     store.mutate(p?.truncated ? { type: 'field.delete', id, withoutUndo: true } : { type: 'field.delete', id });
     return true;
   }

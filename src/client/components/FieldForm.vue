@@ -18,6 +18,11 @@
       <option value="" disabled>links to which table…</option>
       <option v-for="t in tables" :key="t.id" :value="t.id">{{ t.name }}</option>
     </select>
+    <!-- A link is one relation with two faces: its other face — a backlink on the target,
+         named after this table — is made with it, unless unticked (a one-way link). -->
+    <label v-if="d.type === 'link'" class="pair" :title="`Also add a field on ${targetName} showing the ${tableName} records that link to each of its records — the same relation, read from the other end. Unticked, the link is one-way.`">
+      <input v-model="d.pair" type="checkbox" /> two-way{{ d.target ? ` (adds “${pairName}” on ${targetName})` : '' }}
+    </label>
     <!-- BACKLINK: the other end of a link field that points at this table. -->
     <!-- STRUCTURED: which shape its values take. Chosen once — every stored value is
          validated against it, so it cannot be changed afterwards. -->
@@ -79,6 +84,9 @@ const error = ref('');
 const nameInput = ref<HTMLInputElement>();
 
 const tables = computed(() => tablesSorted(props.store.state));
+const tableName = computed(() => props.store.state.tables.get(props.tableId)?.name ?? 'this table');
+const targetName = computed(() => props.store.state.tables.get(d.target)?.name ?? 'the target');
+const pairName = computed(() => (d.target === props.tableId ? `${d.name.trim() || 'link'} (other end)` : tableName.value));
 const derived = computed(() => deriveKey(d.name));
 const linksIn = computed(() => props.actions.linkFieldsInto(props.tableId));
 const lookupVias = computed(() => props.actions.lookupViasOf(props.tableId));
@@ -90,7 +98,7 @@ function submit() {
   error.value = '';
   // Keep type and target: adding five text fields, or three links to the same
   // table, is the common run.
-  Object.assign(d, emptyDraft(), { type: d.type, target: d.target, via: d.via });
+  Object.assign(d, emptyDraft(), { type: d.type, target: d.target, via: d.via, pair: d.pair });
   emit('created', result.id);
   void nextTick(() => nameInput.value?.focus());
 }
@@ -107,7 +115,7 @@ input:not([type='checkbox']), select {
 }
 input[type='checkbox'] { width: auto; flex: none; margin: 0; }
 .field-form.stack .adv { align-self: flex-start; }
-.adv { color: var(--text-muted); font-size: 11px; display: flex; gap: 4px; align-items: center; cursor: pointer; }
+.adv, .pair { color: var(--text-muted); font-size: 11px; display: flex; gap: 4px; align-items: center; cursor: pointer; }
 .mono { font-family: ui-monospace, monospace; }
 .error { color: var(--danger); font-size: 11px; }
 button.add {

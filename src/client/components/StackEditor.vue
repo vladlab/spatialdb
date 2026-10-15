@@ -124,7 +124,7 @@ function placedIn(recordId: string): string | undefined {
   return typeof s === 'string' ? s : '';
 }
 const linkLabels = (recordId: string, fieldId: string) => { const f = store.state.fields.get(fieldId); return f ? derived.textOf(recordId, f).texts : []; };
-const census = computed(() => stackCensus(draft, recordsOf(store.state, draft.tableId), fields.value, placedIn, linkLabels, derived.linksFrom));
+const census = computed(() => stackCensus(draft, recordsOf(store.state, draft.tableId), fields.value, placedIn, linkLabels, derived.idsOf));
 const tagOf = (id: string) => (census.value.missing.includes(id) ? 'missing' : census.value.elsewhere.includes(id) ? 'elsewhere' : 'in');
 
 function save() {

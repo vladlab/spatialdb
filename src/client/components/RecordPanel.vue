@@ -109,8 +109,9 @@
           <input v-else-if="f.type === 'checkbox'" type="checkbox" :checked="record.data[f.key] === true"
                  @click.stop @change="setValue(f.key, !(record.data[f.key] === true))" />
 
-          <!-- BACKLINK: links made on OTHER records, pointing here. Read-only; each
-               chip opens the record that holds the link. -->
+          <!-- BACKLINK: the other face of a link held on the far record — written here the
+               same way as a link (client/links.ts `addLinkThrough`): × removes the row, the
+               line under the pills adds one. -->
           <template v-else-if="f.type === 'backlink'">
             <span v-if="derived.backlinkOf(recordId, f) === null" class="broken">broken backlink</span>
             <!-- A JUNCTION's column (sql/016): the pairs as a NESTED TABLE (JunctionTable.vue) —
@@ -125,10 +126,13 @@
             </template>
             <template v-else>
               <span class="pills column">
-                <RecordPill v-for="from in derived.backlinkOf(recordId, f) ?? []" :key="from" back :text="labelOfId(from)" :color="derived.pillColorOf(f)"
-                            :title="pillTitle(from)" :jump="onCanvas(from)" drag @down="dragPill(from, $event)" @open="$emit('open', from)" @jump="canvasJump?.jump(from)" />
+                <RecordPill v-for="from in derived.backlinkOf(recordId, f) ?? []" :key="from" back :text="labelOfId(from)" :color="derived.pillColorOf(f)" removable
+                            :title="pillTitle(from)" :jump="onCanvas(from)" drag @down="dragPill(from, $event)" @open="$emit('open', from)" @jump="canvasJump?.jump(from)" @remove="removeLinkThrough(store, f, recordId, from)" />
               </span>
-              <span v-if="derived.backlinkOf(recordId, f)?.length === 0" class="placeholder">nothing links here</span>
+              <span v-if="editingId !== f.id" class="placeholder add-link">{{ addLinkText(f) }}</span>
+              <LinkPicker v-if="editingId === f.id && targetOf(f)" field :store="store" :target-table-id="targetOf(f)!"
+                          :linked="derived.backlinkOf(recordId, f) ?? []" :anchor="valueEls.get(f.id)"
+                          @add="(o) => addLinkThrough(store, f, recordId, o)" @remove="(o) => removeLinkThrough(store, f, recordId, o)" @done="onDone" />
             </template>
           </template>
 
@@ -207,7 +211,8 @@ import { clipFromPaste, clipOf, copyCell, pasteCell } from '../cellClipboard';
 import AttachmentField from './AttachmentField.vue';
 import StructuredField from './StructuredField.vue';
 import { formatNumberField } from '../../contract/shapes';
-import { addLink as addLinkVia } from '../links';
+import { addLink as addLinkVia, addLinkThrough, removeLinkThrough } from '../links';
+import { leadsTo } from '../../contract/backlinks';
 import { beginRecordDrag } from '../recordDrag';
 import { compareOf, seedValues } from '../../contract/compare';
 import { SYSTEM_FIELD_TYPES, formatCreated, isSystemKey } from '../../contract/systemFields';
@@ -369,7 +374,8 @@ const asList = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => 
 const labelOfId = derived.labelOfId;
 const linksFrom = (fieldId: string) => derived.linksFrom(props.recordId, fieldId);
 const lookupOf = (f: FieldRow) => derived.lookupOf(props.recordId, f);
-const targetOf = (f: FieldRow) => f.options?.target_table_id as string | undefined;
+/** The table a link OR backlink leads to (contract/backlinks.ts): what its picker lists, what its "add a …" line is named by. */
+const targetOf = (f: FieldRow) => leadsTo(f, (id) => store.state.fields.get(id)) ?? undefined;
 /**
  * "add a Deliverable…" / "add another Deliverable…" — named by what the field links
  * TO (the target table's singular name), as a junction's line is named by its pair.
@@ -378,14 +384,14 @@ const targetOf = (f: FieldRow) => f.options?.target_table_id as string | undefin
 function addLinkText(f: FieldRow): string {
   const t = store.state.tables.get(targetOf(f) ?? '');
   const noun = t?.singular_name || t?.name || 'link';
-  const n = linksFrom(f.id).length;
+  const n = (f.type === 'backlink' ? derived.backlinkOf(props.recordId, f)?.length ?? 0 : linksFrom(f.id).length);
   if (!n) return `add a ${noun}…`;
   return f.options?.single === true ? `change the ${noun}…` : `add another ${noun}…`;
 }
 const referencedBy = computed(() => derived.referencedBy(props.recordId));
 /** A backlink mirroring a junction's endpoint is WRITABLE (contract/junction.ts) — the one backlink that is. */
 const junctionOf = (f: FieldRow) => derived.junctionOfBacklink(f);
-const READONLY = (f: FieldRow) => f.type === 'lookup' || (f.type === 'backlink' && !junctionOf(f)) || SYSTEM_FIELD_TYPES.has(f.type);
+const READONLY = (f: FieldRow) => f.type === 'lookup' || (f.type === 'backlink' && !junctionOf(f) && derived.backlinkOf(props.recordId, f) === null) || SYSTEM_FIELD_TYPES.has(f.type);
 
 /* ── editing ──────────────────────────────────────────────────────────── */
 

@@ -94,8 +94,9 @@
     <!-- "find…" in the new-link menu: pick the other end here, or name a new one. -->
     <div v-if="linkPick" class="link-pick" :style="{ left: linkPick.client.x + 'px', top: linkPick.client.y + 'px' }" @pointerdown.stop @keydown.stop>
       <p class="link-pick-head">Link <b>{{ derived.labelOfId(linkPick.fromRecord) }}</b> → {{ store.state.tables.get(linkPick.targetTable)?.name }}: choose, or type a new name</p>
-      <LinkPicker inline allow-create :store="store" :target-table-id="linkPick.targetTable" :linked="derived.linksFrom(linkPick.fromRecord, linkPick.fieldId)"
-                  :link-field="linkPick.fieldId" :from-record="linkPick.fromRecord"
+      <LinkPicker inline allow-create :store="store" :target-table-id="linkPick.targetTable"
+                  :linked="linkPick.back ? derived.linkedTo(linkPick.fromRecord, linkPick.fieldId) : derived.linksFrom(linkPick.fromRecord, linkPick.fieldId)"
+                  :link-field="linkPick.back ? undefined : linkPick.fieldId" :from-record="linkPick.back ? undefined : linkPick.fromRecord"
                   @add="linkPickChoose" @create="linkPickCreate" @done="linkPick = null" />
     </div>
     <!-- MAKING OR EDITING A STACK: its own dialog, with a preview of what the filter matches. -->
@@ -328,7 +329,7 @@ import LinkPicker from './LinkPicker.vue';
 import JunctionEditor from './JunctionEditor.vue';
 import { duplicateRecords } from '../duplicate';
 import { addLink, addPair } from '../links';
-import { dropVerdict, linkWays, verdictHint, waysBetween, type DropVerdict, type JunctionWay, type LinkFieldWay, type LinkWay } from '../../contract/canvasLink';
+import { dropVerdict, linkEnds, linkWays, verdictHint, waysBetween, type DropVerdict, type JunctionWay, type LinkFieldWay, type LinkWay } from '../../contract/canvasLink';
 import { canvasDefaultsOff } from '../prefs';
 import { confirmDialog } from '../dialogs';
 import { SCOPE } from '../scope';
@@ -572,7 +573,7 @@ const stackOf = (recordId: string) => placedIn(recordId) || null;
 const stackLinkLabels = (recordId: string, fieldId: string) => { const f = store.state.fields.get(fieldId); return f ? derived.textOf(recordId, f).texts : []; };
 const censuses = computed(() => {
   const m = new Map<string, StackCensus>();
-  for (const st of rawStacks.value) m.set(st.id, stackCensus(st, recordsOf(store.state, st.tableId), fieldsOf(store.state, st.tableId), placedIn, stackLinkLabels, derived.linksFrom));
+  for (const st of rawStacks.value) m.set(st.id, stackCensus(st, recordsOf(store.state, st.tableId), fieldsOf(store.state, st.tableId), placedIn, stackLinkLabels, derived.idsOf));
   return m;
 });
 
@@ -781,7 +782,7 @@ function saveStack(def: StackDef, gather: boolean) {
   const exists = stackById.value.has(def.id);
   saveStacks(exists ? rawStacks.value.map((st) => (st.id === def.id ? def : st)) : [...rawStacks.value, def]);
   if (gather) {
-    const census = stackCensus(def, recordsOf(store.state, def.tableId), fieldsOf(store.state, def.tableId), placedIn, stackLinkLabels, derived.linksFrom);
+    const census = stackCensus(def, recordsOf(store.state, def.tableId), fieldsOf(store.state, def.tableId), placedIn, stackLinkLabels, derived.idsOf);
     for (const id of census.elsewhere) joinStack(id, def.id);
   }
   selectedStack.value = def.id;
@@ -817,9 +818,13 @@ function dropCards(moves: Array<{ recordId: string; x: number; y: number; z: num
       const st = stackById.value.get(to)!, census = censuses.value.get(to);
       const rec = store.state.records.get(mv.recordId);
       if (census?.matching.includes(mv.recordId)) { joinStack(mv.recordId, to); handled = true; continue; }
-      const links = rec ? stackDropLinks(st, fieldsOf(store.state, st.tableId), rec.table_id) : null;
+      const links = rec ? stackDropLinks(st, [...store.state.fields.values()], rec.table_id) : null;   // the whole schema: a backlink's link is on the far table
       if (links) {
-        for (const l of links) if (!derived.linksFrom(mv.recordId, l.fieldId).includes(l.recordId)) addLink(store, l.fieldId, mv.recordId, l.recordId);
+        // A line on a link: the row goes on the dropped record. On a backlink: on the filter's record, pointing at it.
+        for (const l of links) {
+          const [holder, target] = l.back ? [l.recordId, mv.recordId] : [mv.recordId, l.recordId];
+          if (!derived.linksFrom(holder, l.fieldId).includes(target)) addLink(store, l.fieldId, holder, target);
+        }
         joinStack(mv.recordId, to);
         handled = true; continue;
       }
@@ -909,14 +914,17 @@ function onEditPair({ recordId, fieldId, row }: { recordId: string; fieldId: str
 /* ── "find…" in the new-link menu: choose the other end, or name a new one ──
    Opened at the spot the link was let go; whichever it is lands THERE (`world` is the
    drop point — the card's top edge sits 24px above it, centred, as for a new record). */
-const linkPick = ref<{ fieldId: string; fromRecord: string; targetTable: string; client: { x: number; y: number }; world: { x: number; y: number } } | null>(null);
+const linkPick = ref<{ fieldId: string; fromRecord: string; targetTable: string; back?: boolean; client: { x: number; y: number }; world: { x: number; y: number } } | null>(null);
+/** The row's ends for a pick: through a backlink the chosen record HOLDS the link. */
+const pickEnds = (p: { fromRecord: string; back?: boolean }, chosen: string) => (p.back ? { holder: chosen, target: p.fromRecord } : { holder: p.fromRecord, target: chosen });
 function linkPickChoose(recordId: string) {
   const p = linkPick.value; if (!p) return;
   linkPick.value = null;
   const rec = store.state.records.get(recordId);
-  addLink(store, p.fieldId, p.fromRecord, recordId);
+  const e = pickEnds(p, recordId);
+  addLink(store, p.fieldId, e.holder, e.target);
   if (rec) placeAtDrop(rec, p.world);
-  pulse([`${p.fieldId}|${p.fromRecord}|${recordId}`]);
+  pulse([`${p.fieldId}|${e.holder}|${e.target}`]);
 }
 function linkPickCreate(name: string) {
   const p = linkPick.value; if (!p) return;
@@ -928,7 +936,8 @@ function linkPickCreate(name: string) {
   const data = key ? { [key]: name } : {};
   if (scopeApi) scopeApi.createRecord(p.targetTable, data, id, { defaults: activeDefaults.value });
   else store.mutate({ type: 'record.create', id, tableId: p.targetTable, data });
-  addLink(store, p.fieldId, p.fromRecord, id);
+  const e = pickEnds(p, id);
+  addLink(store, p.fieldId, e.holder, e.target);
   store.mutate({ type: 'placement.add', id: crypto.randomUUID(), canvasId: props.canvasId, recordId: id, x: Math.round(p.world.x - CARD_W / 2), y: Math.round(p.world.y - 24), w: null, h: null, z });
   selected.clear(); selected.add(id);
 }
@@ -1092,19 +1101,30 @@ const waysByTable = computed(() => {
 const waysOf = (tableId: string) => waysByTable.value.get(tableId) ?? [];
 
 /** Is this way already made between these two records? */
-const wayMade = (way: LinkWay, from: string, to: string) =>
-  (way.kind === 'link' ? store.state.links.has(linkKey(way.fieldId, from, to)) : !!derived.junctionRowFor(way.cfg, way.side, from, to));
-/** The key its arrow is drawn under (ArrowLayer): a pair's runs A → B whichever end made it. */
-const arrowKeyOf = (way: LinkWay, from: string, to: string) =>
-  (way.kind === 'link' ? `${way.fieldId}|${from}|${to}` : way.side === 'a' ? `${way.table}|${from}|${to}` : `${way.table}|${to}|${from}`);
+/* A link way through a BACKLINK (`back`) writes the row on the record the drag LANDS
+   on: `linkEnds` gives the row's holder and target either way, and every rule below
+   reads the row through it — made, replaced, keyed, drawn. */
+const wayMade = (way: LinkWay, from: string, to: string) => {
+  if (way.kind !== 'link') return !!derived.junctionRowFor(way.cfg, way.side, from, to);
+  const e = linkEnds(way, from, to);
+  return store.state.links.has(linkKey(way.fieldId, e.holder, e.target));
+};
+/** The key its arrow is drawn under (ArrowLayer): a link's runs holder → target, a pair's A → B, whichever end made it. */
+const arrowKeyOf = (way: LinkWay, from: string, to: string) => {
+  if (way.kind === 'link') { const e = linkEnds(way, from, to); return `${way.fieldId}|${e.holder}|${e.target}`; }
+  return way.side === 'a' ? `${way.table}|${from}|${to}` : `${way.table}|${to}|${from}`;
+};
 const wayColor = (way: LinkWay) => arrowStyles.value.get(way.key)?.color || 'var(--arrow)';
 const singularOf = (tableId: string) => { const t = store.state.tables.get(tableId); return t?.singular_name || t?.name || 'record'; };
 
 const verdictFor = (from: string, fromTable: string, to: string, toTable: string): DropVerdict =>
   dropVerdict(waysBetween(waysOf(fromTable), toTable), from === to, (w) => wayMade(w, from, to));
 /** What a single link holds now and would lose: making it REPLACES that (client/links.ts). */
-const replacedBy = (way: LinkWay, from: string, to: string) =>
-  (way.kind === 'link' && way.single ? derived.linksFrom(from, way.fieldId).find((id) => id !== to) : undefined);
+const replacedBy = (way: LinkWay, from: string, to: string) => {
+  if (way.kind !== 'link' || !way.single) return undefined;
+  const e = linkEnds(way, from, to);
+  return derived.linksFrom(e.holder, way.fieldId).find((id) => id !== e.target);
+};
 function hintFor(v: DropVerdict, from: string, to: string) {
   const names = { from: tableNameOf(from), to: tableNameOf(to) };
   const was = v.kind === 'link' ? replacedBy(v.way, from, to) : undefined;
@@ -1251,7 +1271,8 @@ function dropLink(from: string, fromTable: string, p: { world: Point; client: { 
 function makeLink(way: LinkFieldWay, from: string, to: string, client: { x: number; y: number }) {
   const was = replacedBy(way, from, to);
   const wasLabel = was ? derived.labelOfId(was) : '';
-  addLink(store, way.fieldId, from, to);
+  const e = linkEnds(way, from, to);
+  addLink(store, way.fieldId, e.holder, e.target);
   pulse([arrowKeyOf(way, from, to)]);
   say(was ? `✓ ${way.name} · replaced ${wasLabel}` : `✓ ${way.name}`, 'ok', client);
 }
@@ -1309,13 +1330,14 @@ function createLinked(m: Menu, way: LinkFieldWay) {
   const z = placements.value.reduce((n, q) => Math.max(n, q.z), 0) + 1;
   if (scopeApi) scopeApi.createRecord(way.toTable, {}, id, { defaults: activeDefaults.value });
   else store.mutate({ type: 'record.create', id, tableId: way.toTable, data: {} });
-  addLink(store, way.fieldId, m.recordId, id);
+  const e = linkEnds(way, m.recordId, id);
+  addLink(store, way.fieldId, e.holder, e.target);
   store.mutate({ type: 'placement.add', id: crypto.randomUUID(), canvasId: props.canvasId, recordId: id, x: Math.round(m.wx - CARD_W / 2), y: Math.round(m.wy - 24), w: null, h: null, z });
   selected.clear(); selected.add(id);
   emit('open-record', id);
 }
 const findLinked = (m: Menu, way: LinkFieldWay) => {
-  if (m.recordId) linkPick.value = { fieldId: way.fieldId, fromRecord: m.recordId, targetTable: way.toTable, client: m.client ?? { x: 0, y: 0 }, world: { x: m.wx, y: m.wy } };
+  if (m.recordId) linkPick.value = { fieldId: way.fieldId, fromRecord: m.recordId, targetTable: way.toTable, back: way.back, client: m.client ?? { x: 0, y: 0 }, world: { x: m.wx, y: m.wy } };
 };
 const pairVia = (m: Menu, way: JunctionWay) => {
   if (m.recordId) junctionPick.value = { table: way.table, cfg: way.cfg, side: way.side, fromRecord: m.recordId, client: m.client ?? { x: 0, y: 0 }, world: { x: m.wx, y: m.wy } };

@@ -956,12 +956,18 @@ async function main() {
     await until(() => /reel_10/.test(column(UB())[showRow('Gamma')] ?? '') && /reel_2/.test(column(UB())[showRow('Alpha')] ?? '')),
     column(UB()).join(' | '));
   await cell(showRow('Gamma'), UB()).trigger('mousedown');
-  await key('Enter'); await key('x'); await key('Delete');
-  check('it is read-only — the link is made on the file, not here', !editor().exists() && !w.find('.gridview .picker').exists());
+  await key('Enter');
+  // A backlink is the other FACE of the link, and is written from here too: Enter opens the
+  // same picker a link cell has (the row is still held on the file).
+  check('it is written here too: Enter opens the picker of files', await until(() => w.find('.gridview .picker').exists()), 'no picker');
+  await w.find('.gridview .picker').trigger('keydown', { key: 'Escape' });   // the picker's own Escape: closes it, keeps the cell
+  check('…Escape closes it', await until(() => !w.find('.gridview .picker').exists() && !w.find('.gridview td.editing').exists()));
+  await key('Delete');
+  check('Delete clears nothing: links are rows, removed one × at a time', (await pool.query(`select count(*)::int n from links where field_id = $1`, [linkField])).rows[0].n === 3);
   check('and stores nothing', (await pool.query(`select 1 from records where data ? 'used_by'`)).rowCount === 0);
 
   await key(' ');
-  await until(() => panel().exists());
+  check('Space opens the record', await until(() => panel().exists(), 8000), `sel=${w.find('.gridview td.sel').exists()} editing=${w.find('.gridview td.editing').exists()}`);
   check('the record panel shows the backlink as chips', await until(() => pField('Used by').findAll('.pill.back').some((c) => c.find('.pill-text').text() === 'reel_10')),
     pField('Used by').text());
   check('and a "Referenced by" section lists EVERY incoming link, grouped by where it comes from',

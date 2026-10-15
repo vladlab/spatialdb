@@ -163,7 +163,8 @@ async function main() {
     check('the lookup shows as BROKEN, not as an empty cell', await until(() => cellOf('Texted Master', 'File status').find('.broken').exists()), cellOf('Texted Master', 'File status').text());
     await th('File status').find('.th-menu').trigger('click');
     await until(() => gridPop().find('.field-settings').exists());
-    check('…and its ⚙ says why: the backlink it follows is itself broken', /broken — “Files” is itself broken/.test(gridPop().find('.field-settings .meta.lookup').text()), gridPop().find('.field-settings .meta.lookup').text());
+    // Deleting the link took its other face (the backlink) with it, so the lookup's via is gone outright.
+    check('…and its ⚙ says why: the backlink it followed went with its link', /broken/.test(gridPop().find('.field-settings .meta.lookup').text()), gridPop().find('.field-settings .meta.lookup').text());
     await gridPop().trigger('keydown', { key: 'Escape' });
     check('the lookup through the junction column is untouched', looked('Trailer', 'Send status') === 'Received');
     win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));

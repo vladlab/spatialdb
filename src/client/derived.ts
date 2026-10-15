@@ -121,6 +121,22 @@ export function useDerived(store: Store) {
   const backlinkOf = (recordId: string, f: FieldRow) => backlinkRecords(f, recordId, getField, linkedTo);
 
   /**
+   * The RECORDS a relation field holds, by id, from either face: a link's targets, a
+   * backlink's sources — a junction column's the OTHER ENDS of its pairs, not the pair
+   * rows. What the `is` filter, grouping and the stacks compare. [] for anything else.
+   */
+  function idsOf(recordId: string, fieldId: string): readonly string[] {
+    const f = getField(fieldId);
+    if (!f) return NONE;
+    if (f.type === 'link') return linksFrom(recordId, f.id);
+    if (f.type !== 'backlink') return NONE;
+    const rows = backlinkOf(recordId, f) ?? NONE;
+    const j = junctionOfBacklink(f);
+    if (!j) return rows;
+    return rows.flatMap((row) => { const o = junctionRow(row)?.[otherEnd(j.side)]; return o ? [o] : []; });
+  }
+
+  /**
    * One derived field as TEXT — what sorting, filtering, search and canvas card
    * rows all want. `broken` distinguishes "depends on something deleted" from
    * "empty".
@@ -341,6 +357,6 @@ export function useDerived(store: Store) {
     return out;
   }
 
-  return { labelKeys, linksFrom, linkedTo, labelOfId, plainLabelOfId, lookupOf, backlinkOf, textOf, tablesNeededBy, referencedBy, comparisonsOf, compare, differencesOf, fieldVerdicts, compareTargetTable, compareTargets,
+  return { labelKeys, linksFrom, linkedTo, idsOf, labelOfId, plainLabelOfId, lookupOf, backlinkOf, textOf, tablesNeededBy, referencedBy, comparisonsOf, compare, differencesOf, fieldVerdicts, compareTargetTable, compareTargets,
     junctionCfg, junctionRow, junctionOfBacklink, junctionChip, junctionRowFor, pillColorOf, pillTableOf, countOf, held, linkMatchRule };
 }

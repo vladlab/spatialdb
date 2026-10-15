@@ -25,6 +25,14 @@
  *  schema comment that mentions it (`symmetric_field_id`) was never implemented
  *  for good reason: every link write would become two, atomically, with its own
  *  undo story. A backlink is a VIEW of the one fact.
+ *
+ *  …and, since Oct 15, an EQUAL face of it. What Airtable gives with its pairs is
+ *  given here without the second copy: a backlink is filtered by record (`is`),
+ *  written from its own side (client/links.ts `addLinkThrough` — the row still
+ *  lands on the link's record), dragged from on the canvas (contract/canvasLink.ts
+ *  `back` ways), and made automatically when a link field is (schemaActions
+ *  `pairLink`), going with it when the link is deleted. One relation, two faces;
+ *  which record HOLDS the row is the one thing the two faces do not share.
  */
 
 import type { LookupFieldInfo } from './lookups.js';

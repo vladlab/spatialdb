@@ -1081,6 +1081,33 @@ contract, no second query language, the preview before the commit.
   it auto-placed (they were not undo steps); they stay, by hand, in the column where
   the stack was. "Remove stack" is the clean way back.
 
+### Symmetry (Oct 15): a link and its backlink are two faces of one relation
+
+The owner: "I continue to strongly want all links to be symmetrical — like Airtable
+does it… I keep tripping up on the directionality." Pushback given and taken: NOT
+synced fields (two copies of one fact, two writes, two undo stories) — the one `links`
+row stays the one fact, and the BACKLINK, until now a read-only view, becomes an equal
+face of it:
+
+- **Filter `is` on a backlink** (`views.ts`): "Work is Ep 101" on Deliverables, with a
+  record list, where before only text `contains` was offered. `derived.idsOf` is the
+  one reading of a relation's ids from either face (a junction column's: the other
+  ends); the grid, stacks and reports all filter through it.
+- **Written from either side** (`client/links.ts` `addLinkThrough` / `removeLinkThrough`):
+  a backlink cell / tray field has the same pills with × and the same picker as a link;
+  the row is written on the far record. A single link is still single (replaced).
+- **A way on the canvas** (`canvasLink.ts` `back`): a Deliverable dragged onto a Work
+  links them through the Deliverables' "Work" backlink — `linkEnds` says which record
+  holds the row. The Oct 13 "forward only" is retired.
+- **A stack filtered on a backlink** takes drops (`stackDropLinks` `back`).
+- **Auto-pairing**: making a link field makes its other face on the target, named
+  after the source table ("two-way", ticked by default in the field form); deleting
+  the link deletes its faces with it (said in the dialog; one Ctrl+Z restores both).
+- What stays directional: which record HOLDS the row (shows only through `single`),
+  and presentation — arrow colour/direction and compare live on the link field.
+
+`test/symmetry.ts` pins all of it.
+
 ### One handle (Oct 13): linking from the card, not from its rows
 
 **This retires the per-row ports** kept on Sept 28 (item 7 below). The owner, after

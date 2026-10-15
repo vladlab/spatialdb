@@ -146,14 +146,25 @@ export function stackCensus<R extends ViewRecord>(
  * the filter is "<link> is <record>" (and the card is of the stack's table). Null
  * otherwise — the drop is refused, because a stack cannot give a record a status
  * or a date by being dropped on, and must not look as if it could.
+ *
+ * A line on a BACKLINK is the same relation read from the other end: the link is
+ * written on the filter's record, pointing at the dropped one (`back`).
  */
-export function stackDropLinks(stack: Pick<StackDef, 'tableId' | 'filters'>, fields: ViewField[], droppedTable: string): Array<{ fieldId: string; recordId: string }> | null {
+export interface DropLink { fieldId: string; recordId: string; /** The link field is on `recordId`'s table: write it there, pointing at the dropped record. */ back?: boolean }
+export function stackDropLinks(stack: Pick<StackDef, 'tableId' | 'filters'>, fields: Array<ViewField & { table_id?: string }>, droppedTable: string): DropLink[] | null {
   if (droppedTable !== stack.tableId || !stack.filters.length) return null;
-  const out: Array<{ fieldId: string; recordId: string }> = [];
+  const out: DropLink[] = [];
   for (const f of stack.filters) {
     const field = fields.find((x) => x.id === f.fieldId);
-    if (!field || field.type !== 'link' || f.op !== 'is' || typeof f.value !== 'string') return null;
-    out.push({ fieldId: f.fieldId, recordId: f.value });
+    if (!field || f.op !== 'is' || typeof f.value !== 'string') return null;
+    if (field.type === 'link') { out.push({ fieldId: f.fieldId, recordId: f.value }); continue; }
+    if (field.type === 'backlink') {
+      const src = fields.find((x) => x.id === field.options?.source_field_id);
+      if (!src || src.type !== 'link') return null;
+      out.push({ fieldId: src.id, recordId: f.value, back: true });
+      continue;
+    }
+    return null;
   }
   return out;
 }

@@ -32,6 +32,7 @@
 import { z } from 'zod';
 import { richTextToPlain } from './richtext.js';
 import { shapeOf, summarise } from './shapes.js';
+import { leadsTo } from './backlinks.js';
 
 const uuid = z.guid();
 
@@ -59,7 +60,7 @@ export const FILTER_OPS = [
   'eq', 'neq',  // text, number, date, select, checkbox
   'gt', 'gte', 'lt', 'lte',   // number, date
   'has',        // multi_select: includes this choice
-  'is',         // link: linked to THIS record (value = its id). Identity, where
+  'is',         // link or backlink: linked to THIS record (value = its id). Identity, where
                 // `contains` is text: "Work is Episode 101" cannot also catch 1010.
   'empty', 'notEmpty',        // everything, links included
 ] as const;
@@ -71,9 +72,14 @@ export const OP_LABEL: Record<FilterOp, string> = {
   gt: '>', gte: '≥', lt: '<', lte: '≤',
   has: 'has', is: 'is', empty: 'is empty', notEmpty: 'is not empty',
 };
-/** The target table of a link field's `is` value — what a RecordSelect lists. */
-export const linkTargetOf = (f: { type: string; options?: Record<string, unknown> | null }): string | undefined =>
-  (f.type === 'link' && typeof f.options?.target_table_id === 'string' ? f.options.target_table_id : undefined);
+/**
+ * The table an `is` value is a record of — what a RecordSelect lists: a link's target,
+ * a backlink's source table (contract/backlinks.ts `leadsTo`). Undefined for any other field.
+ */
+export const relationTargetOf = (
+  f: { type: string; table_id: string; options?: Record<string, unknown> | null },
+  getField: (id: string) => { type: string; table_id: string } | undefined,
+): string | undefined => leadsTo(f, getField) ?? undefined;
 
 export const FilterEntry = z.strictObject({
   fieldId: uuid,
@@ -149,8 +155,9 @@ export interface ViewRecord { id: string; data: Record<string, unknown> }
  */
 export type LinkLabels = (recordId: string, fieldId: string) => string[];
 /**
- * For a link / backlink field: the IDS behind the labels. Grouping needs both; the
- * `is` op compares records, not text, so it needs these — optional, and without
+ * For a link / backlink field: the IDS behind the labels — a link's targets, a
+ * backlink's sources (a junction column's: the other ends). Grouping needs both;
+ * the `is` op compares records, not text, so it needs these — optional, and without
  * them `is` is inert (filters nothing), as a half-built filter is, never "hide all".
  */
 export type LinkIds = (recordId: string, fieldId: string) => readonly string[];
@@ -163,9 +170,10 @@ export function opsFor(type: string): FilterOp[] {
     case 'checkbox':     return ['eq'];
     case 'select':       return ['eq', 'neq', 'empty', 'notEmpty'];
     case 'multi_select': return ['has', 'empty', 'notEmpty'];
-    case 'link':         return ['is', 'contains', 'empty', 'notEmpty'];
+    // A link and a backlink are the two faces of one relation: the same ops, both ways.
+    case 'link':
+    case 'backlink':     return ['is', 'contains', 'empty', 'notEmpty'];
     case 'lookup':
-    case 'backlink':
     case 'rich_text':    return ['contains', 'empty', 'notEmpty'];
     case 'attachment':   return ['empty', 'notEmpty'];
     // Matched on its one-line SUMMARY ("4 tracks / 12 ch (5.1, 2.0…)"): "contains 5.1" works.
@@ -193,7 +201,7 @@ function matches(
     if (f.op === 'empty') return labels.length === 0;
     if (f.op === 'notEmpty') return labels.length > 0;
     if (f.op === 'is') {
-      if (field.type !== 'link' || !linkIds || typeof f.value !== 'string') return true;
+      if ((field.type !== 'link' && field.type !== 'backlink') || !linkIds || typeof f.value !== 'string') return true;
       return linkIds(rec.id, field.id).includes(f.value);
     }
     if (f.op === 'contains') {
