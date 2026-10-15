@@ -324,20 +324,41 @@ export function useSchemaActions(store: Store) {
     return { id };
   }
 
-  /** The backlink that is the other face of link `linkId` — made unless the target already has one for it. */
-  function pairLink(linkId: string, tableId: string, targetId: string, linkName: string) {
-    if (fields(targetId).some((f) => f.type === 'backlink' && f.options?.source_field_id === linkId)) return;
-    const own = store.state.tables.get(tableId);
-    const name = targetId === tableId ? `${linkName} (other end)` : (own?.name ?? 'Links');
-    const have = new Set(fields(targetId).map((f) => f.key));
+  /**
+   * The backlink that is the other face of link `linkId` — made unless the target already
+   * has one for it. Named after the source table ("Online Edits"); when that table links to
+   * the target MORE than once, every face says which link it is ("Online Edits (via Inputs)",
+   * "Online Edits (via Outputs)") — and a sibling still wearing the bare name is renamed in
+   * the same run, or the two columns would be indistinguishable. A name someone chose is
+   * left alone. Returns the backlink's id (new or existing).
+   */
+  function pairLink(linkId: string, tableId?: string, targetId?: string, linkName?: string): string | null {
+    const link = store.state.fields.get(linkId);
+    const from = tableId ?? link?.table_id, to = targetId ?? (link?.options?.target_table_id as string | undefined);
+    const lname = linkName ?? link?.name ?? 'link';
+    if (!from || !to) return null;
+    const existing = fields(to).find((f) => f.type === 'backlink' && f.options?.source_field_id === linkId);
+    if (existing) return existing.id;
+    const own = store.state.tables.get(from)?.name ?? 'Links';
+    const siblings = [...store.state.fields.values()].filter((f) => f.type === 'link' && f.id !== linkId && f.table_id === from && f.options?.target_table_id === to);
+    const via = siblings.length > 0;
+    const name = to === from ? `${lname} (other end)` : via ? `${own} (via ${lname})` : own;
+    for (const sib of siblings) {
+      const face = fields(to).find((f) => f.type === 'backlink' && f.options?.source_field_id === sib.id);
+      if (face && face.name === own) store.mutate({ type: 'field.update', id: face.id, name: `${own} (via ${sib.name})` });
+    }
+    const have = new Set(fields(to).map((f) => f.key));
     const base = deriveKey(name) || 'links';
     let key = base; for (let i = 2; have.has(key); i++) key = `${base}_${i}`;
     const id = crypto.randomUUID();
-    const pos = Math.max(0, ...fields(targetId).map((f) => f.position)) + 1;
-    store.mutate({ type: 'field.create', id, tableId: targetId, name, key, fieldType: 'backlink', options: { source_field_id: linkId }, required: false });
+    const pos = Math.max(0, ...fields(to).map((f) => f.position)) + 1;
+    store.mutate({ type: 'field.create', id, tableId: to, name, key, fieldType: 'backlink', options: { source_field_id: linkId }, required: false });
     store.mutate({ type: 'field.update', id, position: pos });
-    joinLastSection(targetId, [id]);
+    joinLastSection(to, [id]);
+    return id;
   }
+  /** The backlinks that are this link's other face, wherever they are. */
+  const facesOf = (linkId: string) => [...store.state.fields.values()].filter((f) => f.type === 'backlink' && f.options?.source_field_id === linkId);
 
   /* ── the desktop client's tools on a table (contract/tools.ts) ──────────── */
 
@@ -649,7 +670,7 @@ export function useSchemaActions(store: Store) {
     if (!f) return false;
     const n = recordsOf(store.state, f.table_id).filter((r) => f.key in r.data).length;
     // A link's other faces go with it: a backlink with no link is a broken column.
-    const faces = f.type === 'link' ? [...store.state.fields.values()].filter((x) => x.type === 'backlink' && x.options?.source_field_id === id) : [];
+    const faces = f.type === 'link' ? facesOf(id) : [];
     const naming = (isPrimary(id) ? '\nIt is the PRIMARY field: records will be named by the next field instead.' : '')
       + (faces.length ? `\nIts other side${faces.length > 1 ? 's' : ''} — ${faces.map((x) => `“${x.name}” on ${store.state.tables.get(x.table_id)?.name ?? '?'}`).join(', ')} — go${faces.length > 1 ? '' : 'es'} with it.` : '');
     const p = await previewOf({ type: 'field.delete', id });
@@ -675,7 +696,7 @@ export function useSchemaActions(store: Store) {
     draftError, createField, renameField, setChoices, moveField, reorderFields, makePrimary, isPrimary,
     arrangement, setArrangement, addSection, updateSection, removeSection,
     canBePrimary, deleteField,
-    setArrowStyle, setMembership, setSingle, setCount, setMatch, setVocabulary, setTools, enableFileDrop, disableFileDrop, addToolFields, linkFieldsOf, lookupViasOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
+    pairLink, facesOf, setArrowStyle, setMembership, setSingle, setCount, setMatch, setVocabulary, setTools, enableFileDrop, disableFileDrop, addToolFields, linkFieldsOf, lookupViasOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
   };
 }
 export type SchemaActions = ReturnType<typeof useSchemaActions>;

@@ -86,7 +86,12 @@ const nameInput = ref<HTMLInputElement>();
 const tables = computed(() => tablesSorted(props.store.state));
 const tableName = computed(() => props.store.state.tables.get(props.tableId)?.name ?? 'this table');
 const targetName = computed(() => props.store.state.tables.get(d.target)?.name ?? 'the target');
-const pairName = computed(() => (d.target === props.tableId ? `${d.name.trim() || 'link'} (other end)` : tableName.value));
+/** What pairLink will call it: "(via …)" when this table already links to the target. */
+const pairName = computed(() => {
+  if (d.target === props.tableId) return `${d.name.trim() || 'link'} (other end)`;
+  const twice = props.actions.linkFieldsOf(props.tableId).some((f) => f.options?.target_table_id === d.target);
+  return twice ? `${tableName.value} (via ${d.name.trim() || '…'})` : tableName.value;
+});
 const derived = computed(() => deriveKey(d.name));
 const linksIn = computed(() => props.actions.linkFieldsInto(props.tableId));
 const lookupVias = computed(() => props.actions.lookupViasOf(props.tableId));

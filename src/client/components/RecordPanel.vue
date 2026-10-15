@@ -403,7 +403,7 @@ function addLinkText(f: FieldRow): string {
   const t = store.state.tables.get(targetOf(f) ?? '');
   const noun = t?.singular_name || t?.name || 'link';
   const n = (f.type === 'backlink' ? derived.backlinkOf(props.recordId, f)?.length ?? 0 : linksFrom(f.id).length);
-  if (!n) return `add a ${noun}…`;
+  if (!n) return `add ${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${noun}…`;
   return f.options?.single === true ? `change the ${noun}…` : `add another ${noun}…`;
 }
 const referencedBy = computed(() => derived.referencedBy(props.recordId));

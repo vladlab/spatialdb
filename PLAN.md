@@ -1103,6 +1103,10 @@ face of it:
 - **Auto-pairing**: making a link field makes its other face on the target, named
   after the source table ("two-way", ticked by default in the field form); deleting
   the link deletes its faces with it (said in the dialog; one Ctrl+Z restores both).
+  **Links that existed before this got NO face** — nothing is backfilled, because the
+  app cannot know which old links deserve a column. The link's ⚙ says "one-way · make
+  two-way" for those; or add the backlink by hand, as before. (The owner hit exactly
+  this on Online Edits' Inputs/Outputs and read it as the symmetry not working.)
 - What stays directional: which record HOLDS the row (shows only through `single`),
   and presentation — arrow colour/direction and compare live on the link field.
 

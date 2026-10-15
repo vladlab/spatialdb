@@ -66,6 +66,12 @@
              @change="actions.setSingle(field.id, ($event.target as HTMLInputElement).checked)" />
       single
     </label>
+    <!-- LINK fields: its OTHER FACE on the target table. Links made since Oct 15 get one
+         automatically; older ones (and links made one-way on purpose) get it from here. -->
+    <span v-if="field.type === 'link'" class="two-way">
+      <template v-if="faces.length">two-way ↔ {{ faces.map((x) => `“${x.name}” on ${tableNameOf(x.table_id)}`).join(', ') }}</template>
+      <button v-else class="make-two-way" :title="`Add a field on ${targetName} that shows, and edits, this same link from that side`" @click="actions.pairLink(field.id)">one-way · make two-way</button>
+    </span>
     <!-- LINK fields: what the PICKER narrows by (contract/match.ts) — "deliverables of
          this file's Work first". A default filter with "show all", never a constraint. -->
     <LinkMatch v-if="field.type === 'link'" :store="store" :actions="actions" :field="field" class="match" />
@@ -125,6 +131,8 @@ const derived = useDerived(props.store);
 async function onDelete() { if (await props.actions.deleteField(props.field.id)) emit('deleted'); }
 
 const arrow = computed(() => arrowStyleOf(props.field));
+const faces = computed(() => props.actions.facesOf(props.field.id));
+const tableNameOf = (id: string) => props.store.state.tables.get(id)?.name ?? '?';
 const backlink = computed(() => props.actions.describeBacklink(props.field));
 const lookup = computed(() => props.actions.describeLookup(props.field));
 const tableName = computed(() => props.store.state.tables.get(props.field.table_id)?.name ?? '');
@@ -175,6 +183,9 @@ input:not([type='checkbox']):not([type='color']) {
 .field-settings.row .lookup { width: auto; }
 input[type='checkbox'] { width: auto; flex: none; margin: 0; }
 .field-settings.stack .membership, .field-settings.stack .arrow-style, .field-settings.stack .count-tick, .field-settings.stack .match { align-self: flex-start; }
+.two-way { color: var(--text-muted); font-size: 11px; }
+.make-two-way { background: none; border: 1px dashed var(--border-main); color: var(--text-muted); border-radius: 4px; padding: 1px 6px; cursor: pointer; font: inherit; font-size: 11px; }
+.make-two-way:hover { color: var(--accent); border-color: var(--accent); }
 .membership, .single, .compare-tick, .count-tick { display: flex; gap: 4px; align-items: center; cursor: pointer; color: var(--text-muted); font-size: 11px; white-space: nowrap; }
 .arrow-style { display: flex; gap: 6px; align-items: center; color: var(--text-muted); font-size: 11px; }
 .arrow-style label { display: flex; gap: 4px; align-items: center; cursor: pointer; }

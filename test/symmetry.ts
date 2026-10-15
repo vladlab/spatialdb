@@ -201,21 +201,52 @@ async function main() {
     await gridPop().find('input.name').setValue('Vendor');
     await gridPop().find('select.type').setValue('link');
     await gridPop().find('select.target').setValue(tDelivs);
-    check('the form offers two-way, ticked, naming what it adds', gridPop().find('.pair input').element.checked && gridPop().find('.pair').text().includes('“Works” on Deliverables'), gridPop().find('.pair')?.text());
+    // Works already links to Deliverables ("Deliverables"), so the new face says which link it is.
+    check('the form offers two-way, ticked, naming what it adds', gridPop().find('.pair input').element.checked && gridPop().find('.pair').text().includes('“Works (via Vendor)” on Deliverables'), gridPop().find('.pair')?.text());
     await gridPop().find('button.add').trigger('click');
-    const made = await untilDb(`select id, table_id, type, name, options from fields where name in ('Vendor', 'Works') and table_id in ('${tWorks}', '${tDelivs}') order by name`, (r) => r.length === 2, 8000);
-    check('both faces exist: Works.Vendor (a link) and Deliverables.Works (its backlink)',
-      made.length === 2 && made[0].name === 'Vendor' && made[0].type === 'link' && made[1].name === 'Works' && made[1].type === 'backlink' && made[1].table_id === tDelivs && made[1].options.source_field_id === made[0].id, JSON.stringify(made));
+    const made = await untilDb(`select id, table_id, type, name, options from fields where name in ('Vendor', 'Works (via Vendor)') and table_id in ('${tWorks}', '${tDelivs}') order by name`, (r) => r.length === 2, 8000);
+    check('both faces exist: Works.Vendor (a link) and Deliverables."Works (via Vendor)" (its backlink)',
+      made.length === 2 && made[0].name === 'Vendor' && made[0].type === 'link' && made[1].name === 'Works (via Vendor)' && made[1].type === 'backlink' && made[1].table_id === tDelivs && made[1].options.source_field_id === made[0].id, JSON.stringify(made));
     await gridPop().trigger('keydown', { key: 'Escape' });
     await until(() => ths().includes('Vendor'));
     const th = (name: string) => w.findAll('.gridview thead th').find((t: any) => t.find('.th-name').exists() && t.find('.th-name').text() === name)!;
     await th('Vendor').find('.th-menu').trigger('click');
     await until(() => gridPop().find('.field-settings').exists());
     await gridPop().find('.field-settings button.delete').trigger('click');   // the dialog pilot confirms
-    check('deleting the link says its other side goes with it', await until(() => nav.dialogs.bodies.some((b) => /“Works” on Deliverables/.test(b)), 4000), nav.dialogs.bodies.join(' || '));
-    check('…and it does: neither face remains', (await untilDb(`select count(*)::int n from fields where name in ('Vendor', 'Works') and table_id in ('${tWorks}', '${tDelivs}')`, (r) => r[0].n === 0, 8000))[0].n === 0);
+    check('deleting the link says its other side goes with it', await until(() => nav.dialogs.bodies.some((b) => /“Works \(via Vendor\)” on Deliverables/.test(b)), 4000), nav.dialogs.bodies.join(' || '));
+    check('…and it does: neither face remains', (await untilDb(`select count(*)::int n from fields where name in ('Vendor', 'Works (via Vendor)') and table_id in ('${tWorks}', '${tDelivs}')`, (r) => r[0].n === 0, 8000))[0].n === 0);
     await w.find('.gridview').trigger('keydown', { key: 'z', ctrlKey: true });
-    check('…one Ctrl+Z restores both', (await untilDb(`select count(*)::int n from fields where name in ('Vendor', 'Works') and table_id in ('${tWorks}', '${tDelivs}')`, (r) => r[0].n === 2, 8000))[0].n === 2);
+    check('…one Ctrl+Z restores both', (await untilDb(`select count(*)::int n from fields where name in ('Vendor', 'Works (via Vendor)') and table_id in ('${tWorks}', '${tDelivs}')`, (r) => r[0].n === 2, 8000))[0].n === 2);
+
+    /* ───────────────────────────────────────────────────────────────────── */
+    console.log('\nY7. Two links from one table: each face says which; an old one-way link is made two-way');
+    // Works already has "Deliverables" → Deliverables, whose face is "Work" (hand-named: left alone).
+    // A one-way link made before Oct 15 — no face — then a second link to the same table.
+    const fOld = randomUUID();
+    await post([{ type: 'field.create', id: fOld, tableId: tWorks, name: 'Inputs', key: 'inputs', fieldType: 'link', options: { target_table_id: tDelivs } }, pos(fOld, 5)]);
+    await until(() => ths().includes('Inputs'), 6000);
+    await th('Inputs').find('.th-menu').trigger('click');
+    await until(() => gridPop().find('.field-settings').exists());
+    check('an old link with no other face says one-way, and offers to make it two-way', gridPop().find('.make-two-way').exists(), gridPop().find('.two-way')?.text());
+    await gridPop().find('.make-two-way').trigger('click');
+    const inFace = await untilDb(`select name from fields where table_id = '${tDelivs}' and options->>'source_field_id' = '${fOld}'`, (r) => r.length === 1, 6000);
+    check('…its face is "Works (via Inputs)" — Works already links to Deliverables', inFace[0]?.name === 'Works (via Inputs)', JSON.stringify(inFace));
+    check('…the ⚙ now names it', await until(() => gridPop().find('.two-way').text().includes('“Works (via Inputs)” on Deliverables')), gridPop().find('.two-way')?.text());
+    check('…and the hand-named "Work" face is left as it is', (await pool.query(`select name from fields where id = $1`, [fDWork])).rows[0].name === 'Work');
+    await gridPop().trigger('keydown', { key: 'Escape' });
+    // A bare-named sibling IS renamed: make "Outputs" when "Inputs"' face had the plain name.
+    await post([{ type: 'field.update', id: (await pool.query(`select id from fields where table_id = $1 and options->>'source_field_id' = $2`, [tDelivs, fOld])).rows[0].id, name: 'Works' }]);
+    await until(() => true);
+    await sleep(500);
+    await w.find('.gridview .th-add').trigger('click');
+    await until(() => gridPop().find('.field-form').exists());
+    await gridPop().find('input.name').setValue('Outputs');
+    await gridPop().find('select.type').setValue('link');
+    await gridPop().find('select.target').setValue(tDelivs);
+    check('the form says what the new face will be called', gridPop().find('.pair').text().includes('“Works (via Outputs)”'), gridPop().find('.pair')?.text());
+    await gridPop().find('button.add').trigger('click');
+    const faces = await untilDb(`select name from fields where table_id = '${tDelivs}' and name like 'Works%' order by name`, (r) => r.length === 3 && r.every((x: any) => x.name.includes('(via')), 6000);
+    check('another link from Works: every face says which — the bare "Works" became "Works (via Inputs)"', faces.map((r: any) => r.name).join() === 'Works (via Inputs),Works (via Outputs),Works (via Vendor)', JSON.stringify(faces));
   } finally {
     await ui.close();
   }
