@@ -56,6 +56,8 @@ by the (owner type, target type) pair — a small, closed set:
 | number ↔ number | `equals`, `within` (`params.tolerance`), `atLeast`, `atMost` (a spec's "minimum bitrate" is `atLeast`) |
 | link ↔ link (same target table) | `sameRecord`, `sameSet` |
 | structured audio_layout ↔ same | `layout` → `diffLayouts` (exists) |
+| text ↔ structured video_layout | `startsAt` (Oct 15, 2026: the layout's first item is where the file starts; frames at the layout's base; drop-frame by the file's separator) |
+| number ↔ structured video_layout | `rate` |
 | structured manifest ↔ same | later: `kind`, `fileCount`, … |
 
 **Empties mean something.** Target empty → `unspecified` (the spec does not say;

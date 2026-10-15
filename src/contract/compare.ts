@@ -17,15 +17,17 @@
 import { z } from 'zod';
 import { diffLayouts, AudioLayout, summarise, type LayoutDiff } from './shapes.js';
 import { choicesOf } from './values.js';
+import { VideoLayout, resolveLayout } from './videoLayout.js';
+import { baseLabel, labelToTc, tcError, tcToLabel, type TcBase } from './timecode.js';
 
 /* ── the rule set ─────────────────────────────────────────────────────────── */
 
-export const RULES = ['equals', 'onOrBefore', 'onOrAfter', 'within', 'atLeast', 'atMost', 'sameRecord', 'sameSet', 'layout'] as const;
+export const RULES = ['equals', 'onOrBefore', 'onOrAfter', 'within', 'atLeast', 'atMost', 'sameRecord', 'sameSet', 'layout', 'startsAt', 'rate'] as const;
 export type Rule = (typeof RULES)[number];
 
 export const RULE_LABELS: Record<Rule, string> = {
   equals: 'equals', onOrBefore: 'on or before', onOrAfter: 'on or after', within: 'within ± of', atLeast: 'at least', atMost: 'at most',
-  sameRecord: 'same record', sameSet: 'same records', layout: 'same layout',
+  sameRecord: 'same record', sameSet: 'same records', layout: 'same layout', startsAt: 'starts where the layout starts', rate: 'at the layout\'s rate',
 };
 
 interface FieldLike { id: string; key: string; name: string; type: string; table_id: string; options?: Record<string, unknown> | null }
@@ -39,7 +41,66 @@ export function rulesFor(owner: FieldLike, target: FieldLike): Rule[] {
   if (o === 'number' && t === 'number') return ['equals', 'within', 'atLeast', 'atMost'];
   if (o === 'link' && t === 'link' && owner.options?.target_table_id === target.options?.target_table_id) return ['sameRecord', 'sameSet'];
   if (o === 'structured' && t === 'structured' && owner.options?.shape === 'audio_layout' && target.options?.shape === 'audio_layout') return ['layout'];
+  // A spec's VIDEO LAYOUT is the single source of truth for two things a file can
+  // only report as plain values: its start timecode (text, as ffprobe reads the
+  // tmcd track) and its frame rate (a number). Each pairs the one layout field with
+  // the one plain field — so a deliverable needs no separate "Frame rate" column to
+  // drift away from the layout that already states it.
+  if (t === 'structured' && target.options?.shape === 'video_layout') {
+    if (o === 'text') return ['startsAt'];
+    if (o === 'number') return ['rate'];
+  }
   return [];
+}
+
+/* ── video layout versus the file's start timecode and frame rate ─────────── */
+
+const TC_TEXT_RE = /^(\d{2}):(\d{2}):(\d{2})([:;])(\d{2})$/;
+
+/**
+ * `startsAt`: where the layout's FIRST ITEM is — whatever it is, black at
+ * 00:59:50:00 or picture at 00:00:00:00 — is where the file is expected to begin
+ * (the owner's rule, Oct 15: the first thing in the list is the start of the file).
+ * Compared as FRAMES at the layout's base, never as text: at 29.97 "00:59:50:00" and
+ * "00:59:50;00" are different timecodes, and a frame count the rate cannot hold is
+ * a difference, not a coincidence. The file's separator is its only evidence of
+ * drop-frame: ';' means the file counts drop-frame, ':' that it does not, and a
+ * disagreement with the layout's `drop` is a DIFFERENCE in its own right — a
+ * non-drop master delivered against a drop-frame spec is a real delivery fault.
+ */
+export function compareStartsAt(fileTc: unknown, layout: unknown): { status: Status; detail: string; expected: string } {
+  const l = VideoLayout.safeParse(layout);
+  if (!l.success) return { status: 'unspecified', detail: 'the layout is not valid', expected: '—' };
+  const r = resolveLayout(l.data);
+  const first = r.items[0];
+  if (!first || first.start === null) return { status: 'unspecified', detail: 'the layout does not say where it starts', expected: '—' };
+  const base: TcBase = r.base;
+  const expectedTc = labelToTc(first.start, base);
+  const expected = `${expectedTc} (${baseLabel(base)})`;
+  const text = typeof fileTc === 'string' ? fileTc.trim() : '';
+  const m = TC_TEXT_RE.exec(text);
+  if (!m) return { status: 'differ', detail: `"${text}" is not a timecode (HH:MM:SS:FF)`, expected };
+  const fileDrop = m[4] === ';';
+  if (fileDrop !== base.drop) {
+    return { status: 'differ', detail: fileDrop ? `${text} counts drop-frame; the layout is ${baseLabel(base)}, non-drop` : `${text} is non-drop; the layout is ${baseLabel(base)}`, expected };
+  }
+  const err = tcError(text, base);
+  if (err) return { status: 'differ', detail: `${err} — the layout is at ${baseLabel(base)}`, expected };
+  const found = tcToLabel(text, base)!;
+  if (found === first.start) return { status: 'match', detail: `starts at ${expectedTc}${first.label ? ` (${first.label})` : ''}`, expected };
+  const by = found - first.start;
+  return { status: 'differ', detail: `${text} ≠ ${expectedTc} (${Math.abs(by)} frame${Math.abs(by) === 1 ? '' : 's'} ${by > 0 ? 'late' : 'early'} at ${baseLabel(base)})`, expected };
+}
+
+/** `rate`: the file's frame rate (3 decimals, as ffprobe's output is stored) is the layout's. */
+export function compareRate(fileRate: unknown, layout: unknown): { status: Status; detail: string; expected: string } {
+  const l = VideoLayout.safeParse(layout);
+  if (!l.success) return { status: 'unspecified', detail: 'the layout is not valid', expected: '—' };
+  const expected = String(l.data.rate);
+  const n = typeof fileRate === 'number' ? fileRate : Number(fileRate);
+  if (!Number.isFinite(n)) return { status: 'differ', detail: `"${String(fileRate)}" is not a frame rate`, expected };
+  const same = Math.round(n * 1000) === Math.round(l.data.rate * 1000);
+  return same ? { status: 'match', detail: `${expected} fps`, expected } : { status: 'differ', detail: `${n} ≠ ${expected} fps`, expected };
 }
 
 export const ComparePair = z.strictObject({
@@ -141,11 +202,20 @@ export function compareRecords(
     const tv = to.type === 'link' ? linksFrom(target.id, to.id) : target.data[to.key];
     const shapeOf = (f: FieldLike) => (f.type === 'structured' ? String(f.options?.shape ?? '') : null);
     const found = from.type === 'link' ? (fv as string[]).map(labelOf).join(', ') || '—' : show(fv, shapeOf(from));
-    const expected = to.type === 'link' ? (tv as string[]).map(labelOf).join(', ') || '—' : show(tv, shapeOf(to));
+    let expected = to.type === 'link' ? (tv as string[]).map(labelOf).join(', ') || '—' : show(tv, shapeOf(to));
     let layouts: PairResult['layouts'];
     const push = (status: Status, detail: string) => results.push({ pair, status, detail, expected, found, ...(layouts ? { layouts } : {}) });
 
     if (isEmpty(tv)) { push('unspecified', `${to.name}: not specified`); continue; }
+    // The layout rules read ONE value out of the layout; the expected column shows
+    // that value ("00:59:50:00 (29.97 DF)"), not the whole layout's summary.
+    if (pair.rule === 'startsAt' || pair.rule === 'rate') {
+      const r = pair.rule === 'startsAt' ? compareStartsAt(fv, tv) : compareRate(fv, tv);
+      expected = r.expected;
+      if (r.status === 'unspecified') { push('unspecified', `${to.name}: ${r.detail}`); continue; }
+      if (isEmpty(fv)) { push('missing', `${from.name} is empty; expected ${expected}`); continue; }
+      push(r.status, r.detail); continue;
+    }
     if (isEmpty(fv)) { push('missing', `${from.name} is empty; expected ${expected}`); continue; }
 
     let ok = false, why = '';
@@ -193,6 +263,9 @@ export function seedValues(
     const from = fieldsById.get(pair.from), to = fieldsById.get(pair.to);
     if (!from || !to || seen.has(from.id)) continue;
     seen.add(from.id);
+    // A file's start timecode and frame rate are EVIDENCE ffprobe wrote; copying the
+    // spec's into them would be writing a fiction into a column the file owns.
+    if (pair.rule === 'startsAt' || pair.rule === 'rate') continue;
     // Only like-typed pairs can seed: a number cannot become a select. (rulesFor already
     // restricts pairs to like types, except text ↔ select, which seeds as text.)
     if (from.type === 'link') {

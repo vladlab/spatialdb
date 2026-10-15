@@ -551,6 +551,12 @@ table (what is EXPECTED), `rule` legal for the two types (`rulesFor`):
 | number ↔ number | `equals`, `within` (`params.tolerance`, required), `atLeast`, `atMost` |
 | link ↔ link (same target) | `sameRecord`, `sameSet` |
 | audio_layout ↔ audio_layout | `layout` |
+| text ↔ video_layout | `startsAt` — the file's start timecode is where the layout's FIRST ITEM starts, compared as frames at the layout's base; a `;`/`:` separator that disagrees with the layout's drop-frame is a difference; no pinned start → `unspecified` |
+| number ↔ video_layout | `rate` — the file's frame rate (3 decimals) is the layout's |
+
+The two `video_layout` rules make the spec's layout the ONE source of truth for
+what a file can only report as plain values; one layout field pairs with both. They
+never seed (`seedValues` skips them): a file's timecode and rate are ffprobe's evidence.
 
 A **junction column** (sql/016 — the "Delivery" backlink on Files) can carry the
 same `compare` config: `from` a field of Files, `to` a field of the OTHER end's

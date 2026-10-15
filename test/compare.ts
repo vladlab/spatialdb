@@ -138,6 +138,36 @@ async function main() {
     check('grid cells carry the verdict to the right of the value', await until(() => cellIcon('Codec').exists()) && cellIcon('Codec').classes('ok') && cellIcon('Size').classes('ok') && !cellIcon('Name').exists());
     await post([{ type: 'record.update', id: file, set: { size: 500 }, unset: [] }]);
     check('…live: Size over the maximum turns ⚠ in the cell', await until(() => cellIcon('Size').exists() && !cellIcon('Size').classes('ok')));
+
+    console.log('\nC7. A video layout on the spec against the file\'s start timecode and frame rate');
+    const fSVideo = randomUUID(), fTc = randomUUID(), fFps = randomUUID();
+    const head = { rate: 29.97, drop: true, items: [{ label: 'Black', kind: 'black', start: '00:59:50;00', duration: '00:00:10:00' }, { label: 'Picture', kind: 'picture', duration: 'open' }] };
+    const r6 = await post([
+      { type: 'field.create', id: fSVideo, tableId: tSpecs, name: 'Video layout', key: 'video_layout', fieldType: 'structured', options: { shape: 'video_layout' } },
+      { type: 'field.create', id: fTc, tableId: tFiles, name: 'Start timecode', key: 'start_timecode', fieldType: 'text' },
+      { type: 'field.create', id: fFps, tableId: tFiles, name: 'Frame rate', key: 'frame_rate', fieldType: 'number' },
+      { type: 'record.update', id: spec, set: { video_layout: head }, unset: [] },
+      { type: 'record.update', id: file, set: { start_timecode: '00:59:50:00', frame_rate: 29.97, size: 90 }, unset: [] },
+    ]);
+    check('a spec gets a video layout; the file its start timecode and frame rate', r6.status === 200, (await r6.text()).slice(0, 200));
+    const c6 = (await pool.query(`select options from fields where id = '${fSpec}'`)).rows[0].options;
+    await post([{ type: 'field.update', id: fSpec, options: { ...c6, compare: { pairs: [...c6.compare.pairs, { from: fTc, to: fSVideo, rule: 'startsAt' }, { from: fFps, to: fSVideo, rule: 'rate' }] } } }]);
+    await go(tFiles);
+    await th('Spec').find('.th-menu').trigger('click');
+    await until(() => gridPop().findAll('.cp-pair').length === 5);
+    const ruleOpts = (i: number) => gridPop().findAll('.cp-pair')[i].findAll('.cp-rule option').map((o: any) => o.text()).join();
+    check('in the pairs editor, Start timecode ↔ Video layout has the one rule "starts where the layout starts", Frame rate ↔ Video layout "at the layout\'s rate"', ruleOpts(3) === 'starts where the layout starts' && ruleOpts(4) === 'at the layout\'s rate', ruleOpts(3) + ' / ' + ruleOpts(4));
+    await gridPop().trigger('keydown', { key: 'Escape' });
+    await until(() => !gridPop().exists() && w.findAll('.gridview tr.row').some((r: any) => r.findAll('td')[1]?.text() === 'ep101.mov'));
+    await openRecord('ep101.mov');
+    check('the tray: the file counts non-drop against a drop-frame layout — ⚠ on Start timecode, with the reason; ✓ on Frame rate', await until(() => pField('Start timecode').find('.cmp-badge').exists() && pField('Frame rate').find('.cmp-badge').exists())
+      && pField('Start timecode').find('.cmp-badge').text() === '⚠' && /non-drop; the layout is 29.97 DF/.test(pField('Start timecode').find('.cmp-badge').attributes('title') ?? '') && pField('Frame rate').find('.cmp-badge').classes('ok'), pField('Start timecode').find('.cmp-badge').attributes('title'));
+    await post([{ type: 'record.update', id: file, set: { start_timecode: '00:59:50;00' }, unset: [] }]);
+    check('…corrected to a drop-frame timecode it matches — live', await until(() => pField('Start timecode').find('.cmp-badge').classes('ok')));
+    await strip().find('.sbs-btn').trigger('click');
+    await until(() => sbs().exists());
+    const tcRow = () => sbs().findAll('.sbs-row').find((r: any) => /Start timecode/.test(r.text()))!;
+    check('side by side shows the EXPECTED start as the one timecode the layout states, with its base — not the whole layout', /00:59:50;00 \(29.97 DF\)/.test(tcRow().findAll('.sbs-val')[1].text()), tcRow().text());
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);
     await ui.close();

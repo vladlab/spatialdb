@@ -442,7 +442,7 @@ function pure() {
   {
   console.log('\nG1n. The comparison engine (contract/compare.ts)');
   const tF = 'files', tD = 'dels';
-  const U: Record<string, string> = Object.fromEntries(['c1', 'c2', 's1', 's2', 's3', 'd1', 'd2', 't1', 't2', 'w1', 'w2', 'a1', 'a2', 'L'].map((k) => [k, randomUUID()]));
+  const U: Record<string, string> = Object.fromEntries(['c1', 'c2', 's1', 's2', 's3', 'd1', 'd2', 't1', 't2', 'w1', 'w2', 'a1', 'a2', 'L', 'v2', 'tc', 'fps'].map((k) => [k, randomUUID()]));
   const F = (id: string, key: string, type: string, table_id: string, options: Record<string, unknown> = {}) => ({ id, key, name: key, type, table_id, options });
   const codecF = F(U.c1, 'codec', 'text', tF), codecD = F(U.c2, 'codec', 'text', tD);
   const sizeF = F(U.s1, 'size', 'number', tF), maxD = F(U.s2, 'max_size', 'number', tD), sizeD = F(U.s3, 'size', 'number', tD);
@@ -493,6 +493,30 @@ function pure() {
     && JSON.stringify(seed.set.audio_layout) === JSON.stringify(five1), JSON.stringify(seed));
   check('…with overwrite, the kept value goes too', 'codec' in seedValues(pairs, byId, { id: 'F2', data: { codec: 'keep me' } }, spec, lf, true).set);
   check('…a select value that is not one of the field\'s choices is skipped, and says so', /not one of its choices/.test(seedValues([{ from: U.t1, to: U.t2, rule: 'equals' }], byId, { id: 'F', data: {} }, { id: 'D', data: { status: 'zzz' } }, lf).skipped.join()));
+
+  console.log('\nG1n-2. A video layout as the source of truth for start timecode and frame rate');
+  const vlD = F(U.v2, 'video_layout', 'structured', tD, { shape: 'video_layout' });
+  const tcF = F(U.tc, 'start_timecode', 'text', tF), fpsF = F(U.fps, 'frame_rate', 'number', tF);
+  for (const f of [vlD, tcF, fpsF]) byId.set(f.id, f);
+  check('a layout on the EXPECTED side pairs with a text field (starts at) and a number field (rate) on the found side — and with nothing else', rulesFor(tcF, vlD).join() === 'startsAt' && rulesFor(fpsF, vlD).join() === 'rate'
+    && rulesFor(dueF, vlD).length === 0 && rulesFor(alF, vlD).length === 0 && rulesFor(codecF, vlD).join() === 'startsAt');
+  const vPairs: ComparePair[] = [{ from: U.tc, to: U.v2, rule: 'startsAt' }, { from: U.fps, to: U.v2, rule: 'rate' }];
+  check('…the server accepts them, and refuses the rule on a non-layout target', compareConfigError({ table_id: tF, options: { target_table_id: tD, compare: { pairs: vPairs } } }, [...all, vlD, tcF, fpsF]) === null
+    && /not valid for/.test(compareConfigError({ table_id: tF, options: { target_table_id: tD, compare: { pairs: [{ from: U.tc, to: U.c2, rule: 'startsAt' }] } } }, [...all, vlD, tcF, fpsF]) ?? ''));
+  const head = { rate: 23.976, drop: false, items: [{ label: 'Black', kind: 'black', start: '00:59:50:00', duration: '00:00:10:00' }, { label: 'Picture', kind: 'picture', start: '01:00:00:00', duration: 'open' }] };
+  const vr = (data: Record<string, unknown>, layout: unknown) => Object.fromEntries(compareRecords(vPairs, byId, { id: 'F', data }, { id: 'D', data: { video_layout: layout } }, lf).results.map((r) => [r.pair.from, r]));
+  let v = vr({ start_timecode: '00:59:50:00', frame_rate: 23.976 }, head);
+  check('the file starts where the layout\'s FIRST ITEM starts (black at 00:59:50:00, not picture) and runs at its rate: both match', v[U.tc].status === 'match' && v[U.fps].status === 'match' && v[U.tc].expected === '00:59:50:00 (23.976)' && v[U.fps].expected === '23.976', JSON.stringify(v));
+  v = vr({ start_timecode: '01:00:00:00', frame_rate: 25 }, head);
+  check('a file starting at picture is late by the head, and the rate differs — both say by how much', v[U.tc].status === 'differ' && /240 frames late/.test(v[U.tc].detail) && v[U.fps].status === 'differ' && /25 ≠ 23.976/.test(v[U.fps].detail), v[U.tc].detail + ' | ' + v[U.fps].detail);
+  check('an empty file value is MISSING; a layout with no pinned start is UNSPECIFIED', vr({}, head)[U.tc].status === 'missing' && vr({ start_timecode: '00:59:50:00' }, { rate: 24, drop: false, items: [{ label: 'Black', duration: '00:00:03:00' }] })[U.tc].status === 'unspecified'
+    && vr({ start_timecode: '00:59:50:00' }, { rate: 24, drop: false, items: [] })[U.tc].status === 'unspecified');
+  const df = { rate: 29.97, drop: true, items: [{ label: 'Picture', kind: 'picture', start: '01:00:00;00', duration: 'open' }] };
+  check('DROP-FRAME: a file whose timecode counts non-drop (":") against a drop-frame layout DIFFERS even at the same label — and the other way round', vr({ start_timecode: '01:00:00:00' }, df)[U.tc].status === 'differ' && /non-drop; the layout is 29.97 DF/.test(vr({ start_timecode: '01:00:00:00' }, df)[U.tc].detail)
+    && vr({ start_timecode: '01:00:00;00' }, df)[U.tc].status === 'match' && /counts drop-frame/.test(vr({ start_timecode: '00:59:50;00' }, head)[U.tc].detail));
+  check('compared as frames at the layout\'s rate: frame 29 does not exist at 23.976, and reads as a difference, not a coincidence', /frame 29/.test(vr({ start_timecode: '00:59:50:29' }, head)[U.tc].detail) && vr({ start_timecode: 'not a tc' }, head)[U.tc].status === 'differ');
+  check('a 3-decimal rate matches 24000/1001 as ffprobe stores it; 24 does not', vr({ frame_rate: 23.976 }, head)[U.fps].status === 'match' && vr({ frame_rate: 24 }, head)[U.fps].status === 'differ');
+  check('neither rule SEEDS — a file\'s start timecode and rate are ffprobe\'s evidence, never copied from the spec', Object.keys(seedValues(vPairs, byId, { id: 'F', data: {} }, { id: 'D', data: { video_layout: head } }, lf).set).length === 0);
 
   }
   console.log('\nG1o. Ranking a select\'s choices (client/fuzzy.ts: rankChoices)');
