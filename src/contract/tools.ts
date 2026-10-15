@@ -230,6 +230,10 @@ export const Step = z.strictObject({
    *  from the record by hand (the ▶ beside its path) — for the slow steps a client
    *  asks for once, such as an md5. */
   when: z.enum(WHEN).optional(),
+  /** Hash steps only. Absent = true: the hash is written into the record's manifest
+   *  (beside the size, or beside each member) through the Manifest field the
+   *  filesystem step maps. `false`: only where `map.hash` points. */
+  into_manifest: z.boolean().optional(),
   map: z.record(z.string(), z.guid()),
 });
 export const Recipe = z.strictObject({ steps: z.array(Step) });
@@ -275,6 +279,12 @@ export function toolsProblem(tools: unknown, fields: Iterable<ToolFieldLike>): s
         used.set(fieldId, `${a.id}.${key}`);
       }
     }
+    // A hash step writing into the manifest with no Manifest field mapped writes
+    // nothing — like any step with an empty map, allowed (it is how a step starts
+    // out); the editor says so beside the tick instead of refusing the save.
+    for (const step of recipe.steps) {
+      if (step.into_manifest !== undefined && !isHashStep(step)) return `${analyzerOf(step.analyzer)?.name ?? step.analyzer}: only a hash step can write into the manifest`;
+    }
     for (const r of REQUIRED) {
       if (!recipe.steps.some((s) => s.analyzer === r.analyzer && r.key in s.map)) {
         const a = analyzerOf(r.analyzer)!;
@@ -289,6 +299,9 @@ export function toolsProblem(tools: unknown, fields: Iterable<ToolFieldLike>): s
 export const runsOnOf = (step: Step): RunsOn => step.runs_on ?? analyzerOf(step.analyzer)?.defaultRunsOn ?? {};
 /** A step run by hand from the record, not at the drop. */
 export const isManual = (step: Step): boolean => step.when === 'manual';
+export const isHashStep = (step: Step): boolean => step.analyzer.startsWith('hash-');
+/** Does this hash step write into the manifest? (Absent = yes.) */
+export const intoManifest = (step: Step): boolean => isHashStep(step) && step.into_manifest !== false;
 
 /** Does a step apply to a dropped thing? An absent list is no constraint. */
 export function stepApplies(step: Step, unit: { media: string; kind: string }): boolean {
@@ -325,6 +338,7 @@ export function describe(recipe: Recipe, fields: Iterable<{ id: string; name: st
     const via = a.program ? `${a.program}${v}` : a.name;
     // In the analyzer's own output order — jsonb does not keep a map's key order.
     const cols = a.outputs.filter((o) => o.key in step.map).map((o) => `${o.name} → ${nameOf.get(step.map[o.key]) ?? 'a missing field'}`);
+    if (intoManifest(step)) cols.unshift('into the manifest');
     return `${i + 1}. ${when}: ${via} → ${cols.length ? cols.join(', ') : 'nothing mapped'}.`;
   });
 }

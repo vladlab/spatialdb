@@ -150,6 +150,7 @@ async function main() {
     await until(() => child().find('.rl-id').text() === 'deliverables');
     check('ticking a via names the level after the table it lands in, and the other link (to Works) is now disabled — different table',
       child().findAll('.rl-via').find((x: any) => x.find('.rl-via-name').text() === 'Work')!.classes('off'));
+    check('the role box is NOT inside the via row\'s <label> (WebKit would tick the checkbox on every click in it)', !child().find('.rl-role').element.closest('label') && !!child().find('.rl-via input[type="checkbox"]').element.closest('label'));
     await child().find('.rl-role').setValue('target');
     await tick(child(), 'Codec');
     await rootEd().find('.add-rollup').trigger('click');

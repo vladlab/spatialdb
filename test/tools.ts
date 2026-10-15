@@ -75,7 +75,7 @@ async function main() {
     const u = { media: 'audio', kind: 'file' };
     check('stepApplies: ffprobe\'s DEFAULT is video or audio; an explicit runs_on replaces it; both lists must match', stepApplies(ff({}), u) && !stepApplies(ff({}), { media: 'document', kind: 'file' }) && !stepApplies(ff({}, { media: ['video'] }), u) && stepApplies({ analyzer: 'hash-xxh3', map: {} }, { media: 'other', kind: 'bundle' }) && !stepApplies(ff({}, { media: ['audio'], kind: ['sequence'] }), u));
     const lines = describe(ok.file_drop as never, [{ id: fPath, name: 'Path' }, { id: fName, name: 'Name' }, { id: fKind, name: 'Kind' }, { id: fManifest, name: 'Manifest' }, { id: fWidth, name: 'Width' }, { id: fLayout, name: 'Audio' }, { id: fHash, name: 'Hash' }], { ffprobe: '7.1' });
-    check('describe() turns the recipe into checkable sentences, with the program version', lines.length === 3 && /^1\. For everything: Filesystem → Path → Path, File name → Name/.test(lines[0]) && /^2\. If video or audio: ffprobe 7\.1 → Width → Width, Audio layout → Audio\.$/.test(lines[1]) && /^3\. If file or bundle or channel set: Hash \(xxh3\) → Hash → Hash\.$/.test(lines[2]), JSON.stringify(lines));
+    check('describe() turns the recipe into checkable sentences, with the program version', lines.length === 3 && /^1\. For everything: Filesystem → Path → Path, File name → Name/.test(lines[0]) && /^2\. If video or audio: ffprobe 7\.1 → Width → Width, Audio layout → Audio\.$/.test(lines[1]) && /^3\. If file or bundle or channel set: Hash \(xxh3\) → into the manifest, Hash → Hash\.$/.test(lines[2]), JSON.stringify(lines));
     check('…a manual step says so', /when asked from the record: Hash \(md5\)/.test(describe({ steps: [{ analyzer: 'hash-md5', when: 'manual', map: {} }] }, [])[0]));
     check('…and says when the program is not on this machine', /ffprobe \(not on this machine\)/.test(describe(ok.file_drop as never, [], { ffprobe: null })[1]));
     check('Via: lowercase snake, 2–40 chars', Via.safeParse('file_drop').success && !Via.safeParse('File Drop').success && !Via.safeParse('x').success && !Via.safeParse('a'.repeat(41)).success);
@@ -343,6 +343,14 @@ async function main() {
     await stepCard(2).find('button[title="Run earlier"]').trigger('click');
     cfg = await ui.untilDb(`select tools from tables where id = '${tNew}'`, (x) => x[0]?.tools?.file_drop?.steps?.[1]?.analyzer === 'hash-xxh3');
     check('↑ moves a step earlier; the order IS the recipe', cfg[0].tools.file_drop.steps.map((s: any) => s.analyzer).join() === 'filesystem,hash-xxh3,ffprobe');
+    const tickBox = () => stepCard(1).find('.into-manifest input[type="checkbox"]');
+    check('a HASH step has its own "into the manifest" tick, on by default, warning that this table maps no Manifest yet; its Hash column dropdown reads "(no column)"', tickBox().exists() && (tickBox().element as HTMLInputElement).checked
+      && /no Manifest field is mapped/.test(stepCard(1).find('.into-manifest').text()) && stepCard(1).find('.rows select option').text() === '(no column)' && !stepCard(0).find('.into-manifest').exists());
+    await tickBox().setValue(false);
+    cfg = await ui.untilDb(`select tools from tables where id = '${tNew}'`, (x) => x[0]?.tools?.file_drop?.steps?.[1]?.into_manifest === false);
+    check('…unticking it is saved as an explicit into_manifest: false; ticking it again removes the key (absent = into the manifest)', cfg[0].tools.file_drop.steps[1].into_manifest === false);
+    await tickBox().setValue(true);
+    cfg = await ui.untilDb(`select tools from tables where id = '${tNew}'`, (x) => x[0]?.tools?.file_drop?.steps?.[1] && !('into_manifest' in x[0].tools.file_drop.steps[1]));
     await stepCard(1).find('button[title="Remove this step"]').trigger('click');
     cfg = await ui.untilDb(`select tools from tables where id = '${tNew}'`, (x) => x[0]?.tools?.file_drop?.steps?.length === 2);
     check('× removes it', cfg[0].tools.file_drop.steps.map((s: any) => s.analyzer).join() === 'filesystem,ffprobe');

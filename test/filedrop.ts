@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { mountApp, sleep } from './uiHarness.js';
 import { boardsTableMutations } from './harness.js';
 import type { Unit } from '../src/client/tools/fileDrop.js';
-import { resolveMap, stepApplies } from '../src/contract/tools.js';
+import { describe, resolveMap, stepApplies } from '../src/contract/tools.js';
 
 let pass = 0, fail = 0;
 function check(label: string, ok: boolean, detail = '') {
@@ -253,19 +253,40 @@ async function main() {
     await go(tFiles);
     await until(() => w.findAll('.gridview tr.row').some((row: any) => /final\.mov/.test(row.text())));
     await w.findAll('.gridview tr.row').find((row: any) => /final\.mov/.test(row.text()))!.find('.expand').trigger('click');
-    check('the record tray offers ▶ Hash (md5) beside the path, next to "show"', await until(() => w.find('.record-panel .run-step').exists()) && w.find('.record-panel .run-step').text() === '▶ Hash (md5)' && w.find('.record-panel .reveal').exists());
+    const fieldNamed = (label: string) => w.findAll('.record-panel .rp-field').find((x: any) => x.find('.rp-name').text().replace(/[★⚠✓▶⤴].*$/s, '').trim() === label)!;
+    check('the record tray offers ▶ Hash (md5) on the MANIFEST field (where a hash lands), not on the path; "show" stays on the path', await until(() => w.find('.record-panel .run-step').exists()) && w.find('.record-panel .run-step').text() === '▶ Hash (md5)'
+      && fieldNamed('Manifest').find('.run-step').exists() && !fieldNamed('Path').find('.run-step').exists() && fieldNamed('Path').find('.reveal').exists() && !fieldNamed('Manifest').find('.reveal:not(.run-step)').exists());
     const seqBefore = Number((await rows(`select coalesce(max(seq), 0) n from mutations`))[0].n);
     calls.length = 0;
     await w.find('.record-panel .run-step').trigger('click');
     fr = await untilDb(`select id, data from records where id = '${fr[0].id}'`, (x) => !!x[0].data.md5);
     check('clicking it asks the shell to run that analyzer on THE RECORD\'S PATH (analyze_path — the native "read this file?" dialog is the shell\'s), and the md5 is written, into the manifest too',
       calls.some((c) => c.cmd === 'analyze_path' && c.args.path === '/mnt/san/final.mov' && c.args.analyzer === 'hash-md5') && /^md5:[0-9a-f]{32}$/.test(fr[0].data.md5) && fr[0].data.manifest.hash === fr[0].data.md5 && fr[0].data.hash?.startsWith('xxh3:'), JSON.stringify(fr[0].data));
+    check('…and the click did NOT also "show in folder" (the tab is no longer a <label>, which activated its first button on any click inside)', !calls.some((c) => c.cmd === 'reveal'));
     const seqAfter = Number((await rows(`select coalesce(max(seq), 0) n from mutations`))[0].n);
     check('…as ONE mutation of its own, tagged file_drop (a hash asked for by hand is a deliberate change, so Ctrl+Z takes it alone)', seqAfter === seqBefore + 1 && (await rows(`select via, payload from mutations where seq = ${seqAfter}`))[0].via === 'file_drop');
     allowPath = false;
     await w.find('.record-panel .run-step').trigger('click');
     check('when the person declines the native dialog nothing is written and the refusal is a notice about that file', await until(() => /you did not allow it/.test(noticesText())) && (await rows(`select coalesce(max(seq), 0) n from mutations`))[0].n == seqAfter, noticesText());
     allowPath = true;
+
+    console.log('\nF6e. "into the manifest" is the hash step\'s own setting');
+    const r6e = await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [
+        { analyzer: 'filesystem', map: { path: f.path, name: f.name, kind: f.kind, manifest: f.manifest, total_size: f.size, media: f.media } },
+        { analyzer: 'hash-xxh3', into_manifest: false, map: { hash: f.hash } },
+        { analyzer: 'hash-md5', map: {} },
+      ] } } }]);
+    check('a hash step may opt OUT of the manifest (a column only), and one with no column at all still writes into the manifest', r6e.status === 200, (await r6e.text()).slice(0, 200));
+    check('…but into_manifest is refused on a non-hash step', (await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', into_manifest: true, map: { path: f.path } }] } } }])).status === 400);
+    drop(['/mnt/san/opt.mov']);
+    fr = await untilDb(`select data from records where table_id = '${tFiles}' and data->>'name' = 'opt.mov'`, (x) => x.length === 1 && x[0].data.hash && x[0].data.manifest?.hash);
+    check('at the drop: the xxh3 went to its column ONLY; the md5, with no column, into the manifest', fr[0].data.hash.startsWith('xxh3:') && fr[0].data.manifest.hash.startsWith('md5:'), JSON.stringify(fr[0].data));
+    await go(tFiles);
+    await until(() => w.findAll('.gridview tr.row').some((row: any) => row.findAll('td')[1]?.text().startsWith('mix51')));
+    await w.findAll('.gridview tr.row').find((row: any) => row.findAll('td')[1]?.text().startsWith('mix51'))!.find('.expand').trigger('click');
+    check('the tray\'s manifest of a channel set SHOWS each member\'s hash beside its channel (short, the full value on hover)', await until(() => w.findAll('.record-panel .mv-member-hash').length === 6)
+      && w.findAll('.record-panel .mv-member-hash').every((c: any) => /^xxh3:/.test(c.text()) && /^xxh3:[0-9a-f]{16}$/.test(c.attributes('title') ?? '')), w.findAll('.record-panel .mv-member-hash').map((c: any) => c.text()).join('|'));
+    check('the Summary says so', describe({ steps: [{ analyzer: 'hash-md5', when: 'manual', map: {} }] }, [])[0].endsWith('Hash (md5) → into the manifest.') && /Hash \(xxh3\) → Hash → Hash\.$/.test(describe({ steps: [{ analyzer: 'hash-xxh3', into_manifest: false, map: { hash: 'x' } }] }, [{ id: 'x', name: 'Hash' }])[0]));
 
     console.log('\nF7. Dropping on a canvas');
     win.location.hash = `#/all/canvas`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange'));

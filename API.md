@@ -403,19 +403,23 @@ RECIPE:
     { "analyzer": "filesystem",                                        "map": { "path": "<fieldId>", "name": "<fieldId>" } },
     { "analyzer": "ffprobe",   "runs_on": { "media": ["video", "audio"] }, "map": { "width": "<fieldId>" } },
     { "analyzer": "hash-xxh3",                                         "map": { "hash": "<fieldId>" } },
-    { "analyzer": "hash-md5",  "when": "manual",                        "map": { "hash": "<fieldId>" } } ] } }
+    { "analyzer": "hash-md5",  "when": "manual", "into_manifest": true,  "map": {} } ] } }
 ```
 
 - An **analyzer** is one compiled unit of derivation, declared in `tools.ts` with
   the program it runs (or built in), a one-line `how`, a default `runs_on`, and its
   outputs: `filesystem`, `sequence`, `imf`, `ffprobe`, `hash-xxh3`, `hash-sha256`,
-  `hash-md5`. Hashes are PER FILE (Oct 15): a single file's goes to the `hash`
-  output and into its manifest; a bundle's or channel set's members each get their
-  own, written beside the member into the Manifest field the FILESYSTEM step maps
-  (the hash step has no manifest output, so no two steps own one field); a sequence
-  is not hashed. A step may say `when: "manual"`: it is skipped at the drop and run
-  from the record (▶ beside its path in the tray; `runManualStep` →
-  `analyze_path`), as one undoable `record.update` — for the md5 a client asks for
+  `hash-md5`. Hashes are PER FILE (Oct 15): a single file's hash, or one per member
+  of a bundle or channel set; a sequence is not hashed. Where they go is the hash
+  step's own business: `into_manifest` (absent = true; the "into the manifest" tick
+  in the Steps editor) writes them into the record's manifest — beside the size, or
+  beside each member — through the Manifest field the FILESYSTEM step maps (the
+  hash step has no manifest output, so no two steps own one field); `map.hash`
+  optionally puts a single file's hash in a column as well. A hash step with
+  neither writes nothing (allowed, as any empty step; the editor warns). A step may
+  say `when: "manual"`: it is skipped at the drop and run from the record — ▶ on the
+  MANIFEST field in the tray (else on the step's Hash column); `runManualStep` →
+  `analyze_path` — as one undoable `record.update`: for the md5 a client asks for
   once rather than on every drop.
   Each that runs a program offers its version as an output (`ffprobe.version`) —
   provenance a table may keep per record. The desktop's handshake reports which

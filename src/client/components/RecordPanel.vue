@@ -63,19 +63,22 @@
       </button>
       <div v-if="g.open" class="rp-well rp-fields" :class="{ sectioned: g.head }">
       <div v-for="f in g.fields" :key="f.id" class="rp-field" :class="{ editing: editingId === f.id, block: f.type === 'rich_text', readonly: READONLY(f) }">
-        <label class="rp-name">
+        <!-- A <div>, not a <label>: a label activates its FIRST labelable descendant on
+             any click inside it, so a second button in the tab (▶ md5 beside ⤴ show)
+             clicked the first one too — the "manual hash also showed the file" bug. -->
+        <div class="rp-name">
           <span v-if="f.id === primaryId" class="star" title="Primary field — this record's name">★</span>{{ f.name }}
           <span v-if="verdicts.get(f.id)" class="cmp-badge" :class="{ ok: verdicts.get(f.id)!.ok }" :title="verdicts.get(f.id)!.title">{{ verdicts.get(f.id)!.ok ? '✓' : '⚠' }}</span>
           <!-- Desktop app only: select the file in the file manager (never opens it — src-tauri/src/lib.rs). -->
           <button v-if="desktop && f.type === 'file_path' && typeof record.data[f.key] === 'string'" class="reveal" title="Show in folder"
                   @click.stop="reveal(String(record.data[f.key]))">⤴ show</button>
-          <!-- The recipe's MANUAL steps (an md5): run by hand, on this record's file. -->
-          <template v-if="desktop && f.type === 'file_path' && typeof record.data[f.key] === 'string' && !jobs.get(recordId)">
-            <button v-for="m in manual" :key="m.index" class="reveal run-step" :title="`Run ${m.name} on this file now`"
+          <!-- The recipe's MANUAL steps (an md5), on the field they write — the manifest. -->
+          <template v-if="manualHome === f.id && !jobs.get(recordId)">
+            <button v-for="m in manual" :key="m.index" class="reveal run-step" :title="`Run ${m.name} on this record's file now`"
                     @click.stop="runManualStep(store, recordId, m.index)">▶ {{ m.name }}</button>
           </template>
-          <span v-if="jobs.get(recordId) && f.type === 'file_path'" class="job">{{ jobs.get(recordId) }}…</span>
-        </label>
+          <span v-if="jobs.get(recordId) && (f.type === 'file_path' || manualHome === f.id)" class="job">{{ jobs.get(recordId) }}…</span>
+        </div>
 
         <!-- RICH TEXT is not a click-to-edit value like the rest: it is an editor that
              is simply THERE, full width, at a height that only the user changes. The
@@ -208,7 +211,7 @@ import { useDerived } from '../derived';
 import { confirmDialog } from '../dialogs';
 import CellEditor, { type EditExit } from './CellEditor.vue';
 import { invoke, isDesktop, jobs, notice } from '../desktop';
-import { manualSteps, runManualStep } from '../tools/fileDrop';
+import { manualHomeField, manualSteps, pathKeyOf, runManualStep } from '../tools/fileDrop';
 import LinkPicker from './LinkPicker.vue';
 import JunctionEditor from './JunctionEditor.vue';
 import RecordPill from './RecordPill.vue';
@@ -248,6 +251,8 @@ const record = computed(() => store.state.records.get(props.recordId));
 const table = computed(() => store.state.tables.get(record.value?.table_id ?? ''));
 /** The recipe's manual steps on this table — offered beside the path, in the desktop app. */
 const manual = computed(() => (desktop && table.value ? manualSteps(store, table.value.id) : []));
+/** The field the ▶ buttons sit on: the Manifest the recipe maps (where a hash lands), else the first mapped hash field. */
+const manualHome = computed(() => (manual.value.length && table.value && record.value && typeof record.value.data[pathKeyOf(store, table.value.id) ?? ''] === 'string' ? manualHomeField(store, table.value.id) : null));
 const tableColor = computed(() => table.value?.color || 'var(--card-head-bg)');
 const fields = computed(() => (record.value ? fieldsOf(store.state, record.value.table_id) : []));
 

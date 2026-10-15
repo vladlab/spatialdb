@@ -43,12 +43,16 @@
     <div v-if="depth > 0" class="rl-block">
       <span class="rl-label">via</span>
       <div class="rl-rows">
-        <label v-for="c in viaChoices" :key="c.fieldId" class="rl-via" :class="{ off: c.disabled, through: c.dir === 'junction' }" :data-via="c.fieldId" :title="c.disabled ? 'lands in a different table than the links already chosen' : c.title">
-          <input type="checkbox" :checked="viaIndex(c.fieldId) >= 0" :disabled="c.disabled" @change="toggleVia(c.fieldId, ($event.target as HTMLInputElement).checked)" />
-          <span class="rl-via-name">{{ c.label }}</span>
-          <span class="rl-via-dir">{{ c.dir === 'forward' ? '→' : c.dir === 'junction' ? '⇄' : '←' }} {{ c.tableName }}<template v-if="c.dir === 'junction'"> · through {{ c.through }}</template></span>
+        <!-- The role box sits OUTSIDE the <label>: WebKit (the desktop window) activates a
+             label's checkbox on a click anywhere inside it, so typing a role un-ticked the link. -->
+        <div v-for="c in viaChoices" :key="c.fieldId" class="rl-via" :class="{ off: c.disabled, through: c.dir === 'junction' }" :data-via="c.fieldId" :title="c.disabled ? 'lands in a different table than the links already chosen' : c.title">
+          <label class="rl-via-tick">
+            <input type="checkbox" :checked="viaIndex(c.fieldId) >= 0" :disabled="c.disabled" @change="toggleVia(c.fieldId, ($event.target as HTMLInputElement).checked)" />
+            <span class="rl-via-name">{{ c.label }}</span>
+            <span class="rl-via-dir">{{ c.dir === 'forward' ? '→' : c.dir === 'junction' ? '⇄' : '←' }} {{ c.tableName }}<template v-if="c.dir === 'junction'"> · through {{ c.through }}</template></span>
+          </label>
           <input v-if="viaIndex(c.fieldId) >= 0" class="rl-role" :value="d.via[viaIndex(c.fieldId)].role ?? ''" placeholder="role" title="Shown on every record reached through this link: 'bid', 'added'" @change="setRole(c.fieldId, val($event))" />
-        </label>
+        </div>
         <p v-if="!viaChoices.length" class="rl-note">no link fields connect to {{ parentTableName }} — add one to a table first</p>
       </div>
     </div>
@@ -505,6 +509,7 @@ function addChild() {
 .rl-via.through .rl-via-dir { color: var(--text-muted); }
 .rl-field, .rl-via { display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text-secondary); min-width: 0; }
 .rl-via.off { opacity: 0.4; cursor: default; }
+.rl-via-tick { display: flex; align-items: center; gap: 4px; cursor: inherit; min-width: 0; }
 .rl-via-name { color: var(--text-primary); }
 .rl-via-dir { color: var(--text-faint); font-size: 11px; white-space: nowrap; }
 .rl-role { width: 64px; margin-left: 4px; }

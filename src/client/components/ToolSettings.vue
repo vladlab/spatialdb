@@ -62,11 +62,17 @@
           </div>
 
           <div class="rows">
+            <!-- A hash step: into the manifest by default (beside the size, or beside each member of a set); a column as well if wanted. -->
+            <label v-if="isHashStep(step)" class="row into-manifest" :title="manifestMapped ? 'Written into the record\'s manifest, through the Manifest field the Filesystem step maps' : 'The Filesystem step maps no Manifest field yet'">
+              <span class="oname"><input type="checkbox" :checked="intoManifest(step)" @change="setIntoManifest(i, ($event.target as HTMLInputElement).checked)" /> into the manifest</span>
+              <span class="otype">manifest</span>
+              <span class="hint-cell">{{ manifestMapped ? 'beside the size, or beside each member of a set' : '⚠ no Manifest field is mapped in the Filesystem step' }}</span>
+            </label>
             <div v-for="out in analyzerOf(step.analyzer)?.outputs ?? []" :key="out.key" class="row" :title="out.note ?? ''">
               <span class="oname">{{ out.name }}<span v-if="isRequired(step.analyzer, out.key)" class="req" title="the tool cannot run without this">*</span></span>
               <span class="otype">{{ out.type.replace('structured:', '') }}</span>
               <select :value="step.map[out.key] ?? ''" @change="setMap(i, out.key, ($event.target as HTMLSelectElement).value)">
-                <option value="">(not written)</option>
+                <option value="">{{ isHashStep(step) ? '(no column)' : '(not written)' }}</option>
                 <option v-for="f in accepting(out)" :key="f.id" :value="f.id">{{ f.name }}</option>
               </select>
               <button v-if="!step.map[out.key] && !hasKey(out.key)" class="plain mini" title="make a field for this output and map it" @click="addField(i, out)">+ field</button>
@@ -110,7 +116,7 @@ import type { Store } from '../store';
 import { fieldsOf } from '../state';
 import { useSchemaActions } from '../schemaActions';
 import { available } from '../desktop';
-import { ANALYZERS, KINDS, MEDIA, REQUIRED, analyzerOf, describe, fieldAccepts, isManual, runsOnOf, toolsProblem, type Kind, type Media, type Output, type Recipe, type Step, type TablesTools } from '../../contract/tools';
+import { ANALYZERS, KINDS, MEDIA, REQUIRED, analyzerOf, describe, fieldAccepts, intoManifest, isHashStep, isManual, runsOnOf, toolsProblem, type Kind, type Media, type Output, type Recipe, type Step, type TablesTools } from '../../contract/tools';
 
 const props = defineProps<{ store: Store; tableId: string }>();
 const actions = useSchemaActions(props.store);
@@ -182,6 +188,8 @@ function toggleKind(i: number, k: Kind) {
   });
 }
 function resetRunsOn(i: number) { edit((r) => { delete r.steps[i].runs_on; }); }
+function setIntoManifest(i: number, on: boolean) { edit((r) => { if (on) delete r.steps[i].into_manifest; else r.steps[i].into_manifest = false; }); }
+const manifestMapped = computed(() => !!recipe.value?.steps.some((st) => st.analyzer === 'filesystem' && 'manifest' in st.map && fields.value.some((f) => f.id === st.map.manifest)));
 function setWhen(i: number, when: 'drop' | 'manual') { edit((r) => { if (when === 'manual') r.steps[i].when = 'manual'; else delete r.steps[i].when; }); }
 
 /* ── JSON view: a draft, validated live, saved once ── */
@@ -221,6 +229,9 @@ h4 { margin: 0 0 6px; font-size: 12px; color: var(--text-secondary); }
 .row { display: grid; grid-template-columns: 1fr 70px 160px auto; gap: 6px; align-items: center; font-size: 12px; padding: 1px 0; }
 .oname { color: var(--text-primary); }
 .req { color: var(--accent); margin-left: 2px; }
+.into-manifest { cursor: pointer; }
+.into-manifest input { margin: 0 4px 0 0; vertical-align: -1px; }
+.hint-cell { color: var(--text-faint); font-size: 11px; grid-column: 3 / 5; }
 .otype { color: var(--text-faint); font-size: 10px; }
 select { border: 1px solid var(--border-main); border-radius: 4px; padding: 2px 4px; font: inherit; font-size: 11px; min-width: 0; }
 .add { display: flex; gap: 6px; align-items: center; }

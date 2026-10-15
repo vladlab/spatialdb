@@ -30,6 +30,8 @@
               <td v-if="m.kind === 'channel_set'" class="mv-ch">{{ (x as { channel: string }).channel }}</td>
               <td class="mv-path" :title="x.path">{{ x.path }}</td>
               <td v-if="m.kind === 'bundle'" class="mv-size">{{ formatBytes((x as { size: number }).size) }}</td>
+              <!-- A column only once some member HAS a hash; the full value on hover. -->
+              <td v-if="hashed" class="mv-hash mv-member-hash" :title="x.hash ?? 'not hashed'">{{ x.hash ? short(x.hash) : '—' }}</td>
             </tr>
           </tbody>
         </table>
@@ -46,6 +48,8 @@ import { Manifest, formatBytes } from '../../contract/shapes';
 const props = defineProps<{ value: unknown }>();
 const m = computed(() => { const r = Manifest.safeParse(props.value); return r.success ? r.data : null; });
 const short = (h: string) => (h.length > 22 ? `${h.slice(0, 20)}…` : h);
+/** Some member of a bundle or channel set carries a hash (hash.rs: per file, into the manifest). */
+const hashed = computed(() => !!m.value && 'members' in m.value && (m.value.members as Array<{ hash?: string }>).some((x) => x.hash));
 </script>
 
 <style scoped>
@@ -54,6 +58,7 @@ const short = (h: string) => (h.length > 22 ? `${h.slice(0, 20)}…` : h);
 .mv-line code { font-size: 11px; word-break: break-all; }
 .muted { color: var(--text-muted); }
 .mv-hash { color: var(--text-muted); font-family: ui-monospace, monospace; font-size: 11px; }
+.mv-member-hash { white-space: nowrap; padding-left: 8px; }
 .mv-ok { color: var(--success); }
 .mv-bad { color: var(--warning); }
 .mv-scroll { max-height: 220px; overflow-y: auto; border: 1px solid var(--border-main); border-radius: 4px; }
