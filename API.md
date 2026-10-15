@@ -503,6 +503,35 @@ default's table; or, if several, the one flagged `membership`; if still ambiguou
 table is skipped (and the canvas says so). A script wanting the same behaviour sends
 the same links. It REPLACED "a board inherits from its record's membership links".
 
+### Canvas stacks
+
+`canvas.update { config: { cardFields, defaults?, stacks? } }` — `stacks` is a list
+(≤ 40) of `{ id, tableId, name?, filters, sort, x, y, w, collapsed }`: a saved view
+PLACED on the canvas (`src/contract/canvasStack.ts`). `filters` and `sort` are the
+view contract's own entries (`src/contract/views.ts`), so a stack can say what a
+view can — including the `is` op, new with stacks: `{ fieldId: <link>, op: 'is',
+value: <recordId> }` keeps the records linked to THAT record (identity, where
+`contains` matches the label's text). The same merge rule as `defaults`: send the
+whole config.
+
+Which cards are IN a stack is on the placements: `placement.add` / `placement.update`
+take `style: { stack: <stackId> }` (presentation only, like the column). The rules
+are the CLIENT's, as defaults are — a script sees them as plain placements:
+
+- a matching record with no card on the canvas is placed into the stack by any
+  client that has the canvas open (`placement.add` with the style; not an undo step)
+- a matching record already placed BY HAND is left alone; the stack counts it as
+  "elsewhere" and gathers it only when asked (`placement.update` with the style)
+- a stacked record that stops matching keeps its placement, drawn dimmed in the
+  stack, until it is removed or taken out (`style` without `stack`)
+- the first `STACK_MAX` (200) matches are placed; the frame says when there are more
+- removing a stack unplaces its cards; "break out" keeps them (the style is dropped
+  and their positions written to where the stack drew them)
+
+`placement.update { w: null }` / `{ h: null }` now means "back to auto-size"
+(it used to be dropped). A placement with no `w` is as wide as its name
+(`src/client/canvas/cardLayout.ts` `defaultCardWidth`, 240–720px).
+
 `field.create` without a following `field.update { position }` now APPENDS the field
 (position = last + 1). It used to be 0, which let a new field tie with — and, sorting
 alphabetically, displace — the table's primary field.

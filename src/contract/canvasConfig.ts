@@ -15,6 +15,7 @@
  * the board, so it is kept per-browser and never sent anywhere.
  */
 import { z } from 'zod';
+import { StackDef } from './canvasStack.js';
 
 const uuid = z.guid();
 
@@ -37,6 +38,13 @@ export const CanvasConfig = z.strictObject({
    * OPTIONAL, not defaulted — every canvas config already saved predates it.
    */
   defaults: z.array(z.strictObject({ tableId: uuid, recordId: uuid })).max(20).optional(),
+  /**
+   * STACKS: saved views placed on the canvas — "the deliverables of Episode 101, in a
+   * column, kept current" (contract/canvasStack.ts has the rules). Which cards are IN
+   * a stack is on the placements (`style.stack`), not here: a placement is the card.
+   * OPTIONAL, not defaulted, like `defaults`.
+   */
+  stacks: z.array(StackDef).max(40).optional(),
 });
 export type CanvasConfig = z.infer<typeof CanvasConfig>;
 

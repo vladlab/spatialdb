@@ -139,7 +139,7 @@ async function main() {
     const filterLine = () => rootEd().findAll('.rl-block').find((b: any) => b.find('.rl-label').text() === 'filter')!.find('.rl-line');
     await filterLine().findAll('select')[0].setValue(fDeliv);
     await filterLine().findAll('select')[1].setValue('notEmpty');
-    check('a filter row offers the ops for the field\'s TYPE (a link: contains / is empty / is not empty)', filterLine().findAll('select')[1].findAll('option').map((o: any) => o.attributes('value')).join() === 'contains,empty,notEmpty');
+    check('a filter row offers the ops for the field\'s TYPE (a link: is / contains / is empty / is not empty)', filterLine().findAll('select')[1].findAll('option').map((o: any) => o.attributes('value')).join() === 'is,contains,empty,notEmpty');
     await rootEd().find('.add-level').trigger('click');
     await until(() => ed().findAll('.rl:not(.root)').length === 1);
     const child = () => ed().find('.rl:not(.root)');

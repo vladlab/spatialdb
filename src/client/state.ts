@@ -358,7 +358,7 @@ export function applyMutation(state: State, m: Mutation): void {
       state.placements.set(key, {
         canvas_id: m.canvasId, record_id: m.recordId,
         x: m.x, y: m.y, w: m.w, h: m.h, z: m.z,
-        collapsed: false, style: {},
+        collapsed: false, style: (m.style ?? {}) as Record<string, unknown>,
       });
       return;
     }

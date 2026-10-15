@@ -639,11 +639,11 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
     case 'placement.add':
       await ensureBoardState(db, m.canvasId);
       await db.query(
-        `insert into placements (id, canvas_id, record_id, x, y, w, h, z)
-         values ($1,$2,$3,$4,$5,$6,$7,$8)
+        `insert into placements (id, canvas_id, record_id, x, y, w, h, z, style)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
          on conflict (canvas_id, record_id)
          do update set x = excluded.x, y = excluded.y, z = excluded.z`,
-        [m.id, m.canvasId, m.recordId, m.x, m.y, m.w, m.h, m.z],
+        [m.id, m.canvasId, m.recordId, m.x, m.y, m.w, m.h, m.z, JSON.stringify(m.style ?? {})],
       );
       return;
 

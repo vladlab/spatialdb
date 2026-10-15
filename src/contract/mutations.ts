@@ -279,6 +279,8 @@ const PlacementAdd = z.strictObject({
   w: z.number().nullable().default(null),
   h: z.number().nullable().default(null),
   z: z.number().int().default(0),
+  /** Presentation only, as the column is (001_schema.sql) — e.g. `{ stack }`: placed INTO a stack (contract/canvasStack.ts). */
+  style: z.record(z.string(), z.unknown()).optional(),
 });
 
 /**

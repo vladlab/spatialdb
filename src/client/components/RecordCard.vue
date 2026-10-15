@@ -29,7 +29,9 @@
   >
     <header class="card-head" :style="{ background: tableColor, color: textOn(tableColor) }">
       <span class="card-table">{{ tableName }}</span>
+      <!-- No × on a card its stack claims: the stack would place it again at once. -->
       <button
+        v-if="!claimed"
         class="card-unplace"
         title="Remove from this canvas (the record is kept)"
         @pointerdown.stop
@@ -201,6 +203,8 @@ const props = defineProps<{
   stacked?: boolean;
   /** In a stack, but its record no longer matches the stack's filter: dimmed, and says so, until cleared or dragged out. */
   stale?: boolean;
+  /** In a stack AND matching its filter: cannot be removed from the canvas (the stack would place it again), only taken out of the stack. */
+  claimed?: boolean;
 }>();
 
 const emit = defineEmits<{

@@ -48,6 +48,9 @@
       <button :disabled="!selected.size" @click="unplaceSelected">
         unplace{{ selected.size > 1 ? ` ${selected.size}` : '' }}
       </button>
+      <span class="sep" />
+      <!-- A STACK: a filter's records in a column, kept current (contract/canvasStack.ts). -->
+      <button class="new-stack" title="A column of every record matching a filter — kept current as records come to match" @click="newStack()">+ stack</button>
     </div>
 
     <!-- WHAT A NEW RECORD HERE STARTS OUT LINKED TO. Always visible, because the whole
@@ -93,6 +96,8 @@
                   :link-field="linkPick.fieldId" :from-record="linkPick.fromRecord"
                   @add="linkPickChoose" @create="linkPickCreate" @done="linkPick = null" />
     </div>
+    <!-- MAKING OR EDITING A STACK: its own dialog, with a preview of what the filter matches. -->
+    <StackEditor v-if="stackEdit" :key="stackEdit.def.id" :store="store" :canvas-id="canvasId" :initial="stackEdit.def" :editing="stackEdit.editing" @save="saveStack" @cancel="stackEdit = null" />
     <!-- A JUNCTION drag (sql/016) let go: on a card of the other table, the pair's status
          is picked here and the row made; on empty canvas, the other end is picked first
          (the same editor, with its picker) and placed where the drop was. The div is only
@@ -134,6 +139,10 @@
     />
 
     <div class="canvas-world" :style="{ transform: viewport.transformCSS.value, '--zoom': viewport.transform.scale }">
+      <!-- STACKS first: a frame is drawn UNDER the cards in it (contract/canvasStack.ts). -->
+      <StackFrame v-for="st in stackFrames" :key="st.id" v-bind="st"
+                  :selected="selectedStack === st.id" :drop-state="stackDrop.over === st.id ? 'over' : stackRefused === st.id ? 'refused' : null"
+                  @pointerdown="onStackPointerDown" @menu="onStackMenu" @resize="onStackResize" @fit="fitStack" @fold="toggleStackFold" @gather="gatherStack" @edit="editStack" />
       <RecordCard
         v-for="c in cards"
         :key="c.recordId"
@@ -147,6 +156,9 @@
         :can-link="waysOf(c.tableId).length > 0"
         :link-target="linkTargetState(c.recordId)"
         :refused="refused === c.recordId"
+        :stacked="c.stacked"
+        :stale="c.stale"
+        :claimed="c.stacked && !c.stale"
         @pointerdown="onCardPointerDown"
         @link-start="startLinkDrag"
         @drag-linked="onDragLinked" @open-linked="(id) => emit('open-record', id)" @jump-linked="jumpTo" @edit-pair="onEditPair"
@@ -248,7 +260,9 @@
         <button v-else-if="canBeDefault(menu.recordId!)" class="set-default" @click="menuDo((m) => addDefault(store.state.records.get(m.recordId!)!.table_id, m.recordId!))">Link new records here to this</button>
         <hr />
         <button v-if="!isJunctionRecord(menu.recordId!)" class="duplicate-record" @click="menuDo((m) => duplicateHere(m.recordId!))">Duplicate record</button>
-        <button @click="menuDo((m) => unplace(m.recordId!))">Remove from canvas</button>
+        <!-- IN A STACK: it can leave the stack and stay on the canvas, where it is, as a card placed by hand. -->
+        <button v-if="stackOf(menu.recordId!)" class="leave-stack" @click="menuDo((m) => leaveStack([m.recordId!]))">Take out of the stack (keep here)</button>
+        <button v-if="!stackClaims(menu.recordId!)" @click="menuDo((m) => unplace(m.recordId!))">Remove from canvas</button>
         <button class="danger" @click="menuDo((m) => deleteRecord(m.recordId!))">Delete record…</button>
       </template>
 
@@ -260,8 +274,25 @@
         <p v-if="!tablesForCreate.length" class="ctx-note">No tables yet — make one in the table tab.</p>
         <template v-if="menu.kind === 'canvas'">
           <hr />
+          <button class="new-stack-here" @click="menuDo((m) => newStack({ x: m.wx, y: m.wy }))">New stack here…</button>
           <button @click="menuDo(() => fitAll())">Fit all cards</button>
         </template>
+      </template>
+
+      <!-- A STACK's menu. Removing it UNPLACES its cards — that is what a stack holds; breaking
+           it out is the other thing, offered, never the default. -->
+      <template v-else-if="menu.kind === 'stack' && menu.stackId">
+        <div class="ctx-head">{{ stackFrameOf(menu.stackId)?.name || stackFrameOf(menu.stackId)?.description }}</div>
+        <div class="ctx-sub">{{ stackFrameOf(menu.stackId)?.tableName }} · {{ stackFrameOf(menu.stackId)?.count }} card{{ stackFrameOf(menu.stackId)?.count === 1 ? '' : 's' }}</div>
+        <hr />
+        <button class="stack-edit-item" @click="menuDo((m) => editStack(m.stackId!))">Edit filter, order, name…</button>
+        <button @click="menuDo((m) => toggleStackFold(m.stackId!))">{{ stackFrameOf(menu.stackId)?.collapsed ? 'Unfold' : 'Fold' }}</button>
+        <button v-if="stackFrameOf(menu.stackId)?.elsewhere" class="stack-gather-item" @click="menuDo((m) => gatherStack(m.stackId!))">Gather the {{ stackFrameOf(menu.stackId)?.elsewhere }} placed elsewhere</button>
+        <button v-if="stackFrameOf(menu.stackId)?.stale" class="stack-clear-stale" @click="menuDo((m) => clearStale(m.stackId!))">Remove the {{ stackFrameOf(menu.stackId)?.stale }} that no longer match</button>
+        <button @click="menuDo((m) => fitStack(m.stackId!))">Fit width to the cards</button>
+        <hr />
+        <button class="stack-breakout" @click="menuDo((m) => breakOutStack(m.stackId!))">Break out: keep the cards, remove the stack</button>
+        <button class="danger stack-remove" @click="menuDo((m) => removeStack(m.stackId!))">Remove stack and its cards…</button>
       </template>
 
       <template v-else-if="menu.kind === 'fields'">
@@ -314,6 +345,10 @@ import { useCardDrag } from '../canvas/useCardDrag';
 import { useBoxSelection, useCardResize } from '../canvas/useCardResize';
 import ArrowLayer from './ArrowLayer.vue';
 import RecordCard from './RecordCard.vue';
+import StackFrame from './StackFrame.vue';
+import StackEditor from './StackEditor.vue';
+import { STACK_MAX, STACK_MIN_W, STACK_PAD, describeFilters, stackCensus, stackDropLinks, stackLayout, type StackCensus, type StackDef, type StackLayout } from '../../contract/canvasStack';
+import { placementKey, recordsOf } from '../state';
 
 const props = defineProps<{ store: Store; canvasId: string; /** The record open in the tray, or '' — its card is marked. */ openRecordId?: string }>();
 const emit = defineEmits<{ 'open-record': [recordId: string]; 'open-board': [recordId: string] }>();
@@ -448,6 +483,7 @@ function shownFields(tableId: string): FieldRow[] {
 const tablesRead = computed(() => {
   const placed = new Set<string>();
   for (const p of placements.value) { const t = store.state.records.get(p.record_id)?.table_id; if (t) placed.add(t); }
+  for (const st of parsedConfig().stacks ?? []) placed.add(st.tableId);   // (parsedConfig: hoisted; rawStacks is declared below)
   const out = new Set<string>();
   for (const tableId of placed) {
     const fs = shownFields(tableId);
@@ -466,7 +502,8 @@ const tablesRead = computed(() => {
 });
 watch(tablesRead, (joined) => { for (const t of joined.split(',').filter(Boolean)) void store.loadTable(t); }, { immediate: true });
 
-const cards = computed(() =>
+/** Every card as its placement has it — before stacks lay theirs out (below). */
+const baseCards = computed(() =>
   placements.value.flatMap((p) => {
     const rec = store.state.records.get(p.record_id);
     if (!rec) return [];   // placement without its record: mid-sync, skip a frame
@@ -486,8 +523,304 @@ const cards = computed(() =>
       // No width of its own: as wide as its name (cardLayout.ts) — resolved HERE, once, so the
       // card, the arrows and the box selection all use the same number.
       x: p.x, y: p.y, w: p.w ?? defaultCardWidth(title, textWidth), h: p.h, z: p.z,
+      stacked: false, stale: false,
     }];
   }));
+
+/* ── STACKS: a filter's records, in a column, kept current (contract/canvasStack.ts) ──
+
+   The stack DEFINITIONS are in the canvas config; which cards are IN one is on their
+   placements (`style.stack`). Everything else is derived, every frame:
+
+     census    per stack — what matches, what is here, what is missing, what is stale
+     layout    per stack — where its frame is and where each of its cards goes; a
+               card in a stack takes THAT position and width, not its placement's
+     missing   placed into the stack by the watcher below, without an undo step
+
+   A card being DRAGGED keeps following the pointer (its placement's x/y, which the
+   drag writes every frame) and only on release does the drop decide what it was. */
+
+const rawStacks = computed<StackDef[]>(() => parsedConfig().stacks ?? []);
+const stackById = computed(() => new Map(rawStacks.value.map((st) => [st.id, st])));
+// A stack's table has to be WHOLLY loaded to know what matches — and what its filter
+// reads (a link's labels) with it. loadTable is a no-op once a table is loaded.
+watch(() => rawStacks.value.map((st) => st.tableId).sort().join(), (joined) => {
+  for (const t of new Set(joined.split(',').filter(Boolean))) {
+    void store.loadTable(t);
+    for (const u of derived.tablesNeededBy(fieldsOf(store.state, t))) void store.loadTable(u);
+  }
+}, { immediate: true });
+
+/** Which stack a record's card is in here: its id, '' for a card placed by hand, undefined for not on this canvas. */
+function placedIn(recordId: string): string | undefined {
+  const p = store.state.placements.get(placementKey(props.canvasId, recordId));
+  if (!p) return undefined;
+  const st = p.style?.stack;
+  // A card whose stack is gone from the config (the stack was undone, or removed by a peer) is a card placed by hand.
+  return typeof st === 'string' && stackById.value.has(st) ? st : '';
+}
+const stackOf = (recordId: string) => placedIn(recordId) || null;
+const stackLinkLabels = (recordId: string, fieldId: string) => { const f = store.state.fields.get(fieldId); return f ? derived.textOf(recordId, f).texts : []; };
+const censuses = computed(() => {
+  const m = new Map<string, StackCensus>();
+  for (const st of rawStacks.value) m.set(st.id, stackCensus(st, recordsOf(store.state, st.tableId), fieldsOf(store.state, st.tableId), placedIn, stackLinkLabels, derived.linksFrom));
+  return m;
+});
+
+/* A stack being moved or resized: its live geometry, written here every frame and
+   sent as one canvas.update on release — the same split as a card drag. */
+const stackLive = reactive(new Map<string, { x?: number; y?: number; w?: number | null }>());
+
+const stackLayouts = computed(() => {
+  const m = new Map<string, StackLayout>();
+  const byId = new Map(baseCards.value.map((c) => [c.recordId, c]));
+  for (const st of rawStacks.value) {
+    const census = censuses.value.get(st.id);
+    const members = (census?.order ?? []).flatMap((id) => {
+      const c = byId.get(id);
+      return c ? [{ recordId: id, h: effectiveHeight(c.h, lineCount(c.rows), c.collapsed, c.rich.length), w: c.w }] : [];
+    });
+    const live = stackLive.get(st.id);
+    m.set(st.id, stackLayout({ x: live?.x ?? st.x, y: live?.y ?? st.y, w: live?.w !== undefined ? live.w : st.w, collapsed: st.collapsed }, members));
+  }
+  return m;
+});
+
+/** Until a stack's table is wholly loaded, nothing in it is called stale: the links its filter reads arrive with the table. */
+const stackLoaded = (stackId: string) => store.tableLoads.get(stackById.value.get(stackId)?.tableId ?? '')?.state === 'loaded';
+const cards = computed(() => {
+  const dragging = drag.draggingIds.value;
+  return baseCards.value.map((c) => {
+    const stackId = placedIn(c.recordId);
+    if (!stackId) return c;
+    const layout = stackLayouts.value.get(stackId), at = layout?.cards.get(c.recordId);
+    const stale = stackLoaded(stackId) && (censuses.value.get(stackId)?.stale.includes(c.recordId) ?? false);
+    if (!at) return { ...c, stacked: true, stale };
+    // Folded stack: its cards are drawn nowhere — kept out of `cards` entirely (no arrows, no selection).
+    return dragging.has(c.recordId)
+      ? { ...c, w: layout!.cardW, stacked: true, stale }
+      : { ...c, x: at.x, y: at.y, w: at.w, stacked: true, stale };
+  }).filter((c) => !c.stacked || !stackById.value.get(placedIn(c.recordId)!)?.collapsed || dragging.has(c.recordId));
+});
+
+/** What StackFrame draws, per stack. */
+const stackFrames = computed(() => rawStacks.value.map((st) => {
+  const census = censuses.value.get(st.id), layout = stackLayouts.value.get(st.id)!;
+  const table = store.state.tables.get(st.tableId);
+  return {
+    id: st.id, rect: layout.rect, tableName: table?.name ?? '?', color: table?.color || 'var(--border-main)',
+    name: st.name, description: describeFilters(st.filters, (id) => store.state.fields.get(id)?.name, (id) => derived.plainLabelOfId(id)),
+    count: census?.inStack.length ?? 0, total: census?.total ?? 0, overCap: (census?.total ?? 0) > STACK_MAX,
+    elsewhere: census?.elsewhere.length ?? 0, stale: stackLoaded(st.id) ? census?.stale.length ?? 0 : 0, collapsed: st.collapsed,
+    loading: !stackLoaded(st.id),
+  };
+}));
+const stackFrameOf = (id: string) => stackFrames.value.find((f) => f.id === id);
+
+/* NEW TO THE CANVAS → IN. Once a stack's table is loaded, every matching record with no
+   card here is placed into the stack. Not an undo step: undoing it would only have it
+   placed again a moment later. Keyed on the SET of missing ids, so a frame where nothing
+   is missing does nothing. */
+const missingKey = computed(() => rawStacks.value.map((st) => {
+  if (store.tableLoads.get(st.tableId)?.state !== 'loaded') return '';
+  return (censuses.value.get(st.id)?.missing ?? []).map((id) => `${st.id}|${id}`).join(',');
+}).filter(Boolean).join(','));
+const autoPlaced = new Map<string, number>();   // key → when: a refused add must not be retried every frame
+watch(missingKey, (key) => {
+  if (!key) return;
+  let z = placements.value.reduce((n, p) => Math.max(n, p.z), 0);
+  let placedAny = false;
+  const now = Date.now();
+  for (const pair of key.split(',')) {
+    const [stackId, recordId] = pair.split('|');
+    const st = stackById.value.get(stackId), layout = stackLayouts.value.get(stackId);
+    if (!st || !layout || store.state.placements.has(placementKey(props.canvasId, recordId))) continue;
+    if ((autoPlaced.get(pair) ?? 0) > now - 3000) continue;
+    autoPlaced.set(pair, now);
+    // Its x/y are only where the card would land if the stack went away: under the frame.
+    store.mutate({ type: 'placement.add', id: crypto.randomUUID(), canvasId: props.canvasId, recordId, x: Math.round(st.x + STACK_PAD), y: Math.round(layout.rect.y + layout.rect.h), w: null, h: null, z: ++z, style: { stack: stackId } },
+      { undoable: false });
+    placedAny = true;
+  }
+  if (placedAny) refreshLinksAfterPlacing();
+}, { immediate: true });
+
+/* The stack itself: selected by its bar; Delete asks; dragged by its bar; resized at its edge. */
+const selectedStack = ref<string | null>(null);
+watch(() => props.canvasId, () => { selectedStack.value = null; stackEdit.value = null; });
+
+function saveStacks(next: StackDef[]) {
+  const { stacks: _old, ...rest } = parsedConfig();
+  void _old;
+  store.mutate({ type: 'canvas.update', id: props.canvasId, config: next.length ? { ...rest, stacks: next } : rest });
+}
+const patchStack = (id: string, patch: Partial<StackDef>) => saveStacks(rawStacks.value.map((st) => (st.id === id ? { ...st, ...patch } : st)));
+
+function onStackPointerDown({ stackId, e }: { stackId: string; e: PointerEvent }) {
+  if (e.button !== 0 || spaceHeld.value) return;
+  menu.value = null; selectedLink.value = null; selected.clear();
+  selectedStack.value = stackId;
+  containerRef.value?.focus();
+  const st = stackById.value.get(stackId); if (!st) return;
+  const start = { x: e.clientX, y: e.clientY }, from = { x: st.x, y: st.y };
+  let movedFar = false;
+  const move = (ev: PointerEvent) => {
+    const scale = viewport.transform.scale || 1;
+    const dx = (ev.clientX - start.x) / scale, dy = (ev.clientY - start.y) / scale;
+    if (!movedFar && Math.hypot(dx * scale, dy * scale) < 4) return;
+    movedFar = true;
+    stackLive.set(stackId, { ...(stackLive.get(stackId) ?? {}), x: from.x + dx, y: from.y + dy });
+  };
+  const up = () => {
+    window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+    const live = stackLive.get(stackId);
+    stackLive.delete(stackId);
+    if (movedFar && live?.x !== undefined && live.y !== undefined) patchStack(stackId, { x: Math.round(live.x), y: Math.round(live.y) });
+  };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+}
+function onStackResize({ stackId, e }: { stackId: string; e: PointerEvent }) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  const layout = stackLayouts.value.get(stackId); if (!layout) return;
+  const start = e.clientX, w0 = layout.rect.w;
+  const move = (ev: PointerEvent) => {
+    const w = Math.max(STACK_MIN_W, Math.round(w0 + (ev.clientX - start) / (viewport.transform.scale || 1)));
+    stackLive.set(stackId, { ...(stackLive.get(stackId) ?? {}), w });
+  };
+  const up = () => {
+    window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+    const live = stackLive.get(stackId);
+    stackLive.delete(stackId);
+    if (live?.w !== undefined && live.w !== null && live.w !== w0) patchStack(stackId, { w: live.w });
+  };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+}
+/** Double-click on the edge: back to "as wide as the widest card wants". */
+function fitStack(stackId: string) { if (stackById.value.get(stackId)?.w !== null) patchStack(stackId, { w: null }); }
+function toggleStackFold(stackId: string) { const st = stackById.value.get(stackId); if (st) patchStack(stackId, { collapsed: !st.collapsed }); }
+
+/** Matching cards placed elsewhere on this canvas: into the stack, one Ctrl+Z. */
+function gatherStack(stackId: string) {
+  const ids = censuses.value.get(stackId)?.elsewhere ?? [];
+  for (const id of ids) joinStack(id, stackId);
+  selected.clear(); for (const id of ids) selected.add(id);
+}
+function joinStack(recordId: string, stackId: string) {
+  const p = placementOf(recordId); if (!p) return;
+  store.mutate({ type: 'placement.update', canvasId: props.canvasId, recordId, style: { ...(p.style ?? {}), stack: stackId } });
+}
+/** Out of the stack, staying ON the canvas where it is drawn now, as a card placed by hand. */
+function leaveStack(recordIds: string[], at?: Map<string, { x: number; y: number }>) {
+  const moves: Array<{ recordId: string; x: number; y: number }> = [];
+  for (const recordId of recordIds) {
+    const p = placementOf(recordId), rect = cardRects.value.get(recordId);
+    if (!p) continue;
+    const { stack: _s, ...rest } = p.style ?? {};
+    void _s;
+    store.mutate({ type: 'placement.update', canvasId: props.canvasId, recordId, style: rest });
+    const to = at?.get(recordId) ?? rect;
+    if (to) moves.push({ recordId, x: Math.round(to.x), y: Math.round(to.y) });
+  }
+  if (moves.length) store.mutate({ type: 'placement.move', canvasId: props.canvasId, moves });
+}
+function clearStale(stackId: string) { for (const id of censuses.value.get(stackId)?.stale ?? []) unplace(id); }
+
+/** The stack goes; its cards stay where they were drawn, placed by hand. */
+function breakOutStack(stackId: string) {
+  const ids = placements.value.filter((p) => placedIn(p.record_id) === stackId).map((p) => p.record_id);
+  leaveStack(ids);
+  saveStacks(rawStacks.value.filter((st) => st.id !== stackId));
+  if (selectedStack.value === stackId) selectedStack.value = null;
+}
+/** The stack goes, and so do its cards (off the canvas — the records stay). Asked, because it is many at once; one Ctrl+Z. */
+async function removeStack(stackId: string) {
+  const ids = placements.value.filter((p) => placedIn(p.record_id) === stackId).map((p) => p.record_id);
+  const f = stackFrameOf(stackId);
+  if (ids.length && !await confirmDialog({
+    title: `Remove this stack and its ${ids.length} card${ids.length === 1 ? '' : 's'}?`, danger: true, okText: 'Remove stack',
+    body: `${f?.name || f?.description || 'The stack'}\n\nThe cards come off this canvas; the records themselves stay. To keep the cards and drop only the frame, choose "Break out" instead. This can be undone (Ctrl+Z).`,
+  })) return;
+  for (const id of ids) unplace(id);
+  saveStacks(rawStacks.value.filter((st) => st.id !== stackId));
+  if (selectedStack.value === stackId) selectedStack.value = null;
+}
+
+/* The editor: a new stack at a point (the right-click, or the middle of the view), or an existing one. */
+const stackEdit = ref<{ def: StackDef; editing: boolean } | null>(null);
+function newStack(at?: Point) {
+  const box = containerRef.value?.getBoundingClientRect();
+  const p = at ?? viewport.clientToWorld((box?.left ?? 0) + (box?.width ?? 0) / 2 - STACK_MIN_W / 2, (box?.top ?? 0) + (box?.height ?? 0) / 3);
+  const tables = tablesForCreate.value.filter((t) => t.kind !== 'junction');
+  stackEdit.value = { def: { id: crypto.randomUUID(), tableId: tables.length === 1 ? tables[0].id : '', filters: [], sort: [], x: Math.round(p.x), y: Math.round(p.y), w: null, collapsed: false }, editing: false };
+  menu.value = null;
+}
+function editStack(stackId: string) {
+  const st = stackById.value.get(stackId); if (!st) return;
+  stackEdit.value = { def: st, editing: true };
+  menu.value = null;
+}
+/** The definition and, if asked, the gathering: one run, one Ctrl+Z. The missing ones follow by the watcher. */
+function saveStack(def: StackDef, gather: boolean) {
+  stackEdit.value = null;
+  const exists = stackById.value.has(def.id);
+  saveStacks(exists ? rawStacks.value.map((st) => (st.id === def.id ? def : st)) : [...rawStacks.value, def]);
+  if (gather) {
+    const census = stackCensus(def, recordsOf(store.state, def.tableId), fieldsOf(store.state, def.tableId), placedIn, stackLinkLabels, derived.linksFrom);
+    for (const id of census.elsewhere) joinStack(id, def.id);
+  }
+  selectedStack.value = def.id;
+  containerRef.value?.focus();
+}
+
+/* A card DROPPED in or out of a stack (the hook in useCardDrag). Decided by where the
+   card's top-left lands:
+     its own stack       snaps back (nothing written)
+     another stack       joins it if it already matches, or if the filter is links a
+                         drop can set (contract `stackDropLinks`) — else refused: the
+                         frame flashes, and the card is placed by hand where it landed
+     empty canvas        out of its stack (if it was in one), placed by hand there */
+const stackDrop = reactive<{ over: string | null }>({ over: null });
+const stackRefused = ref('');
+let stackRefuseTimer: ReturnType<typeof setTimeout> | undefined;
+function stackAt(p: Point): string | null {
+  for (const st of rawStacks.value) {
+    const r = stackLayouts.value.get(st.id)?.rect;
+    if (r && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) return st.id;
+  }
+  return null;
+}
+function dropCards(moves: Array<{ recordId: string; x: number; y: number; z: number }>): boolean {
+  if (!rawStacks.value.length) return false;
+  const plain: typeof moves = [];
+  let handled = false;
+  for (const mv of moves) {
+    const was = placedIn(mv.recordId) || null;
+    const to = stackAt({ x: mv.x + 24, y: mv.y + 12 });
+    if (to && to === was) { handled = true; continue; }                         // let go inside its own stack: back it goes
+    if (to) {
+      const st = stackById.value.get(to)!, census = censuses.value.get(to);
+      const rec = store.state.records.get(mv.recordId);
+      if (census?.matching.includes(mv.recordId)) { joinStack(mv.recordId, to); handled = true; continue; }
+      const links = rec ? stackDropLinks(st, fieldsOf(store.state, st.tableId), rec.table_id) : null;
+      if (links) {
+        for (const l of links) if (!derived.linksFrom(mv.recordId, l.fieldId).includes(l.recordId)) addLink(store, l.fieldId, mv.recordId, l.recordId);
+        joinStack(mv.recordId, to);
+        handled = true; continue;
+      }
+      // Refused: said, and the card lands by hand where it was let go (out of its old stack, if any).
+      stackRefused.value = ''; clearTimeout(stackRefuseTimer);
+      void nextTick(() => { stackRefused.value = to; stackRefuseTimer = setTimeout(() => { stackRefused.value = ''; }, 750); });
+      const tn = store.state.tables.get(st.tableId)?.name ?? 'that table';
+      say(rec?.table_id !== st.tableId ? `not a ${tn} record` : 'this stack’s filter is not something a drop can set', 'no', lastClient ?? { x: 0, y: 0 });
+    }
+    if (was) { leaveStack([mv.recordId], new Map([[mv.recordId, mv]])); handled = true; continue; }
+    plain.push(mv);
+  }
+  if (!handled) return false;
+  if (plain.length) store.mutate({ type: 'placement.move', canvasId: props.canvasId, moves: plain });
+  return true;
+}
 
 /**
  * World rects, for arrows and box selection — from the SAME function RecordCard
@@ -1125,6 +1458,7 @@ const drag = useCardDrag({
   selected,
   mutate: store.mutate,
   topZ: () => placements.value.reduce((n, p) => Math.max(n, p.z), 0),
+  drop: (moves) => dropCards(moves),
 });
 
 const resize = useCardResize({
@@ -1158,6 +1492,13 @@ function onCardPointerDown({ recordId, e }: { recordId: string; e: PointerEvent 
     selected.clear();
     selected.add(recordId);
   }
+  selectedStack.value = null;
+  // A card in a stack is drawn where the stack puts it, not where its placement says:
+  // give the placement that position, so the drag starts from where the card IS.
+  for (const id of selected.has(recordId) && selected.size > 1 ? [...selected] : [recordId]) {
+    const p = placementOf(id), r = placedIn(id) ? cardRects.value.get(id) : undefined;
+    if (p && r) { p.x = r.x; p.y = r.y; }
+  }
   drag.start(recordId, e);
 }
 
@@ -1181,8 +1522,16 @@ function onCardFit({ recordId, handle }: { recordId: string; handle: 'e' | 's' |
 
 function onCanvasPointerMove(e: PointerEvent) {
   lastPointer = viewport.clientToWorld(e.clientX, e.clientY);
+  lastClient = { x: e.clientX, y: e.clientY };
+  // While a card is dragged: the stack it would land in lights up (or not).
+  if (drag.isDragging.value && rawStacks.value.length) {
+    const id = [...drag.draggingIds.value][0];
+    const p = id ? placementOf(id) : undefined;
+    stackDrop.over = p ? stackAt({ x: p.x + 24, y: p.y + 12 }) : null;
+  } else if (stackDrop.over) stackDrop.over = null;
   viewport.onPointerMove(e);
 }
+let lastClient: { x: number; y: number } | null = null;
 
 function onCanvasPointerDown(e: PointerEvent) {
   menu.value = null;
@@ -1195,6 +1544,7 @@ function onCanvasPointerDown(e: PointerEvent) {
   if (e.target !== containerRef.value &&
       !(e.target as HTMLElement).classList.contains('canvas-grid') &&
       !(e.target as HTMLElement).classList.contains('canvas-world')) return;
+  selectedStack.value = null;
   if (!(e.shiftKey || e.ctrlKey || e.metaKey)) selected.clear();
   boxSelect.start(e);
 }
@@ -1208,9 +1558,11 @@ function onKeyDown(e: KeyboardEvent) {
     e.preventDefault();
     // With an ARROW selected, Delete asks about the link (and only ever asks).
     const l = selectedLink.value;
-    if (l && selectedLinkKey.value) void removeLink(l); else unplaceSelected();
+    if (l && selectedLinkKey.value) void removeLink(l);
+    else if (selectedStack.value) void removeStack(selectedStack.value);   // asks
+    else unplaceSelected();
   }
-  if (e.key === 'Escape') { if (menu.value) { menu.value = null; return; } selected.clear(); selectedLink.value = null; drag.cancel(); }
+  if (e.key === 'Escape') { if (menu.value) { menu.value = null; return; } selected.clear(); selectedLink.value = null; selectedStack.value = null; drag.cancel(); }
   if (e.key === 'Enter' && selected.size === 1) { emit('open-record', [...selected][0]); e.preventDefault(); }
   if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
@@ -1228,7 +1580,7 @@ function toggleScrollMode() {
 }
 
 function fitAll() {
-  viewport.fit([...cardRects.value.values()]);
+  viewport.fit([...cardRects.value.values(), ...[...stackLayouts.value.values()].map((l) => l.rect)]);
 }
 
 /* ── placing and unplacing ───────────────────────────────────────────────── */
@@ -1251,8 +1603,8 @@ function toggleFold(recordId: string) {
    ten double-clicks, not ten double-clicks and ten menu picks. */
 
 interface Menu {
-  kind: 'card' | 'canvas' | 'create' | 'fields' | 'link' | 'link-choose' | 'link-new';
-  x: number; y: number; wx: number; wy: number; recordId?: string; link?: ArrowLink;
+  kind: 'card' | 'canvas' | 'create' | 'fields' | 'link' | 'link-choose' | 'link-new' | 'stack';
+  x: number; y: number; wx: number; wy: number; recordId?: string; link?: ArrowLink; stackId?: string;
   /** The two link menus: the card the link landed on and the ways to choose from (`link-choose`); where the pointer was, on screen. */
   toRecord?: string; options?: Array<{ way: LinkWay; linked: boolean }>; client?: { x: number; y: number };
 }
@@ -1304,6 +1656,12 @@ function onCardMenu({ recordId, x, y }: { recordId: string; x: number; y: number
 }
 function onCanvasMenu(e: MouseEvent) {
   if (isBackground(e.target)) openMenu('canvas', e);
+}
+function onStackMenu({ stackId, x, y }: { stackId: string; x: number; y: number }) {
+  selected.clear(); selectedLink.value = null;
+  selectedStack.value = stackId;
+  openMenu('stack', { clientX: x, clientY: y } as MouseEvent);
+  if (menu.value) menu.value = { ...menu.value, stackId };
 }
 function onCanvasDblClick(e: MouseEvent) {
   if (!isBackground(e.target)) return;
@@ -1382,8 +1740,16 @@ function jumpTo(recordId: string): boolean {
   return true;
 }
 
+/** On this canvas but drawn nowhere — in a FOLDED stack: unfold it, so the card can be jumped to. */
+function unfoldFor(recordId: string): boolean {
+  const st = placedIn(recordId);
+  if (!st || !stackById.value.get(st)?.collapsed) return false;
+  patchStack(st, { collapsed: false });
+  void nextTick(() => jumpTo(recordId));
+  return true;
+}
 function placeOrJump(rec: RecordRow): 'placed' | 'jumped' {
-  if (jumpTo(rec.id)) return 'jumped';
+  if (jumpTo(rec.id) || unfoldFor(rec.id)) return 'jumped';
   store.adopt([rec]);
   const box = containerRef.value?.getBoundingClientRect();
   const at = lastPointer ?? viewport.clientToWorld((box?.left ?? 0) + (box?.width ?? 0) / 2, (box?.top ?? 0) + (box?.height ?? 0) / 2);
@@ -1414,9 +1780,9 @@ const DROP_GAP = 16, DROP_PER_COLUMN = 8;
 function placeMany(records: RecordRow[], clientX: number, clientY: number, options: MutateOptions = {}) {
   // ONE record that is already here (a pill dragged from the tray, say): jump to its
   // card rather than do nothing — a drop that silently does nothing reads as a failure.
-  if (records.length === 1 && cardRects.value.has(records[0].id)) { placeOrJump(records[0]); return; }
+  if (records.length === 1 && placedHere.value.has(records[0].id)) { placeOrJump(records[0]); return; }
   const at = viewport.clientToWorld(clientX, clientY);
-  const fresh = records.filter((r) => !cardRects.value.has(r.id));
+  const fresh = records.filter((r) => !placedHere.value.has(r.id));
   store.adopt(fresh);
   let z = placements.value.reduce((n, p) => Math.max(n, p.z), 0);
   let col = 0, row = 0, y = at.y;
@@ -1493,8 +1859,14 @@ function unplace(recordId: string) {
 }
 
 function unplaceSelected() {
-  for (const id of [...selected]) unplace(id);
+  // A card a stack CLAIMS (it matches the filter) cannot be unplaced: the stack would
+  // place it again at once. Take it out of the stack, or change the stack.
+  const kept = [...selected].filter((id) => { const st = placedIn(id); return st && censuses.value.get(st)?.matching.includes(id); });
+  for (const id of [...selected]) if (!kept.includes(id)) unplace(id);
+  if (kept.length) say(`${kept.length === 1 ? 'a card' : `${kept.length} cards`} in a stack stay${kept.length === 1 ? 's' : ''} — take ${kept.length === 1 ? 'it' : 'them'} out of the stack first`, 'info', lastClient ?? { x: 0, y: 0 });
 }
+/** Is this card one its stack claims — not stale? Such a card has no × and no "remove". */
+const stackClaims = (recordId: string) => { const st = placedIn(recordId); return !!st && (censuses.value.get(st)?.matching.includes(recordId) ?? false); };
 
 /* ── lifecycle ───────────────────────────────────────────────────────────── */
 
@@ -1517,7 +1889,7 @@ watch(() => props.canvasId, async (id) => {
 });
 
 onUnmounted(() => {
-  clearTimeout(flashTimer); clearTimeout(noteTimer); clearTimeout(refuseTimer); clearTimeout(pulseTimer);
+  clearTimeout(flashTimer); clearTimeout(noteTimer); clearTimeout(refuseTimer); clearTimeout(pulseTimer); clearTimeout(stackRefuseTimer);
   unregisterDrop?.();
   drag.cancel();
   resize.cancel();
@@ -1578,6 +1950,8 @@ onUnmounted(() => {
 .canvas-controls button.active { color: var(--accent); }
 .canvas-controls .zoom { color: var(--text-muted); min-width: 38px; text-align: center; }
 .canvas-controls .sep { width: 1px; height: 14px; background: var(--border-main); margin: 0 2px; }
+.canvas-controls .new-stack { border: 1px dashed var(--border-main); }
+.canvas-controls .new-stack:hover { color: var(--accent); border-color: var(--accent); }
 
 .stream-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
 .stream-dot.connected { background: var(--success); }

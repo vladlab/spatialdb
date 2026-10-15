@@ -1027,6 +1027,53 @@ that visibly does nothing.
 - **The tray as wells**, like the tree: the comparison strip and the record's fields
   each in a recessed well; "Referenced by" outside, below.
 
+### Stacks (Oct 15): a saved view, placed on the canvas
+
+The owner wanted "a stack based on a filter condition — all deliverables assigned to a
+work in a project — so if I add a deliverable it gets auto added to the canvas", with
+the stack visually apparent and labelled, duplicates handled, and a way to cancel a
+stack that would sweep up cards he placed by hand (a typo'd filter). The paradigm he
+chose: **a stack is a saved view placed on the canvas** — the grid's own filter
+contract, no second query language, the preview before the commit.
+
+- **`contract/canvasStack.ts`** is the rule, pure and pinned by `test/stacks.ts` S1:
+  `stackCensus` (who matches; of those, who is in the stack, placed elsewhere, or
+  missing from the canvas; who is in the stack and no longer matches — the stale),
+  `stackLayout` (a column under a 40px bar; the stack is as wide as its widest card
+  wants, or a hand width), `stackDropLinks` (what a drop into the stack can SET: only
+  a filter made of "link is record" lines), `describeFilters` (the label).
+- **The definition is in the canvas config** (`stacks`, beside `cardFields` and
+  `defaults` — same merge-the-whole-config rule); **membership is on the placement**
+  (`style.stack`). A placement is the card; a record is on a canvas once, still.
+- **New to the canvas → in, without an undo step** (`undoable: false`; undoing it would
+  only have it placed again). **Already placed by hand → left alone**, counted as
+  "elsewhere" on the frame, gathered on request (one Ctrl+Z). **Stops matching →
+  stays, dimmed**, at the bottom, marked, until cleared or dragged out. A card its
+  stack claims has no × and no "remove from canvas" (the stack would place it again
+  at once) — "take out of the stack" is the move.
+- **Drag out:** placed by hand where it is let go. **Drag in:** joins if it matches;
+  if the filter is links a drop can set, the record is LINKED and joins (one Ctrl+Z);
+  anything else is refused — the frame flashes, the card lands by hand.
+- **The editor** (`StackEditor.vue`): table, filter lines (`FilterLines.vue`, now
+  shared with the grid), order, name, and a PREVIEW that counts — new to the canvas,
+  already in the stack, placed elsewhere — with "also gather" as a tick box. The
+  warning-and-continue the owner asked for, moved to before anything moves.
+- **Removing a stack unplaces its cards** (his call); "break out" — keep the cards,
+  drop the frame — is in the menu, never the default. One column; a stack's width is
+  resized at its edge, double-click to fit. A folded stack is its bar; its cards are
+  drawn nowhere (jumping to one unfolds it).
+- **The `is` op** (`views.ts`): a link IS a record — identity, where `contains` is
+  text; it needed a record picker in every filter editor (`RecordSelect.vue`), and the
+  grid, the report editor and the stack editor all got it. Reports evaluate it
+  through the `linksFrom` they already carry.
+- **Cards, while there:** a card is as wide as its NAME by default (240–720px); the
+  title is 13px; a double-click on an edge fits the card to its content, saved like a
+  hand resize. `placement.update { w: null }` now reaches the server as "auto" —
+  `coalesce` had been dropping it.
+- **Known edge:** Ctrl+Z on *making* a stack removes the definition but not the cards
+  it auto-placed (they were not undo steps); they stay, by hand, in the column where
+  the stack was. "Remove stack" is the clean way back.
+
 ### One handle (Oct 13): linking from the card, not from its rows
 
 **This retires the per-row ports** kept on Sept 28 (item 7 below). The owner, after

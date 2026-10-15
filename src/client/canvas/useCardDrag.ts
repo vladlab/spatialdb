@@ -49,6 +49,13 @@ export interface DragDeps {
   mutate: (m: Mutation) => void;
   /** Highest z on the canvas, so a dragged card comes to the front. */
   topZ: () => number;
+  /**
+   * The drop, if the canvas wants it: given the moves (state already put back to
+   * where the drag started, as the plain path does), return true to have handled
+   * them — or false for the one `placement.move`. The canvas uses it for STACKS
+   * (contract/canvasStack.ts): a card let go inside one joins it or snaps back.
+   */
+  drop?: (moves: Array<{ recordId: string; x: number; y: number; z: number }>, canvasId: string) => boolean;
 }
 
 interface Dragged {
@@ -207,6 +214,7 @@ export function useCardDrag(deps: DragDeps) {
     // alone, the inverse of this move would be "move to where it already is" and
     // undo would silently do nothing. Same tick, so nothing renders in between.
     for (const d of changed) { d.placement.x = d.startX; d.placement.y = d.startY; }
+    if (deps.drop?.(moves, canvasId)) return;
     deps.mutate({ type: 'placement.move', canvasId, moves });
   }
 
