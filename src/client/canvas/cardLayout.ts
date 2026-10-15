@@ -16,9 +16,12 @@
  * `test/canvas.ts` pins the function; nothing can pin the CSS, so: change both.
  */
 
-export const CARD_W = 240;
+export const CARD_W = 240;         // the NARROWEST a card is by default — see `defaultCardWidth`
+export const CARD_W_MAX = 720;     // …and the widest a title can make it; wider is a hand resize
 export const CARD_HEAD_H = 22;     // the coloured table-name strip
 export const CARD_TITLE_H = 26;    // the record's label (primary field)
+export const CARD_TITLE_PX = 13;   // its font size — a notch above the rows' 12px, so the name reads first
+export const CARD_TEXT_PX = 12;    // the rows
 export const CARD_ROW_H = 18;      // one "key  value" line
 export const CARD_BODY_PAD = 12;   // body padding, top + bottom
 export const CARD_BORDER = 2;      // 1px top + 1px bottom
@@ -48,6 +51,46 @@ export const LINK_HANDLE_SIZE = 18;
 export const LINK_HANDLE_OUT = 5;
 export const linkHandleAt = (r: { x: number; y: number; w: number; h: number }) =>
   ({ x: r.x + r.w + LINK_HANDLE_OUT, y: r.y + r.h + LINK_HANDLE_OUT });
+
+/* ── WIDTH ──────────────────────────────────────────────────────────────────
+   A card is as wide as its NAME by default. The name is what a card is read for
+   across a canvas, and a fixed 240px cut most filenames and most episode titles
+   short; a wide card is better than a wide ellipsis. `w` on the placement (a hand
+   resize, or a double-click on the edge) overrides this and is kept. Widths come
+   from measuring text on an offscreen canvas (client/textWidth.ts), never the DOM,
+   so arrows and the box selection work from the same numbers the card draws with. */
+
+/** What the title line adds around its text: the fold button, its gap, the padding, the border. */
+const TITLE_CHROME = 14 + 4 + 4 + 8 + 2 + 8;
+/** A row's chrome around its value: the key column, the gap, the padding, the border. */
+const ROW_CHROME = 76 + 8 + 16 + 2;
+const clampW = (w: number) => Math.max(CARD_W, Math.min(CARD_W_MAX, Math.ceil(w)));
+
+/** The width a card with no `w` of its own gets: its name, whole. */
+export function defaultCardWidth(title: string, measure: (text: string, px: number, weight?: '' | 'bold') => number): number {
+  return clampW(measure(title, CARD_TITLE_PX, 'bold') + TITLE_CHROME);
+}
+/** A row's own idea of its width: for `fitCardWidth`, the widest line it would draw. */
+export interface RowWidth { text: string; lines?: string[]; count?: number; slot?: number; statusW?: number; ids?: string[] }
+/**
+ * Wide enough to show everything the card has on it — the double-click on its edge.
+ * Capped like the default: a 2,000px note line is a reason to open the record, not
+ * to make a card the width of the canvas.
+ */
+export function fitCardWidth(title: string, rows: RowWidth[], measure: (text: string, px: number, weight?: '' | 'bold') => number): number {
+  let w = measure(title, CARD_TITLE_PX, 'bold') + TITLE_CHROME;
+  for (const r of rows) {
+    let v: number;
+    if (r.slot !== undefined) v = r.slot + 6 + (r.statusW ?? 0);                 // a column of pairs: name slot, then statuses
+    else if (r.count) v = measure(`${r.count} ${r.text}`, CARD_TEXT_PX) + 15;    // a count pill
+    else {
+      const lines = r.lines?.length ? r.lines : [r.text];
+      v = Math.max(...lines.map((l) => measure(l, CARD_TEXT_PX))) + (r.ids?.length ? 15 + 24 : 0);   // a pill: its padding, and room for its ×
+    }
+    w = Math.max(w, v + ROW_CHROME);
+  }
+  return clampW(w);
+}
 
 /** Height of a card showing `rows` field lines. Folded: title only. */
 /**

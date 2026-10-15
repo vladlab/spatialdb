@@ -151,6 +151,7 @@
         @link-start="startLinkDrag"
         @drag-linked="onDragLinked" @open-linked="(id) => emit('open-record', id)" @jump-linked="jumpTo" @edit-pair="onEditPair"
         @resize="onCardResize"
+        @fit="onCardFit"
         @unplace="unplace"
         @fold="toggleFold"
         @open="(id) => (isBoardRecord(id) ? $emit('open-board', id) : $emit('open-record', id))"
@@ -304,8 +305,8 @@ import type { ArrowLink } from './ArrowLayer.vue';
 import { linkKey } from '../state';
 import { bezierPath, rectsIntersect, type AnchorSide, type Point } from '../canvas/geometry';
 import { CanvasConfig, cardFieldsFor } from '../../contract/canvasConfig';
-import { CARD_W, effectiveHeight, lineCount, linkHandleAt } from '../canvas/cardLayout';
-import { capsuleWidth, JUMP_PAD, pairSlot } from '../textWidth';
+import { CARD_W, defaultCardWidth, effectiveHeight, fitCardWidth, lineCount, linkHandleAt } from '../canvas/cardLayout';
+import { capsuleWidth, JUMP_PAD, pairSlot, textWidth } from '../textWidth';
 import type { CardRow } from './RecordCard.vue';
 import type { Rect } from '../canvas/geometry';
 import { useViewport } from '../canvas/useViewport';
@@ -472,16 +473,19 @@ const cards = computed(() =>
     const table = store.state.tables.get(rec.table_id);
     // ✓ / ⚠ per row from comparing links (COMPARE-BRIEF.md) — derived, live.
     const verdicts = derived.fieldVerdicts(p.record_id);
+    const title = labelFrom(rec.data, labelKeys.value.get(rec.table_id), '');
     return [{
       recordId: p.record_id,
       tableId: rec.table_id,
       tableName: table?.name ?? 'unknown',
       tableColor: colorOf(rec.table_id),
-      title: labelFrom(rec.data, labelKeys.value.get(rec.table_id), ''),
+      title,
       rows: rowFields(rec.table_id).map((f) => { const r = rowFor(rec, f); const v = verdicts.get(f.id); return v ? { ...r, verdict: v } : r; }),
       rich: richBlocks(rec),
       collapsed: p.collapsed,
-      x: p.x, y: p.y, w: p.w, h: p.h, z: p.z,
+      // No width of its own: as wide as its name (cardLayout.ts) — resolved HERE, once, so the
+      // card, the arrows and the box selection all use the same number.
+      x: p.x, y: p.y, w: p.w ?? defaultCardWidth(title, textWidth), h: p.h, z: p.z,
     }];
   }));
 
@@ -493,7 +497,7 @@ const cards = computed(() =>
 const cardRects = computed(() => {
   const m = new Map<string, Rect>();
   for (const c of cards.value) {
-    m.set(c.recordId, { x: c.x, y: c.y, w: c.w ?? CARD_W, h: effectiveHeight(c.h, lineCount(c.rows), c.collapsed, c.rich.length) });
+    m.set(c.recordId, { x: c.x, y: c.y, w: c.w, h: effectiveHeight(c.h, lineCount(c.rows), c.collapsed, c.rich.length) });
   }
   return m;
 });
@@ -1159,6 +1163,20 @@ function onCardPointerDown({ recordId, e }: { recordId: string; e: PointerEvent 
 
 function onCardResize({ recordId, handle, e }: { recordId: string; handle: 'e' | 's' | 'se'; e: PointerEvent }) {
   resize.start(recordId, handle, e);
+}
+/**
+ * An edge double-clicked: the card fits its content along that edge — width wide enough
+ * for every row (cardLayout.ts `fitCardWidth`), height back to the rows' own (null:
+ * auto). Saved like a hand resize, so it stays.
+ */
+function onCardFit({ recordId, handle }: { recordId: string; handle: 'e' | 's' | 'se' }) {
+  const c = cards.value.find((x) => x.recordId === recordId);
+  const p = placementOf(recordId);
+  if (!c || !p) return;
+  const w = handle.includes('e') ? fitCardWidth(c.title, c.rows, textWidth) : undefined;
+  const h = handle.includes('s') ? null : undefined;
+  if ((w === undefined || w === p.w) && (h === undefined || p.h === null)) return;
+  store.mutate({ type: 'placement.update', canvasId: props.canvasId, recordId, ...(w !== undefined ? { w } : {}), ...(h !== undefined ? { h } : {}) });
 }
 
 function onCanvasPointerMove(e: PointerEvent) {

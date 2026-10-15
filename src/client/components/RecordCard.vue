@@ -19,7 +19,7 @@
 <template>
   <div
     class="card"
-    :class="[{ selected, opened, flash, refused, dragging, unconfirmed, collapsed }, linkTarget ? `link-${linkTarget}` : '']"
+    :class="[{ selected, opened, flash, refused, dragging, unconfirmed, collapsed, stacked, stale }, linkTarget ? `link-${linkTarget}` : '']"
     :style="style"
     @pointerdown="onPointerDown"
     @pointerenter="$emit('hover', recordId)"
@@ -42,6 +42,7 @@
       <button class="card-fold" :title="collapsed ? 'Unfold' : 'Fold'"
               @pointerdown.stop @dblclick.stop @click.stop="$emit('fold', recordId)">{{ collapsed ? '▸' : '▾' }}</button>
       <span class="card-label" :class="{ empty: !title }">{{ title || 'untitled' }}</span>
+      <span v-if="stale" class="card-stale" title="This record no longer matches the stack's filter. Drag it out to keep it on the canvas, or × to remove it.">no longer matches</span>
     </div>
 
     <div v-if="!collapsed && (rows.length || rich?.length)" class="card-body">
@@ -92,10 +93,13 @@
 
     <!-- Resize handles. `e` and `s` alone are genuinely useful: width matters for
          long text, height rarely does, and offering all eight would mean eight
-         hit targets fighting the drag surface on a small card. -->
-    <div class="handle handle-e" @pointerdown.stop="$emit('resize', { recordId, handle: 'e', e: $event })" />
-    <div v-if="!collapsed" class="handle handle-s" @pointerdown.stop="$emit('resize', { recordId, handle: 's', e: $event })" />
-    <div v-if="!collapsed" class="handle handle-se" @pointerdown.stop="$emit('resize', { recordId, handle: 'se', e: $event })" />
+         hit targets fighting the drag surface on a small card. A DOUBLE-CLICK on an
+         edge fits the card to what is on it (cardLayout.ts `fitCardWidth`) — the
+         window-manager gesture, and the quickest way back from a bad hand resize.
+         A card in a STACK has no width of its own (the stack's is the width): no e. -->
+    <div v-if="!stacked" class="handle handle-e" title="Drag to resize · double-click to fit" @pointerdown.stop="$emit('resize', { recordId, handle: 'e', e: $event })" @dblclick.stop="$emit('fit', { recordId, handle: 'e' })" />
+    <div v-if="!collapsed" class="handle handle-s" title="Drag to resize · double-click to fit" @pointerdown.stop="$emit('resize', { recordId, handle: 's', e: $event })" @dblclick.stop="$emit('fit', { recordId, handle: 's' })" />
+    <div v-if="!collapsed && !stacked" class="handle handle-se" title="Drag to resize · double-click to fit" @pointerdown.stop="$emit('resize', { recordId, handle: 'se', e: $event })" @dblclick.stop="$emit('fit', { recordId, handle: 'se' })" />
 
     <!-- THE LINK HANDLE: one per card, hung off its bottom-right corner — where a new
          link starts, whichever field it turns out to be (contract/canvasLink.ts decides
@@ -120,7 +124,7 @@ import RecordPill from './RecordPill.vue';
 import VideoLayoutStrip from './VideoLayoutStrip.vue';
 import type { Store } from '../store';
 import {
-  CARD_BODY_PAD, CARD_HEAD_H, CARD_RICH_H, CARD_RICH_LABEL_H, CARD_ROW_H, CARD_TITLE_H, CARD_W, LINK_HANDLE_OUT, LINK_HANDLE_SIZE, effectiveHeight, lineCount,
+  CARD_BODY_PAD, CARD_HEAD_H, CARD_RICH_H, CARD_RICH_LABEL_H, CARD_ROW_H, CARD_TITLE_H, CARD_TITLE_PX, CARD_W, LINK_HANDLE_OUT, LINK_HANDLE_SIZE, effectiveHeight, lineCount,
 } from '../canvas/cardLayout';
 
 // TipTap's renderer is a large chunk; only a canvas that actually shows a note pays for it.
@@ -193,6 +197,10 @@ const props = defineProps<{
   refused?: boolean;
   dragging: boolean;
   unconfirmed: boolean;
+  /** In a STACK (contract/canvasStack.ts): the stack sizes and places it; it cannot be resized sideways. */
+  stacked?: boolean;
+  /** In a stack, but its record no longer matches the stack's filter: dimmed, and says so, until cleared or dragged out. */
+  stale?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -208,6 +216,8 @@ const emit = defineEmits<{
   /** A junction pair's ✎ on this card: edit its status (the pair editor, anchored at the card). */
   (e: 'edit-pair', payload: { recordId: string; fieldId: string; row: string }): void;
   (e: 'resize', payload: { recordId: string; handle: 'e' | 's' | 'se'; e: PointerEvent }): void;
+  /** An edge double-clicked: size the card to its content along that edge. */
+  (e: 'fit', payload: { recordId: string; handle: 'e' | 's' | 'se' }): void;
   (e: 'unplace', recordId: string): void;
   (e: 'fold', recordId: string): void;
   (e: 'open', recordId: string): void;
@@ -223,6 +233,7 @@ const style = computed(() => ({
   zIndex: String(props.z),
   '--head-h': `${CARD_HEAD_H}px`,
   '--title-h': `${CARD_TITLE_H}px`,
+  '--title-px': `${CARD_TITLE_PX}px`,
   '--row-h': `${CARD_ROW_H}px`,
   '--body-pad': `${CARD_BODY_PAD / 2}px`,
   '--rich-h': `${CARD_RICH_H}px`,
@@ -306,8 +317,12 @@ function onPointerDown(e: PointerEvent) {
 .card-title {
   display: flex; align-items: center; gap: 4px; flex: none;
   box-sizing: border-box; height: var(--title-h); padding: 0 8px 0 4px;
-  font-weight: 600; color: var(--text-primary);
+  font-weight: 600; font-size: var(--title-px); color: var(--text-primary);
 }
+.card-stale { flex: none; margin-left: auto; font-size: 10px; font-weight: 400; font-style: italic; color: var(--warning); white-space: nowrap; }
+/* STALE in a stack: still there, plainly not current — until cleared or dragged out. */
+.card.stale { opacity: 0.55; border-style: dashed; }
+.card.stale:hover, .card.stale.selected { opacity: 0.9; }
 .card-fold { color: inherit; opacity: 0.7; font-size: 10px; width: 14px; }
 .card-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-label.empty { color: var(--text-faint); font-weight: 400; font-style: italic; }

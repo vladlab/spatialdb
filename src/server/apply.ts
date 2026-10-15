@@ -670,15 +670,18 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
     }
 
     case 'placement.update':
+      // w/h are NULLABLE: an explicit null means "back to auto-size" (the contract
+      // says so, and the client applies it so) — which `coalesce` silently dropped,
+      // leaving a card auto-sized on one screen and not another.
       await db.query(
         `update placements set
-           w         = coalesce($3, w),
-           h         = coalesce($4, h),
+           w         = case when $7 then $3 else w end,
+           h         = case when $8 then $4 else h end,
            collapsed = coalesce($5, collapsed),
            style     = coalesce($6::jsonb, style)
          where canvas_id = $1 and record_id = $2`,
         [m.canvasId, m.recordId, m.w ?? null, m.h ?? null, m.collapsed ?? null,
-         m.style ? JSON.stringify(m.style) : null],
+         m.style ? JSON.stringify(m.style) : null, m.w !== undefined, m.h !== undefined],
       );
       return;
 

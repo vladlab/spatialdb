@@ -18,16 +18,16 @@ export const UI_FONT = 'ui-sans-serif, system-ui, -apple-system, sans-serif';
 let ctx: CanvasRenderingContext2D | null | undefined;
 const cache = new Map<string, number>();
 
-export function textWidth(text: string, px: number): number {
-  const key = `${px}\n${text}`;
+export function textWidth(text: string, px: number, weight: '' | 'bold' = ''): number {
+  const key = `${px}${weight}\n${text}`;
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
   if (ctx === undefined) {
     try { ctx = typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d'); } catch { ctx = null; }
   }
   let w = 0;
-  if (ctx) { ctx.font = `${px}px ${UI_FONT}`; w = ctx.measureText(text).width; }
-  if (!w) w = text.length * px * 0.56;
+  if (ctx) { ctx.font = `${weight ? weight + ' ' : ''}${px}px ${UI_FONT}`; w = ctx.measureText(text).width; }
+  if (!w) w = text.length * px * (weight ? 0.6 : 0.56);
   if (cache.size > 20000) cache.clear();
   cache.set(key, w);
   return w;
