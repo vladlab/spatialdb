@@ -191,17 +191,27 @@ const FFPROBE: Analyzer = {
   ],
 };
 
+/**
+ * Hashes are PER FILE, always: a single file's hash goes to the `hash` output AND
+ * into its manifest; a bundle's or channel set's members each get their own, written
+ * into the manifest beside the member (the Manifest field the filesystem step maps —
+ * the hash step has no manifest output of its own, so two steps never own one
+ * field). A sequence is not hashed. A hash step is usually `when: "manual"`: an md5
+ * of a 200 GB master is minutes, and a client asks for it once, not on every drop.
+ */
 const hashAnalyzer = (algo: string, note: string): Analyzer => ({
   id: `hash-${algo}`, name: `Hash (${algo})`, program: null,
-  how: `${note}; a multi-file unit is hashed as its members concatenated in manifest order`,
-  defaultRunsOn: {},
-  outputs: [{ key: 'hash', name: 'Hash', type: 'text', note: `"${algo}:<hex>" — the algorithm travels with the value` }],
+  how: `${note}; one hash per file — a bundle or channel set gets one per member, into the manifest; a sequence is not hashed`,
+  defaultRunsOn: { kind: ['file', 'bundle', 'channel_set'] },
+  outputs: [{ key: 'hash', name: 'Hash', type: 'text', note: `"${algo}:<hex>" — the algorithm travels with the value; a single file's only (a set's members are hashed into the manifest)` }],
 });
+export const HASH_ALGORITHMS = ['xxh3', 'sha256', 'md5'] as const;
 
 export const ANALYZERS: readonly Analyzer[] = [
   FILESYSTEM, SEQUENCE, IMF, FFPROBE,
   hashAnalyzer('xxh3', 'xxh3-64, fast, NOT cryptographic — a fingerprint for "is this the same file"'),
   hashAnalyzer('sha256', 'SHA-256 — slow on large files; for a checksum a client will verify'),
+  hashAnalyzer('md5', 'MD5 — what a delivery\'s checksum request almost always means; slow on large files'),
 ];
 export const analyzerOf = (id: string) => ANALYZERS.find((a) => a.id === id);
 
@@ -211,10 +221,15 @@ export const RunsOnSchema = z.strictObject({
   media: z.array(z.enum(MEDIA)).optional(),
   kind: z.array(z.enum(KINDS)).optional(),
 });
+export const WHEN = ['drop', 'manual'] as const;
 export const Step = z.strictObject({
   analyzer: z.string(),
   /** Absent = the analyzer's default. `{}` = everything. Both lists given = both must match. */
   runs_on: RunsOnSchema.optional(),
+  /** Absent = `drop`: runs when a file is dropped. `manual`: skipped at the drop, run
+   *  from the record by hand (the ▶ beside its path) — for the slow steps a client
+   *  asks for once, such as an md5. */
+  when: z.enum(WHEN).optional(),
   map: z.record(z.string(), z.guid()),
 });
 export const Recipe = z.strictObject({ steps: z.array(Step) });
@@ -272,6 +287,8 @@ export function toolsProblem(tools: unknown, fields: Iterable<ToolFieldLike>): s
 
 /** The effective filter of a step. */
 export const runsOnOf = (step: Step): RunsOn => step.runs_on ?? analyzerOf(step.analyzer)?.defaultRunsOn ?? {};
+/** A step run by hand from the record, not at the drop. */
+export const isManual = (step: Step): boolean => step.when === 'manual';
 
 /** Does a step apply to a dropped thing? An absent list is no constraint. */
 export function stepApplies(step: Step, unit: { media: string; kind: string }): boolean {
@@ -303,7 +320,7 @@ export function describe(recipe: Recipe, fields: Iterable<{ id: string; name: st
     if (!a) return `${i + 1}. Unknown analyzer "${step.analyzer}".`;
     const r = runsOnOf(step);
     const cond = [r.media?.length ? r.media.join(' or ') : '', r.kind?.length ? r.kind.map((k) => k.replace('_', ' ')).join(' or ') : ''].filter(Boolean);
-    const when = cond.length ? `If ${cond.join(', and ')}` : 'For everything';
+    const when = (cond.length ? `If ${cond.join(', and ')}` : 'For everything') + (isManual(step) ? ', when asked from the record' : '');
     const v = a.id in versions ? (versions[a.id] === null ? ' (not on this machine)' : ` ${versions[a.id]}`) : '';
     const via = a.program ? `${a.program}${v}` : a.name;
     // In the analyzer's own output order — jsonb does not keep a map's key order.

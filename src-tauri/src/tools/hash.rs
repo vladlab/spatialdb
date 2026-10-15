@@ -1,33 +1,103 @@
-//! Stage 3, last: a fingerprint of a unit. `<algo>:<hex>` — the algorithm is IN
-//! the value (contract/shapes.ts `Hash`), so xxh3 today and sha256 tomorrow can
-//! coexist in one column. A multi-file unit (bundle, sequence, channel set) hashes
-//! its members concatenated in manifest order, so two copies of a DCP agree.
+//! Stage 3, usually last: a fingerprint of what was dropped. `<algo>:<hex>` — the
+//! algorithm is IN the value (contract/shapes.ts `Hash`), so xxh3, sha256 and md5
+//! can coexist in one column. Hashes are PER FILE, always (the owner's call, Oct 15:
+//! a hash of several files concatenated is nothing a client can verify): a single
+//! file gets its `hash`; a bundle or channel set gets one per member, which the web
+//! app writes into the manifest beside each member. A sequence is not hashed — its
+//! manifest never lists its frames, and a thousand per-frame hashes have nowhere
+//! to live until a sidecar is a thing.
 use super::classify::Unit;
 use sha2::Digest;
-use std::{fs::File, io::Read};
+use std::{fs::File, io::Read, path::Path};
 
 const CHUNK: usize = 4 << 20;
 
-enum H { X(xxhash_rust::xxh3::Xxh3), S(sha2::Sha256) }
+enum H { X(xxhash_rust::xxh3::Xxh3), S(sha2::Sha256), M(md5::Md5) }
 
-pub fn fingerprint(unit: &Unit, algo: &str) -> Result<String, String> {
-    let mut h = match algo {
+pub const ALGORITHMS: &[&str] = &["xxh3", "sha256", "md5"];
+
+/// What a hash step produced: the unit's own hash (a single file), or one per
+/// member (`path` relative to the unit's folder, as the manifest lists them).
+#[derive(serde::Serialize, Debug, PartialEq)]
+pub struct Hashed {
+    pub hash: Option<String>,
+    pub members: Vec<MemberHash>,
+}
+#[derive(serde::Serialize, Debug, PartialEq)]
+pub struct MemberHash { pub path: String, pub hash: String }
+
+fn hasher(algo: &str) -> Result<H, String> {
+    Ok(match algo {
         "xxh3" => H::X(xxhash_rust::xxh3::Xxh3::new()),
         "sha256" => H::S(sha2::Sha256::new()),
-        other => return Err(format!("unknown hash algorithm: {other} (xxh3 or sha256)")),
-    };
+        "md5" => H::M(md5::Md5::new()),
+        other => return Err(format!("unknown hash algorithm: {other} ({})", ALGORITHMS.join(", "))),
+    })
+}
+
+/// One file, start to end, in 4 MB chunks.
+pub fn hash_file(path: &str, algo: &str) -> Result<String, String> {
+    let mut h = hasher(algo)?;
     let mut buf = vec![0u8; CHUNK];
-    let files: Vec<&str> = if unit.members.is_empty() { vec![unit.path.as_str()] } else { unit.members.iter().map(String::as_str).collect() };
-    for f in files {
-        let mut file = File::open(f).map_err(|e| format!("{f}: {e}"))?;
-        loop {
-            let n = file.read(&mut buf).map_err(|e| format!("{f}: {e}"))?;
-            if n == 0 { break; }
-            match &mut h { H::X(x) => x.update(&buf[..n]), H::S(s) => s.update(&buf[..n]) }
-        }
+    let mut file = File::open(path).map_err(|e| format!("{path}: {e}"))?;
+    loop {
+        let n = file.read(&mut buf).map_err(|e| format!("{path}: {e}"))?;
+        if n == 0 { break; }
+        match &mut h { H::X(x) => x.update(&buf[..n]), H::S(s) => s.update(&buf[..n]), H::M(m) => m.update(&buf[..n]) }
     }
     Ok(match h {
         H::X(x) => format!("xxh3:{:016x}", x.digest()),
         H::S(s) => format!("sha256:{:x}", s.finalize()),
+        H::M(m) => format!("md5:{:x}", m.finalize()),
     })
+}
+
+pub fn fingerprint(unit: &Unit, algo: &str) -> Result<Hashed, String> {
+    hasher(algo)?;   // an unknown algorithm fails before any file is opened
+    match unit.kind.as_str() {
+        "file" => Ok(Hashed { hash: Some(hash_file(&unit.path, algo)?), members: vec![] }),
+        "sequence" => Err("a sequence is not hashed: its manifest lists a frame range, never its files".into()),
+        _ => {
+            let dir = Path::new(&unit.path);
+            let mut members = Vec::with_capacity(unit.members.len());
+            for m in &unit.members {
+                let rel = Path::new(m).strip_prefix(dir).map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| m.clone());
+                members.push(MemberHash { path: rel, hash: hash_file(m, algo)? });
+            }
+            Ok(Hashed { hash: None, members })
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unit(kind: &str, path: &str, members: Vec<String>) -> Unit {
+        Unit { kind: kind.into(), path: path.into(), name: String::new(), extension: String::new(), media: String::new(),
+               manifest: serde_json::Value::Null, file_count: 0, total_size: 0, modified: String::new(), probe_target: None, members, bundle_type: None, cpl_title: None }
+    }
+
+    #[test]
+    fn known_digests_of_an_empty_file_and_of_abc() {
+        let dir = std::env::temp_dir().join(format!("spatialdb-hash-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let empty = dir.join("empty.bin"); std::fs::write(&empty, b"").unwrap();
+        let abc = dir.join("abc.bin"); std::fs::write(&abc, b"abc").unwrap();
+        // The textbook vectors.
+        assert_eq!(hash_file(empty.to_str().unwrap(), "md5").unwrap(), "md5:d41d8cd98f00b204e9800998ecf8427e");
+        assert_eq!(hash_file(abc.to_str().unwrap(), "md5").unwrap(), "md5:900150983cd24fb0d6963f7d28e17f72");
+        assert_eq!(hash_file(abc.to_str().unwrap(), "sha256").unwrap(), "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        assert!(hash_file(abc.to_str().unwrap(), "xxh3").unwrap().starts_with("xxh3:"));
+        assert!(hash_file(abc.to_str().unwrap(), "crc32").is_err());
+        // A single file: its hash. A set: one per member, paths relative to the folder, no hash of the whole.
+        let one = fingerprint(&unit("file", abc.to_str().unwrap(), vec![]), "md5").unwrap();
+        assert_eq!(one.hash.as_deref(), Some("md5:900150983cd24fb0d6963f7d28e17f72"));
+        let set = fingerprint(&unit("channel_set", dir.to_str().unwrap(), vec![abc.to_string_lossy().into_owned(), empty.to_string_lossy().into_owned()]), "md5").unwrap();
+        assert_eq!(set.hash, None);
+        assert_eq!(set.members.iter().map(|m| m.path.as_str()).collect::<Vec<_>>(), vec!["abc.bin", "empty.bin"]);
+        assert_eq!(set.members[1].hash, "md5:d41d8cd98f00b204e9800998ecf8427e");
+        assert!(fingerprint(&unit("sequence", dir.to_str().unwrap(), vec![]), "md5").is_err());
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

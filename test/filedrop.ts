@@ -26,6 +26,20 @@ const unit = (path: string, extra: Partial<Unit> = {}): Unit => ({
   manifest: { kind: 'file', size: 1000 }, file_count: 1, total_size: 1000, modified: '2026-09-27',
   probe_target: path, members: [], bundle_type: null, cpl_title: null, ...extra,
 });
+/** Six mono WAVs classified as one 5.1 channel set: its path is their FOLDER. */
+const mix51 = (dir: string): Unit => unit(dir, { kind: 'channel_set', name: 'mix51', extension: 'wav', media: 'audio',
+  manifest: { kind: 'channel_set', members: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'].map((ch) => ({ path: `mix51_${ch}.wav`, channel: ch })) },
+  file_count: 6, total_size: 6000, probe_target: `${dir}/mix51_L.wav`, members: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'].map((ch) => `${dir}/mix51_${ch}.wav`) });
+/** Per FILE, as hash.rs does it: a single file's hash, or one per member of a set. */
+const hashOutputs = (u: Unit, analyzer: string) => {
+  const algo = analyzer.replace('hash-', '');
+  if (!['xxh3', 'sha256', 'md5'].includes(algo)) throw new Error(`fake shell: no analyzer ${analyzer}`);
+  const hex = (seed: string) => (algo === 'md5' ? 'cd'.repeat(16) : 'ab'.repeat(8)).replace(/^../, seed.length.toString(16).padStart(2, '0'));
+  if (u.kind === 'sequence') throw 'a sequence is not hashed: its manifest lists a frame range, never its files';
+  if (!u.members.length) return { outputs: { hash: `${algo}:${hex(u.name)}` } };
+  return { outputs: { member_hashes: u.members.map((m) => ({ path: m.slice(u.path.length + 1), hash: `${algo}:${hex(m)}` })) } };
+};
+let allowPath = true;
 const calls: Array<{ cmd: string; args: any }> = [];
 let probeDelay = 0;
 let dropCb: ((e: { payload: any }) => void) | null = null;
@@ -34,9 +48,10 @@ const shell = {
     async invoke(cmd: string, args: any = {}) {
       calls.push({ cmd, args });
       switch (cmd) {
-        case 'tools_available': return { version: '0.1.0-test', tools: ['file_drop', 'reveal'], analyzers: { filesystem: '0.1.0-test', sequence: '0.1.0-test', imf: '0.1.0-test', ffprobe: '7.1', 'hash-xxh3': '0.1.0-test', 'hash-sha256': '0.1.0-test' }, platform: 'linux' };
+        case 'tools_available': return { version: '0.1.0-test', tools: ['file_drop', 'reveal'], analyzers: { filesystem: '0.1.0-test', sequence: '0.1.0-test', imf: '0.1.0-test', ffprobe: '7.1', 'hash-xxh3': '0.1.0-test', 'hash-sha256': '0.1.0-test', 'hash-md5': '0.1.0-test' }, platform: 'linux' };
         case 'classify': return (args.paths as string[]).map((p) => p.endsWith('.exr')
           ? unit(p.replace(/\/[^/]+$/, ''), { kind: 'sequence', name: 'plate', extension: 'exr', media: 'image', manifest: { kind: 'sequence', pattern: 'plate.%04d.exr', first: 1001, last: 1010, count: 8, gaps: [[1004, 1005]] }, file_count: 8, total_size: 8000, probe_target: p, members: [p] })
+          : p.endsWith('/mix51') ? mix51(p)
           : p.endsWith('.wav') ? unit(p, { media: 'audio' }) : p.endsWith('.pdf') ? unit(p, { media: 'document' }) : unit(p));
         case 'analyze':
           if (args.analyzer === 'ffprobe') {
@@ -48,8 +63,13 @@ const shell = {
                 ? { 'ffprobe.version': '7.1', container_raw: 'mov,mp4,m4a,3gp,3g2,mj2', major_brand: 'qt  ', video_codec: 'prores', codec_profile: 'Something New', width: 1920 }
                 : { 'ffprobe.version': '7.1', container_raw: 'mov,mp4,m4a,3gp,3g2,mj2', major_brand: 'qt  ', video_codec: 'prores', codec_profile: '4444 XQ', width: 1920, height: 1080, frame_rate: 23.976, scan: 'progressive', color_range: 'legal', color_primaries_raw: 'bt709', color_transfer_raw: 'bt709', color_matrix_raw: 'bt709' } };
           }
-          if (args.analyzer === 'hash-xxh3') return { outputs: { hash: `xxh3:${'ab'.repeat(8)}` } };
-          throw new Error(`fake shell: no analyzer ${args.analyzer}`);
+          return hashOutputs(args.unit, args.analyzer);
+        case 'analyze_path': {
+          // The desktop asks in a NATIVE dialog for a path not dropped this session; the fake answers `allowPath`.
+          if (!allowPath) throw `${args.path}: not read — you did not allow it`;
+          const u = args.path.endsWith('/mix51') ? mix51(args.path) : unit(args.path);
+          return { unit: u, outputs: hashOutputs(u, args.analyzer).outputs };
+        }
         case 'reveal': return null;
         default: throw new Error(`fake shell: unknown command ${cmd}`);
       }
@@ -67,7 +87,7 @@ async function main() {
   const { w, win, pool, until, untilDb, post, nav } = ui;
   try {
     // Imported AFTER mountApp: @vue/runtime-dom captures `document` when it loads.
-    const { immediateOutputs, mappedData } = await import('../src/client/tools/fileDrop.js');
+    const { immediateOutputs, mappedData, withHashes } = await import('../src/client/tools/fileDrop.js');
     console.log('\nF1. The pure parts');
     const seq = unit('/mnt/san/plates', { kind: 'sequence', manifest: { kind: 'sequence', pattern: 'plate.%04d.exr', first: 1001, last: 1010, count: 8, gaps: [[1004, 1005]] }, file_count: 8, media: 'image' });
     const o = immediateOutputs('sequence', seq);
@@ -86,6 +106,13 @@ async function main() {
     const m = mappedData({ path: '/x/a.wav', width: 1920, media: 'audio', height: 1080, name: 'a.wav' }, map, fields as any);
     check('mapped + valid values are written; unmapped (name) and dangling (height) are dropped silently', JSON.stringify(m.data) === JSON.stringify({ path: '/x/a.wav', width: 1920 }), JSON.stringify(m.data));
     check('a select value that is not a choice is SKIPPED and named — never written, never a schema change', m.skipped.length === 1 && /^Media: /.test(m.skipped[0]), JSON.stringify(m.skipped));
+
+    const h1 = withHashes({ hash: 'md5:' + 'cd'.repeat(16) }, unit('/x/a.mov'), undefined);
+    check('withHashes: a single file\'s hash goes into its manifest too', h1.hash === 'md5:' + 'cd'.repeat(16) && (h1.manifest as any).hash === h1.hash && (h1.manifest as any).size === 1000, JSON.stringify(h1));
+    const set = mix51('/x/mix51');
+    const h2 = withHashes({ member_hashes: [{ path: 'mix51_L.wav', hash: 'md5:' + '11'.repeat(16) }, { path: 'mix51_Rs.wav', hash: 'md5:' + '22'.repeat(16) }] }, set, { ...set.manifest, members: (set.manifest as any).members.map((m: any) => ({ ...m, hash: 'xxh3:' + 'ab'.repeat(8) })) });
+    const mem = (h2.manifest as any).members;
+    check('…a set\'s member hashes land beside the members of the record\'s CURRENT manifest — replacing the old algorithm\'s where given, keeping the rest — and no hash of the whole', h2.hash === undefined && !('member_hashes' in h2) && mem[0].hash === 'md5:' + '11'.repeat(16) && mem[5].hash === 'md5:' + '22'.repeat(16) && mem[1].hash === 'xxh3:' + 'ab'.repeat(8) && mem[0].channel === 'L', JSON.stringify(mem));
 
     console.log('\nF2. Setup: a Files table with File drop mapped');
     const tFiles = randomUUID(), tPlain = randomUUID(), tBoards = randomUUID();
@@ -152,7 +179,8 @@ async function main() {
       fr[0].data.container === 'QuickTime' && fr[1].data.container === 'WAV' && fr[1].data.audio_codec === 'PCM' && fr[0].data.audio_codec === undefined && fr[0].data.color_primaries === 'Rec. 709' && fr[1].data.color_primaries === undefined, JSON.stringify(fr.map((x) => x.data)));
     fr = await untilDb(`select id, data from records where table_id = '${tFiles}' order by created_at`, (x) => x.length === 2 && x[0].data.hash && x[1].data.hash);
     const analyzeCalls = () => calls.filter((c) => c.cmd === 'analyze').map((c) => `${c.args.analyzer}:${c.args.unit.name}`);
-    check('then the hash, last, because it is the last step', fr[0].data.hash === 'xxh3:abababababababab' && analyzeCalls().filter((x) => x.startsWith('hash')).length === 2);
+    check('then the hash, last, because it is the last step', fr[0].data.hash === 'xxh3:05ababababababab' && analyzeCalls().filter((x) => x.startsWith('hash')).length === 2);
+    check('a single file\'s hash is ALSO written into its manifest, beside the size', fr[0].data.manifest.kind === 'file' && fr[0].data.manifest.hash === 'xxh3:05ababababababab' && fr[0].data.manifest.size === 1000, JSON.stringify(fr[0].data.manifest));
     check('the analyzers ran in RECIPE order per file: ffprobe, then hash', analyzeCalls().join() === 'ffprobe:a.mov,hash-xxh3:a.mov,ffprobe:mix.wav,hash-xxh3:mix.wav', analyzeCalls().join());
     check('the wav\'s "media: audio" was NOT written (not a choice on that select) and the notice says which field', fr[1].data.media === undefined && fr[0].data.media === 'video' && /not written — Media/.test(noticesText()), noticesText());
     const tagged = await rows(`select type, via from mutations where seq > ${before} order by seq`);
@@ -195,6 +223,49 @@ async function main() {
     check('a PDF is a record with its filesystem facts and a hash, and ffprobe was NEVER asked (its default is video or audio)', fr[0].data.media === undefined /* not a choice */ && fr[0].data.hash && !analyzeCalls().some((x) => x.startsWith('ffprobe')) && analyzeCalls().includes('hash-xxh3:spec.pdf'), analyzeCalls().join());
     check('stepApplies agrees, from the contract alone', !stepApplies({ analyzer: 'ffprobe', map: {} }, { media: 'document', kind: 'file' }));
     check('no connection-error banner: a bad file is not a store error', !w.find('.errors').exists());
+
+    console.log('\nF6c. A channel set is hashed PER FILE, into its manifest');
+    calls.length = 0;
+    drop(['/mnt/san/mix51']);
+    fr = await untilDb(`select data from records where table_id = '${tFiles}' and data->>'name' = 'mix51'`, (x) => x.length === 1 && x[0].data.manifest?.members?.[0]?.hash);
+    check('six mono WAVs → one record whose manifest carries one xxh3 per member; the Hash column stays empty (there is no hash of the whole)',
+      fr[0].data.hash === undefined && fr[0].data.manifest.kind === 'channel_set' && fr[0].data.manifest.members.length === 6 && fr[0].data.manifest.members.every((m: any) => /^xxh3:[0-9a-f]{16}$/.test(m.hash)) && fr[0].data.manifest.members[3].channel === 'LFE', JSON.stringify(fr[0].data.manifest));
+    check('a sequence is not hashed: the hash step runs on files, bundles and channel sets by default', !stepApplies({ analyzer: 'hash-md5', map: {} }, { media: 'image', kind: 'sequence' }) && stepApplies({ analyzer: 'hash-md5', map: {} }, { media: 'audio', kind: 'channel_set' }));
+
+    console.log('\nF6d. A MANUAL step: md5 when asked for, not at the drop');
+    const md5Field = randomUUID();
+    const r6d = await post([
+      { type: 'field.create', id: md5Field, tableId: tFiles, name: 'MD5', key: 'md5', fieldType: 'text' }, pos(md5Field, 15),
+      { type: 'table.update', id: tFiles, tools: { file_drop: { steps: [
+        { analyzer: 'filesystem', map: { path: f.path, name: f.name, kind: f.kind, manifest: f.manifest, total_size: f.size, media: f.media } },
+        { analyzer: 'ffprobe', map: { width: f.width, frame_rate: f.rate, audio_layout: f.layout, codec: f.codec, video_codec: f.rawCodec, container: f.container, audio_codec: f.audioCodec, color_primaries: f.primaries } },
+        { analyzer: 'hash-xxh3', map: { hash: f.hash } },
+        { analyzer: 'hash-md5', when: 'manual', map: { hash: md5Field } },
+      ] } } },
+    ]);
+    check('a recipe step may say when: "manual"', r6d.status === 200, (await r6d.text()).slice(0, 200));
+    check('…and when: "sometimes" is refused', (await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'hash-md5', when: 'sometimes', map: {} }] } } }])).status === 400);
+    calls.length = 0;
+    drop(['/mnt/san/final.mov']);
+    fr = await untilDb(`select id, data from records where table_id = '${tFiles}' and data->>'name' = 'final.mov'`, (x) => x.length === 1 && x[0].data.hash);
+    await sleep(150);
+    check('at the drop the xxh3 runs and the md5 does NOT', fr[0].data.hash?.startsWith('xxh3:') && fr[0].data.md5 === undefined && !analyzeCalls().some((x) => x.startsWith('hash-md5')), analyzeCalls().join());
+    await go(tFiles);
+    await until(() => w.findAll('.gridview tr.row').some((row: any) => /final\.mov/.test(row.text())));
+    await w.findAll('.gridview tr.row').find((row: any) => /final\.mov/.test(row.text()))!.find('.expand').trigger('click');
+    check('the record tray offers ▶ Hash (md5) beside the path, next to "show"', await until(() => w.find('.record-panel .run-step').exists()) && w.find('.record-panel .run-step').text() === '▶ Hash (md5)' && w.find('.record-panel .reveal').exists());
+    const seqBefore = Number((await rows(`select coalesce(max(seq), 0) n from mutations`))[0].n);
+    calls.length = 0;
+    await w.find('.record-panel .run-step').trigger('click');
+    fr = await untilDb(`select id, data from records where id = '${fr[0].id}'`, (x) => !!x[0].data.md5);
+    check('clicking it asks the shell to run that analyzer on THE RECORD\'S PATH (analyze_path — the native "read this file?" dialog is the shell\'s), and the md5 is written, into the manifest too',
+      calls.some((c) => c.cmd === 'analyze_path' && c.args.path === '/mnt/san/final.mov' && c.args.analyzer === 'hash-md5') && /^md5:[0-9a-f]{32}$/.test(fr[0].data.md5) && fr[0].data.manifest.hash === fr[0].data.md5 && fr[0].data.hash?.startsWith('xxh3:'), JSON.stringify(fr[0].data));
+    const seqAfter = Number((await rows(`select coalesce(max(seq), 0) n from mutations`))[0].n);
+    check('…as ONE mutation of its own, tagged file_drop (a hash asked for by hand is a deliberate change, so Ctrl+Z takes it alone)', seqAfter === seqBefore + 1 && (await rows(`select via, payload from mutations where seq = ${seqAfter}`))[0].via === 'file_drop');
+    allowPath = false;
+    await w.find('.record-panel .run-step').trigger('click');
+    check('when the person declines the native dialog nothing is written and the refusal is a notice about that file', await until(() => /you did not allow it/.test(noticesText())) && (await rows(`select coalesce(max(seq), 0) n from mutations`))[0].n == seqAfter, noticesText());
+    allowPath = true;
 
     console.log('\nF7. Dropping on a canvas');
     win.location.hash = `#/all/canvas`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange'));

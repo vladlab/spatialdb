@@ -103,7 +103,7 @@ fn grant(app: &AppHandle, server: &url::Url) -> Result<(), String> {
             "core:event:default",
             "core:webview:allow-internal-toggle-devtools",
             "allow-tools-available", "allow-server-url",
-            "allow-classify", "allow-analyze", "allow-reveal",
+            "allow-classify", "allow-analyze", "allow-analyze-path", "allow-reveal",
         ]
     });
     app.add_capability(cap.to_string()).map_err(|e| e.to_string())
@@ -152,7 +152,7 @@ pub struct Available {
 fn tools_available() -> Available {
     let own = Some(env!("CARGO_PKG_VERSION").to_string());
     let mut analyzers = std::collections::BTreeMap::new();
-    for a in ["filesystem", "sequence", "imf", "hash-xxh3", "hash-sha256"] { analyzers.insert(a, own.clone()); }
+    for a in ["filesystem", "sequence", "imf", "hash-xxh3", "hash-sha256", "hash-md5"] { analyzers.insert(a, own.clone()); }
     let ffprobe = tools::probe::ffprobe_path();
     analyzers.insert("ffprobe", ffprobe.as_deref().and_then(tools::probe::version));
     Available {
@@ -198,16 +198,54 @@ fn classify(allowed: State<Allowed>, paths: Vec<String>) -> Result<Vec<tools::cl
 #[tauri::command]
 async fn analyze(allowed: State<'_, Allowed>, unit: tools::classify::Unit, analyzer: String) -> Result<tools::probe::Probed, String> {
     allowed.check_unit(&unit)?;
+    run_analyzer(unit, analyzer).await
+}
+
+async fn run_analyzer(unit: tools::classify::Unit, analyzer: String) -> Result<tools::probe::Probed, String> {
     tauri::async_runtime::spawn_blocking(move || match analyzer.as_str() {
         "ffprobe" => tools::probe::probe(&unit),
-        "hash-xxh3" | "hash-sha256" => {
-            let hash = tools::hash::fingerprint(&unit, &analyzer["hash-".len()..])?;
+        id if id.starts_with("hash-") => {
+            // Per file (hash.rs): a single file's own hash, or one per member of a
+            // bundle / channel set, which the page writes into the manifest.
+            let h = tools::hash::fingerprint(&unit, &id["hash-".len()..])?;
             let mut outputs = serde_json::Map::new();
-            outputs.insert("hash".into(), serde_json::Value::String(hash));
+            if let Some(hash) = h.hash { outputs.insert("hash".into(), serde_json::Value::String(hash)); }
+            if !h.members.is_empty() { outputs.insert("member_hashes".into(), serde_json::to_value(&h.members).map_err(|e| e.to_string())?); }
             Ok(tools::probe::Probed { outputs })
         }
         other => Err(format!("this desktop build has no analyzer called \"{other}\"")),
     }).await.map_err(|e| e.to_string())?
+}
+
+#[derive(serde::Serialize)]
+pub struct AnalyzedPath { unit: tools::classify::Unit, outputs: serde_json::Map<String, serde_json::Value> }
+
+/// A record's file, long after it was dropped: a MANUAL step of the recipe
+/// (contract/tools.ts `when: "manual"` — the md5 a client asks for, run when it is
+/// wanted rather than on every drop). The path comes from the PAGE, so rule 3
+/// applies: unless it is already under something dropped this session, a NATIVE
+/// dialog — one the served page cannot draw or answer — asks the person first, and
+/// a yes allows that path for the rest of the session. Classified fresh, so a
+/// folder of mono WAVs is hashed as the channel set it is.
+#[tauri::command]
+async fn analyze_path(app: AppHandle, allowed: State<'_, Allowed>, path: String, analyzer: String) -> Result<AnalyzedPath, String> {
+    if allowed.check(&path).is_err() {
+        if !Path::new(&path).exists() { return Err(format!("{path}: not found on this computer")); }
+        let (a, p, h) = (analyzer.clone(), path.clone(), app.clone());
+        let yes = tauri::async_runtime::spawn_blocking(move || {
+            use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+            h.dialog().message(format!("spatialdb wants to read this file to run {a}:\n\n{p}\n\nIt was not dropped onto the window this session."))
+                .title("Read a file?").kind(MessageDialogKind::Info)
+                .buttons(MessageDialogButtons::OkCancelCustom("Read it".into(), "Cancel".into()))
+                .blocking_show()
+        }).await.map_err(|e| e.to_string())?;
+        if !yes { return Err(format!("{path}: not read — you did not allow it")); }
+        allowed.add(&[PathBuf::from(&path)]);
+    }
+    let root = allowed.check(&path)?;
+    let unit = tools::classify::classify(&[root]).into_iter().next().ok_or_else(|| format!("{path}: nothing there to analyze"))?;
+    let probed = run_analyzer(unit.clone(), analyzer).await?;
+    Ok(AnalyzedPath { unit, outputs: probed.outputs })
 }
 
 /// Select the file in the platform's file manager. Executes nothing. Says what it
@@ -219,7 +257,8 @@ fn reveal(path: String) -> Result<String, String> { tools::reveal::reveal(&path)
 pub fn run() {
     tauri::Builder::default()
         .manage(Allowed::default())
-        .invoke_handler(tauri::generate_handler![tools_available, server_url, set_server, classify, analyze, reveal])
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![tools_available, server_url, set_server, classify, analyze, analyze_path, reveal])
         .setup(|app| {
             let handle = app.handle().clone();
             match configured_server(&handle) {

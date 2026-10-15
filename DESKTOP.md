@@ -5,6 +5,12 @@ in `src-tauri/` (Tauri 2, Rust) and `src/client/desktop.ts` + `src/client/tools/
 (the web app's side). Design and reasons: `TAURI-HANDOFF.md`; the wire contract:
 API.md "Tools".
 
+> **Oct 15, 2026 — unverified:** `analyze_path` and its dialog (tauri-plugin-dialog
+> is a new dependency, resolved into Cargo.lock), the per-file `hash.rs` and md5,
+> and probe.rs's renamed raw outputs were written without a Tauri build environment:
+> the tool modules compile and pass their unit tests on their own, `lib.rs` has not
+> been compiled. Run `npm run desktop:check` first.
+>
 > **Verified / not verified.** `cargo check` and `cargo test` pass (Tauri 2.12,
 > Rust 1.91) and `test/filedrop.ts` runs the whole drop pipeline through the real app
 > and server with the native shell FAKED. Nobody has yet opened the Tauri window:
@@ -26,11 +32,15 @@ API.md "Tools".
   page: `tools_available` (the handshake: version, and every analyzer with the
   version of the program it runs), `server_url`, `set_server` (setup page only),
   `classify`, `analyze(unit, analyzer)` — the analyzer named by id from the closed
-  set — and `reveal`.
+  set — `analyze_path(path, analyzer)` (a recipe's MANUAL step run from a record,
+  such as an md5) and `reveal`.
 - **Reads only what you dropped.** `classify` and `analyze` accept a
   path only if it — or a folder containing it — was dropped onto the window this
   session (`Allowed`). So the served JavaScript, even from a compromised server,
-  cannot probe or hash arbitrary files. `reveal` takes any path (it selects a file in
+  cannot probe or hash arbitrary files. `analyze_path` takes a record's path, which
+  the page supplies, so for a file not under something dropped this session it
+  first asks in a NATIVE dialog (tauri-plugin-dialog — the page cannot draw or
+  answer it), and a yes allows that path for the rest of the session. `reveal` takes any path (it selects a file in
   the file manager and executes nothing). There is deliberately no "open with the
   default app" command: `xdg-open` on the wrong file runs it.
 - **File drop** (the first tool): drop files or folders onto an open table, or onto a

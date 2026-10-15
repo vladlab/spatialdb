@@ -31,7 +31,7 @@ import type { FieldRow, RecordRow } from '../state';
 export type { Step };
 import { fieldsOf, recordsOf } from '../state';
 import { validateValue } from '../../contract/values';
-import { analyzerOf, resolveMap, stepApplies, type Recipe, type Step, type TablesTools } from '../../contract/tools';
+import { analyzerOf, isManual, resolveMap, stepApplies, type Recipe, type Step, type TablesTools } from '../../contract/tools';
 import { lookup } from '../../contract/vocab';
 import { invoke, jobs, notice } from '../desktop';
 import { confirmDialog, askFull } from '../dialogs';
@@ -118,6 +118,29 @@ export function withVocabulary(analyzer: string, outputs: Record<string, unknown
 }
 
 /**
+ * A hash step's outputs, placed: a single file's `hash` is also written into its
+ * manifest (`{ kind: 'file', size, hash }`); a set's `member_hashes` go beside the
+ * members of the manifest — the record's CURRENT one when it has it (an md5 run
+ * after an xxh3 replaces the hashes and keeps everything else), else the unit's
+ * fresh one. The manifest is written through the field the FILESYSTEM step maps,
+ * since the hash step has no manifest output of its own. Pure.
+ */
+export function withHashes(outputs: Record<string, unknown>, unit: Unit, current: unknown): Record<string, unknown> {
+  const out = { ...outputs };
+  const members = out.member_hashes as Array<{ path: string; hash: string }> | undefined;
+  delete out.member_hashes;
+  const base = (current && typeof current === 'object' ? current : unit.manifest) as Record<string, unknown>;
+  if (typeof out.hash === 'string' && base.kind === 'file') out.manifest = { ...base, hash: out.hash };
+  else if (members?.length && Array.isArray(base.members)) {
+    const byPath = new Map(members.map((m) => [m.path, m.hash]));
+    out.manifest = { ...base, members: (base.members as Array<Record<string, unknown>>).map((m) => (byPath.has(String(m.path)) ? { ...m, hash: byPath.get(String(m.path)) } : m)) };
+  }
+  return out;
+}
+/** A hash step's map, plus the filesystem step's manifest field, which its hashes land in. */
+const hashMap = (map: Map<string, string>, manifestKey: string | undefined) => (manifestKey ? new Map([...map, ['manifest', manifestKey]]) : map);
+
+/**
  * Outputs → the `data` a record.create/update takes, through the table's mapping.
  * Unmapped outputs are dropped silently (the table has no column for them); a
  * mapped value the field would refuse is dropped and NAMED, so the person learns
@@ -193,7 +216,9 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
   const steps = recipe.steps.map((step) => ({ step, map: resolveMap(step, fields) }));
   const pathKey = steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('path');
   if (!pathKey) { notice(`File drop on ${table.name}: its Path output is mapped to a field that no longer exists`, 'error'); return; }
-  const applying = (u: Unit) => steps.filter(({ step, map }) => map.size && stepApplies(step, u));
+  const manifestKey = steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('manifest');
+  // A MANUAL step (an md5) is the record's to ask for (`runManualStep`), not the drop's.
+  const applying = (u: Unit) => steps.filter(({ step, map }) => map.size && !isManual(step) && stepApplies(step, u));
 
   let units: Unit[];
   try { units = await invoke<Unit[]>('classify', { paths }); }
@@ -255,7 +280,9 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
       try {
         const raw = await invoke<{ outputs: Record<string, unknown> }>('analyze', { unit, analyzer: step.analyzer });
         const { outputs, unknown } = withVocabulary(step.analyzer, raw.outputs, unit);
-        const { data, skipped } = mappedData(outputs, map, fields);
+        const hashing = step.analyzer.startsWith('hash-');
+        const placed = hashing ? withHashes(outputs, unit, manifestKey ? store.state.records.get(id)?.data[manifestKey] : undefined) : outputs;
+        const { data, skipped } = mappedData(placed, hashing ? hashMap(map, manifestKey) : map, fields);
         if (Object.keys(data).length && store.state.records.has(id)) store.mutate({ type: 'record.update', id, set: data, unset: [] }, FOLLOW_UP);
         for (const sk of skipped) notice(`${unit.name}: not written — ${sk}`, 'warn');
         // Only worth saying when the table wanted the canonical name.
@@ -264,4 +291,53 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
       jobs.delete(id);
     }
   }
+}
+
+/* ── a manual step, from the record ──────────────────────────────────────── */
+
+/** The recipe's manual steps on this table — what the record offers to run. */
+export function manualSteps(store: Store, tableId: string): Array<{ index: number; step: Step; name: string }> {
+  const table = store.state.tables.get(tableId);
+  const recipe = (table?.tools as Partial<TablesTools> | undefined)?.file_drop;
+  if (!recipe) return [];
+  return recipe.steps.flatMap((step, index) => (isManual(step) && Object.keys(step.map).length ? [{ index, step, name: analyzerOf(step.analyzer)?.name ?? step.analyzer }] : []));
+}
+
+/**
+ * Run ONE manual step of the table's recipe on one record, from its path — the
+ * ▶ beside the path in the record tray. The shell classifies the path afresh and
+ * runs the analyzer (`analyze_path`; for a file not dropped this session it asks
+ * the person in a native dialog first). One undoable `record.update`: a hash asked
+ * for by hand is a deliberate change, not a drop's follow-up.
+ */
+export async function runManualStep(store: Store, recordId: string, stepIndex: number): Promise<void> {
+  const record = store.state.records.get(recordId);
+  if (!record) return;
+  const table = store.state.tables.get(record.table_id);
+  const recipe = (table?.tools as Partial<TablesTools> | undefined)?.file_drop;
+  const step = recipe?.steps[stepIndex];
+  if (!table || !recipe || !step) { notice('That step is no longer in the recipe', 'warn'); return; }
+  const fields = fieldsOf(store.state, record.table_id);
+  const steps = recipe.steps.map((st) => ({ step: st, map: resolveMap(st, fields) }));
+  const pathKey = steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('path');
+  const manifestKey = steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('manifest');
+  const path = pathKey ? record.data[pathKey] : undefined;
+  if (typeof path !== 'string' || !path) { notice('This record has no path to run it on', 'warn'); return; }
+  const map = resolveMap(step, fields);
+  const a = analyzerOf(step.analyzer);
+  const label = a?.name ?? step.analyzer;
+  jobs.set(recordId, a?.program ?? label);
+  try {
+    const r = await invoke<{ unit: Unit; outputs: Record<string, unknown> }>('analyze_path', { path, analyzer: step.analyzer });
+    if (!stepApplies(step, r.unit)) { notice(`${r.unit.name}: ${label} does not run on ${r.unit.media} ${r.unit.kind.replace('_', ' ')}s (the step's "runs on")`, 'warn'); return; }
+    const { outputs, unknown } = withVocabulary(step.analyzer, r.outputs, r.unit);
+    const hashing = step.analyzer.startsWith('hash-');
+    const placed = hashing ? withHashes(outputs, r.unit, manifestKey ? record.data[manifestKey] : undefined) : outputs;
+    const { data, skipped } = mappedData(placed, hashing ? hashMap(map, manifestKey) : map, fields);
+    if (Object.keys(data).length && store.state.records.has(recordId)) { store.mutate({ type: 'record.update', id: recordId, set: data, unset: [] }, VIA); notice(`${r.unit.name}: ${label} done`); }
+    else if (!skipped.length) notice(`${r.unit.name}: ${label} produced nothing for this table's fields`, 'warn');
+    for (const sk of skipped) notice(`${r.unit.name}: not written — ${sk}`, 'warn');
+    for (const u of unknown) if (map.has(u.key)) notice(`${r.unit.name}: not written — ${u.message}`, 'warn');
+  } catch (e) { notice(`${label} — ${String(e)}`, 'error'); }
+  finally { jobs.delete(recordId); }
 }

@@ -37,7 +37,7 @@ export const MANIFEST_MAX_MEMBERS = 2000;
  * partial hash is not) is still an open decision, and must be changeable later
  * without touching the schema or rewriting old records.
  */
-const Hash = z.string().regex(/^[a-z0-9_-]{2,20}:[0-9a-f]{8,128}$/i, 'a hash looks like "sha256:9f2c…"');
+export const Hash = z.string().regex(/^[a-z0-9_-]{2,20}:[0-9a-f]{8,128}$/i, 'a hash looks like "sha256:9f2c…"');
 const bytes = z.number().int().nonnegative();
 /** Relative to the RECORD's path — never absolute, so the cross-machine path question stays in one place. */
 const relPath = z.string().min(1).max(1024).refine((p) => !p.startsWith('/') && !/^[a-z]:[\\/]/i.test(p) && !p.split(/[\\/]/).includes('..'),
@@ -58,7 +58,7 @@ export const Manifest = z.discriminatedUnion('kind', [
   }).refine((s) => s.last >= s.first, 'last frame is before first'),
   z.strictObject({
     kind: z.literal('channel_set'),                              // a multi-mono mix: 6 wavs = one 5.1
-    members: z.array(z.strictObject({ path: relPath, channel: z.string().min(1).max(16) })).min(1).max(64),
+    members: z.array(z.strictObject({ path: relPath, channel: z.string().min(1).max(16), size: bytes.optional(), hash: Hash.optional() })).min(1).max(64),
   }),
 ]);
 export type Manifest = z.infer<typeof Manifest>;

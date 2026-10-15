@@ -55,6 +55,10 @@
             <span class="ro-sep">·</span>
             <span v-for="k in KINDS" :key="k" class="chip kind" :class="{ on: kindOn(step, k) }" @click="toggleKind(i, k)">{{ k.replace('_', ' ') }}</span>
             <button v-if="step.runs_on" class="plain mini" title="Back to this analyzer's default" @click="resetRunsOn(i)">default</button>
+            <span class="ro-sep">·</span>
+            <span class="ro-label">when</span>
+            <span class="chip when" :class="{ on: !isManual(step) }" title="At the drop, in order" @click="setWhen(i, 'drop')">dropped</span>
+            <span class="chip when" :class="{ on: isManual(step) }" title="Skipped at the drop; run from the record by hand (the ▶ beside its path) — for the slow steps a client asks for once, such as an md5" @click="setWhen(i, 'manual')">asked for</span>
           </div>
 
           <div class="rows">
@@ -106,7 +110,7 @@ import type { Store } from '../store';
 import { fieldsOf } from '../state';
 import { useSchemaActions } from '../schemaActions';
 import { available } from '../desktop';
-import { ANALYZERS, KINDS, MEDIA, REQUIRED, analyzerOf, describe, fieldAccepts, runsOnOf, toolsProblem, type Kind, type Media, type Output, type Recipe, type Step, type TablesTools } from '../../contract/tools';
+import { ANALYZERS, KINDS, MEDIA, REQUIRED, analyzerOf, describe, fieldAccepts, isManual, runsOnOf, toolsProblem, type Kind, type Media, type Output, type Recipe, type Step, type TablesTools } from '../../contract/tools';
 
 const props = defineProps<{ store: Store; tableId: string }>();
 const actions = useSchemaActions(props.store);
@@ -178,6 +182,7 @@ function toggleKind(i: number, k: Kind) {
   });
 }
 function resetRunsOn(i: number) { edit((r) => { delete r.steps[i].runs_on; }); }
+function setWhen(i: number, when: 'drop' | 'manual') { edit((r) => { if (when === 'manual') r.steps[i].when = 'manual'; else delete r.steps[i].when; }); }
 
 /* ── JSON view: a draft, validated live, saved once ── */
 const draft = ref(current.value);

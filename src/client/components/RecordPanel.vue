@@ -69,6 +69,11 @@
           <!-- Desktop app only: select the file in the file manager (never opens it — src-tauri/src/lib.rs). -->
           <button v-if="desktop && f.type === 'file_path' && typeof record.data[f.key] === 'string'" class="reveal" title="Show in folder"
                   @click.stop="reveal(String(record.data[f.key]))">⤴ show</button>
+          <!-- The recipe's MANUAL steps (an md5): run by hand, on this record's file. -->
+          <template v-if="desktop && f.type === 'file_path' && typeof record.data[f.key] === 'string' && !jobs.get(recordId)">
+            <button v-for="m in manual" :key="m.index" class="reveal run-step" :title="`Run ${m.name} on this file now`"
+                    @click.stop="runManualStep(store, recordId, m.index)">▶ {{ m.name }}</button>
+          </template>
           <span v-if="jobs.get(recordId) && f.type === 'file_path'" class="job">{{ jobs.get(recordId) }}…</span>
         </label>
 
@@ -203,6 +208,7 @@ import { useDerived } from '../derived';
 import { confirmDialog } from '../dialogs';
 import CellEditor, { type EditExit } from './CellEditor.vue';
 import { invoke, isDesktop, jobs, notice } from '../desktop';
+import { manualSteps, runManualStep } from '../tools/fileDrop';
 import LinkPicker from './LinkPicker.vue';
 import JunctionEditor from './JunctionEditor.vue';
 import RecordPill from './RecordPill.vue';
@@ -240,6 +246,8 @@ const derived = useDerived(store);
 
 const record = computed(() => store.state.records.get(props.recordId));
 const table = computed(() => store.state.tables.get(record.value?.table_id ?? ''));
+/** The recipe's manual steps on this table — offered beside the path, in the desktop app. */
+const manual = computed(() => (desktop && table.value ? manualSteps(store, table.value.id) : []));
 const tableColor = computed(() => table.value?.color || 'var(--card-head-bg)');
 const fields = computed(() => (record.value ? fieldsOf(store.state, record.value.table_id) : []));
 
@@ -521,6 +529,7 @@ watch(() => props.recordId, () => {
 .rp-field { padding: 6px 0; }
 .reveal { margin-left: 8px; font-size: 10px; background: none; border: 1px solid var(--border-main); color: var(--text-muted); border-radius: 3px; padding: 0 5px; cursor: pointer; }
 .reveal:hover { color: var(--accent); border-color: var(--accent); }
+.run-step { margin-left: 4px; }
 .job { margin-left: 8px; font-size: 10px; color: var(--accent); }
 .rp-field.block { padding: 10px 0; }
 /* min-height is set inline (richReserve): the editor's place, held while it loads. */
