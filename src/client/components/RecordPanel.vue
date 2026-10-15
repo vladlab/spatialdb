@@ -77,7 +77,8 @@
             <button v-for="m in manual" :key="m.index" class="reveal run-step" :title="`Run ${m.name} on this record's file now`"
                     @click.stop="runManualStep(store, recordId, m.index)">▶ {{ m.name }}</button>
           </template>
-          <span v-if="jobs.get(recordId) && (f.type === 'file_path' || manualHome === f.id)" class="job">{{ jobs.get(recordId) }}…</span>
+          <!-- What is running, drawn ONCE: a drop's steps on the path, a manual step where its ▶ was. -->
+          <span v-if="jobHere(f)" class="job">{{ jobs.get(recordId)!.label }}…</span>
         </div>
 
         <!-- RICH TEXT is not a click-to-edit value like the rest: it is an editor that
@@ -252,6 +253,10 @@ const table = computed(() => store.state.tables.get(record.value?.table_id ?? ''
 /** The recipe's manual steps on this table — offered beside the path, in the desktop app. */
 const manual = computed(() => (desktop && table.value ? manualSteps(store, table.value.id) : []));
 /** The field the ▶ buttons sit on: the Manifest the recipe maps (where a hash lands), else the first mapped hash field. */
+const jobHere = (f: { id: string; type: string }) => {
+  const j = jobs.get(props.recordId);
+  return !!j && (j.manual ? manualHome.value === f.id : f.type === 'file_path');
+};
 const manualHome = computed(() => (manual.value.length && table.value && record.value && typeof record.value.data[pathKeyOf(store, table.value.id) ?? ''] === 'string' ? manualHomeField(store, table.value.id) : null));
 const tableColor = computed(() => table.value?.color || 'var(--card-head-bg)');
 const fields = computed(() => (record.value ? fieldsOf(store.state, record.value.table_id) : []));

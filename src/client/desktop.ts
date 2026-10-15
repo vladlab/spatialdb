@@ -90,5 +90,11 @@ export function notice(text: string, kind: Notice['kind'] = 'info') {
 }
 export function dismiss(id: number) { const i = notices.findIndex((n) => n.id === id); if (i >= 0) notices.splice(i, 1); }
 
-/** Background work in flight, per record: "probing", "hashing". */
-export const jobs = reactive(new Map<string, string>());
+/**
+ * Background work in flight, per record: what is running ("ffprobe", "Hash (md5)")
+ * and WHERE it came from — a drop's follow-up steps (shown on the Path field) or a
+ * manual step run from the record (shown on the field its ▶ sits on). One entry,
+ * drawn in one place: drawing it on both read as the ▶ button doubling up.
+ */
+export interface Job { label: string; manual: boolean }
+export const jobs = reactive(new Map<string, Job>());

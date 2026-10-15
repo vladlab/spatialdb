@@ -278,7 +278,7 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
       if (IMMEDIATE.has(step.analyzer)) continue;
       if (!store.state.records.has(id)) break;   // undone meanwhile: stop, write nothing
       const a = analyzerOf(step.analyzer);
-      jobs.set(id, a?.program ?? a?.name ?? step.analyzer);
+      jobs.set(id, { label: a?.program ?? a?.name ?? step.analyzer, manual: false });
       try {
         const raw = await invoke<{ outputs: Record<string, unknown> }>('analyze', { unit, analyzer: step.analyzer });
         const { outputs, unknown } = withVocabulary(step.analyzer, raw.outputs, unit);
@@ -349,7 +349,7 @@ export async function runManualStep(store: Store, recordId: string, stepIndex: n
   const map = resolveMap(step, fields);
   const a = analyzerOf(step.analyzer);
   const label = a?.name ?? step.analyzer;
-  jobs.set(recordId, a?.program ?? label);
+  jobs.set(recordId, { label: a?.program ?? label, manual: true });
   try {
     const r = await invoke<{ unit: Unit; outputs: Record<string, unknown> }>('analyze_path', { path, analyzer: step.analyzer });
     if (!stepApplies(step, r.unit)) { notice(`${r.unit.name}: ${label} does not run on ${r.unit.media} ${r.unit.kind.replace('_', ' ')}s (the step's "runs on")`, 'warn'); return; }

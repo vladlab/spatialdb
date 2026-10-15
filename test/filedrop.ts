@@ -40,6 +40,7 @@ const hashOutputs = (u: Unit, analyzer: string) => {
   return { outputs: { member_hashes: u.members.map((m) => ({ path: m.slice(u.path.length + 1), hash: `${algo}:${hex(m)}` })) } };
 };
 let allowPath = true;
+let manualDelay = 0;
 const calls: Array<{ cmd: string; args: any }> = [];
 let probeDelay = 0;
 let dropCb: ((e: { payload: any }) => void) | null = null;
@@ -67,6 +68,7 @@ const shell = {
         case 'analyze_path': {
           // The desktop asks in a NATIVE dialog for a path not dropped this session; the fake answers `allowPath`.
           if (!allowPath) throw `${args.path}: not read — you did not allow it`;
+          if (manualDelay) await sleep(manualDelay);
           const u = args.path.endsWith('/mix51') ? mix51(args.path) : unit(args.path);
           return { unit: u, outputs: hashOutputs(u, args.analyzer).outputs };
         }
@@ -253,12 +255,18 @@ async function main() {
     await go(tFiles);
     await until(() => w.findAll('.gridview tr.row').some((row: any) => /final\.mov/.test(row.text())));
     await w.findAll('.gridview tr.row').find((row: any) => /final\.mov/.test(row.text()))!.find('.expand').trigger('click');
-    const fieldNamed = (label: string) => w.findAll('.record-panel .rp-field').find((x: any) => x.find('.rp-name').text().replace(/[★⚠✓▶⤴].*$/s, '').trim() === label)!;
+    const fieldNamed = (label: string) => w.findAll('.record-panel .rp-field').find((x: any) => { const t = x.find('.rp-name').text().replace(/^★/, '').trim(); return t === label || t.startsWith(label + ' ') || /^[⚠✓▶⤴]/.test(t.slice(label.length).trim()) && t.startsWith(label); })!;
     check('the record tray offers ▶ Hash (md5) on the MANIFEST field (where a hash lands), not on the path; "show" stays on the path', await until(() => w.find('.record-panel .run-step').exists()) && w.find('.record-panel .run-step').text() === '▶ Hash (md5)'
       && fieldNamed('Manifest').find('.run-step').exists() && !fieldNamed('Path').find('.run-step').exists() && fieldNamed('Path').find('.reveal').exists() && !fieldNamed('Manifest').find('.reveal:not(.run-step)').exists());
     const seqBefore = Number((await rows(`select coalesce(max(seq), 0) n from mutations`))[0].n);
     calls.length = 0;
+    manualDelay = 400;
     await w.find('.record-panel .run-step').trigger('click');
+    check('WHILE it runs, "Hash (md5)…" shows once — on the Manifest, where the ▶ was — not on the Path as well; the ▶ is hidden meanwhile',
+      await until(() => w.findAll('.record-panel .job').length > 0) && w.findAll('.record-panel .job').length === 1 && fieldNamed('Manifest').find('.job').exists()
+      && /Hash \(md5\)…/.test(fieldNamed('Manifest').find('.job').text()) && !fieldNamed('Path').find('.job').exists() && !w.find('.record-panel .run-step').exists(),
+      w.findAll('.record-panel .rp-name').map((x: any) => x.text()).join(' | '));
+    manualDelay = 0;
     fr = await untilDb(`select id, data from records where id = '${fr[0].id}'`, (x) => !!x[0].data.md5);
     check('clicking it asks the shell to run that analyzer on THE RECORD\'S PATH (analyze_path — the native "read this file?" dialog is the shell\'s), and the md5 is written, into the manifest too',
       calls.some((c) => c.cmd === 'analyze_path' && c.args.path === '/mnt/san/final.mov' && c.args.analyzer === 'hash-md5') && /^md5:[0-9a-f]{32}$/.test(fr[0].data.md5) && fr[0].data.manifest.hash === fr[0].data.md5 && fr[0].data.hash?.startsWith('xxh3:'), JSON.stringify(fr[0].data));
@@ -269,6 +277,12 @@ async function main() {
     await w.find('.record-panel .run-step').trigger('click');
     check('when the person declines the native dialog nothing is written and the refusal is a notice about that file', await until(() => /you did not allow it/.test(noticesText())) && (await rows(`select coalesce(max(seq), 0) n from mutations`))[0].n == seqAfter, noticesText());
     allowPath = true;
+    probeDelay = 400;
+    drop(['/mnt/san/final.mov']);   // the same path again, its tray open: an update, its ffprobe slow
+    check('a DROP\'s follow-up steps still show their progress on the Path — and only there', await until(() => fieldNamed('Path').find('.job').exists()) && /ffprobe…/.test(fieldNamed('Path').find('.job').text())
+      && w.findAll('.record-panel .job').length === 1 && !fieldNamed('Manifest').find('.job').exists(), w.findAll('.record-panel .rp-name').map((x: any) => x.text()).join(' | '));
+    probeDelay = 0;
+    await until(() => !w.find('.record-panel .job').exists());
 
     console.log('\nF6e. "into the manifest" is the hash step\'s own setting');
     const r6e = await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [
