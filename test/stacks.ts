@@ -170,6 +170,19 @@ async function main() {
     check('…in the stack\'s order (by name): Bonus above DCP', rectOf(cardOf('Bonus')).y < rectOf(cardOf('DCP')).y);
     check('the Trailer (Ep 102) and the Stills (no work) are not placed', !cardOf('Trailer') && !cardOf('Stills'));
 
+    // Added while AWAY from the canvas — in the table's grid — then back: the race the
+    // owner hit (the stack's table already loaded, the scene not yet) — the card must be
+    // there, in this tab, not only on the server.
+    win.location.hash = `#/all/table/${tDelivs}`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange'));
+    await until(() => w.find('.gridview').exists() && !w.find('.canvas-container').exists(), 8000);
+    const away = randomUUID();
+    await post([{ type: 'record.create', id: away, tableId: tDelivs, data: { name: 'Away' } }, { type: 'link.add', id: randomUUID(), fieldId: fWork, fromRecord: away, toRecord: ep101 }]);
+    await until(() => w.findAll('.gridview tr.row').some((r: any) => r.text().includes('Away')), 8000);
+    win.location.hash = `#/all/canvas/${board}`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange'));
+    check('a deliverable added while in the grid is in the stack when the canvas is opened again — and stays',
+      await until(() => !!cardOf('Away') && cardOf('Away').classes('stacked'), 8000) && await stackIs(away, stackId) && await (async () => { await sleep(1500); return !!cardOf('Away') && cardOf('Away').classes('stacked'); })());
+    await until(() => !!cardOf('Bonus') && !!cardOf('DCP'), 4000);
+
     // Gather.
     await frame().find('.stack-gather').trigger('click');
     check('gather: the ProRes joins the stack', await until(() => cardOf('ProRes').classes('stacked'), 4000) && await stackIs(prores, stackId) && !frame().find('.stack-gather').exists());
@@ -194,18 +207,18 @@ async function main() {
     check('break out: the frame is gone, the cards stay — by hand, where they were drawn',
       await until(() => frames().length === 0 && !cardOf('Bonus').classes('stacked'), 4000)
         && rectOf(cardOf('Bonus')).x === before.bonus.x && rectOf(cardOf('Bonus')).y === before.bonus.y && rectOf(cardOf('DCP')).y === before.dcp.y
-        && await stackIs(bonus, null) && (await placedCount(3)) === 3);
+        && await stackIs(bonus, null) && (await placedCount(4)) === 4);
     await w.find('.canvas-container').trigger('keydown', { key: 'z', ctrlKey: true });
     check('…one Ctrl+Z: the stack is back with its cards', await until(() => frames().length === 1 && cardOf('Bonus').classes('stacked') && cardOf('DCP').classes('stacked'), 4000));
 
     await frame().trigger('contextmenu', { clientX: 20, clientY: 20 });
     await until(() => menu().exists());
     await menu().find('.stack-remove').trigger('click');
-    check('remove: asked first, naming how many cards', await until(() => nav.dialogs.seen.some((t) => t.startsWith('Remove this stack and its 3 cards')), 4000));
+    check('remove: asked first, naming how many cards', await until(() => nav.dialogs.seen.some((t) => t.startsWith('Remove this stack and its 4 cards')), 4000));
     check('…the frame and its cards are gone; the records are not', await until(() => frames().length === 0 && !cardOf('Bonus') && !cardOf('DCP') && !cardOf('ProRes'), 4000) && (await placedCount(0)) === 0
-      && (await pool.query(`select count(*)::int as n from records where table_id = $1`, [tDelivs])).rows[0].n === 5);
+      && (await pool.query(`select count(*)::int as n from records where table_id = $1`, [tDelivs])).rows[0].n === 6);
     await w.find('.canvas-container').trigger('keydown', { key: 'z', ctrlKey: true });
-    check('…one Ctrl+Z brings all of it back', await until(() => frames().length === 1 && !!cardOf('Bonus') && !!cardOf('DCP') && !!cardOf('ProRes') && cardOf('ProRes').classes('stacked'), 6000) && (await placedCount(3)) === 3);
+    check('…one Ctrl+Z brings all of it back', await until(() => frames().length === 1 && !!cardOf('Bonus') && !!cardOf('DCP') && !!cardOf('ProRes') && cardOf('ProRes').classes('stacked'), 6000) && (await placedCount(4)) === 4);
 
     /* ───────────────────────────────────────────────────────────────────── */
     console.log('\nS4. Dragging out of, and into, a stack');

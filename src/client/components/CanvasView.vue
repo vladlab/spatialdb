@@ -621,8 +621,14 @@ const stackFrameOf = (id: string) => stackFrames.value.find((f) => f.id === id);
    card here is placed into the stack. Not an undo step: undoing it would only have it
    placed again a moment later. Keyed on the SET of missing ids, so a frame where nothing
    is missing does nothing. */
+/* NOT before the scene is in. Opening a canvas whose stack table is already loaded
+   (you were just in its grid) ran this before loadScene had brought the placements:
+   every matching record looked missing, was placed — and then the scene arrived and
+   REPLACED this canvas's placements, dropping the optimistic one. The server had the
+   card; this tab did not, and nothing would ask again. */
+const sceneReady = ref(false);
 const missingKey = computed(() => rawStacks.value.map((st) => {
-  if (store.tableLoads.get(st.tableId)?.state !== 'loaded') return '';
+  if (!sceneReady.value || store.tableLoads.get(st.tableId)?.state !== 'loaded') return '';
   return (censuses.value.get(st.id)?.missing ?? []).map((id) => `${st.id}|${id}`).join(',');
 }).filter(Boolean).join(','));
 const autoPlaced = new Map<string, number>();   // key → when: a refused add must not be retried every frame
@@ -1877,6 +1883,7 @@ onMounted(async () => {
   // client/recordDrag.ts) land here.
   if (containerRef.value) unregisterDrop = registerDropTarget(containerRef.value, placeMany);
   await store.loadScene(props.canvasId);
+  sceneReady.value = true;
   fitAll();
   containerRef.value?.focus();
 });
@@ -1884,7 +1891,9 @@ onMounted(async () => {
 // Reopening a different canvas reloads rather than reusing a stale scene.
 watch(() => props.canvasId, async (id) => {
   selected.clear();
+  sceneReady.value = false;
   await store.loadScene(id);
+  if (props.canvasId === id) sceneReady.value = true;
   fitAll();
 });
 
