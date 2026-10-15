@@ -285,6 +285,18 @@ async function main() {
     await ed().find('.stack-ok').trigger('click');
     check('Make stack: a second frame, named, with its filter under the name', await until(() => frames().length === 2, 4000) && frames()[1].find('.stack-label').text() === 'Ep 102 masters' && frames()[1].find('.stack-filter').text() === 'Work is Ep 102', frames()[1]?.text());
     check('…gathered on request: the Trailer is in it', await until(() => cardOf('Trailer').classes('stacked'), 4000) && await (async () => { const t = Date.now(); while (Date.now() - t < 5000) { const v = await stackOf(trailer); if (v && v !== stackId) return true; await sleep(100); } return false; })());
+    // Z fits the selection (the second stack, selected by its bar); Shift+Z fits everything.
+    const barOf = (i: number) => frames()[i].find('.stack-head');
+    await barOf(1).trigger('pointerdown', { button: 0, clientX: 5, clientY: 5 });
+    winEv('pointerup', { clientX: 5, clientY: 5 });
+    await until(() => frames()[1].classes('selected'));
+    await w.find('.canvas-container').trigger('keydown', { key: 'z' });
+    const sel = tf(), f2 = rectOf(frames()[1]);
+    check('Z with a stack selected: the view is on that stack, zoomed in no further than 125%',
+      Math.abs((f2.x + f2.w / 2) * sel.s + sel.x - 400) < 1 && Math.abs((f2.y + f2.h / 2) * sel.s + sel.y - 300) < 1 && sel.s <= 1.25, JSON.stringify(sel));
+    await w.find('.canvas-container').trigger('keydown', { key: 'Z', shiftKey: true });
+    const all = tf();
+    check('Shift+Z: everything — further out', all.s < sel.s, JSON.stringify(all));
     check('…saved to the canvas, for everyone', (await untilDb(`select jsonb_array_length(config->'stacks') as n from canvases where id = '${board}'`, (r) => r[0]?.n === 2)).length === 1);
   } finally {
     await ui.close();

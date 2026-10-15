@@ -12,7 +12,7 @@
 import { watch, reactive, ref, computed, type Ref } from 'vue';
 import { fitTransform, toWorld, zoomAbout, type Rect } from './geometry.js';
 
-const MIN_SCALE = 0.1;
+const MIN_SCALE = 0.02;   // far enough out that a sprawling board fits whole
 const MAX_SCALE = 3;
 
 export type ScrollMode = 'mouse' | 'touchpad';
@@ -102,9 +102,14 @@ export function useViewport(containerRef: Ref<HTMLElement | null>) {
     apply(zoomAbout(transform, r.width / 2, r.height / 2, 1));
   }
 
-  function fit(rects: Rect[]) {
+  /**
+   * Fit these rects into the view. Everything on the board: as small as it takes.
+   * A selection: brought in close, but never past `maxScale` — one card at 300% is
+   * not a view of anything.
+   */
+  function fit(rects: Rect[], opts: { minScale?: number; maxScale?: number } = {}) {
     const r = rect();
-    apply(fitTransform(rects, r.width, r.height));
+    apply(fitTransform(rects, r.width, r.height, 60, opts.minScale ?? MIN_SCALE, opts.maxScale ?? 1));
   }
 
   /** Centre on a set of rects without changing zoom. */

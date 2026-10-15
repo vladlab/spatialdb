@@ -223,6 +223,10 @@ async function main() {
 
     console.log('\nC2. One handle per card');
     check('the eight cards are up', await until(() => cards().length === 8, 8000));
+    // happy-dom gives the container no size, so the fit at mount lands on the zoom FLOOR
+    // (2% since fit-everything was allowed to go that small) — where a drag across the
+    // whole board is a few screen pixels, under the handle's click slop. Back to 100%.
+    await w.find('.canvas-controls button[title="Reset to 100%"]').trigger('click');
     check('a card whose table can link has exactly ONE ⊕ — Edits, Files (a link), Deliverables (only a junction)',
       await until(() => cardBy('OEV1').findAll('.link-handle').length === 1) && cardBy('a.mov').findAll('.link-handle').length === 1 && cardBy('Trailer').findAll('.link-handle').length === 1);
     check('a card whose table links to NOTHING has none (Works)', !cardBy('Ep 101').find('.link-handle').exists() && !cardBy('Ep 102').find('.link-handle').exists());

@@ -26,7 +26,9 @@
       <span class="zoom">{{ viewport.zoomPercent.value }}%</span>
       <button @click="viewport.zoomIn()" title="Zoom in">+</button>
       <button @click="viewport.resetZoom()" title="Reset to 100%">1:1</button>
-      <button @click="fitAll" title="Fit all cards">fit</button>
+      <!-- FIT: the whole board when nothing is selected (Z, Shift+Z always); the
+           selection — a card, a stack, or several — when something is (Z). -->
+      <button class="fit" :title="hasSelection ? 'Fit the selection to the view (Z) · Shift+Z fits everything' : 'Fit everything on the board into view (Z)'" @click="fit">{{ hasSelection ? 'fit sel' : 'fit' }}</button>
       <span class="sep" />
       <!-- Which RELATIONAL arrows are drawn. A viewing preference, kept in this
            browser — see contract/canvasConfig.ts for why it is not shared. -->
@@ -275,7 +277,7 @@
         <template v-if="menu.kind === 'canvas'">
           <hr />
           <button class="new-stack-here" @click="menuDo((m) => newStack({ x: m.wx, y: m.wy }))">New stack here…</button>
-          <button @click="menuDo(() => fitAll())">Fit all cards</button>
+          <button @click="menuDo(() => fitAll())">Fit everything (Shift+Z)</button>
         </template>
       </template>
 
@@ -290,6 +292,7 @@
         <button v-if="stackFrameOf(menu.stackId)?.elsewhere" class="stack-gather-item" @click="menuDo((m) => gatherStack(m.stackId!))">Gather the {{ stackFrameOf(menu.stackId)?.elsewhere }} placed elsewhere</button>
         <button v-if="stackFrameOf(menu.stackId)?.stale" class="stack-clear-stale" @click="menuDo((m) => clearStale(m.stackId!))">Remove the {{ stackFrameOf(menu.stackId)?.stale }} that no longer match</button>
         <button @click="menuDo((m) => fitStack(m.stackId!))">Fit width to the cards</button>
+        <button @click="menuDo((m) => { selectedStack = m.stackId!; fit(); })">Fit to view (Z)</button>
         <hr />
         <button class="stack-breakout" @click="menuDo((m) => breakOutStack(m.stackId!))">Break out: keep the cards, remove the stack</button>
         <button class="danger stack-remove" @click="menuDo((m) => removeStack(m.stackId!))">Remove stack and its cards…</button>
@@ -1575,6 +1578,7 @@ function onKeyDown(e: KeyboardEvent) {
     for (const id of cardRects.value.keys()) selected.add(id);
   }
   if (e.key === 'f' && !e.ctrlKey && !e.metaKey) fitAll();
+  if ((e.key === 'z' || e.key === 'Z') && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); if (e.shiftKey) fitAll(); else fit(); }
 }
 
 function onKeyUp(e: KeyboardEvent) {
@@ -1587,6 +1591,20 @@ function toggleScrollMode() {
 
 function fitAll() {
   viewport.fit([...cardRects.value.values(), ...[...stackLayouts.value.values()].map((l) => l.rect)]);
+}
+const hasSelection = computed(() => selected.size > 0 || !!selectedStack.value);
+/** The selection's rects: the selected cards, or the selected stack's frame. */
+function selectionRects(): Rect[] {
+  const out: Rect[] = [];
+  for (const id of selected) { const r = cardRects.value.get(id); if (r) out.push(r); }
+  const st = selectedStack.value ? stackLayouts.value.get(selectedStack.value)?.rect : undefined;
+  if (st) out.push(st);
+  return out;
+}
+/** Z: fit the selection if there is one, else everything. Shift+Z: everything, always. */
+function fit() {
+  const rects = selectionRects();
+  if (rects.length) viewport.fit(rects, { maxScale: 1.25 }); else fitAll();
 }
 
 /* ── placing and unplacing ───────────────────────────────────────────────── */
