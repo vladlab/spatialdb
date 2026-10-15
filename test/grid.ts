@@ -467,7 +467,9 @@ function pure() {
     && /not a field of this table/.test(compareConfigError({ table_id: tF, options: { target_table_id: tD, compare: { pairs: [{ from: U.c2, to: U.c2, rule: 'equals' }] } } }, all) ?? '')
     && /not valid for/.test(compareConfigError({ table_id: tF, options: { target_table_id: tD, compare: { pairs: [{ from: U.c1, to: U.s2, rule: 'equals' }] } } }, all) ?? '')
     && /tolerance/.test(compareConfigError({ table_id: tF, options: { target_table_id: tD, compare: { pairs: [{ from: U.s1, to: U.s2, rule: 'within' }] } } }, all) ?? '')
-    && !!compareConfigError({ table_id: tF, options: { target_table_id: tD, compare: { pairs: [{ from: U.c1, to: U.c2, rule: 'bigger' }] } } }, all));
+    && !!compareConfigError({ table_id: tF, options: { target_table_id: tD, compare: { pairs: [{ from: U.c1, to: U.c2, rule: 'bigger' }] } } }, all)
+    // A pair naming a field that is gone is tolerated (it no longer applies), so the link's other options can still be written.
+    && compareConfigError({ table_id: tF, options: { target_table_id: tD, compare: { pairs: [{ from: U.c1, to: randomUUID(), rule: 'equals' }] } } }, all) === null);
 
   const five1 = { tracks: [{ name: 'Full mix', channels: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'] }] };
   const spec = { id: 'D', data: { codec: 'ProRes 4444', max_size: 100, due: '2026-10-01', audio_layout: five1, status: 'a' } };

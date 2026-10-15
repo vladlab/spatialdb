@@ -73,8 +73,12 @@ export function compareConfigError(
   const byId = new Map<string, FieldLike>(); for (const f of fields) byId.set(f.id, f);
   for (const p of r.data.pairs) {
     const from = byId.get(p.from), to = byId.get(p.to);
-    if (!from || from.table_id !== link.table_id) return `compare: 'from' ${p.from} is not a field of this table`;
-    if (!to || to.table_id !== target) return `compare: 'to' ${p.to} is not a field of the target table`;
+    // A pair naming a field that is GONE is left alone, as `compareRecords` leaves it
+    // (it silently no longer applies — and undoing the delete revives it). Refusing it
+    // refused every later write of this field's options: a colour, "single", a match.
+    if (!from || !to) continue;
+    if (from.table_id !== link.table_id) return `compare: 'from' ${p.from} is not a field of this table`;
+    if (to.table_id !== target) return `compare: 'to' ${p.to} is not a field of the target table`;
     if (!rulesFor(from, to).includes(p.rule)) return `compare: rule '${p.rule}' is not valid for ${from.type} ↔ ${to.type} (${from.name} ↔ ${to.name})`;
     if (p.rule === 'within' && p.params?.tolerance === undefined) return `compare: 'within' needs params.tolerance (${from.name} ↔ ${to.name})`;
   }
