@@ -60,7 +60,7 @@
          by pointing), plus the project scope from the breadcrumb, which applies on top.
          The switch turns the canvas's defaults off for YOU, in this browser — the list
          itself is saved with the canvas, for everyone. -->
-    <div class="defaults-bar" :class="{ off: !defaultsOn }" @pointerdown.stop>
+    <div class="defaults-bar context-bar-2" :class="{ off: !defaultsOn }" @pointerdown.stop>
       <label class="defaults-switch" :title="defaultsOn ? 'New records on this canvas are linked to these. Click to switch that off (for you, here).' : 'Switched off — new records are not linked to these.'">
         <input type="checkbox" :checked="defaultsOn" :disabled="!defaults.length" @change="defaultsOn = ($event.target as HTMLInputElement).checked" />
         <span class="defaults-label">New records here →</span>
@@ -112,7 +112,7 @@
     </div>
   <div
     ref="containerRef"
-    class="canvas-container"
+    class="canvas-container stage-body"
     :class="{ panning: viewport.isPanning.value || spaceHeld }"
     tabindex="0"
     @wheel.prevent="viewport.onWheel"
@@ -2067,18 +2067,23 @@ onUnmounted(() => {
   z-index: 50;
 }
 
-.canvas-view { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+/* `display: contents`: the bars and the container are items of App's stage grid
+   (App.vue, `.stage`), placed by `.context-bar` / `.context-bar-2` / `.stage-body`. */
+.canvas-view { display: contents; }
 .canvas-controls {
-  position: relative; flex: none;
-  display: flex; align-items: center; gap: 4px;
+  position: relative;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--border-main);
   z-index: 40;
   font-size: 12px;
 }
+/* NEVER a line break inside a control: a narrow window wraps the bar by whole
+   controls (flex-wrap above), which just makes the bar taller. A button that broke
+   "arrows: always" over two lines made the bar taller AND left the rest misaligned. */
 .canvas-controls button {
   background: none; border: none; color: var(--text-secondary);
-  cursor: pointer; padding: 2px 6px; border-radius: 3px; font: inherit;
+  cursor: pointer; padding: 2px 6px; border-radius: 3px; font: inherit; white-space: nowrap;
 }
 .canvas-controls button:hover:not(:disabled) { background: var(--bg-surface-hover); }
 .canvas-controls button:disabled { opacity: 0.35; cursor: default; }
@@ -2105,7 +2110,7 @@ onUnmounted(() => {
 .legend-note { margin: 4px 4px 2px; color: var(--text-faint); font-size: 11px; white-space: normal; max-width: 260px; }
 
 .defaults-bar {
-  position: relative; flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
   padding: 4px 12px; border-bottom: 1px solid var(--border-main); font-size: 12px; z-index: 39;
 }
 .defaults-switch { display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-secondary); white-space: nowrap; }

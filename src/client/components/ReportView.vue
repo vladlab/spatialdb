@@ -11,7 +11,7 @@
 -->
 <template>
   <div class="reportview">
-    <div class="rv-bar">
+    <div class="rv-bar context-bar">
       <span class="rv-kind">▤ report</span>
       <span class="rv-title">{{ title }}</span>
       <span v-if="scopeNote" class="rv-note">{{ scopeNote }}</span>
@@ -20,8 +20,8 @@
       <span v-if="result" class="rv-count">{{ result.nodes.length }} {{ rootTableName }}</span>
       <button class="rv-def" title="Open the report's record — its definition is edited there" @click="$emit('open-record', reportId)">definition…</button>
     </div>
-    <p v-if="problem" class="hint">{{ problem }}</p>
-    <div v-else-if="result && rootLevel" class="rv-body">
+    <p v-if="problem" class="hint stage-body">{{ problem }}</p>
+    <div v-else-if="result && rootLevel" class="rv-body stage-body">
       <p v-if="warning" class="rv-warning">⚠ {{ warning }}</p>
       <p v-if="shape" class="rv-shape" title="The levels of this report, outermost first">{{ shape }}</p>
       <ReportOutline :section="result" :level="rootLevel" :levels="levels" :depth="0" :sizers="sizers" :fields="fieldMap" :tables="store.state.tables"
@@ -193,8 +193,10 @@ const sizers = computed(() => {
 </script>
 
 <style scoped>
-.reportview { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.rv-bar { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-bottom: 1px solid var(--border-main); background: var(--controls-bg); font-size: 12px; }
+/* `display: contents`: the bar and the body are items of App's stage grid (App.vue, `.stage`). */
+.reportview { display: contents; }
+.rv-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 6px 12px; border-bottom: 1px solid var(--border-main); background: var(--controls-bg); font-size: 12px; }
+.rv-bar > * { white-space: nowrap; }
 .rv-kind { color: var(--text-faint); font-size: 11px; }
 .rv-title { font-weight: 600; color: var(--text-primary); }
 .rv-note { color: var(--text-muted); font-size: 11px; }
@@ -202,7 +204,7 @@ const sizers = computed(() => {
 .rv-count { color: var(--text-muted); font-size: 11px; }
 .rv-def { background: none; border: 1px solid var(--border-main); color: var(--accent); border-radius: 3px; padding: 1px 8px; cursor: pointer; font: inherit; font-size: 11px; }
 .rv-def:hover { border-color: var(--accent); }
-.rv-body { flex: 1; overflow: auto; padding: 12px 16px 40px; }
+.rv-body { overflow: auto; padding: 12px 16px 40px; }
 .rv-warning { margin: 0 0 10px; color: var(--warning); font-size: 12px; }
 .rv-shape { margin: 0 0 10px; color: var(--text-faint); font-size: 11px; }
 .hint { padding: 24px; color: var(--text-muted); white-space: normal; max-width: 640px; }

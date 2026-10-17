@@ -489,11 +489,11 @@ watch(() => props.recordId, () => {
 
 <style scoped>
 .record-panel {
-  /* A TRAY: a flex sibling of the viewport (App.vue sets its width and the
-     splitter beside it resizes it). It used to be `position: absolute` over the
-     right edge, where it covered the grid's "+" column and made "fit" fit a
-     viewport you could not fully see. */
-  position: relative; flex: none; min-width: 320px; max-width: 70vw;
+  /* A TRAY: a cell of App's stage grid, beside the view's BODY and under its bars
+     (App.vue sets its width and the splitter beside it resizes it). It used to be
+     `position: absolute` over the right edge, where it covered the grid's "+" column
+     and made "fit" fit a viewport you could not fully see. */
+  position: relative; min-width: 320px; max-width: 70vw; min-height: 0;
   display: flex; flex-direction: column; outline: none;
   background: var(--bg-app); font-size: 13px;
 }

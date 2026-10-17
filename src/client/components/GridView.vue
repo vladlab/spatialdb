@@ -73,7 +73,7 @@
 -->
 <template>
   <section ref="scrollerRoot" class="gridview">
-    <div class="bar">
+    <div class="bar context-bar">
       <!-- VIEWS: one control that NAMES the view you are in and, opened, LISTS them
            all. It was a row of tabs that looked like any other buttons in this bar,
            so "which view am I in" and "what views exist" were both unanswered — the
@@ -232,10 +232,10 @@
       </span>
     </div>
 
-    <KanbanView v-if="kanban && kanbanField" :store="store" :records="matched" :field="kanbanField"
+    <KanbanView v-if="kanban && kanbanField" class="stage-body" :store="store" :records="matched" :field="kanbanField"
                 :card-fields="shown.filter((f) => f.id !== primaryField?.id)" :primary="primaryField" :open-id="openRecordId"
                 @open-record="$emit('open-record', $event)" @create="createInColumn" />
-    <div v-else ref="scroller" class="scroller" tabindex="0" @scroll.passive="onScroll" @keydown="onGridKey" @copy="onCopy" @paste="onPaste">
+    <div v-else ref="scroller" class="scroller stage-body" tabindex="0" @scroll.passive="onScroll" @keydown="onGridKey" @copy="onCopy" @paste="onPaste">
       <table class="grid">
         <thead>
           <tr>
@@ -1511,11 +1511,15 @@ watch(() => props.tableId, () => { activeId.value = ''; search.value = ''; });
 </script>
 
 <style scoped>
-.gridview { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+/* `display: contents`: the bar and the scroller (or the board) are items of App's
+   stage grid (App.vue, `.stage`) — the bar at full width above the record tray. */
+.gridview { display: contents; }
 .bar {
-  display: flex; align-items: center; gap: 8px; flex: none;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   padding: 6px 12px; border-bottom: 1px solid var(--border-main);
 }
+/* A narrow window wraps the bar by whole controls; nothing in it breaks mid-text. */
+.bar > .menu > summary, .bar .count, .bar .scope-note { white-space: nowrap; }
 
 .menu { position: relative; }
 .menu summary {
@@ -1537,7 +1541,7 @@ watch(() => props.tableId, () => { activeId.value = ''; search.value = ''; });
   border-radius: 4px; padding: 2px 6px; font: inherit; min-width: 0; flex: 1;
   color-scheme: dark;
 }
-.search { flex: none; width: 180px; }
+.search { flex: 0 1 180px; min-width: 90px; }
 .note { margin: 0; color: var(--text-muted); font-size: 11px; }
 .x {
   background: none; border: none; color: var(--text-muted); cursor: pointer;
@@ -1548,7 +1552,7 @@ watch(() => props.tableId, () => { activeId.value = ''; search.value = ''; });
 .count { color: var(--text-muted); font-size: 11px; }
 .count.warn { color: var(--warning); }
 
-.scroller { flex: 1; overflow: auto; min-height: 0; }
+.scroller { overflow: auto; min-height: 0; }
 .grid { border-collapse: separate; border-spacing: 0; min-width: 100%; }
 .grid th, .grid td {
   border-right: 1px solid var(--border-main); border-bottom: 1px solid var(--border-main);

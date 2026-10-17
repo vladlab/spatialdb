@@ -25,7 +25,14 @@
       viewport     the grid or the canvas
       record tray  RIGHT, and it takes its own space — it shrinks the viewport
                    rather than floating over it, so the grid's "+" column stays
-                   reachable and "fit" fits what you can actually see.
+                   reachable and "fit" fits what you can actually see. It sits UNDER
+                   the context bar, not beside it: the stage is a grid whose first
+                   rows are the open view's bars, full width, and whose last row is
+                   the view's body with the tray at its right. The bar used to be
+                   inside the same column as the body, so opening the tray squeezed
+                   it: "arrows: always" wrapped to two lines, the defaults bar ran
+                   into it. A bar's controls are a fixed shopping list; the tray is
+                   half the window — they never had to share a width.
 
     It replaced a single header row that had grown four dropdowns (section, scope,
     table, canvas), four buttons dressed as tabs, and a status readout whose width
@@ -78,7 +85,7 @@
       <div class="main">
         <HomePage v-if="sectionKey === null" :store="store" :is-admin="store.me.value?.role === 'admin'" @open="goSection" />
         <template v-else>
-          <div class="stage">
+          <div ref="stageRef" class="stage">
             <div class="viewport">
               <!-- `open-record-id`: the record in the tray — its card (and, in the grid, its
                    row) is marked, so the tray never has to be matched to its record by name. -->
@@ -100,11 +107,12 @@
 
             </div>
 
-            <!-- A TRAY, not a float: a flex sibling of the viewport, so opening it
-                 makes the viewport narrower instead of covering its right edge. -->
+            <!-- A TRAY, not a float: a sibling of the view's body in the stage grid, so
+                 opening it makes the body narrower instead of covering its right edge —
+                 and leaves the bars above both of them at full width. -->
             <template v-if="openRecordId && (view === 'canvas' || view === 'table' || view === 'report')">
               <div class="tray-splitter" title="Drag to resize" @pointerdown="startTrayResize" />
-              <RecordPanel :store="store" :record-id="openRecordId" :style="{ width: trayWidth + 'px' }"
+              <RecordPanel :store="store" :record-id="openRecordId" :style="{ width: trayShown + 'px' }"
                            @close="openRecordId = ''" @open="openRecordId = $event" @open-board="openBoard" @open-report="openReport" />
             </template>
           </div>
@@ -193,10 +201,26 @@ watch(treeOpen, (v) => writeLocal('spatialdb.tree', v ? '1' : '0'));
 const tableSettings = ref('');
 
 const trayWidth = ref(Math.max(320, Number(readLocal('spatialdb.tray', '460')) || 460));
+/* The tray is DRAWN no wider than the stage can afford: a 460px tray remembered from
+   a big monitor, opened in a 760px window beside the tree, left the grid a sixty-pixel
+   strip. The body keeps at least `BODY_MIN`; the saved width is not touched, so the big
+   monitor gets it back. (The tray's own `min-width` still wins below that — a window
+   too small for both is a window too small; close the tree.) */
+const BODY_MIN = 360;
+const stageRef = ref<HTMLElement | null>(null);
+const stageWidth = ref(0);
+let stageWatch: ResizeObserver | undefined;
+onMounted(() => {
+  if (typeof ResizeObserver === 'undefined') return;   // the test DOM has no layout
+  stageWatch = new ResizeObserver(([entry]) => { stageWidth.value = entry.contentRect.width; });
+  watch(stageRef, (el, was) => { if (was) stageWatch?.unobserve(was); if (el) stageWatch?.observe(el); }, { immediate: true });
+});
+onUnmounted(() => stageWatch?.disconnect());
+const trayShown = computed(() => stageWidth.value ? Math.min(trayWidth.value, Math.max(320, stageWidth.value - BODY_MIN)) : trayWidth.value);
 function startTrayResize(e: PointerEvent) {
   e.preventDefault();
   const start = trayWidth.value, x0 = e.clientX;
-  const move = (ev: PointerEvent) => { trayWidth.value = Math.round(Math.min(Math.max(start + (x0 - ev.clientX), 320), window.innerWidth - 360)); };
+  const move = (ev: PointerEvent) => { trayWidth.value = Math.round(Math.min(Math.max(start + (x0 - ev.clientX), 320), (stageWidth.value || window.innerWidth) - BODY_MIN)); };
   const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); writeLocal('spatialdb.tray', String(trayWidth.value)); };
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
@@ -727,14 +751,31 @@ body {
   margin-left: 8px; background: var(--accent); color: #fff; border-radius: 8px;
   padding: 0 6px; font-size: 11px; font-weight: 600;
 }
-.stage { flex: 1; min-height: 0; display: flex; }
-.viewport { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; }
-.tray-splitter { flex: none; width: 5px; cursor: col-resize; background: var(--border-main); }
+/* THE STAGE GRID (see the shell note at the top). Columns: the view's body, the
+   splitter, the tray. Rows: up to two bars (the canvas has its controls AND its
+   defaults bar; the grid and a report have one), then the body. The open view's root
+   and the `.viewport` wrapper are `display: contents`, so the view's own children —
+   its bar(s), its body — are the grid's items and take the rows they name
+   (`.context-bar`, `.context-bar-2`, `.stage-body`), while in the DOM they stay inside
+   the view, where its code and its tests look for them. */
+.stage {
+  flex: 1; min-height: 0; display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+.viewport { display: contents; }
+.context-bar { grid-row: 1; grid-column: 1 / -1; min-width: 0; }
+.context-bar-2 { grid-row: 2; grid-column: 1 / -1; min-width: 0; }
+.stage-body { grid-row: 3; grid-column: 1; min-width: 0; min-height: 0; }
+.stage > .tray-splitter { grid-row: 3; grid-column: 2; }
+.stage > .record-panel { grid-row: 3; grid-column: 3; }
+.tray-splitter { width: 5px; cursor: col-resize; background: var(--border-main); }
 .tray-splitter:hover { background: var(--accent); }
 .panel { padding: 16px; overflow: auto; flex: 1; }
 .hint { color: var(--text-muted); }
 /* The empty-view placeholders ("No table open — …") wear the padding, not every hint. */
 p.hint { padding: 24px; }
+.viewport > p.hint { grid-row: 1 / -1; grid-column: 1; }
 /* (Global `.grid` table rules lived here — the phase-1 debug grid's. GridView styles
    its own table, scoped; but `border: 1px solid` from here still reached its cells,
    and once the grid's borders stopped collapsing (pinned columns need `separate`) the
