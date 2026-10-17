@@ -48,6 +48,17 @@ async function main() {
     const pField = (label: string) => w.findAll('.record-panel .rp-field').find((f: any) => f.find('.rp-name').text().replace(/[★⚠✓]/g, '').trim() === label)!;
     const openRecord = async (name: string) => { await w.findAll('.gridview tr.row').find((r: any) => r.findAll('td')[1].text() === name)!.find('.expand').trigger('click'); await until(() => w.find('.record-panel .rp-title').text() === name); };
 
+    console.log('\nC0. The rules for LINK pairs (vocabulary tables, Oct 17)');
+    const { rulesFor, compareRecords } = await import('../src/contract/compare.js');
+    const lf = (id: string, table_id: string, target: string) => ({ id, key: id, name: id, type: 'link', table_id, options: { target_table_id: target } });
+    check('two links into the SAME table compare as "same record" / "same records"; into different tables they cannot be paired at all', rulesFor(lf('a', 'files', 'containers'), lf('b', 'specs', 'containers')).join() === 'sameRecord,sameSet' && rulesFor(lf('a', 'files', 'containers'), lf('b', 'specs', 'codecs')).length === 0);
+    const byId = new Map([['a', lf('a', 'files', 'containers')], ['b', lf('b', 'specs', 'containers')]]);
+    const links = (rec: string, f: string) => (rec === 'file' && f === 'a' ? ['qt'] : rec === 'spec' && f === 'b' ? ['op1a'] : []);
+    const v = compareRecords([{ from: 'a', to: 'b', rule: 'sameRecord' }], byId as never, { id: 'file', data: {} }, { id: 'spec', data: {} }, links, (id) => ({ qt: 'QuickTime', op1a: 'MXF OP1a' })[id] ?? id);
+    check('a mismatch is reported by the rows\' NAMES ("QuickTime ≠ MXF OP1a"), not ids', v.results[0].status === 'differ' && v.results[0].detail === 'QuickTime ≠ MXF OP1a' && v.results[0].expected === 'MXF OP1a', JSON.stringify(v));
+    const same = compareRecords([{ from: 'a', to: 'b', rule: 'sameRecord' }], byId as never, { id: 'file', data: {} }, { id: 'spec', data: {} }, (r, f) => (f === 'a' || f === 'b' ? ['qt'] : []));
+    check('the same row on both sides matches; an empty spec side is "unspecified"', same.results[0].status === 'match' && compareRecords([{ from: 'a', to: 'b', rule: 'sameRecord' }], byId as never, { id: 'file', data: {} }, { id: 'spec', data: {} }, (r, f) => (f === 'a' ? ['qt'] : [])).results[0].status === 'unspecified');
+
     console.log('\nC1. Ticking "compare" on a link');
     await go(tFiles);
     await th('Spec').find('.th-menu').trigger('click');
