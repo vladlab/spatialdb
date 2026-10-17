@@ -264,11 +264,14 @@ export interface LayoutDiff {
  *   grouping   same channels in the same order, contained differently — 12 mono
  *              vs 5.1 + 3× stereo. THE one vendors reject deliveries for.
  *   name,      only when the grouping matches (track i ↔ track i): labels differ.
- *   language   Warnings, in effect: `same` is false, but the audio may be right.
+ *   language   OFF unless `labels` is asked for (Oct 17): track names and languages
+ *              are rarely enforced by a spec — the track and channel layout is what
+ *              gets a delivery rejected. A compare pair ticks "names too" for the
+ *              rare spec that does enforce them (compare.ts `params.labels`).
  *
  * Channel labels compare case-insensitively; names ignore case and outer spaces.
  */
-export function diffLayouts(a: AudioLayout, b: AudioLayout): LayoutDiff {
+export function diffLayouts(a: AudioLayout, b: AudioLayout, labels = false): LayoutDiff {
   const fa = flattenChannels(a), fb = flattenChannels(b);
   const out: LayoutDiff = { same: true, channelCount: [fa.length, fb.length], issues: [] };
   const low = (s: string) => s.trim().toLowerCase();
@@ -286,7 +289,7 @@ export function diffLayouts(a: AudioLayout, b: AudioLayout): LayoutDiff {
       const ga = a.tracks.map((t) => t.channels.length).join('+'), gb = b.tracks.map((t) => t.channels.length).join('+');
       if (ga !== gb) {
         out.issues.push({ kind: 'grouping', detail: `same ${fa.length} channels, grouped differently — expected ${a.tracks.map(trackFormat).join(', ')}; found ${b.tracks.map(trackFormat).join(', ')}` });
-      } else {
+      } else if (labels) {
         a.tracks.forEach((t, i) => {
           const u = b.tracks[i];
           if (low(t.name) !== low(u.name)) out.issues.push({ kind: 'name', track: i, detail: `track ${i + 1} is named “${u.name || '(unnamed)'}”, expected “${t.name || '(unnamed)'}”` });

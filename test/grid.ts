@@ -419,8 +419,9 @@ function pure() {
   const short = diffLayouts(spec, { tracks: spec.tracks.slice(0, 3) });
   check('a missing stereo pair is a COUNT problem, and nothing else is said', short.issues.length === 1 && short.issues[0].kind === 'count' && short.channelCount.join() === '12,10', JSON.stringify(short));
   const renamed: Layout = { tracks: spec.tracks.map((t, i) => (i === 2 ? { ...t, name: 'Music and effects', language: 'es' } : t)) };
-  const nameDiff = diffLayouts(spec, renamed);
-  check('matching structure, different labels: NAME and LANGUAGE are reported per track', nameDiff.issues.map((x) => `${x.kind}:${x.track}`).join() === 'name:2,language:2', JSON.stringify(nameDiff.issues));
+  check('matching structure, different labels: the SAME layout by default — names and languages are rarely enforced (Oct 17)', diffLayouts(spec, renamed).same);
+  const nameDiff = diffLayouts(spec, renamed, true);
+  check('…asked for (labels = true), NAME and LANGUAGE are reported per track', nameDiff.issues.map((x) => `${x.kind}:${x.track}`).join() === 'name:2,language:2', JSON.stringify(nameDiff.issues));
   check('channel labels compare case-insensitively ("lfe" is LFE)', diffLayouts(spec, { tracks: spec.tracks.map((t) => ({ ...t, channels: t.channels.map((c) => c.toLowerCase()) })) }).same);
 
   console.log('\nG1m. Kanban columns (contract/views.ts: kanbanColumns)');

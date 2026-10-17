@@ -27,7 +27,7 @@ export type Rule = (typeof RULES)[number];
 
 export const RULE_LABELS: Record<Rule, string> = {
   equals: 'equals', onOrBefore: 'on or before', onOrAfter: 'on or after', within: 'within ± of', atLeast: 'at least', atMost: 'at most',
-  sameRecord: 'same record', sameSet: 'same records', layout: 'same layout', startsAt: 'starts where the layout starts', rate: 'at the layout\'s rate',
+  sameRecord: 'same record', sameSet: 'same records', layout: 'same channel layout', startsAt: 'starts where the layout starts', rate: 'at the layout\'s rate',
 };
 
 interface FieldLike { id: string; key: string; name: string; type: string; table_id: string; options?: Record<string, unknown> | null }
@@ -108,7 +108,12 @@ export const ComparePair = z.strictObject({
   from: z.string().uuid(),          // a field of the link's OWNER table (what was found)
   to: z.string().uuid(),            // a field of the link's TARGET table (what is expected)
   rule: z.enum(RULES),
-  params: z.strictObject({ caseInsensitive: z.boolean().optional(), tolerance: z.number().nonnegative().optional() }).optional(),
+  params: z.strictObject({
+    caseInsensitive: z.boolean().optional(),
+    tolerance: z.number().nonnegative().optional(),
+    /** `layout` only: compare track NAMES and languages as well as the channel layout (off by default — rarely enforced). */
+    labels: z.boolean().optional(),
+  }).optional(),
 });
 export const CompareConfig = z.strictObject({ pairs: z.array(ComparePair).max(200) });
 export type ComparePair = z.infer<typeof ComparePair>;
@@ -237,7 +242,7 @@ export function compareRecords(
       case 'layout': {
         const a = AudioLayout.safeParse(tv), b = AudioLayout.safeParse(fv);
         if (!a.success || !b.success) { ok = false; why = 'not a valid layout'; break; }
-        const d = diffLayouts(a.data, b.data);
+        const d = diffLayouts(a.data, b.data, pair.params?.labels === true);
         layouts = { found: b.data, expected: a.data, diff: d };
         ok = d.same; why = ok ? 'same layout' : d.issues.map((i) => i.detail).join('; ');
         break;

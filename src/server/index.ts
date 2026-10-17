@@ -512,13 +512,14 @@ app.get('/api/stream', async (c) => {
  * FOUND (a file, as probed). Stateless: nothing is read from or written to the DB.
  */
 app.post('/api/qc/audio-layout-diff', async (c) => {
-  const body = await c.req.json().catch(() => ({})) as { a?: unknown; b?: unknown };
+  const body = await c.req.json().catch(() => ({})) as { a?: unknown; b?: unknown; labels?: unknown };
   const a = AudioLayout.safeParse(body.a), b = AudioLayout.safeParse(body.b);
   if (!a.success || !b.success) {
     const bad = !a.success ? ['a', a.error] as const : ['b', (b as { error: z.ZodError }).error] as const;
     return c.json({ error: `'${bad[0]}' is not an audio layout — ${bad[1].issues[0]?.path.join('.')}: ${bad[1].issues[0]?.message}` }, 400);
   }
-  return c.json(diffLayouts(a.data, b.data));
+  // `labels: true` compares track names and languages too; off by default (shapes.ts).
+  return c.json(diffLayouts(a.data, b.data, body.labels === true));
 });
 
 /**
