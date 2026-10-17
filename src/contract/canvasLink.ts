@@ -67,6 +67,8 @@ export interface LinkFieldWay extends WayBase {
   kind: 'link'; fieldId: string;
   /** A "single" link holds one record: making it REPLACES what is there. */
   single: boolean;
+  /** "single" from the target's side (`single_target`): a target is held by one record — making it moves it. */
+  singleTarget: boolean;
   /** Through a BACKLINK: the link field is on the far table — the row is written on the record the drag LANDS on, pointing back at the starter. */
   back?: boolean;
 }
@@ -111,14 +113,14 @@ export function linkWays(fields: Iterable<WayField>, tables: Iterable<WayTable>,
       const to = targetOf(f);
       if (!to || !tableIds.has(to)) continue;
       if (ownCfg && (f.id === ownCfg.a || f.id === ownCfg.b)) continue;
-      out.push({ way: { kind: 'link', key: f.id, fieldId: f.id, name: f.name, toTable: to, column: f.id, single: f.options?.single === true }, at: f });
+      out.push({ way: { kind: 'link', key: f.id, fieldId: f.id, name: f.name, toTable: to, column: f.id, single: f.options?.single === true, singleTarget: f.options?.single_target === true }, at: f });
     } else if (f.type === 'backlink') {
       // The other face of a link held on the far table. A junction's column is not one
       // (that way is the junction's, below); a backlink whose link is gone is nothing.
       const srcId = f.options?.source_field_id;
       const src = typeof srcId === 'string' ? byId.get(srcId) : undefined;
       if (!src || src.type !== 'link' || targetOf(src) !== fromTable || junctionEnds.has(src.id) || !tableIds.has(src.table_id)) continue;
-      out.push({ way: { kind: 'link', key: src.id, fieldId: src.id, name: f.name, toTable: src.table_id, column: f.id, single: src.options?.single === true, back: true }, at: f });
+      out.push({ way: { kind: 'link', key: src.id, fieldId: src.id, name: f.name, toTable: src.table_id, column: f.id, single: src.options?.single === true, singleTarget: src.options?.single_target === true, back: true }, at: f });
     }
   }
   for (const t of tableList) {

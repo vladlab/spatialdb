@@ -566,9 +566,23 @@ export function useSchemaActions(store: Store) {
    * same step, because the server would refuse two.
    */
   /** "At most one link per record." The server refuses a second; pickers replace. */
+  /**
+   * "single", on either face. On a link: its holder links to one record (`single`). On a
+   * backlink: a target is linked from one record — written to the LINK as `single_target`,
+   * because the rule is the relation's, and the server enforces it there.
+   */
   function setSingle(id: string, on: boolean) {
     const f = store.state.fields.get(id);
-    if (!f || f.type !== 'link') return;
+    if (!f) return;
+    if (f.type === 'backlink') {
+      const src = store.state.fields.get(backlinkSourceOf(f) ?? '');
+      if (!src || src.type !== 'link') return;
+      const { single_target: _old, ...rest } = src.options ?? {};
+      void _old;
+      store.mutate({ type: 'field.update', id: src.id, options: on ? { ...rest, single_target: true } : rest });
+      return;
+    }
+    if (f.type !== 'link') return;
     const { single: _old, ...rest } = f.options ?? {};
     void _old;
     store.mutate({ type: 'field.update', id, options: on ? { ...rest, single: true } : rest });

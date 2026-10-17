@@ -1121,9 +1121,13 @@ const verdictFor = (from: string, fromTable: string, to: string, toTable: string
   dropVerdict(waysBetween(waysOf(fromTable), toTable), from === to, (w) => wayMade(w, from, to));
 /** What a single link holds now and would lose: making it REPLACES that (client/links.ts). */
 const replacedBy = (way: LinkWay, from: string, to: string) => {
-  if (way.kind !== 'link' || !way.single) return undefined;
+  if (way.kind !== 'link') return undefined;
   const e = linkEnds(way, from, to);
-  return derived.linksFrom(e.holder, way.fieldId).find((id) => id !== e.target);
+  // Single on the holder's side: what the holder links to now goes. Single on the target's
+  // side: whoever holds the target now lets go of it. Either reads as "replaces X".
+  if (way.single) { const was = derived.linksFrom(e.holder, way.fieldId).find((id) => id !== e.target); if (was) return was; }
+  if (way.singleTarget) return derived.linkedTo(e.target, way.fieldId).find((id) => id !== e.holder);
+  return undefined;
 };
 function hintFor(v: DropVerdict, from: string, to: string) {
   const names = { from: tableNameOf(from), to: tableNameOf(to) };

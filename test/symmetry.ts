@@ -247,6 +247,71 @@ async function main() {
     await gridPop().find('button.add').trigger('click');
     const faces = await untilDb(`select name from fields where table_id = '${tDelivs}' and name like 'Works%' order by name`, (r) => r.length === 3 && r.every((x: any) => x.name.includes('(via')), 6000);
     check('another link from Works: every face says which — the bare "Works" became "Works (via Inputs)"', faces.map((r: any) => r.name).join() === 'Works (via Inputs),Works (via Outputs),Works (via Vendor)', JSON.stringify(faces));
+
+    /* ───────────────────────────────────────────────────────────────────── */
+    console.log('\nY8. "single" from the other side: a target is held by one record');
+    // Edits.Outputs → Files, many on the Edit's side; a File is the output of ONE Edit.
+    const tEdits = randomUUID(), fEName = randomUUID(), fOut = randomUUID(), fOutOf = randomUUID(), oev1 = randomUUID(), oev2 = randomUUID(), mov = randomUUID();
+    const r8 = await post([
+      { type: 'table.create', id: tEdits, name: 'Edits', singularName: 'Edit' },
+      { type: 'field.create', id: fEName, tableId: tEdits, name: 'Name', key: 'name', fieldType: 'text' }, pos(fEName, 0),
+      { type: 'field.create', id: fOut, tableId: tEdits, name: 'Outputs', key: 'outputs', fieldType: 'link', options: { target_table_id: tDelivs } }, pos(fOut, 1),
+      { type: 'field.create', id: fOutOf, tableId: tDelivs, name: 'Output of', key: 'output_of', fieldType: 'backlink', options: { source_field_id: fOut } }, pos(fOutOf, 9),
+      { type: 'record.create', id: oev1, tableId: tEdits, data: { name: 'OEV1' } }, { type: 'record.create', id: oev2, tableId: tEdits, data: { name: 'OEV2' } },
+      { type: 'record.create', id: mov, tableId: tDelivs, data: { name: 'master.mov' } },
+      { type: 'link.add', id: randomUUID(), fieldId: fOut, fromRecord: oev1, toRecord: mov },
+    ]);
+    check('fixture', r8.status === 200, (await r8.text()).slice(0, 200));
+    const outsOf = async (edit: string) => (await pool.query(`select to_record from links where field_id = $1 and from_record = $2`, [fOut, edit])).rows.map((r) => r.to_record);
+    const heldBy = async (file: string) => (await pool.query(`select from_record from links where field_id = $1 and to_record = $2 order by from_record`, [fOut, file])).rows.map((r) => r.from_record);
+    const heldIs = async (file: string, expected: string[]) => { const t = Date.now(); while (Date.now() - t < 5000) { if ((await heldBy(file)).join() === [...expected].sort().join()) return true; await sleep(100); } return false; };
+
+    // Without the rule, a second edit CAN claim the same output (the gap the owner found).
+    const second = await post([{ type: 'link.add', id: randomUUID(), fieldId: fOut, fromRecord: oev2, toRecord: mov }]);
+    check('without the rule, two edits may both list the same file as an output', second.status === 200 && (await heldBy(mov)).length === 2);
+    await post([{ type: 'link.remove', fieldId: fOut, fromRecord: oev2, toRecord: mov }]);
+
+    // The backlink's ⚙ has its own "single" — written to the link as single_target.
+    await go(tDelivs);
+    await until(() => ths().includes('Output of'));
+    await th('Output of').find('.th-menu').trigger('click');
+    await until(() => gridPop().find('.field-settings').exists());
+    check('a backlink\'s ⚙ offers "single"', gridPop().find('.field-settings .single input').exists());
+    await gridPop().find('.field-settings .single input').setValue(true);
+    const opt = await untilDb(`select options from fields where id = '${fOut}'`, (r) => r[0].options.single_target === true, 6000);
+    check('ticking it writes single_target on the LINK (the relation\'s rule) — the link\'s own "single" untouched', opt[0].options.single_target === true && opt[0].options.single !== true);
+    await gridPop().trigger('keydown', { key: 'Escape' });
+
+    // Server: a second holder is refused…
+    const refused = await post([{ type: 'link.add', id: randomUUID(), fieldId: fOut, fromRecord: oev2, toRecord: mov }]);
+    check('the server refuses a second edit claiming the file', refused.status === 400 && /single/.test(await refused.text()) && (await heldBy(mov)).join() === oev1);
+    // …while the Edit's own side stays many: OEV1 may have another output.
+    const another = await post([{ type: 'link.add', id: randomUUID(), fieldId: fOut, fromRecord: oev1, toRecord: dcp }]);
+    check('…but an edit may still have several outputs: the rule is one-sided', another.status === 200 && (await outsOf(oev1)).length === 2);
+
+    // Client, from the backlink: choosing OEV2 on master.mov MOVES it (replace, one Ctrl+Z).
+    await until(() => cellOf('master.mov', 'Output of')?.findAll('.pill').length === 1, 6000);
+    await cellOf('master.mov', 'Output of').trigger('mousedown');
+    await cellOf('master.mov', 'Output of').trigger('dblclick');
+    await until(() => picker().exists() && picker().text().includes('OEV2'), 4000);
+    await picker().findAll('.list li').find((x: any) => x.find('.name').text() === 'OEV2')!.trigger('mousedown');
+    check('from the file: choosing OEV2 moves the file to OEV2 — OEV1 lets go', await heldIs(mov, [oev2]));
+    await w.find('.gridview').trigger('keydown', { key: 'z', ctrlKey: true });
+    check('…one Ctrl+Z puts it back on OEV1', await heldIs(mov, [oev1]));
+    await picker().exists() && await picker().trigger('keydown', { key: 'Escape' });
+
+    // Client, from the link: OEV2 adding master.mov as an output takes it from OEV1.
+    await go(tEdits);
+    await until(() => ths().includes('Outputs'));
+    await cellOf('OEV2', 'Outputs').trigger('mousedown');
+    await cellOf('OEV2', 'Outputs').trigger('dblclick');
+    await until(() => picker().exists(), 4000);
+    check('the Edit\'s picker narrows out files another edit holds (show all keeps them)', await until(() => picker().find('.match-toggle').exists() || picker().find('.no-match').exists(), 4000), picker().text().slice(0, 200));
+    await picker().find('input.q').setValue('master');
+    if (picker().find('.match-toggle input').exists()) await picker().find('.match-toggle input').setValue(true);
+    await until(() => picker().findAll('.list li').some((x: any) => x.find('.name').text() === 'master.mov'), 4000);
+    await picker().findAll('.list li').find((x: any) => x.find('.name').text() === 'master.mov')!.trigger('mousedown');
+    check('from the edit: OEV2 taking master.mov as an output takes it from OEV1', await heldIs(mov, [oev2]));
   } finally {
     await ui.close();
   }

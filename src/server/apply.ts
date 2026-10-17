@@ -611,6 +611,14 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
               and exists (select 1 from links l where l.field_id = $1 and l.from_record = $2 and l.to_record <> $3)`,
           [m.fieldId, m.fromRecord, m.toRecord]);
         if (single.rowCount) throw new MutationError('this link field is "single": the record already links to another record — remove that link first (or replace it in one batch)');
+        // …and one ticked "single" on its OTHER face (`single_target`) is held by at most
+        // ONE record per target: a file is the output of one edit. The same rule, read
+        // from the other end; the client replaces the same way.
+        const singleTarget = await db.query(
+          `select 1 from fields f where f.id = $1 and (f.options->>'single_target')::boolean
+              and exists (select 1 from links l where l.field_id = $1 and l.to_record = $3 and l.from_record <> $2)`,
+          [m.fieldId, m.fromRecord, m.toRecord]);
+        if (singleTarget.rowCount) throw new MutationError('this link is "single" from the other side: that record is already linked from another record — remove that link first (or replace it in one batch)');
       }
       await db.query(
         `insert into links (id, field_id, from_record, to_record)

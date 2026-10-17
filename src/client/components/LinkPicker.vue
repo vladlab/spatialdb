@@ -173,7 +173,12 @@ const inScope = computed(() => {
 const derived = useDerived(props.store);
 const ownField = computed(() => (props.linkField ? props.store.state.fields.get(props.linkField) : undefined));
 const rule = computed(() => props.match
-  ?? (ownField.value && props.fromRecord ? derived.linkMatchRule(ownField.value, props.fromRecord) : undefined));
+  ?? (ownField.value && props.fromRecord ? derived.linkMatchRule(ownField.value, props.fromRecord) : undefined)
+  // A link "single" from the target's side: records already held by another record are
+  // narrowed out (a rule, not a constraint — "show all" offers them, and choosing one moves it).
+  ?? (ownField.value?.options?.single_target === true && props.fromRecord
+    ? { test: (id: string) => !derived.linkedTo(id, ownField.value!.id).some((h) => h !== props.fromRecord), label: 'no other record yet' }
+    : undefined));
 const anyMatch = computed(() => !!rule.value && inScope.value.some((r) => rule.value!.test(r.id)));
 const candidates = computed(() => {
   const m = rule.value;

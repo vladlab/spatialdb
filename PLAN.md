@@ -1155,6 +1155,13 @@ face of it:
   app cannot know which old links deserve a column. The link's ⚙ says "one-way · make
   two-way" for those; or add the backlink by hand, as before. (The owner hit exactly
   this on Online Edits' Inputs/Outputs and read it as the symmetry not working.)
+- **Cardinality from either side** (Oct 17): the owner found that a writable backlink
+  let a File be the output of two Edits — which was always possible from the Edit side
+  too; `single` only ever constrained the holder. `single_target` on the link is the
+  same rule from the target's side, shown as "single" in the backlink's ⚙, enforced by
+  the server, replaced-not-refused by the client from either face (the canvas says
+  "replaces OEV1" either way), and the link's picker narrows out records another
+  holder has (with "show all").
 - What stays directional: which record HOLDS the row (shows only through `single`),
   and presentation — arrow colour/direction and compare live on the link field.
 

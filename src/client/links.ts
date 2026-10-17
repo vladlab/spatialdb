@@ -17,8 +17,28 @@ export function addLink(store: Store, fieldId: string, fromRecord: string, toRec
       }
     }
   }
+  // "single" on the OTHER face (`single_target`): the target is held by one record —
+  // the row from whichever record held it before goes, the same way, one Ctrl+Z.
+  if (f?.options?.single_target === true) {
+    for (const l of store.state.links.values()) {
+      if (l.field_id === fieldId && l.to_record === toRecord && l.from_record !== fromRecord) {
+        store.mutate({ type: 'link.remove', fieldId, fromRecord: l.from_record, toRecord });
+      }
+    }
+  }
   store.mutate({ type: 'link.add', id: crypto.randomUUID(), fieldId, fromRecord, toRecord });
 }
+
+/**
+ * CARDINALITY, from either face. `single` on a link: its holder links to ONE record.
+ * `single_target`: a target is linked from ONE record — "single", read from the backlink.
+ * Each face's ⚙ shows the one that constrains what THAT face holds.
+ */
+export const singleOn = (field: { type: string; options?: Record<string, unknown> | null }, getField: (id: string) => { options?: Record<string, unknown> | null } | undefined): boolean => {
+  if (field.type === 'link') return field.options?.single === true;
+  const src = field.type === 'backlink' ? getField(String(field.options?.source_field_id ?? '')) : undefined;
+  return src?.options?.single_target === true;
+};
 
 /**
  * A relation edited from EITHER FACE. A link field: the row is held on `recordId`.

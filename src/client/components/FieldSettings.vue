@@ -64,9 +64,11 @@
 
     <!-- LINK fields: at most one link per record? Records that already have several
          keep them; only ADDING is refused from then on. -->
-    <label v-if="field.type === 'link'" class="single"
-           :title="`Tick if a record may link to only ONE ${targetName} record. Choosing another then replaces it. Records that already link to several are left alone.`">
-      <input type="checkbox" :checked="field.options?.single === true"
+    <label v-if="field.type === 'link' || plainBacklink" class="single"
+           :title="field.type === 'link'
+             ? `Tick if a record may link to only ONE ${targetName} record. Choosing another then replaces it. Records that already link to several are left alone.`
+             : `Tick if a ${tableName} record may be linked from only ONE ${targetName} record through this — a file is the output of one edit. Linking it from another then moves it. Records already linked from several are left alone.`">
+      <input type="checkbox" :checked="singleOn(field, (id) => store.state.fields.get(id))"
              @change="actions.setSingle(field.id, ($event.target as HTMLInputElement).checked)" />
       single
     </label>
@@ -125,6 +127,7 @@ import { useDerived } from '../derived';
 import { choicesOf, ownChoices, type SchemaActions } from '../schemaActions';
 import { VOCABULARIES, VOCABULARY_IDS } from '../../contract/vocab';
 import { arrowStyleOf } from '../../contract/arrows';
+import { singleOn } from '../links';
 
 const props = defineProps<{
   store: Store; actions: SchemaActions; field: FieldRow;
@@ -136,6 +139,8 @@ async function onDelete() { if (await props.actions.deleteField(props.field.id))
 
 const arrow = computed(() => arrowStyleOf(props.field));
 const faces = computed(() => props.actions.facesOf(props.field.id));
+/** A backlink that mirrors a plain link (not a junction's column, not broken): it has a "single" of its own. */
+const plainBacklink = computed(() => props.field.type === 'backlink' && !compareTarget.value && !!props.store.state.fields.get(String(props.field.options?.source_field_id ?? '')));
 const tableNameOf = (id: string) => props.store.state.tables.get(id)?.name ?? '?';
 const backlink = computed(() => props.actions.describeBacklink(props.field));
 const lookup = computed(() => props.actions.describeLookup(props.field));
@@ -154,7 +159,9 @@ function toggleCompare(on: boolean) {
 /** What a count of this field counts: the table its pills are records of. */
 const countedName = computed(() => { const t = derived.pillTableOf(props.field); return (t && props.store.state.tables.get(t)?.name) || 'records'; });
 const targetName = computed(() => {
-  const id = (props.field.options?.target_table_id as string | undefined) ?? compareTarget.value ?? undefined;
+  // A backlink's "target" is the table its records come from — the link's own table.
+  const id = (props.field.options?.target_table_id as string | undefined) ?? compareTarget.value
+    ?? (props.field.type === 'backlink' ? props.store.state.fields.get(String(props.field.options?.source_field_id ?? ''))?.table_id : undefined);
   return (id && props.store.state.tables.get(id)?.name) || '(missing table)';
 });
 

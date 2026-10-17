@@ -604,6 +604,15 @@ default's table; or, if several, the one flagged `membership`; if still ambiguou
 table is skipped (and the canvas says so). A script wanting the same behaviour sends
 the same links. It REPLACED "a board inherits from its record's membership links".
 
+### Link cardinality — from either side
+
+A link field's `options.single` means its HOLDER links to at most one record (an
+Edit has one Work). `options.single_target` is the same rule from the other side: a
+TARGET is linked from at most one record (a File is the output of one Edit) — what a
+backlink's ⚙ shows as its own "single". Both are enforced on `link.add` (a second row
+is refused); the client replaces instead — `link.remove` + `link.add` in one batch —
+from whichever face the edit is made. Neither touches rows that already exist.
+
 ### Canvas stacks
 
 `canvas.update { config: { cardFields, defaults?, stacks? } }` — `stacks` is a list
