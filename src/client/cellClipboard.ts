@@ -10,6 +10,7 @@
  *  through un-copyable, as video layout did between Sept 30 and Oct 17):
  *
  *      text ↔ long_text ↔ file_path      number      date      checkbox
+      dimensions                        "1920×1080"; plain text parsed ("1920x1080")
  *      select ↔ select                   only if the target select HAS that choice
  *      multi_select ↔ multi_select       only if it has every choice
  *      link ↔ link ↔ backlink            a SET OF RECORDS of one table: both faces
@@ -60,6 +61,7 @@ import { junctionOf } from '../contract/junction';
 import { backlinkRecords } from '../contract/backlinks';
 import { formatCreated } from '../contract/systemFields';
 import { addLinkThrough, removeLinkThrough } from './links';
+import { canonicalDimensions } from '../contract/dimensions';
 
 export interface CellClip {
   /** The source field's type, and what it pointed at (links) or was shaped as (structured). */
@@ -81,7 +83,7 @@ let held: CellClip | null = null;
 const TEXTUAL = new Set(['text', 'long_text', 'file_path']);
 const RELATION = new Set(['link', 'backlink']);
 /** Types a value can be pasted INTO. */
-const PASTABLE = new Set([...TEXTUAL, 'number', 'date', 'checkbox', 'select', 'multi_select', ...RELATION, 'structured', 'rich_text', 'attachment']);
+const PASTABLE = new Set([...TEXTUAL, 'number', 'date', 'checkbox', 'dimensions', 'select', 'multi_select', ...RELATION, 'structured', 'rich_text', 'attachment']);
 /** Types that copy but take nothing: computed, or the system's. */
 const COPY_ONLY = new Set(['lookup', 'created_at', 'created_by']);
 
@@ -200,6 +202,7 @@ export function pasteCell(store: Store, recordId: string, field: FieldRow, clip:
     if (group === 'number') { const n = Number(t); return Number.isFinite(n) && t !== '' ? set(store, rec.id, field.key, n) : `"${t}" is not a number`; }
     if (group === 'date') return /^\d{4}-\d{2}-\d{2}$/.test(t) ? set(store, rec.id, field.key, t) : `"${t}" is not a date (YYYY-MM-DD)`;
     if (group === 'checkbox') { if (/^(true|yes|1)$/i.test(t)) return set(store, rec.id, field.key, true); if (/^(false|no|0)$/i.test(t)) return set(store, rec.id, field.key, false); return `"${t}" is not true or false`; }
+    if (group === 'dimensions') { const d = canonicalDimensions(t); return d ? set(store, rec.id, field.key, d) : `"${t}" is not a frame size (width × height)`; }
     return `plain text cannot be pasted into a ${human(group)} field`;
   }
 

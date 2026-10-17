@@ -62,7 +62,7 @@ export type Kind = (typeof KINDS)[number];
 /* ── outputs ─────────────────────────────────────────────────────────────── */
 
 export const OUTPUT_TYPES = [
-  'text', 'number', 'date', 'checkbox', 'select', 'file_path',
+  'text', 'number', 'date', 'checkbox', 'select', 'file_path', 'dimensions',
   'structured:manifest', 'structured:audio_layout',
 ] as const;
 export type OutputType = (typeof OUTPUT_TYPES)[number];
@@ -75,6 +75,7 @@ const ACCEPTS: Record<OutputType, ReadonlyArray<{ type: string; shape?: string }
   checkbox:   [{ type: 'checkbox' }],
   select:     [{ type: 'select' }, { type: 'text' }],
   file_path:  [{ type: 'file_path' }],
+  dimensions: [{ type: 'dimensions' }],
   'structured:manifest':     [{ type: 'structured', shape: 'manifest' }],
   'structured:audio_layout': [{ type: 'structured', shape: 'audio_layout' }],
 };
@@ -175,7 +176,8 @@ const FFPROBE: Analyzer = {
     { key: 'codec',            name: 'Codec',           type: 'select', vocabulary: 'video_codec', choices: VOCABULARIES.video_codec.choices, note: 'the CANONICAL name, looked up from codec + profile in contract/vocab.ts: "ProRes 4444 XQ", "H.264"; absent when the table has no entry' },
     { key: 'video_codec',      name: 'Video codec (raw)', type: 'text', note: 'as ffprobe says it: "prores", "dnxhd", "h264", "exr"' },
     { key: 'codec_profile',    name: 'Codec profile (raw)', type: 'text', note: 'as ffprobe says it: "4444 XQ", "HQ", "High"' },
-    { key: 'width',            name: 'Width',           type: 'number', note: 'stored frame size, as coded (anamorphic: not the display size)' },
+    { key: 'dimensions',       name: 'Dimensions',      type: 'dimensions', note: 'the stored frame size as ONE value, "1920×1080" (contract/dimensions.ts) — what a spec says; as coded (anamorphic: not the display size)' },
+    { key: 'width',            name: 'Width',           type: 'number', note: 'stored frame size, as coded (anamorphic: not the display size) — the two plain numbers, for a table that wants them apart' },
     { key: 'height',           name: 'Height',          type: 'number' },
     { key: 'frame_rate',       name: 'Frame rate',      type: 'number', note: '23.976, 25, 29.97 — 3 decimals' },
     { key: 'frame_count',      name: 'Frame count',     type: 'number' },

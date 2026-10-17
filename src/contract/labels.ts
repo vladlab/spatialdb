@@ -31,7 +31,7 @@ import { isSystemKey } from './systemFields.js';
 
 /** Types whose value reads as a name. Links, checkboxes and sets do not. */
 export const LABEL_TYPES: ReadonlySet<string> =
-  new Set(['text', 'long_text', 'number', 'date', 'select', 'file_path']);
+  new Set(['text', 'long_text', 'number', 'date', 'select', 'file_path', 'dimensions']);
 
 export interface LabelField { key: string; type: string; position: number; name: string }
 

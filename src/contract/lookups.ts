@@ -61,7 +61,7 @@ export function lookupOptionsOf(f: { options?: Record<string, unknown> | null })
 
 /** Types a lookup may read. */
 export const LOOKUP_TARGET_TYPES: ReadonlySet<string> = new Set([
-  'text', 'long_text', 'number', 'date', 'select', 'multi_select', 'checkbox', 'file_path',
+  'text', 'long_text', 'number', 'date', 'select', 'multi_select', 'checkbox', 'file_path', 'dimensions',
 ]);
 
 /**

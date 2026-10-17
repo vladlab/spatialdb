@@ -73,6 +73,7 @@ export const FIELD_TYPES = [
   'checkbox',
   'link',
   'file_path',
+  'dimensions',      // a frame size, "1920×1080" (contract/dimensions.ts)
   'lookup',
   'backlink',
   'rich_text',

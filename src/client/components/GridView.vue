@@ -1196,7 +1196,7 @@ const notePreview = (v: unknown) => richTextToPlain(v).split('\n', 1)[0];
 const attachSummary = (v: unknown) => { const n = Array.isArray(v) ? v.length : 0; return n ? `📎 ${n} file${n === 1 ? '' : 's'}` : ''; };
 const asList = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
 /** Types with a text-like editor, where typing a character can start the edit. */
-const TYPEABLE = new Set(['text', 'long_text', 'number', 'file_path', 'link', 'backlink']);   // link, backlink: the character seeds the picker's search
+const TYPEABLE = new Set(['text', 'long_text', 'number', 'file_path', 'dimensions', 'link', 'backlink']);   // link, backlink: the character seeds the picker's search
 
 function select(rec: string, field: string) {
   rowSel.clear();

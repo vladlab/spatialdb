@@ -37,6 +37,7 @@ export function rulesFor(owner: FieldLike, target: FieldLike): Rule[] {
   const o = owner.type, t = target.type;
   if ((o === 'text' || o === 'select') && (t === 'text' || t === 'select')) return ['equals'];
   if (o === 'checkbox' && t === 'checkbox') return ['equals'];
+  if (o === 'dimensions' && t === 'dimensions') return ['equals'];   // "1920×1080" to "1920×1080": one spelling, so plain equality is exact
   if (o === 'date' && t === 'date') return ['equals', 'onOrBefore', 'onOrAfter'];
   if (o === 'number' && t === 'number') return ['equals', 'within', 'atLeast', 'atMost'];
   if (o === 'link' && t === 'link' && owner.options?.target_table_id === target.options?.target_table_id) return ['sameRecord', 'sameSet'];

@@ -63,9 +63,10 @@
     <input v-else-if="field.type === 'date'" ref="el" v-model="draft" type="date"
            :class="{ invalid }" :title="invalid || undefined" @blur="onBlur" />
 
-    <!-- text, file_path, number. Number is type="text" on purpose — see header. -->
+    <!-- text, file_path, number, dimensions. Number is type="text" on purpose — see header;
+         dimensions is typed any way ("1920x1080", "1920 1080") and stored one way. -->
     <input v-else ref="el" v-model="draft" type="text"
-           :inputmode="field.type === 'number' ? 'decimal' : undefined"
+           :inputmode="field.type === 'number' ? 'decimal' : undefined" :placeholder="field.type === 'dimensions' ? 'width × height' : undefined"
            :class="{ invalid }" :title="invalid || undefined" @blur="onBlur" />
   </span>
 </template>
@@ -75,6 +76,7 @@ import { computed, nextTick, onMounted, ref } from 'vue';
 import { choicesOf as contractChoices } from '../../contract/values';
 import ChoicePicker from './ChoicePicker.vue';
 import { validateValue, type FieldShape } from '../../contract/values';
+import { canonicalDimensions } from '../../contract/dimensions';
 
 export type EditExit = 'down' | 'right' | 'left' | 'none';
 
@@ -144,8 +146,9 @@ function commit(): boolean {
     if (props.value !== undefined) emit('unset', props.field.key);
     return true;
   }
-  // Number('12abc') is NaN, which validateValue refuses.
-  const next: unknown = props.field.type === 'number' ? Number(raw) : raw;
+  // Number('12abc') is NaN, which validateValue refuses. A size is read leniently and
+  // written canonically; what does not parse stays as typed, so validateValue says why.
+  const next: unknown = props.field.type === 'number' ? Number(raw) : props.field.type === 'dimensions' ? (canonicalDimensions(raw) ?? raw) : raw;
   const err = validateValue(shape.value, next);
   invalid.value = err;
   if (err) return false;

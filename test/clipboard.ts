@@ -11,7 +11,6 @@ import { randomUUID } from 'node:crypto';
 import { mountApp, sleep } from './uiHarness.js';
 import { FIELD_TYPES } from '../src/contract/mutations.js';
 import { FIELD_FORM_SHAPES } from '../src/contract/shapes.js';
-import { clipOf, pasteCell, pasteCells, describePaste, uncopyable } from '../src/client/cellClipboard.js';
 
 let pass = 0, fail = 0;
 function check(label: string, ok: boolean, detail = '') {
@@ -22,6 +21,9 @@ function check(label: string, ok: boolean, detail = '') {
 async function main() {
   const ui = await mountApp(Number(process.env.TEST_PORT ?? 8842));
   const { w, win, pool, until, untilDb, post, API } = ui;
+  // Imported AFTER the window exists: cellClipboard pulls in vue, and @vue/runtime-dom
+  // captures `document` at import time — null here before mountApp has made one.
+  const { clipOf, pasteCell, pasteCells, describePaste, uncopyable } = await import('../src/client/cellClipboard.js');
   try {
     // One asset, so an attachment value is real (the server checks assets exist).
     const u32 = (n: number) => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b; };
@@ -44,7 +46,7 @@ async function main() {
       { type: 'field.create', id: fWName, tableId: tWorks, name: 'Name', key: 'name', fieldType: 'text' }, pos(fWName, 0),
       fieldFor('text', 'name'), fieldFor('long_text', 'notes'), fieldFor('number', 'n'), fieldFor('select', 'status', { choices: ['todo', 'done'] }),
       fieldFor('multi_select', 'tags', { choices: ['hdr', 'sdr'] }), fieldFor('date', 'due'), fieldFor('checkbox', 'ok'),
-      fieldFor('link', 'work', { target_table_id: tWorks }), fieldFor('file_path', 'path'),
+      fieldFor('link', 'work', { target_table_id: tWorks }), fieldFor('file_path', 'path'), fieldFor('dimensions', 'size'),
       fieldFor('rich_text', 'doc'), fieldFor('attachment', 'files'),
       ...FIELD_FORM_SHAPES.map((shape) => fieldFor('structured', `s_${shape}`, { shape })),
       { type: 'record.create', id: ep1, tableId: tWorks, data: { name: 'Ep 101' } }, { type: 'record.create', id: ep2, tableId: tWorks, data: { name: 'Ep 102' } },
@@ -58,7 +60,7 @@ async function main() {
     check('lookup + backlink accepted', more.status === 200, (await more.text()).slice(0, 300));
 
     const values: Record<string, unknown> = {
-      name: 'a.mov', notes: 'two\nlines', n: 23.976, status: 'done', tags: ['hdr', 'sdr'], due: '2026-10-17', ok: true, path: '/mnt/x/a.mov',
+      name: 'a.mov', notes: 'two\nlines', n: 23.976, status: 'done', tags: ['hdr', 'sdr'], due: '2026-10-17', ok: true, path: '/mnt/x/a.mov', size: '1920×1080',
       doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'hello' }] }] }, files: [asset],
       s_manifest: { kind: 'file', size: 1234 },
       s_audio_layout: { tracks: [{ name: 'Stereo', channels: ['L', 'R'] }] },
@@ -120,7 +122,7 @@ async function main() {
     const canon = (v: unknown): unknown => (Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, canon((v as Record<string, unknown>)[k])])) : v);
     const same = (k: string) => JSON.stringify(canon(bd[k])) === JSON.stringify(canon(values[k]));
     check('…and the server has them all, byte for byte (video layout, audio layout, manifest, json, rich text, attachment, the plain ones)',
-      ['notes', 'n', 'status', 'tags', 'due', 'ok', 'path', 'doc', 'files', 's_manifest', 's_audio_layout', 's_video_layout', 's_json'].every(same), JSON.stringify(bd));
+      ['notes', 'n', 'status', 'tags', 'due', 'ok', 'path', 'size', 'doc', 'files', 's_manifest', 's_audio_layout', 's_video_layout', 's_json'].every(same), JSON.stringify(bd));
     const bl = await untilDb(`select to_record from links where from_record='${b}' and field_id='${F.work}'`, (x) => x.length === 2, 4000);
     check('…links included', bl.length === 2);
     check('no notice complained along the way', !/cannot be copied|Not pasted/.test(w.find('.desk-notices').exists() ? w.find('.desk-notices').text() : ''), w.find('.desk-notices').exists() ? w.find('.desk-notices').text() : '');

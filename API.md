@@ -66,7 +66,12 @@ the only line of defence. The rules, and the decisions inside them:
   no times, no timezones; a moment-in-time is a different field type, added when
   something needs it. `select`: one of `options.choices` when choices are
   configured. `multi_select`: an array of them, each at most once — it is a set
-  stored as an array.
+  stored as an array. `dimensions` (Oct 17): a frame size as ONE value, stored
+  as its canonical text `"1920×1080"` (U+00D7, two positive integers); the editor
+  and a plain-text paste read "1920x1080", "1920 x 1080", "1920 1080" and write
+  that one spelling — sanitising is parsing, not a list of every resolution
+  (`contract/dimensions.ts`). It sorts naturally, filters as text and compares
+  to a spec's by `equals`; the ffprobe analyzer's `dimensions` output fills it.
 - `link` and `lookup` reject any value: relations are rows in `links`, and
   lookups are computed at read time. A value under either key is always a
   mistake, usually an import that flattened links into cells.
@@ -432,7 +437,7 @@ RECIPE:
 - **Validated on write** (`toolsProblem`, the same function the editor runs before
   queueing): each step's analyzer and each mapped output must exist by name; each
   mapped field must be on THIS table and of a type that accepts the output (`text` →
-  text or long_text; `number`, `date`, `checkbox`, `file_path` → the same; `select` →
+  text or long_text; `number`, `date`, `checkbox`, `file_path`, `dimensions` → the same; `select` →
   select or text; `structured:<shape>` → a structured field of that shape); `path`
   on a `filesystem` step must be mapped; two DIFFERENT outputs may not share a
   field. Strict objects — an unknown key is a 400. `{}` disables everything.

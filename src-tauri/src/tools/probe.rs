@@ -173,6 +173,8 @@ fn video(o: &mut Map<String, Value>, s: &Value, format: &Value, is_sequence: boo
     if let Some(p) = s["profile"].as_str() { o.insert("codec_profile".into(), json!(p)); }
     if let Some(w) = s["width"].as_u64() { o.insert("width".into(), json!(w)); }
     if let Some(h) = s["height"].as_u64() { o.insert("height".into(), json!(h)); }
+    // The two as ONE value, in the canonical spelling of contract/dimensions.ts.
+    if let (Some(w), Some(h)) = (s["width"].as_u64(), s["height"].as_u64()) { if w > 0 && h > 0 { o.insert("dimensions".into(), json!(format!("{w}\u{d7}{h}"))); } }
     let pix = s["pix_fmt"].as_str().unwrap_or("");
     if !pix.is_empty() {
         o.insert("pixel_format".into(), json!(pix));
@@ -336,6 +338,14 @@ mod tests {
         assert!(!o.contains_key("video_bitrate"));
         video(&mut o, &json!({ "bit_rate": "220000000" }), &json!({}), false);
         assert_eq!(o["video_bitrate"], 220000000u64);
+    }
+    #[test] fn dimensions_is_one_value() {
+        let mut o = Map::new();
+        video(&mut o, &json!({ "width": 1920, "height": 1080 }), &json!({}), false);
+        assert_eq!(o["dimensions"], "1920\u{d7}1080");
+        let mut o = Map::new();
+        video(&mut o, &json!({ "width": 0, "height": 1080 }), &json!({}), false);
+        assert!(!o.contains_key("dimensions"));
     }
     #[test] fn operational_pattern() {
         // as ffprobe printed them for files from its own OP1a and OPAtom muxers

@@ -31,6 +31,7 @@
 import type { FIELD_TYPES } from './mutations.js';
 import { VOCABULARIES } from './vocab.js';
 import { attachmentError, richTextError } from './richtext.js';
+import { dimensionsError } from './dimensions.js';
 import { shapeOf, structuredError } from './shapes.js';
 import { ReportDef } from './reports.js';
 
@@ -83,6 +84,10 @@ export function validateValue(field: FieldShape, value: unknown): string | null 
 
     case 'checkbox':
       return typeof value === 'boolean' ? null : `'${field.key}' must be true or false`;
+
+    case 'dimensions':
+      // Canonical text only — "1920×1080". The editor parses what was typed into it.
+      return dimensionsError(field.key, value);
 
     case 'date': {
       // A calendar date, `YYYY-MM-DD`, stored as a string. No times and no

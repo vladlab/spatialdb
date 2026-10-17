@@ -119,7 +119,7 @@ const cols = computed(() => fieldsOf(store.state, props.table)
   .filter((f) => f.id !== props.cfg.a && f.id !== props.cfg.b && !SYSTEM_FIELD_TYPES.has(f.type)));
 
 /** Edited in place, with the grid's editor. The rest is a summary: the pair's own tray (⤢) is where it is changed. */
-const INLINE = new Set(['text', 'long_text', 'number', 'date', 'select', 'multi_select', 'file_path']);
+const INLINE = new Set(['text', 'long_text', 'number', 'date', 'select', 'multi_select', 'file_path', 'dimensions']);
 const EDITABLE = (f: FieldRow) => INLINE.has(f.type);
 const DERIVED = new Set(['lookup', 'backlink']);
 
