@@ -302,7 +302,8 @@ async function main() {
     await jrow(0).find('td.editing .cp-input').setValue('Acc');
     await jrow(0).find('td.editing .cp-input').trigger('keydown', { key: 'Enter' });
     await untilDb(`select data->>'status' s from records where id = '${p1}'`, (r) => r[0]?.s === 'Accepted', 4000);
-    check('…and writes the pair row; the capsule follows', await until(() => jrow(0).findAll('td')[1].find('.choice').text() === 'Accepted' && !jt().find('td.editing').exists()));
+    check('…and writes the pair row; the capsule follows (Enter moves on to the next row\'s cell, as in any cell — Oct 17)', await until(() => jrow(0).findAll('td')[1].find('.choice').text() === 'Accepted' && !jrow(0).find('td.editing').exists()));
+    if (jt().find('td.editing').exists()) { await jt().find('td.editing input, td.editing .cp-input, td.editing textarea').trigger('keydown', { key: 'Escape' }); await until(() => !jt().find('td.editing').exists()); }
     await jrow(0).findAll('td')[2].trigger('click');
     await until(() => jrow(0).find('td.editing textarea').exists());
     await jrow(0).find('td.editing textarea').setValue('client approved');
