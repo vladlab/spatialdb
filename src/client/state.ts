@@ -521,7 +521,7 @@ export function ingestSchema(
 }
 
 export function ingestRecords(state: State, records: RecordRow[]) {
-  for (const r of records) state.records.set(r.id, r);
+  for (const r of records) state.records.set(r.id, foldSystemFields(r, state.records.get(r.id)));
 }
 
 /* ── pages, and the two ways a page can be stale ───────────────────────────
@@ -583,6 +583,24 @@ export interface RecordsPage {
   seq: number;
 }
 
+/**
+ * System fields (contract/systemFields.ts), folded into `data` under their reserved
+ * keys from the columns a read carries beside it. Every path a record arrives by goes
+ * through this — a page, a scene, the boards list, a search hit — and a record that
+ * arrives WITHOUT them keeps the ones it has: a scene used to overwrite a loaded
+ * record with a bare one, and "Created" went blank on every canvas you opened.
+ */
+export function foldSystemFields(r: RecordRow, existing?: RecordRow): RecordRow {
+  const raw = r as RecordRow & { created_at?: string | Date; created_by_name?: string | null };
+  const { created_at, created_by_name, ...rest } = raw;
+  const out = rest as RecordRow;
+  if (created_at !== undefined && created_at !== null) out.data._created_at = typeof created_at === 'string' ? created_at : new Date(created_at).toISOString();
+  else if (out.data._created_at === undefined && existing?.data._created_at !== undefined) out.data._created_at = existing.data._created_at;
+  if (created_by_name !== undefined) out.data._created_by = created_by_name ?? '';
+  else if (out.data._created_by === undefined && existing?.data._created_by !== undefined) out.data._created_by = existing.data._created_by;
+  return out;
+}
+
 /** Ingest a page, skipping anything `touched` says we know better. Returns rows taken. */
 export function ingestPage(
   state: State, page: RecordsPage, touched: ReadonlyMap<string, number>,
@@ -591,11 +609,7 @@ export function ingestPage(
   let taken = 0;
   for (const r of page.records) {
     if (newer(`r:${r.id}`)) continue;
-    // System fields (contract/systemFields.ts) folded into data under reserved keys.
-    const raw = r as RecordRow & { created_at?: string; created_by_name?: string | null };
-    if (raw.created_at !== undefined) r.data._created_at = raw.created_at;
-    if (raw.created_by_name !== undefined) r.data._created_by = raw.created_by_name ?? '';
-    state.records.set(r.id, r);
+    state.records.set(r.id, foldSystemFields(r, state.records.get(r.id)));
     taken++;
   }
   for (const l of page.links ?? []) {
@@ -616,7 +630,7 @@ export function ingestCanvases(
 ) {
   for (const b of boards) {
     const { config, viewport, ...record } = b;
-    if (!state.records.has(record.id)) state.records.set(record.id, record);
+    if (!state.records.has(record.id)) state.records.set(record.id, foldSystemFields(record as RecordRow));
     state.canvases.set(b.id, { id: b.id, config, viewport });
   }
 }

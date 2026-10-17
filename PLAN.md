@@ -1081,6 +1081,17 @@ contract, no second query language, the preview before the commit.
   it auto-placed (they were not undo steps); they stay, by hand, in the column where
   the stack was. "Remove stack" is the clean way back.
 
+### System fields, everywhere (Oct 17)
+
+"Created" and "Created by" were blank "anywhere" for the owner. Only a TABLE PAGE
+carried `created_at` / `created_by_name`; a scene, the boards list, the unplaced list,
+a search hit and a streamed `record.create` did not — and `ingestScene` overwrote a
+loaded record with the bare one, so every canvas visit wiped them, and nothing fetched
+the table again. Now every read carries them, `foldSystemFields` (client/state.ts) is
+the one fold on every path and keeps what a record already has, and the server puts the
+TRUTH on the logged `record.create` (after stripping what the client claimed), so peers
+and catch-up have them without a fetch. `test/sysfields.ts`.
+
 ### Symmetry (Oct 15): a link and its backlink are two faces of one relation
 
 The owner: "I continue to strongly want all links to be symmetrical — like Airtable

@@ -69,6 +69,8 @@ function blame<E>(err: E, mutationId: string): E {
 export interface Actor {
   id: string;
   role: 'admin' | 'editor' | 'viewer';
+  /** What "Created by" shows — put on a logged record.create for peers (below). */
+  name?: string;
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -546,11 +548,21 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
       // check that used to be a no-op.
       await assertFieldKeysExistForTable(db, m.tableId, Object.keys(m.data));
       await assertValuesValid(db, m.tableId, m.data);
-      await db.query(
-        `insert into records (id, table_id, data, created_by, updated_by)
-         values ($1,$2,$3,$4,$4)`,
-        [m.id, m.tableId, JSON.stringify(m.data), actor.id],
-      );
+      {
+        const ins = await db.query(
+          `insert into records (id, table_id, data, created_by, updated_by)
+           values ($1,$2,$3,$4,$4) returning created_at`,
+          [m.id, m.tableId, JSON.stringify(m.data), actor.id],
+        );
+        // Put the TRUTH on the mutation that gets logged and streamed: a peer applying
+        // this record.create (and a client catching up) then has "Created" and
+        // "Created by" without fetching the table. The reserved keys were stripped
+        // above, so what a client CLAIMED never gets this far; `data` in the row is
+        // already written without them.
+        const d = m.data as Record<string, unknown>;
+        d._created_at = new Date(ins.rows[0].created_at).toISOString();
+        d._created_by = actor.name ?? '';
+      }
       return;
 
     case 'record.update': {

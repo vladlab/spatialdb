@@ -122,13 +122,18 @@ export async function loadScene(db: PoolClient, canvasId: string): Promise<Scene
     // Join through placements rather than issuing one query per card.
     // …plus the board's OWN record: its name is that record's primary field, and a
     // client arriving by URL may not have loaded the boards table.
+    // WITH the system fields (contract/systemFields.ts), as a table page carries them:
+    // the client folds a scene's records in whole, and a record that arrived here
+    // without them lost its "Created" until its table was fetched again.
     const records = await db.query(
-        `select r.id, r.table_id, r.data
+        `select r.id, r.table_id, r.data, r.created_at, u.name as created_by_name
            from records r
            join placements p on p.record_id = r.id
+           left join users u on u.id = r.created_by
           where p.canvas_id = $1
          union
-         select r.id, r.table_id, r.data from records r where r.id = $1`,
+         select r.id, r.table_id, r.data, r.created_at, u.name as created_by_name
+           from records r left join users u on u.id = r.created_by where r.id = $1`,
         [canvasId]);
 
     // Both endpoints must be on this canvas, or there is nothing to draw.
@@ -373,8 +378,8 @@ export async function loadUnplaced(
 ): Promise<Page<unknown>> {
   const { limit, offset } = paging(opts);
   const { rows } = await db.query(
-    `select r.id, r.table_id, r.data
-       from records r
+    `select r.id, r.table_id, r.data, r.created_at, u.name as created_by_name
+       from records r left join users u on u.id = r.created_by
       where ($2::uuid is null or r.table_id = $2)
         and not exists (
           select 1 from placements p
@@ -623,16 +628,16 @@ export async function searchRecords(
 
   let fuzzy = false;
   let { rows } = await db.query(
-    `select id, table_id, data from records
+    `select r.id, r.table_id, r.data, r.created_at, u.name as created_by_name from records r left join users u on u.id = r.created_by
       where ${scope} ${likes.map((_, i) => `and ${SEARCH_EXPR} like $${n + i + 1}`).join(' ')}
-      order by created_at desc limit ${CANDIDATES}`,
+      order by r.created_at desc limit ${CANDIDATES}`,
     [...base, ...likes]);
 
   if (!rows.length && terms.length) {
     try {
       // `term <% text`: some WORD in the text is similar to the term. Index-backed.
       ({ rows } = await db.query(
-        `select id, table_id, data from records
+        `select r.id, r.table_id, r.data, r.created_at, u.name as created_by_name from records r left join users u on u.id = r.created_by
           where ${scope} ${terms.map((_, i) => `and $${n + i + 1} <% ${SEARCH_EXPR}`).join(' ')}
           order by ${terms.map((_, i) => `word_similarity($${n + i + 1}, ${SEARCH_EXPR})`).join(' + ')} desc
           limit ${limit}`,

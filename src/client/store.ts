@@ -51,7 +51,7 @@ import { reactive, ref, computed } from 'vue';
 import type { Mutation } from '../contract/mutations.js';
 import { StreamEvent } from '../contract/events.js';
 import {
-  applyMutation, clearState, emptyState, ingestCanvases, ingestPage,
+  applyMutation, clearState, emptyState, foldSystemFields, ingestCanvases, ingestPage,
   ingestSchema, ingestScene, linkKey, touchedBy, type RecordRow, type SectionRow, type State,
 } from './state.js';
 
@@ -526,7 +526,7 @@ export function createStore(opts: StoreOptions = {}) {
   }
   /** Make records known locally WITHOUT overwriting anything already held (it may be newer). */
   function adopt(records: RecordRow[]) {
-    for (const r of records) if (!state.records.has(r.id)) state.records.set(r.id, r);
+    for (const r of records) if (!state.records.has(r.id)) state.records.set(r.id, foldSystemFields(r));
   }
 
   async function uploadAsset(file: Blob, name = ''): Promise<AssetMeta> {

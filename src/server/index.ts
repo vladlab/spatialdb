@@ -105,7 +105,7 @@ app.use('/api/*', async (c, next) => {
 });
 
 const userOf = (c: Context): AuthUser => (c as unknown as Context<Vars>).get('user');
-const currentActor = (c: Context): Actor => { const u = userOf(c); return { id: u.id, role: u.role }; };
+const currentActor = (c: Context): Actor => { const u = userOf(c); return { id: u.id, role: u.role, name: u.name }; };
 
 /* ────────────────────────────────────────────────────────────────────────────
  *  Writes — the single entry point
@@ -362,11 +362,12 @@ app.get('/api/canvases', async (c) => {
   // lists boards by name, and a name is a record's primary field — and there are
   // few of them (boards are made by hand).
   const { rows } = await pool.query(
-    `select r.id, r.table_id, r.data,
+    `select r.id, r.table_id, r.data, r.created_at, u.name as created_by_name,
             coalesce(c.config, '{}'::jsonb) as config, coalesce(c.viewport, '{}'::jsonb) as viewport
        from records r
        join tables t on t.id = r.table_id and t.kind = 'canvas'
        left join canvases c on c.id = r.id
+       left join users u on u.id = r.created_by
       order by r.created_at, r.id`);
   return c.json(rows);
 });
