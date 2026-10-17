@@ -64,6 +64,8 @@ export interface TableRow {
   junction?: Record<string, unknown>;
   /** The fields grouped into sections for the record tray (contract/fieldSections.ts). */
   field_sections?: unknown[];
+  /** Folded away in the navigation with the boards, reports and junctions (sql/018) — a vocabulary table, say. */
+  utility?: boolean;
 }
 export interface FieldRow {
   id: string; table_id: string; name: string; key: string; type: string;
@@ -260,6 +262,7 @@ export function applyMutation(state: State, m: Mutation): void {
       if (m.tools !== undefined) t.tools = m.tools;
       if (m.junction !== undefined) t.junction = m.junction;
       if (m.fieldSections !== undefined) t.field_sections = m.fieldSections;
+      if (m.utility !== undefined) t.utility = m.utility;
       return;
     }
     case 'table.delete':
@@ -638,7 +641,8 @@ export function ingestCanvases(
 /** Tables whose records are pairs (sql/016). */
 export const isJunctionTable = (t: TableRow | undefined) => t?.kind === 'junction';
 /** Tables that are navigation utilities rather than data: boards, reports, junctions. */
-export const isUtilityTable = (t: TableRow | undefined) => t?.kind === 'canvas' || t?.kind === 'report' || t?.kind === 'junction';
+/** Folded away in the tree: a table of boards, reports or pairs BY KIND, or one the owner ticked "utility" (sql/018). */
+export const isUtilityTable = (t: TableRow | undefined) => t?.kind === 'canvas' || t?.kind === 'report' || t?.kind === 'junction' || t?.utility === true;
 
 /** The junction rows linking TO `recordId` through an endpoint field of any junction table. */
 export function junctionRowsOf(state: State, recordId: string): string[] {

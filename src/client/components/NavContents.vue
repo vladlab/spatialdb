@@ -23,7 +23,8 @@
     </div>
     <p v-if="!dataTables.length" class="empty">none yet</p>
 
-    <!-- UTILITY tables — boards, reports, junctions: tables that exist to serve the
+    <!-- UTILITY tables — boards, reports, junctions, and any table ticked "utility"
+         (a vocabulary such as Containers, sql/018): tables that exist to serve the
          data tables, not to be browsed. Folded by default, like archived projects:
          a colleague looking for "Files" should not have to read past "Delivery". -->
     <template v-if="utilityTables.length">
@@ -39,6 +40,7 @@
           <span v-if="t.kind === 'canvas'" class="tag" title="A table of boards: each record is a canvas">boards</span>
           <span v-if="t.kind === 'report'" class="tag" title="A table of reports: each record is a report">reports</span>
           <span v-if="t.kind === 'junction'" class="tag" title="A junction: each record pairs a record of one table with one of another">junction</span>
+          <span v-if="t.utility && (!t.kind || t.kind === 'records')" class="tag" title="Ticked “utility” in its Table settings: a table other tables link to (a vocabulary such as Containers), kept out of the way here">utility</span>
           <button class="act" title="Table settings" @click.stop="$emit('table-settings', t.id)">⚙</button>
         </div>
       </template>

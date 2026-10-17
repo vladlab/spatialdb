@@ -442,12 +442,14 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
            position      = coalesce($6, position),
            tools         = coalesce($7::jsonb, tools),
            junction      = coalesce($8::jsonb, junction),
-           field_sections = coalesce($9::jsonb, field_sections)
+           field_sections = coalesce($9::jsonb, field_sections),
+           utility       = coalesce($10, utility)
          where id = $1`,
         [m.id, m.name ?? null, m.singularName ?? null, m.color ?? null, m.icon ?? null,
          m.position ?? null, m.tools === undefined ? null : JSON.stringify(m.tools),
          m.junction === undefined ? null : JSON.stringify(m.junction),
-         m.fieldSections === undefined ? null : JSON.stringify(m.fieldSections)],
+         m.fieldSections === undefined ? null : JSON.stringify(m.fieldSections),
+         m.utility ?? null],
       );
       return;
 

@@ -131,6 +131,12 @@ const TableUpdate = z.strictObject({
    * real check (unique ids, a field in one section only) runs in apply.
    */
   fieldSections: z.array(z.unknown()).optional(),
+  /**
+   * A UTILITY table (sql/018): folded away in the navigation with the boards,
+   * reports and junctions. For the vocabulary tables (Containers, Codecs) that
+   * only exist to be linked to. Navigation only — nothing else reads it.
+   */
+  utility: z.boolean().optional(),
 });
 
 const TableDelete = z.strictObject({

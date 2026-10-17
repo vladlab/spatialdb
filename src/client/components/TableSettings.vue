@@ -44,6 +44,13 @@
         <template v-else-if="table.kind === 'junction'"><!-- JunctionSettings below says it all --></template>
         <template v-else>An ordinary table. (Tables of boards, reports or junctions are chosen in the new-table dialog.)</template>
       </p>
+      <!-- A VOCABULARY table — Containers, Codecs: rows other tables link to, that nobody
+           browses — can fold itself away with the boards and junctions (sql/018). -->
+      <label v-if="!table.kind || table.kind === 'records'" class="utility-tick"
+             title="Tick for a table that only exists to be linked to — a vocabulary such as Containers or Codecs. It is then folded away in the navigation with the boards, reports and junctions, and left out of the pickers that choose a data table. Links, the link picker, search and reports still see it.">
+        <input type="checkbox" :checked="table.utility === true" @change="upd({ utility: ($event.target as HTMLInputElement).checked })" />
+        utility table <span class="hint">— folded away in the tree; for a table other tables link to, such as a vocabulary</span>
+      </label>
       <JunctionSettings v-if="table.kind === 'junction'" :store="store" :table-id="tableId" />
 
       <!-- THE SCHEMA. Its order is not any view's column order — that is arranged in
@@ -138,7 +145,7 @@ const nameInput = ref<HTMLInputElement>();
 const val = (e: Event) => (e.target as HTMLInputElement).value;
 const table = computed(() => props.store.state.tables.get(props.tableId));
 const ownFields = computed(() => fieldsOf(props.store.state, props.tableId).filter((f) => !SYSTEM_FIELD_TYPES.has(f.type)));
-const upd = (patch: { icon?: string; color?: string; singularName?: string }) =>
+const upd = (patch: { icon?: string; color?: string; singularName?: string; utility?: boolean }) =>
   props.store.mutate({ type: 'table.update', id: props.tableId, ...patch });
 
 /* ── the list ──────────────────────────────────────────────────────────── */
@@ -311,6 +318,7 @@ input[type='color'] { width: 30px; height: 26px; padding: 0; border: 1px solid v
 .fld input { width: 100%; box-sizing: border-box; }
 .hint { color: var(--text-faint); }
 .info { color: var(--text-muted); font-size: 12px; margin: 0 0 8px; line-height: 1.4; }
+.utility-tick { display: flex; align-items: center; gap: 6px; font-size: 12px; margin: -2px 0 10px; }
 .info.warn { color: var(--warning); }
 .mono { font-family: var(--font-mono, monospace); font-size: 11px; }
 
