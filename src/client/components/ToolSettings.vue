@@ -115,8 +115,8 @@ import { computed, ref, watch } from 'vue';
 import type { Store } from '../store';
 import { fieldsOf } from '../state';
 import { useSchemaActions } from '../schemaActions';
-import { available } from '../desktop';
-import { ANALYZERS, KINDS, MEDIA, REQUIRED, analyzerOf, describe, fieldAccepts, intoManifest, isHashStep, isManual, runsOnOf, toolsProblem, type Kind, type Media, type Output, type Recipe, type Step, type TablesTools } from '../../contract/tools';
+import { available, notice } from '../desktop';
+import { ANALYZERS, KINDS, MEDIA, REQUIRED, analyzerOf, describe, fieldAccepts, intoManifest, isHashStep, isManual, pruneTools, runsOnOf, toolsProblem, type Kind, type Media, type Output, type Recipe, type Step, type TablesTools } from '../../contract/tools';
 
 const props = defineProps<{ store: Store; tableId: string }>();
 const actions = useSchemaActions(props.store);
@@ -145,7 +145,11 @@ const mediaOn = (step: Step, m: Media) => { const r = runsOnOf(step); return !r.
 const kindOn = (step: Step, k: Kind) => { const r = runsOnOf(step); return !r.kind || r.kind.includes(k); };
 
 function write(next: Recipe) {
-  problem.value = actions.setTools(props.tableId, { ...tools.value, file_drop: next } as TablesTools) ?? '';
+  // Stale mappings (a deleted field, an output renamed across versions) are dropped
+  // and named, rather than refusing every edit until the tool is re-added.
+  const pruned = pruneTools({ ...tools.value, file_drop: next } as TablesTools, fields.value);
+  for (const d of pruned.dropped) notice(`Recipe: dropped a stale mapping — ${d}`, 'warn');
+  problem.value = actions.setTools(props.tableId, pruned.tools) ?? '';
 }
 function edit(fn: (r: Recipe) => void) {
   const next: Recipe = JSON.parse(JSON.stringify(recipe.value));

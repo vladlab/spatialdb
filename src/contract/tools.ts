@@ -310,6 +310,39 @@ export function toolsProblem(tools: unknown, fields: Iterable<ToolFieldLike>): s
   return null;
 }
 
+/**
+ * The mappings a recipe carries that no longer hold — an output the analyzer no
+ * longer has (a key renamed across versions), a field that is gone, or one the
+ * output may no longer be written to — taken out, each named. The server stays
+ * strict (`toolsProblem`); the EDITOR calls this before every save, because one
+ * stale entry used to refuse every edit of the recipe until the whole tool was
+ * removed and re-added (the owner, Oct 17). The runtime already skips a dangling
+ * id (`resolveMap`); this makes the stored recipe say what the runtime does.
+ */
+export function pruneTools(tools: TablesTools, fields: Iterable<ToolFieldLike>): { tools: TablesTools; dropped: string[] } {
+  const byId = new Map<string, ToolFieldLike>();
+  for (const f of fields) byId.set(f.id, f);
+  const dropped: string[] = [];
+  const out: TablesTools = {};
+  for (const [toolId, recipe] of Object.entries(tools) as Array<[keyof TablesTools, Recipe]>) {
+    out[toolId] = { ...recipe, steps: recipe.steps.map((step) => {
+      const a = analyzerOf(step.analyzer);
+      const map: Record<string, string> = {};
+      for (const [key, fieldId] of Object.entries(step.map)) {
+        const o = a?.outputs.find((x) => x.key === key);
+        const field = byId.get(fieldId);
+        if (!a) { map[key] = fieldId; continue; }               // an unknown analyzer is a different problem; left for toolsProblem
+        if (!o) { dropped.push(`${a.name}: no output called "${key}" any more`); continue; }
+        if (!field) { dropped.push(`${a.name}: "${o.name}" was mapped to a field that no longer exists`); continue; }
+        if (!fieldAccepts(o, field)) { dropped.push(`${a.name}: "${o.name}" (${o.type}) can no longer be written to that ${field.type} field`); continue; }
+        map[key] = fieldId;
+      }
+      return { ...step, map };
+    }) };
+  }
+  return { tools: out, dropped };
+}
+
 /** The effective filter of a step. */
 export const runsOnOf = (step: Step): RunsOn => step.runs_on ?? analyzerOf(step.analyzer)?.defaultRunsOn ?? {};
 /** A step run by hand from the record, not at the drop. */

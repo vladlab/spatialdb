@@ -29,6 +29,10 @@ export function vocabularyDoc(): string {
     '- a **text** field;',
     '- a **link** to a table you maintain (Oct 17) — a *vocabulary table* such as Containers or Codecs, one row per name, with a `Name` and an optional `Aliases` column (key `aliases`, text or long text; one alias per line, or comma- or semicolon-separated). The drop links the row **named** the canonical name; else a row whose aliases include that name; else a row whose aliases include the raw spelling shown in the drop\'s notice (`prores / Something New`) or any single raw value. No row: no link, and a notice naming the spelling to add. A re-drop replaces the link, as it overwrites a select. A bound select\'s ⚙ → `convert to a link…` makes such a table from the list below, in one undoable step.', '',
   );
+  out.push('## Reading the transfer list', '',
+    '- `bt709` (H.273 code 1) is the Rec. 709 **OETF**, the camera-side curve; BT.1886 is the **EOTF** of the reference display (gamma 2.4). There is no "bt1886" tag — a file meant for BT.1886 display is tagged bt709, and that tag is read as "SDR video gamma". One entry, "Rec. 709", covers both; name your own row "Rec. 709 (BT.1886)" and alias it `Rec. 709` if you prefer.',
+    '- `bt2020-10` / `bt2020-12` (codes 14/15) are the Rec. 2020 **SDR** curve — numerically Rec. 709\'s, specified at 10/12-bit precision. They are not HDR. HDR is BT.2100: PQ (`smpte2084`, code 16) and HLG (`arib-std-b67`, code 18). So "Rec. 2020" and "PQ" are rightly two entries.',
+    '- Gamma 2.4 is not in the list because H.273 has no code for it (only 2.2 and 2.8): ffprobe can never report it; such a file arrives tagged bt709. A spec can still say it — add a "Gamma 2.4" row to your Transfer table; nothing lands on it by drop, you pick it on the spec.', '');
   for (const [id, v] of Object.entries(VOCABULARY_TABLES)) {
     const outs = ffprobe.outputs.filter((o) => o.vocabulary === id).map((o) => `\`${o.name}\``).join(', ');
     out.push(`## ${v.name} (\`${id}\`)`, '', `ffprobe output${outs.includes(',') ? 's' : ''}: ${outs}. Raw keys read: ${v.keys.map((k) => `\`${k}\``).join(', ')}.`, '',

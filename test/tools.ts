@@ -179,6 +179,17 @@ async function main() {
     check('`{}` disables everything', r.status === 200 && JSON.stringify(await dbTools(tFiles)) === '{}');
     await post([{ type: 'table.update', id: tFiles, tools: good }]);
 
+    console.log('\nT1e. pruneTools — stale mappings dropped and named, not refused (Oct 17)');
+    const { pruneTools } = await import('../src/contract/tools.js');
+    const [pId, wId, selId, goneId] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    const pf = [{ id: pId, type: 'file_path', options: {} }, { id: wId, type: 'number', options: {} }, { id: selId, type: 'select', options: { choices: ['x'] } }];
+    const stale = { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: pId, name: goneId } }, { analyzer: 'ffprobe', map: { width: wId, codec: selId, old_output: wId } }] } };
+    const pr = pruneTools(stale as never, pf);
+    check('a mapping to a deleted field, to an output that no longer exists, and to a field the output may not write are dropped — the rest kept', JSON.stringify(pr.tools) === JSON.stringify({ file_drop: { steps: [{ analyzer: 'filesystem', map: { path: pId } }, { analyzer: 'ffprobe', map: { width: wId } }] } }), JSON.stringify(pr.tools));
+    check('…each named', pr.dropped.length === 3 && /File name.*no longer exists/.test(pr.dropped[0]) && /no output called "old_output"/.test(pr.dropped.join()) && /Codec.*can no longer be written/.test(pr.dropped.join()), JSON.stringify(pr.dropped));
+    check('…and what is left passes the strict check the server runs', toolsProblem(pr.tools, pf) === null);
+    check('a clean recipe comes back unchanged with nothing dropped', pruneTools(pr.tools, pf).dropped.length === 0);
+
     console.log('\nT2a. sql/015 rewrites a 014-shaped mapping into steps');
     const tOld = randomUUID(), oPath = randomUUID(), oWidth = randomUUID(), oHash = randomUUID(), oFirst = randomUUID();
     await post([{ type: 'table.create', id: tOld, name: 'Old' },
