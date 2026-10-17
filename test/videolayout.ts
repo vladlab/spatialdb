@@ -272,6 +272,19 @@ async function app() {
     await field().find('.save-json').trigger('click');
     check('a valid one is stored and drawn: a lone marker', (await untilDb(`select data->'video_layout'->'items'->0->>'label' l from records where id = '${blank}'`, (r) => r[0].l === 'FFOA')).length === 1
       && await until(() => field().find('.vl-item.marker').exists() && field().find('.vl-pinmark').exists()));
+
+    console.log('\nV10. Copy / paste buttons — the cell clipboard, as the audio editor has (Oct 17)');
+    check('nothing to paste before anything is copied; copy is offered', field().find('.vl-btn.paste').attributes('disabled') !== undefined && field().find('.vl-btn.copy').attributes('disabled') === undefined);
+    await openRecord('Network master');
+    await until(() => !!field() && field().find('.vl').exists() && field().findAll('.vl-item').length > 1);
+    const nItems = field().findAll('.vl-item').length, rate = field().find('.vl-rate').element.value;   // as V8 left it
+    await field().find('.vl-btn.copy').trigger('click');
+    await openRecord('Screener');
+    await until(() => !!field() && field().find('.vl').exists() && field().findAll('.vl-item').length === 1);
+    check('the copy survives moving to another record; the paste button says what it holds', field().find('.vl-btn.paste').attributes('disabled') === undefined && new RegExp(`${nItems} items`).test(field().find('.vl-btn.paste').attributes('title') ?? ''), field().find('.vl-btn.paste').attributes('title'));
+    await field().find('.vl-btn.paste').trigger('click');
+    const pasted = (await untilDb(`select data->'video_layout' v from records where id = '${blank}'`, (r) => r[0].v?.items?.length === nItems))[0].v;
+    check('paste REPLACES the layout with the copied one — every item, at its rate', String(pasted.rate) === rate && pasted.items.length === nItems && pasted.items[0].kind === 'black', JSON.stringify(pasted).slice(0, 120));
   } finally {
     await ui.close();
   }

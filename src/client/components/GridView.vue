@@ -13,7 +13,10 @@
     click / arrows / Tab    move the SELECTION (a ring on the cell; no input exists)
     Enter, F2, double-click start EDITING the selected cell (mounts a CellEditor)
     typing a character      starts editing AND replaces the value with it
-    Delete / Backspace      clears the selected cell
+    Delete / Backspace      clears the selected cell (or every cell of a range)
+    Shift+arrows / Shift+click  a RANGE from the selected cell: Ctrl+V pastes the one
+                            copied value into every cell of it, Delete clears them —
+                            one Ctrl+Z either way (cellClipboard.ts)
     Space                   ticks a checkbox (Enter does too — it has no edit mode);
                             on any other cell it OPENS the record in the side panel
     while editing           Enter commits + moves down · Tab commits + moves right
@@ -302,7 +305,7 @@
               <button class="expand" tabindex="-1" title="Open record (Space)" @pointerdown.stop @mousedown.prevent @click="$emit('open-record', r.id)">⤢</button>
             </td>
             <td v-for="f in shown" :key="f.id"
-                :class="{ sel: isSel(r.id, f.id), editing: isSel(r.id, f.id) && editing, pin: f.id === primaryId, sized: colWidth(f.id) !== undefined }"
+                :class="{ sel: isSel(r.id, f.id), rng: inRange(r.id, f.id), editing: isSel(r.id, f.id) && editing, pin: f.id === primaryId, sized: colWidth(f.id) !== undefined }"
                 :style="colStyle(f.id)"
                 @mousedown="onCellDown(r.id, f, $event)" @dblclick="startEdit(r.id, f)">
               <div class="cell">
@@ -511,7 +514,7 @@ import { SYSTEM_FIELD_TYPES, formatCreated } from '../../contract/systemFields';
 import KanbanView from './KanbanView.vue';   // (`summarise` here is the VIEW's summary)
 import { beginRecordDrag } from '../recordDrag';
 import { duplicateRecords } from '../duplicate';
-import { clipFromPaste, clipOf, copyCell, pasteCell } from '../cellClipboard';
+import { clipFromPaste, clipOf, copyCell, describePaste, pasteCell, pasteCells, uncopyable } from '../cellClipboard';
 import { notice } from '../desktop';
 import { otherEnd } from '../../contract/junction';
 import { pairSlot } from '../textWidth';
@@ -939,14 +942,19 @@ function onCopy(e: ClipboardEvent) {
   if (editing.value || !sel.value) return;
   const f = fieldById.value.get(sel.value.field);
   if (!f) return;
-  if (!copyCell(e, clipOf(store, sel.value.rec, f, labelFor))) notice(`${f.name} cannot be copied`, 'warn');
+  // A range copies its ANCHOR cell only (a many-cell copy is for later — decided Sept 30).
+  const lookupText = f.type === 'lookup' ? (lookupOf(sel.value.rec, f) ?? []).join(', ') : undefined;
+  if (!copyCell(e, clipOf(store, sel.value.rec, f, labelFor, lookupText))) notice(`${f.name} cannot be copied: ${uncopyable(store, f) ?? 'nothing there'}`, 'warn');
 }
+/** Ctrl+V: into the selected cell — or into EVERY cell of the range, one batch, one Ctrl+Z. */
 function onPaste(e: ClipboardEvent) {
   if (editing.value || !sel.value) return;
   const f = fieldById.value.get(sel.value.field);
   const clip = clipFromPaste(e);
   if (!f || !clip) return;
   e.preventDefault();
+  const cells = rangeCells.value;
+  if (cells.length > 1) { notice(describePaste(pasteCells(store, cells, clip)), 'info'); return; }
   const err = pasteCell(store, sel.value.rec, f, clip);
   if (err) notice(`Not pasted: ${err}`, 'warn');
 }
@@ -1147,6 +1155,41 @@ const seed = ref<string | undefined>();
 const anchorEl = ref<HTMLElement | null>(null);
 
 const isSel = (rec: string, field: string) => sel.value?.rec === rec && sel.value.field === field;
+
+/* ── a RANGE of cells (Oct 17) ─────────────────────────────────────────────
+   `sel` is the anchor; `focus` the other corner, set by Shift+arrows or a
+   Shift+click and cleared by any plain move. The range is the rectangle between
+   them in VIEW order (rows as sorted and grouped, columns as shown). It exists for
+   one thing so far: pasting one copied value into every cell of it (onPaste), and
+   Delete clearing them. The cell selection stays a single cell underneath — what
+   Enter edits, what Ctrl+C copies. */
+const focus = ref<{ rec: string; field: string } | null>(null);
+const rangeCells = computed((): Array<{ recordId: string; field: FieldRow }> => {
+  const s = sel.value, f = focus.value;
+  if (!s) return [];
+  const cols = shown.value, rs = rows.value;
+  const r0 = rs.findIndex((r) => r.id === s.rec), c0 = cols.findIndex((c) => c.id === s.field);
+  if (r0 === -1 || c0 === -1) return [];
+  const r1 = f ? rs.findIndex((r) => r.id === f.rec) : r0, c1 = f ? cols.findIndex((c) => c.id === f.field) : c0;
+  if (r1 === -1 || c1 === -1) return [{ recordId: s.rec, field: fieldById.value.get(s.field)! }];
+  const out: Array<{ recordId: string; field: FieldRow }> = [];
+  for (let r = Math.min(r0, r1); r <= Math.max(r0, r1); r++) for (let c = Math.min(c0, c1); c <= Math.max(c0, c1); c++) out.push({ recordId: rs[r].id, field: cols[c] });
+  return out;
+});
+const rangeKeys = computed(() => new Set(rangeCells.value.length > 1 ? rangeCells.value.map((x) => `${x.recordId}|${x.field.id}`) : []));
+const inRange = (rec: string, field: string) => rangeKeys.value.has(`${rec}|${field}`);
+/** Shift+arrow: the far corner moves; the anchor stays. */
+function extend(dRow: number, dCol: number) {
+  const s = sel.value; if (!s) return;
+  const cols = shown.value, rs = rows.value;
+  const from = focus.value ?? s;
+  let ri = rs.findIndex((r) => r.id === from.rec), ci = cols.findIndex((c) => c.id === from.field);
+  if (ri === -1 || ci === -1) return;
+  ri = Math.min(rs.length - 1, Math.max(0, ri + dRow));
+  ci = Math.min(cols.length - 1, Math.max(0, ci + dCol));
+  focus.value = { rec: rs[ri].id, field: cols[ci].id };
+  reveal(ri, cols[ci].id);
+}
 const display = (v: unknown) => (v === undefined || v === null ? '' : String(v));
 /** First line of a note, as text. */
 const notePreview = (v: unknown) => richTextToPlain(v).split('\n', 1)[0];
@@ -1157,6 +1200,7 @@ const TYPEABLE = new Set(['text', 'long_text', 'number', 'file_path', 'link', 'b
 
 function select(rec: string, field: string) {
   rowSel.clear();
+  focus.value = null;
   sel.value = { rec, field };
 }
 
@@ -1166,6 +1210,8 @@ function onCellDown(rec: string, f: FieldRow, e: MouseEvent) {
   // is about to act on), and on the already-selected cell it must not start an edit.
   if (e.button !== 0) return;
   if (isSel(rec, f.id) && editing.value) return;   // clicks inside the open editor are its own
+  // Shift+click: the far corner of a range from the selected cell.
+  if (e.shiftKey && sel.value && !editing.value) { e.preventDefault(); rowSel.clear(); focus.value = { rec, field: f.id }; scroller.value?.focus({ preventScroll: true }); return; }
   // A second click on the already-selected cell edits it — the mouse equivalent
   // of Enter, and what makes a link or select cell usable without the keyboard.
   const again = isSel(rec, f.id);
@@ -1268,7 +1314,7 @@ function onGridKey(e: KeyboardEvent) {
   }
   const f = fieldById.value.get(s.field);
   if (!f) return;
-  const go = (r: number, c: number, wrap = false) => { e.preventDefault(); move(r, c, wrap); };
+  const go = (r: number, c: number, wrap = false) => { e.preventDefault(); if (e.shiftKey && !wrap) extend(r, c); else move(r, c, wrap); };
   switch (e.key) {
     case 'ArrowUp': return go(-1, 0);
     case 'ArrowDown': return go(1, 0);
@@ -1281,15 +1327,20 @@ function onGridKey(e: KeyboardEvent) {
       e.preventDefault();
       if (f.type === 'checkbox') toggleBox(s.rec, f); else emit('open-record', s.rec);
       return;
-    case 'Escape': sel.value = null; return;
-    case 'Delete': case 'Backspace':
+    case 'Escape': if (focus.value) { focus.value = null; return; } sel.value = null; return;
+    case 'Delete': case 'Backspace': {
       // Links are rows, not a value; "clear" there would mean deleting N links on
       // one keypress. Use the × on each chip.
       // …and one keypress must not wipe a whole document or a set of files.
-      if (['link', 'lookup', 'backlink', 'rich_text', 'attachment', 'structured', 'created_at', 'created_by'].includes(f.type)) return;
+      // A range clears every cell in it that a single Delete would — one Ctrl+Z.
+      const KEEP = ['link', 'lookup', 'backlink', 'rich_text', 'attachment', 'structured', 'created_at', 'created_by'];
+      const cells = rangeCells.value.length > 1 ? rangeCells.value : [{ recordId: s.rec, field: f }];
+      const clearable = cells.filter((c) => !KEEP.includes(c.field.type) && store.state.records.get(c.recordId)?.data[c.field.key] !== undefined);
+      if (cells.length === 1 && KEEP.includes(f.type)) return;
       e.preventDefault();
-      if (store.state.records.get(s.rec)?.data[f.key] !== undefined) unsetValue(s.rec, f.key);
+      for (const c of clearable) unsetValue(c.recordId, c.field.key);
       return;
+    }
   }
   // A printable character starts an edit that REPLACES the value with it.
   if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && TYPEABLE.has(f.type)) {
@@ -1634,6 +1685,7 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
    wrapper clipped at the left and right edges — .cell must clip, to hold the
    fixed row height. An inset outline cannot be clipped by anything. */
 .grid td.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
+.grid td.rng { background: var(--accent-ring); }          /* the range, the anchor's ring on top of it */
 .grid td.sel.editing { outline-color: var(--success); background: var(--bg-app); }
 .grid td.sized .cell :deep(.over) { width: 100%; }
 .scroller:focus { outline: none; }

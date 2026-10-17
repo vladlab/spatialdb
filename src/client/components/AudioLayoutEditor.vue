@@ -69,7 +69,7 @@ import {
   AudioLayout, LAYOUT_PRESETS, addPreset, mergeTracks, moveTrack, removeTrack, splitTrack,
   summarise, trackFormat, type AudioLayout as Layout,
 } from '../../contract/shapes';
-import { layoutClipboard } from '../layoutClipboard';
+import { clipOf, copyCell, heldClip, pasteCell } from '../cellClipboard';
 
 const props = defineProps<{ store: Store; recordId: string; field: FieldRow; value: unknown }>();
 const emit = defineEmits<{ set: [value: Layout]; unset: [] }>();
@@ -95,14 +95,13 @@ const picked = reactive(new Set<number>());
 const togglePick = (i: number) => { if (picked.has(i)) picked.delete(i); else picked.add(i); };
 const merge = () => apply(mergeTracks(layout.value, [...picked]));
 
-/* ── copy / paste ── */
-const clipboardLayout = computed(() => layoutClipboard.value);
-function copy() {
-  layoutClipboard.value = JSON.parse(JSON.stringify(layout.value));
-  // Best effort: unavailable outside a secure context (plain HTTP on a LAN).
-  try { void navigator.clipboard?.writeText(JSON.stringify(layout.value, null, 2)).catch(() => {}); } catch { /* not allowed here */ }
-}
-function paste() { if (layoutClipboard.value) apply(JSON.parse(JSON.stringify(layoutClipboard.value))); }
+/* ── copy / paste ──
+   The CELL clipboard (cellClipboard.ts): the same one Ctrl+C / Ctrl+V on the field
+   use, so a layout copied with the button pastes with the key and the other way
+   round. The paste button lights only for a copied AUDIO layout. */
+const clipboardLayout = computed(() => (heldClip.value?.type === 'structured' && heldClip.value.shape === 'audio_layout' ? (heldClip.value.value as AudioLayout | null) : null));
+function copy() { copyCell(null, clipOf(props.store, props.recordId, props.field, (id) => props.store.state.records.get(id)?.data?.name as string ?? id)); }
+function paste() { if (heldClip.value && clipboardLayout.value) pasteCell(props.store, props.recordId, props.field, heldClip.value); }
 
 </script>
 

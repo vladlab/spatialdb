@@ -217,7 +217,7 @@ import LinkPicker from './LinkPicker.vue';
 import JunctionEditor from './JunctionEditor.vue';
 import RecordPill from './RecordPill.vue';
 import { duplicateRecords } from '../duplicate';
-import { clipFromPaste, clipOf, copyCell, pasteCell } from '../cellClipboard';
+import { clipFromPaste, clipOf, copyCell, pasteCell, uncopyable } from '../cellClipboard';
 import AttachmentField from './AttachmentField.vue';
 import StructuredField from './StructuredField.vue';
 import { formatNumberField } from '../../contract/shapes';
@@ -308,12 +308,15 @@ function duplicate() {
   if (id) emit('open', id); else notice('Nothing to duplicate here', 'warn');
 }
 /** Ctrl+C / Ctrl+V on a focused field (cellClipboard.ts) — the browser's copy/paste events, while it is not being edited. */
+/** A copy or paste INSIDE a structured editor's own input (a timecode, a track name) is that input's: the field's value box stays out of it. */
+const inOwnEditor = (e: ClipboardEvent) => { const t = e.target as Element | null; return !!t && typeof t.matches === 'function' && t.matches('input, textarea, [contenteditable=""], [contenteditable="true"]'); };
 function onCopy(f: FieldRow, e: ClipboardEvent) {
-  if (editingId.value === f.id) return;
-  if (!copyCell(e, clipOf(store, props.recordId, f, labelOfId))) notice(`${f.name} cannot be copied`, 'warn');
+  if (editingId.value === f.id || inOwnEditor(e)) return;
+  const lookupText = f.type === 'lookup' ? (lookupOf(f) ?? []).join(', ') : undefined;
+  if (!copyCell(e, clipOf(store, props.recordId, f, labelOfId, lookupText))) notice(`${f.name} cannot be copied: ${uncopyable(store, f) ?? 'nothing there'}`, 'warn');
 }
 function onPaste(f: FieldRow, e: ClipboardEvent) {
-  if (editingId.value === f.id) return;
+  if (editingId.value === f.id || inOwnEditor(e)) return;
   const clip = clipFromPaste(e);
   if (!clip) return;
   e.preventDefault();

@@ -77,6 +77,10 @@
     <div class="vl-bar">
       <span class="vl-label">add</span>
       <button v-for="p in VIDEO_PRESETS" :key="p.id" class="vl-btn add-item" :data-preset="p.id" @click="apply(addItem(layout, p.id))">{{ p.label }}</button>
+      <span class="vl-gap" />
+      <!-- The cell clipboard (cellClipboard.ts) — what Ctrl+C / Ctrl+V on the field use, as the audio editor's buttons do. -->
+      <button class="vl-btn copy" :disabled="!layout.items.length" title="Copy this layout, to paste onto another record" @click="copy">copy</button>
+      <button class="vl-btn paste" :disabled="!clipboardLayout" :title="clipboardLayout ? `Replace with the copied layout: ${summariseVideoLayout(clipboardLayout)}` : 'Nothing copied yet'" @click="paste">paste</button>
     </div>
   </div>
 </template>
@@ -87,10 +91,11 @@ import type { Store } from '../store';
 import type { FieldRow } from '../state';
 import { TC_RATES, canDrop, completeTc, formatLength, labelToTc, lengthToTc, parseLength, tcFps } from '../../contract/timecode';
 import {
-  VIDEO_KINDS, VIDEO_KIND_LABELS, VIDEO_PRESETS, VideoLayout, addItem, moveItem, patchItem, rebase, removeItem, resolveLayout,
+  VIDEO_KINDS, VIDEO_KIND_LABELS, VIDEO_PRESETS, VideoLayout, addItem, moveItem, patchItem, rebase, removeItem, resolveLayout, summariseVideoLayout,
   type VideoLayout as Layout,
 } from '../../contract/videoLayout';
 import VideoLayoutStrip from './VideoLayoutStrip.vue';
+import { clipOf, copyCell, heldClip, pasteCell } from '../cellClipboard';
 
 const props = defineProps<{ store: Store; recordId: string; field: FieldRow; value: unknown }>();
 const emit = defineEmits<{ set: [value: Layout]; unset: [] }>();
@@ -117,6 +122,11 @@ const rows = computed(() => resolved.value.items);
 const tc = (n: number) => labelToTc(n, base.value);
 
 const error = ref('');
+
+/* ── copy / paste: the cell clipboard, shared with Ctrl+C / Ctrl+V on the field ── */
+const clipboardLayout = computed(() => (heldClip.value?.type === 'structured' && heldClip.value.shape === 'video_layout' ? (heldClip.value.value as Layout | null) : null));
+function copy() { copyCell(null, clipOf(props.store, props.recordId, props.field, (id) => props.store.state.records.get(id)?.data?.name as string ?? id)); }
+function paste() { if (heldClip.value && clipboardLayout.value) pasteCell(props.store, props.recordId, props.field, heldClip.value); }
 
 /** Write the whole value — if the schema the server uses accepts it. An empty layout is "no value". */
 function apply(next: Layout) {
@@ -221,6 +231,7 @@ const headLine = computed(() => {
 .vl-note.hint { color: var(--text-muted); }
 .vl-bar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .vl-label { color: var(--text-faint); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 2px; }
+.vl-gap { flex: 1; }
 .vl-btn { background: none; border: 1px solid var(--border-main); color: var(--text-secondary); border-radius: 4px; padding: 1px 8px; cursor: pointer; font: inherit; font-size: 11px; }
 .vl-btn:hover { color: var(--accent); border-color: var(--accent); }
 </style>
