@@ -33,6 +33,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { rankChoices } from '../fuzzy';
+import { rectVp, vp } from '../uiScale';
 
 const props = defineProps<{
   choices: string[];
@@ -55,9 +56,9 @@ watch(query, () => { hi.value = 0; });
 /* Where the list goes: under the input, on screen; flipped above when there is no room. */
 const listPos = ref<Record<string, string>>({});
 function place() {
-  const r = input.value?.getBoundingClientRect();
+  const r = input.value ? rectVp(input.value.getBoundingClientRect()) : undefined;   // the page's pixels: this list is position: fixed (uiScale.ts)
   if (!r) return;
-  const H = typeof window !== 'undefined' ? window.innerHeight : 800;
+  const H = typeof window !== 'undefined' ? vp(window.innerHeight) : 800;
   const below = H - r.bottom > 200 || r.top < 200;
   listPos.value = below
     ? { position: 'fixed', left: `${r.left}px`, top: `${r.bottom + 2}px`, minWidth: `${Math.max(r.width, 180)}px` }

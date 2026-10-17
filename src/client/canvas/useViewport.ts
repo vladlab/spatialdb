@@ -9,6 +9,7 @@
  * around. Per-client, ephemeral, until there's a reason otherwise.
  */
 
+import { rectVp, toVp, vp } from '../uiScale';
 import { watch, reactive, ref, computed, type Ref } from 'vue';
 import { fitTransform, toWorld, zoomAbout, type Rect } from './geometry.js';
 
@@ -28,16 +29,18 @@ export function useViewport(containerRef: Ref<HTMLElement | null>) {
   watch(scrollMode, (m) => { try { localStorage.setItem(MODE_KEY, m); } catch { /* unavailable */ } });
   const panStart = { x: 0, y: 0 };
 
+  // In the PAGE's pixels (uiScale.ts): the container's rect and the pointer both arrive
+  // in viewport pixels, and under a UI scale those are not the pixels the transform is in.
   const rect = () =>
-    containerRef.value?.getBoundingClientRect() ?? { left: 0, top: 0, width: 800, height: 600 };
+    (containerRef.value ? rectVp(containerRef.value.getBoundingClientRect()) : { left: 0, top: 0, width: 800, height: 600 });
 
   function clientToWorld(clientX: number, clientY: number) {
-    return toWorld(clientX, clientY, rect(), transform);
+    return toWorld(vp(clientX), vp(clientY), rect(), transform);
   }
-  /** The inverse: where a world point is on screen (to anchor a popover at a card). */
+  /** The inverse: where a world point is on screen, in VIEWPORT pixels (to anchor a popover at a card). */
   function worldToClient(x: number, y: number) {
     const r = rect();
-    return { x: r.left + transform.x + x * transform.scale, y: r.top + transform.y + y * transform.scale };
+    return { x: toVp(r.left + transform.x + x * transform.scale), y: toVp(r.top + transform.y + y * transform.scale) };
   }
 
   function apply(next: { x: number; y: number; scale: number }) {
@@ -58,7 +61,7 @@ export function useViewport(containerRef: Ref<HTMLElement | null>) {
       const factor = Math.pow(0.999, e.deltaY);
       const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, transform.scale * factor));
       const r = rect();
-      apply(zoomAbout(transform, e.clientX - r.left, e.clientY - r.top, next));
+      apply(zoomAbout(transform, vp(e.clientX) - r.left, vp(e.clientY) - r.top, next));
     } else {
       transform.x -= e.deltaX;
       transform.y -= e.deltaY;
@@ -70,21 +73,21 @@ export function useViewport(containerRef: Ref<HTMLElement | null>) {
     if (e.button !== 1) return;
     e.preventDefault();
     isPanning.value = true;
-    panStart.x = e.clientX - transform.x;
-    panStart.y = e.clientY - transform.y;
+    panStart.x = vp(e.clientX) - transform.x;
+    panStart.y = vp(e.clientY) - transform.y;
     (e.target as HTMLElement)?.setPointerCapture?.(e.pointerId);
   }
 
   function startPan(e: PointerEvent) {
     isPanning.value = true;
-    panStart.x = e.clientX - transform.x;
-    panStart.y = e.clientY - transform.y;
+    panStart.x = vp(e.clientX) - transform.x;
+    panStart.y = vp(e.clientY) - transform.y;
   }
 
   function onPointerMove(e: PointerEvent) {
     if (!isPanning.value) return;
-    transform.x = e.clientX - panStart.x;
-    transform.y = e.clientY - panStart.y;
+    transform.x = vp(e.clientX) - panStart.x;
+    transform.y = vp(e.clientY) - panStart.y;
   }
 
   function onPointerUp() {

@@ -483,6 +483,7 @@
 </template>
 
 <script setup lang="ts">
+import { rectVp, toVp, vp } from '../uiScale';
 import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { SCOPE } from '../scope';
 import type { Store } from '../store';
@@ -640,9 +641,9 @@ function setWidth(id: string, w: number | undefined) {
 function onResizeDown(id: string, e: PointerEvent) {
   if (e.button !== 0) return;
   const th = (e.currentTarget as HTMLElement).closest('th');
-  const startW = th?.getBoundingClientRect().width ?? colWidth(id) ?? 160;
+  const startW = th ? vp(th.getBoundingClientRect().width) : (colWidth(id) ?? 160);
   const startX = e.clientX;
-  const onMove = (ev: PointerEvent) => { liveWidths.set(id, Math.max(MIN_COL_W, Math.min(MAX_COL_W, startW + ev.clientX - startX))); };
+  const onMove = (ev: PointerEvent) => { liveWidths.set(id, Math.max(MIN_COL_W, Math.min(MAX_COL_W, startW + vp(ev.clientX - startX)))); };
   const onUp = () => {
     window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp);
     const w = liveWidths.get(id);
@@ -900,16 +901,16 @@ function onRowMenu(id: string, e: MouseEvent) {
   if ((e.target as Element | null)?.closest?.('td.editing')) return;
   e.preventDefault();
   const ids = rowSel.has(id) && rowSel.size > 1 ? rows.value.filter((r) => rowSel.has(r.id)).map((r) => r.id) : [id];
-  rowMenu.value = { x: e.clientX, y: e.clientY, id, ids };
+  rowMenu.value = { x: vp(e.clientX), y: vp(e.clientY), id, ids };   // fixed, in the page's pixels (uiScale.ts)
   // Opened near the window's bottom or right edge, it moves back inside. (Measured
   // once it exists; without layout — the headless suites — nothing is measured.)
   void nextTick(() => {
     const el = rowMenuEl.value, m = rowMenu.value;
     if (!el || !m) return;
-    const r = el.getBoundingClientRect();
+    const r = rectVp(el.getBoundingClientRect());
     if (!r.width) return;
-    const x = Math.max(4, Math.min(m.x, window.innerWidth - r.width - 4));
-    const y = Math.max(4, Math.min(m.y, window.innerHeight - r.height - 4));
+    const x = Math.max(4, Math.min(m.x, vp(window.innerWidth) - r.width - 4));
+    const y = Math.max(4, Math.min(m.y, vp(window.innerHeight) - r.height - 4));
     if (x !== m.x || y !== m.y) rowMenu.value = { ...m, x, y };
   });
 }
@@ -1417,9 +1418,10 @@ function revealCol(fieldId: string) {
   const box = sc.getBoundingClientRect(), cell = th.getBoundingClientRect();
   const pins = [...sc.querySelectorAll<HTMLElement>('thead th.pin')].map((p) => p.getBoundingClientRect().right);
   const from = Math.max(box.left, ...pins);                       // where unpinned columns start to show
-  const to = box.left + sc.clientWidth;                           // clientWidth: not under the vertical scrollbar
-  if (cell.left < from) sc.scrollLeft -= from - cell.left;
-  else if (cell.right > to) sc.scrollLeft += Math.min(cell.right - to, cell.left - from);
+  const to = box.left + toVp(sc.clientWidth);                     // clientWidth: not under the vertical scrollbar (page px → viewport px)
+  // Rects are viewport pixels, scrollLeft the page's own: `vp` (uiScale.ts) between them.
+  if (cell.left < from) sc.scrollLeft -= vp(from - cell.left);
+  else if (cell.right > to) sc.scrollLeft += vp(Math.min(cell.right - to, cell.left - from));
 }
 
 /* The sort / filter / fields menus are <details>. A <details> only closes when its

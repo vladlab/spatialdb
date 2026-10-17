@@ -319,6 +319,7 @@
 </template>
 
 <script setup lang="ts">
+import { vp } from '../uiScale';
 import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import type { MutateOptions, Store } from '../store';
 import { fieldsOf, tablesSorted, type FieldRow, type RecordRow } from '../state';
@@ -682,7 +683,7 @@ function onStackPointerDown({ stackId, e }: { stackId: string; e: PointerEvent }
   let movedFar = false;
   const move = (ev: PointerEvent) => {
     const scale = viewport.transform.scale || 1;
-    const dx = (ev.clientX - start.x) / scale, dy = (ev.clientY - start.y) / scale;
+    const dx = vp(ev.clientX - start.x) / scale, dy = vp(ev.clientY - start.y) / scale;
     if (!movedFar && Math.hypot(dx * scale, dy * scale) < 4) return;
     movedFar = true;
     stackLive.set(stackId, { ...(stackLive.get(stackId) ?? {}), x: from.x + dx, y: from.y + dy });
@@ -701,7 +702,7 @@ function onStackResize({ stackId, e }: { stackId: string; e: PointerEvent }) {
   const layout = stackLayouts.value.get(stackId); if (!layout) return;
   const start = e.clientX, w0 = layout.rect.w;
   const move = (ev: PointerEvent) => {
-    const w = Math.max(STACK_MIN_W, Math.round(w0 + (ev.clientX - start) / (viewport.transform.scale || 1)));
+    const w = Math.max(STACK_MIN_W, Math.round(w0 + vp(ev.clientX - start) / (viewport.transform.scale || 1)));
     stackLive.set(stackId, { ...(stackLive.get(stackId) ?? {}), w });
   };
   const up = () => {
@@ -1044,7 +1045,7 @@ function onLinkMenu(l: ArrowLink, e: MouseEvent) {
   selectLink(l);
   const r = containerRef.value!.getBoundingClientRect();
   const w = viewport.clientToWorld(e.clientX, e.clientY);
-  menu.value = { kind: 'link', x: e.clientX - r.left, y: e.clientY - r.top, wx: w.x, wy: w.y, link: l };
+  menu.value = { kind: 'link', x: vp(e.clientX - r.left), y: vp(e.clientY - r.top), wx: w.x, wy: w.y, link: l };
 }
 async function removeLink(l: ArrowLink) {
   if (l.junction) {
@@ -1300,7 +1301,7 @@ function chooseWay(m: Menu, way: LinkWay) {
 /* The new-link menu (empty canvas, or the ⊕ clicked). */
 const menuAt = (client: { x: number; y: number }) => {
   const box = containerRef.value?.getBoundingClientRect();
-  return { x: client.x - (box?.left ?? 0), y: client.y - (box?.top ?? 0) };
+  return { x: vp(client.x - (box?.left ?? 0)), y: vp(client.y - (box?.top ?? 0)) };
 };
 function openNewLinkMenu(from: string, client: { x: number; y: number }, world: Point) {
   menu.value = { kind: 'link-new', ...menuAt(client), wx: world.x, wy: world.y, recordId: from, client: { ...client } };
@@ -1702,7 +1703,7 @@ watch(menu, (m, was) => {
   void nextTick(() => {
     const el = menuRef.value, box = containerRef.value?.getBoundingClientRect();
     if (!el || !box || menu.value !== m || !el.offsetWidth) return;
-    const x = Math.max(4, Math.min(m.x, box.width - el.offsetWidth - 4)), y = Math.max(4, Math.min(m.y, box.height - el.offsetHeight - 4));
+    const x = Math.max(4, Math.min(m.x, vp(box.width) - el.offsetWidth - 4)), y = Math.max(4, Math.min(m.y, vp(box.height) - el.offsetHeight - 4));
     if (x !== m.x || y !== m.y) menu.value = { ...m, x, y };
   });
 });
@@ -1716,7 +1717,7 @@ function openMenu(kind: Menu['kind'], e: MouseEvent, recordId?: string) {
   const box = containerRef.value?.getBoundingClientRect();
   const world = viewport.clientToWorld(e.clientX, e.clientY);
   menu.value = { kind, recordId, wx: world.x, wy: world.y,
-    x: e.clientX - (box?.left ?? 0), y: e.clientY - (box?.top ?? 0) };
+    x: vp(e.clientX - (box?.left ?? 0)), y: vp(e.clientY - (box?.top ?? 0)) };
 }
 /**
  * Close the menu, THEN act — handing the action the menu as it was. The first

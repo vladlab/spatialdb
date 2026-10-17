@@ -144,6 +144,7 @@
 </template>
 
 <script setup lang="ts">
+import { applyUiScale } from './uiScale';
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue';
 import { dismiss, fileDrag, handshake, isDesktop, jobs, listenFileDrops, notice, notices } from './desktop';
 import { runFileDrop } from './tools/fileDrop';
@@ -440,6 +441,7 @@ function onPaletteKey(e: KeyboardEvent) {
   }
 }
 onMounted(() => window.addEventListener('keydown', onPaletteKey));
+applyUiScale();   // the saved UI scale, before anything is measured (uiScale.ts)
 onUnmounted(() => window.removeEventListener('keydown', onPaletteKey));
 
 /* Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y), app-wide — see client/history.ts.

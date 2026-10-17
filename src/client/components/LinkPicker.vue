@@ -96,6 +96,7 @@
 </template>
 
 <script setup lang="ts">
+import { rectVp } from '../uiScale';
 import { computed, inject, nextTick, onMounted, ref, watch } from 'vue';
 import { SCOPE } from '../scope';
 import type { Store } from '../store';
@@ -262,7 +263,7 @@ function onBlur(e?: FocusEvent) {
 }
 
 const pos = computed(() => {
-  const r = props.anchor?.getBoundingClientRect();
+  const r = props.anchor ? rectVp(props.anchor.getBoundingClientRect()) : undefined;   // the page's pixels (uiScale.ts)
   if (!r) return {};
   return { left: `${r.left}px`, top: `${r.top}px`, minWidth: `${Math.max(r.width, 320)}px` };
 });

@@ -14,6 +14,7 @@
 </template>
 
 <script setup lang="ts">
+import { rectVp, vp } from '../uiScale';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 const props = defineProps<{ anchor?: HTMLElement | null; align?: 'left' | 'right' }>();
@@ -28,9 +29,9 @@ const panel = ref<HTMLElement>();
  */
 const size = ref({ w: 0, h: 0 });
 const pos = computed(() => {
-  const r = props.anchor?.getBoundingClientRect();
+  const r = props.anchor ? rectVp(props.anchor.getBoundingClientRect()) : undefined;   // the page's pixels (uiScale.ts)
   if (!r) return {};
-  const M = 6, W = window.innerWidth, H = window.innerHeight;
+  const M = 6, W = vp(window.innerWidth), H = vp(window.innerHeight);
   let left = props.align === 'right' ? r.right - size.value.w : r.left;
   left = Math.max(M, Math.min(left, W - size.value.w - M));
   let top = r.bottom + 2;

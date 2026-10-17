@@ -6,6 +6,7 @@
  * mutation lands on release.
  */
 
+import { vp } from '../uiScale';
 import { ref, reactive, computed } from 'vue';
 import type { Mutation } from '../../contract/mutations.js';
 import { placementKey, type PlacementRow, type State } from '../state.js';
@@ -87,8 +88,8 @@ export function useCardResize(deps: ResizeDeps) {
     const e = pending;
     if (!e || !target) return;
     const scale = deps.getTransform().scale || 1;
-    const dx = (e.clientX - startClient.x) / scale;
-    const dy = (e.clientY - startClient.y) / scale;
+    const dx = vp(e.clientX - startClient.x) / scale;
+    const dy = vp(e.clientY - startClient.y) / scale;
 
     if (handle.includes('e')) target.w = Math.max(MIN_W, Math.round(startW + dx));
     if (handle.includes('s')) target.h = Math.max(MIN_H, Math.round(startH + dy));

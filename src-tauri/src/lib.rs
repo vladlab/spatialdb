@@ -102,6 +102,7 @@ fn grant(app: &AppHandle, server: &url::Url) -> Result<(), String> {
             "core:default",
             "core:event:default",
             "core:webview:allow-internal-toggle-devtools",
+            "core:webview:allow-set-webview-zoom",      // the UI size setting (client/uiScale.ts) is the webview's own zoom here
             "allow-tools-available", "allow-server-url",
             "allow-classify", "allow-analyze", "allow-analyze-path", "allow-reveal",
         ]

@@ -35,6 +35,7 @@
  *  the right trade.
  */
 
+import { vp } from '../uiScale';
 import { ref } from 'vue';
 import type { Mutation } from '../../contract/mutations.js';
 import { placementKey, type PlacementRow, type State } from '../state.js';
@@ -169,8 +170,8 @@ export function useCardDrag(deps: DragDeps) {
     const scale = deps.getTransform().scale || 1;
     // Screen delta ÷ scale: at 50% zoom the pointer moves twice as far on screen
     // as the card should move in world space.
-    const dx = (e.clientX - startClient.x) / scale;
-    const dy = (e.clientY - startClient.y) / scale;
+    const dx = vp(e.clientX - startClient.x) / scale;
+    const dy = vp(e.clientY - startClient.y) / scale;
 
     // Straight into local state — NOT through store.mutate(). See the header.
     for (const it of items) {

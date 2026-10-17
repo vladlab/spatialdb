@@ -31,6 +31,15 @@
       <section class="prefs">
         <h3>This browser</h3>
         <label class="pref"><input type="checkbox" v-model="scopedFirst" /> In the tree, list the tables that belong to a project above the rest (each group alphabetical)</label>
+        <!-- UI SCALE (uiScale.ts): every pixel of the app, for this monitor. Per browser, like
+             the rest of this section — a 4K desk and a laptop should not fight over it. -->
+        <div class="pref scale">
+          <span>UI size</span>
+          <input class="scale-range" type="range" :min="UI_SCALE_MIN" :max="UI_SCALE_MAX" :step="UI_SCALE_STEP" v-model.number="uiScale" />
+          <span class="scale-pct">{{ Math.round(uiScale * 100) }}%</span>
+          <button v-if="uiScale !== 1" class="plain mini scale-reset" @click="uiScale = 1">reset</button>
+          <span class="hint">text, rows, cards, everything — for the monitor this browser is on</span>
+        </div>
       </section>
 
       <section v-if="me?.role === 'admin'" class="users">
@@ -102,6 +111,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { askFull } from '../dialogs';
 import { scopedFirst } from '../prefs';
+import { UI_SCALE_MAX, UI_SCALE_MIN, UI_SCALE_STEP, uiScale } from '../uiScale';
 import type { Store } from '../store';
 import { TOOL_NAMES } from '../../contract/tools';
 
@@ -209,5 +219,9 @@ tr.done td { opacity: 0.5; }
 .add-user input { flex: 1 1 120px; }
 .do .plain + .plain { margin-left: 4px; }
 .pref { display: flex; gap: 8px; align-items: baseline; font-size: 13px; cursor: pointer; }
+.pref.scale { align-items: center; cursor: default; flex-wrap: wrap; }
+.scale-range { width: 220px; accent-color: var(--accent); }
+.scale-pct { min-width: 40px; font-variant-numeric: tabular-nums; }
+.pref.scale .hint { color: var(--text-muted); font-size: 11px; flex-basis: 100%; }
 .pref input { margin: 0; }
 </style>
