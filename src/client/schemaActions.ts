@@ -430,7 +430,9 @@ export function useSchemaActions(store: Store) {
     for (const out of outputs) {
       if (have.has(out.key)) continue;
       const id = crypto.randomUUID();
-      const [type, shape] = out.type.split(':');
+      let [type, shape] = out.type.split(':');
+      // A text output meant to be READ at length (ffprobe's raw dump) gets a long-text column.
+      if (type === 'text' && out.key === 'raw_dump') type = 'long_text';
       const options: Record<string, unknown> = {};
       if (shape) options.shape = shape;
       if (out.vocabulary) options.vocabulary = out.vocabulary;
