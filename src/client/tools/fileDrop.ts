@@ -85,7 +85,7 @@ export function immediateOutputs(analyzer: string, u: Unit): Record<string, unkn
 const CANONICAL: ReadonlyArray<{ key: string; name: string; vocabulary: string; raw: Record<string, string> }> = [
   { key: 'codec',           name: 'Codec',       vocabulary: 'video_codec',     raw: { codec: 'video_codec', profile: 'codec_profile' } },
   { key: 'audio_codec',     name: 'Audio codec', vocabulary: 'audio_codec',     raw: { codec: 'audio_codec_raw' } },
-  { key: 'container',       name: 'Container',   vocabulary: 'container',       raw: { format: 'container_raw', brand: 'major_brand', extension: 'extension' } },
+  { key: 'container',       name: 'Container',   vocabulary: 'container',       raw: { format: 'container_raw', brand: 'major_brand', extension: 'extension', op: 'mxf_op' } },
   { key: 'color_primaries', name: 'Primaries',   vocabulary: 'color_primaries', raw: { primaries: 'color_primaries_raw' } },
   { key: 'color_transfer',  name: 'Transfer',    vocabulary: 'color_transfer',  raw: { transfer: 'color_transfer_raw' } },
   { key: 'color_matrix',    name: 'Matrix',      vocabulary: 'color_matrix',    raw: { matrix: 'color_matrix_raw' } },

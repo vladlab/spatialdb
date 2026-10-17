@@ -138,11 +138,21 @@ export const AUDIO_CODECS: readonly VocabEntry[] = [
  * enough to have no `ftyp` at all (brand absent, "") is QuickTime too. An unknown
  * brand in that family matches nothing: say so, do not guess. Matroska and WebM
  * share a `format_name` and are told apart by `extension`.
+ *
+ * MXF's operational pattern — OP1a (one file, all essence; what broadcasters take)
+ * vs OP-Atom (one essence track per file; Avid's) — is `op`, decoded by the probe
+ * (probe.rs `mxf_op`) from the `operational_pattern_ul` tag ffprobe reports: byte
+ * 13 of the UL is the pattern (0x01 OP1 … 0x03 OP3, 0x10 OP-Atom) and byte 14 the
+ * letter (0x01 a, 0x02 b, 0x03 c). Plain "MXF" is the fallback for a pattern the
+ * entries do not name, or a file whose UL ffprobe did not report.
  */
 export const CONTAINERS: readonly VocabEntry[] = [
   { id: 'quicktime', name: 'QuickTime', raw: { format: 'mov,mp4,m4a,3gp,3g2,mj2', brand: ['qt', ''] } },
   { id: 'mp4',       name: 'MP4',       raw: { format: 'mov,mp4,m4a,3gp,3g2,mj2', brand: ['isom', 'iso2', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'mp71', 'avc1', 'm4v', 'm4a', 'dash', 'msnv', 'f4v', 'mp4v', 'hvc1', 'av01'] } },
-  { id: 'mxf',       name: 'MXF',       raw: { format: 'mxf' } },
+  { id: 'mxf_op1a',  name: 'MXF OP1a',  raw: { format: 'mxf', op: 'OP1a' } },
+  { id: 'mxf_op1b',  name: 'MXF OP1b',  raw: { format: 'mxf', op: 'OP1b' } },
+  { id: 'mxf_opatom', name: 'MXF OP-Atom', raw: { format: 'mxf', op: 'OP-Atom' } },
+  { id: 'mxf',       name: 'MXF',       raw: { format: 'mxf' } },                       // any other pattern, or none reported
   { id: 'wav',       name: 'WAV',       raw: { format: 'wav' } },                       // RF64 reports as wav too
   { id: 'w64',       name: 'Wave64',    raw: { format: 'w64' } },
   { id: 'aiff',      name: 'AIFF',      raw: { format: 'aiff' } },
@@ -214,7 +224,7 @@ export const COLOR_MATRICES: readonly VocabEntry[] = [
 export const VOCABULARY_TABLES: Record<string, Vocabulary> = {
   video_codec:      { name: 'Video codec',      keys: ['codec', 'profile'],               entries: VIDEO_CODECS },
   audio_codec:      { name: 'Audio codec',      keys: ['codec'],                          entries: AUDIO_CODECS },
-  container:        { name: 'Container',        keys: ['format', 'brand', 'extension'],   entries: CONTAINERS },
+  container:        { name: 'Container',        keys: ['format', 'brand', 'extension', 'op'], entries: CONTAINERS },
   color_primaries:  { name: 'Colour primaries', keys: ['primaries'],                      entries: COLOR_PRIMARIES },
   color_transfer:   { name: 'Transfer function', keys: ['transfer'],                      entries: COLOR_TRANSFERS },
   color_matrix:     { name: 'Colour matrix',    keys: ['matrix'],                         entries: COLOR_MATRICES },

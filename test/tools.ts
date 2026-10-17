@@ -107,6 +107,9 @@ async function main() {
       lookup('container', { format: qt, brand: 'qt  ', extension: 'mov' })?.name === 'QuickTime' && lookup('container', { format: qt, brand: 'mp42', extension: 'mp4' })?.name === 'MP4'
       && lookup('container', { format: qt, brand: 'isom', extension: 'mov' })?.name === 'MP4' && lookup('container', { format: qt, extension: 'mov' })?.name === 'QuickTime');
     check('…an unknown brand in that family matches NOTHING — never a guess', lookup('container', { format: qt, brand: 'XAVC', extension: 'mp4' }) === undefined);
+    check('…an MXF is split by its operational pattern (probe.rs decodes the OP UL into `op`): OP1a, OP1b, OP-Atom — and plain "MXF" when the pattern is unlisted or unreported (Oct 17)',
+      lookup('container', { format: 'mxf', op: 'OP1a', extension: 'mxf' })?.name === 'MXF OP1a' && lookup('container', { format: 'mxf', op: 'OP-Atom' })?.name === 'MXF OP-Atom' && lookup('container', { format: 'mxf', op: 'OP1b' })?.name === 'MXF OP1b'
+      && lookup('container', { format: 'mxf', op: 'OP2a' })?.name === 'MXF' && lookup('container', { format: 'mxf' })?.name === 'MXF');
     check('…Matroska and WebM share a format name and are told apart by extension; mxf, wav, image pipes', lookup('container', { format: 'matroska,webm', extension: 'mkv' })?.name === 'Matroska' && lookup('container', { format: 'matroska,webm', extension: 'webm' })?.name === 'WebM'
       && lookup('container', { format: 'mxf' })?.name === 'MXF' && lookup('container', { format: 'wav', extension: 'wav' })?.name === 'WAV' && lookup('container', { format: 'exr_pipe', extension: 'exr' })?.name === 'Image file(s)' && lookup('container', { format: 'matroska,webm' }) === undefined);
     check('colour: primaries, transfer and matrix are three lists, named as a spec names them', lookup('color_primaries', { primaries: 'bt2020' })?.name === 'Rec. 2020' && lookup('color_primaries', { primaries: 'smpte432' })?.name === 'P3-D65'

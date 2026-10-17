@@ -80,27 +80,30 @@ ffprobe output: `Audio codec`. Raw keys read: `codec`.
 
 ## Container (`container`)
 
-ffprobe output: `Container`. Raw keys read: `format`, `brand`, `extension`.
+ffprobe output: `Container`. Raw keys read: `format`, `brand`, `extension`, `op`.
 
-| Canonical name | id | format | brand | extension |
-|---|---|---|---|---|
-| QuickTime | `quicktime` | `mov,mp4,m4a,3gp,3g2,mj2` | `qt` / *(absent)* | *any* |
-| MP4 | `mp4` | `mov,mp4,m4a,3gp,3g2,mj2` | `isom` / `iso2` / `iso4` / `iso5` / `iso6` / `mp41` / `mp42` / `mp71` / `avc1` / `m4v` / `m4a` / `dash` / `msnv` / `f4v` / `mp4v` / `hvc1` / `av01` | *any* |
-| MXF | `mxf` | `mxf` | *any* | *any* |
-| WAV | `wav` | `wav` | *any* | *any* |
-| Wave64 | `w64` | `w64` | *any* | *any* |
-| AIFF | `aiff` | `aiff` | *any* | *any* |
-| FLAC | `flac` | `flac` | *any* | *any* |
-| MP3 | `mp3` | `mp3` | *any* | *any* |
-| AC-3 elementary | `ac3` | `ac3` | *any* | *any* |
-| E-AC-3 elementary | `eac3` | `eac3` | *any* | *any* |
-| Matroska | `matroska` | `matroska,webm` | *any* | `mkv` / `mka` / `mks` / `mk3d` |
-| WebM | `webm` | `matroska,webm` | *any* | `webm` |
-| AVI | `avi` | `avi` | *any* | *any* |
-| MPEG-TS | `mpegts` | `mpegts` | *any* | *any* |
-| MPEG-PS | `mpegps` | `mpeg` | *any* | *any* |
-| Ogg | `ogg` | `ogg` | *any* | *any* |
-| Image file(s) | `images` | `image2` / `image2pipe` / `exr_pipe` / `dpx_pipe` / `tiff_pipe` / `png_pipe` / `jpeg_pipe` / `bmp_pipe` / `webp_pipe` / `j2k_pipe` / `gif` | *any* | *any* |
+| Canonical name | id | format | brand | extension | op |
+|---|---|---|---|---|---|
+| QuickTime | `quicktime` | `mov,mp4,m4a,3gp,3g2,mj2` | `qt` / *(absent)* | *any* | *any* |
+| MP4 | `mp4` | `mov,mp4,m4a,3gp,3g2,mj2` | `isom` / `iso2` / `iso4` / `iso5` / `iso6` / `mp41` / `mp42` / `mp71` / `avc1` / `m4v` / `m4a` / `dash` / `msnv` / `f4v` / `mp4v` / `hvc1` / `av01` | *any* | *any* |
+| MXF OP1a | `mxf_op1a` | `mxf` | *any* | *any* | `OP1a` |
+| MXF OP1b | `mxf_op1b` | `mxf` | *any* | *any* | `OP1b` |
+| MXF OP-Atom | `mxf_opatom` | `mxf` | *any* | *any* | `OP-Atom` |
+| MXF | `mxf` | `mxf` | *any* | *any* | *any* |
+| WAV | `wav` | `wav` | *any* | *any* | *any* |
+| Wave64 | `w64` | `w64` | *any* | *any* | *any* |
+| AIFF | `aiff` | `aiff` | *any* | *any* | *any* |
+| FLAC | `flac` | `flac` | *any* | *any* | *any* |
+| MP3 | `mp3` | `mp3` | *any* | *any* | *any* |
+| AC-3 elementary | `ac3` | `ac3` | *any* | *any* | *any* |
+| E-AC-3 elementary | `eac3` | `eac3` | *any* | *any* | *any* |
+| Matroska | `matroska` | `matroska,webm` | *any* | `mkv` / `mka` / `mks` / `mk3d` | *any* |
+| WebM | `webm` | `matroska,webm` | *any* | `webm` | *any* |
+| AVI | `avi` | `avi` | *any* | *any* | *any* |
+| MPEG-TS | `mpegts` | `mpegts` | *any* | *any* | *any* |
+| MPEG-PS | `mpegps` | `mpeg` | *any* | *any* | *any* |
+| Ogg | `ogg` | `ogg` | *any* | *any* | *any* |
+| Image file(s) | `images` | `image2` / `image2pipe` / `exr_pipe` / `dpx_pipe` / `tiff_pipe` / `png_pipe` / `jpeg_pipe` / `bmp_pipe` / `webp_pipe` / `j2k_pipe` / `gif` | *any* | *any* | *any* |
 
 ## Colour primaries (`color_primaries`)
 

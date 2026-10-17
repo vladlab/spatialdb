@@ -1112,8 +1112,11 @@ table is the point now.) Built as planned, in his order:
 6. `VOCABULARIES.md`, generated from the code (`npm run vocab:doc`), kept current by
    `test/tools.ts` — the raw → canonical dictionary as a page.
 
-Known edges: ffprobe mostly says just "mxf", so a file lands on a generic MXF row
-while a spec says OP1a — the compare honestly flags it; the OP is his to set by hand.
+Known edges (the MXF one is closed, Oct 17: ffprobe does carry the operational
+pattern, as the `operational_pattern_ul` format tag; probe.rs decodes it into the
+`mxf_op` raw output — "OP1a", "OP1b", "OP-Atom" — and the container lookup reads it,
+so a drop lands on "MXF OP1a" / "MXF OP-Atom"; plain "MXF" only when the UL names a
+pattern the list does not, or is missing. Desktop rebuild needed.)
 `junction` on `table.update` still has no undo inverse (its first write would invert
 to `{}`, which the server refuses). The convert action does not touch compare pairs
 that name the old select.

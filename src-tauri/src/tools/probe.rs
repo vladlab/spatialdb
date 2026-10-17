@@ -102,6 +102,8 @@ pub fn probe(unit: &Unit) -> Result<Probed, String> {
     // side (contract/vocab.ts) from the format name, the ftyp brand and the extension.
     if let Some(name) = format["format_name"].as_str() { o.insert("container_raw".into(), json!(name)); }
     if let Some(brand) = format["tags"]["major_brand"].as_str() { if !brand.trim().is_empty() { o.insert("major_brand".into(), json!(brand)); } }
+    // An MXF's operational pattern, from the UL ffprobe reports off the partition pack.
+    if let Some(op) = format["tags"]["operational_pattern_ul"].as_str().and_then(mxf_op) { o.insert("mxf_op".into(), json!(op)); }
 
     if let Some(s) = first_stream(&v, "video") {
         video(&mut o, s, format, unit.kind == "sequence");
@@ -132,6 +134,28 @@ pub fn probe(unit: &Unit) -> Result<Probed, String> {
         .map(str::to_string);
     if let Some(tc) = tc { o.insert("start_timecode".into(), json!(tc)); }
     Ok(Probed { outputs: o })
+}
+
+/// The operational pattern named by an MXF's OP UL (SMPTE 377-1 §8.2 / ST 390 for
+/// OP-Atom), as ffprobe prints it: "060e2b34.04010101.0d010201.01010900". Byte 13 is
+/// the pattern — 0x01..0x03 are the generalised OP1…OP3, 0x10 is OP-Atom — and for
+/// the generalised ones byte 14 is the item complexity: 0x01 a, 0x02 b, 0x03 c. So
+/// "…0d010201.01010900" is OP1a and "…0d010201.10030000" OP-Atom. None for a UL
+/// that is not an OP UL at all; what is not understood is not guessed.
+fn mxf_op(ul: &str) -> Option<String> {
+    let hex: String = ul.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+    if hex.len() < 28 { return None; }
+    let byte = |i: usize| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok();
+    // bytes 9..12 say "operational pattern" (0d 01 02 01); anything else is some other UL
+    if (byte(8)?, byte(9)?, byte(10)?, byte(11)?) != (0x0d, 0x01, 0x02, 0x01) { return None; }
+    match byte(12)? {
+        0x10 => Some("OP-Atom".to_string()),
+        n @ 0x01..=0x03 => {
+            let letter = match byte(13)? { 0x01 => "a", 0x02 => "b", 0x03 => "c", _ => return Some(format!("OP{n}")) };
+            Some(format!("OP{n}{letter}"))
+        }
+        _ => None,
+    }
 }
 
 fn streams(v: &Value) -> Vec<&Value> { v["streams"].as_array().map(|a| a.iter().collect()).unwrap_or_default() }
@@ -312,6 +336,16 @@ mod tests {
         assert!(!o.contains_key("video_bitrate"));
         video(&mut o, &json!({ "bit_rate": "220000000" }), &json!({}), false);
         assert_eq!(o["video_bitrate"], 220000000u64);
+    }
+    #[test] fn operational_pattern() {
+        // as ffprobe printed them for files from its own OP1a and OPAtom muxers
+        assert_eq!(mxf_op("060e2b34.04010101.0d010201.01010900").as_deref(), Some("OP1a"));
+        assert_eq!(mxf_op("060e2b34.04010102.0d010201.10030000").as_deref(), Some("OP-Atom"));
+        assert_eq!(mxf_op("060e2b34.04010101.0d010201.01020900").as_deref(), Some("OP1b"));
+        assert_eq!(mxf_op("060e2b34.04010101.0d010201.02010900").as_deref(), Some("OP2a"));
+        assert_eq!(mxf_op("060e2b34.04010101.0d010201.01090900").as_deref(), Some("OP1"));   // an unknown letter: the pattern alone
+        assert_eq!(mxf_op("060e2b34.04010101.0d010101.01010900"), None);   // not an OP UL
+        assert_eq!(mxf_op("garbage"), None);
     }
     #[test] fn labels() {
         assert_eq!(channel_labels("5.1", 6), vec!["L", "R", "C", "LFE", "Ls", "Rs"]);

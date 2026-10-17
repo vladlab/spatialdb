@@ -168,9 +168,10 @@ const FFPROBE: Analyzer = {
   outputs: [
     { key: 'ffprobe.version',  name: 'ffprobe version', type: 'text',   note: 'provenance: which ffprobe wrote the rest' },
     { key: 'raw_dump',         name: 'Raw dump',        type: 'text',   note: 'the whole of what ffprobe said (-show_format -show_streams, as JSON) — a long-text field; the fallback for anything the outputs below do not carry. SINGLE FILES only: a sequence\'s frame or a set\'s members get none' },
-    { key: 'container',        name: 'Container',       type: 'select', vocabulary: 'container', choices: VOCABULARIES.container.choices, note: 'the CANONICAL name, looked up from the raw format name, brand and extension in contract/vocab.ts: "QuickTime", "MP4", "MXF"; absent when the table has no entry' },
+    { key: 'container',        name: 'Container',       type: 'select', vocabulary: 'container', choices: VOCABULARIES.container.choices, note: 'the CANONICAL name, looked up from the raw format name, brand, extension and MXF pattern in contract/vocab.ts: "QuickTime", "MP4", "MXF OP1a", "MXF OP-Atom"; absent when the table has no entry' },
     { key: 'container_raw',    name: 'Container (raw)', type: 'text',   note: 'ffprobe\'s format_name, whole: "mov,mp4,m4a,3gp,3g2,mj2" (the QuickTime family — it cannot tell .mov from .mp4; the brand can), "mxf", "wav"' },
     { key: 'major_brand',      name: 'Brand (raw)',     type: 'text',   note: 'the ftyp atom\'s major_brand: "qt  " is QuickTime, "isom"/"mp42" are MP4; absent when the file has no ftyp' },
+    { key: 'mxf_op',           name: 'MXF pattern (raw)', type: 'text', note: 'the operational pattern decoded from the MXF\'s operational_pattern_ul tag: "OP1a", "OP1b", "OP-Atom"; absent for anything but an MXF' },
     { key: 'codec',            name: 'Codec',           type: 'select', vocabulary: 'video_codec', choices: VOCABULARIES.video_codec.choices, note: 'the CANONICAL name, looked up from codec + profile in contract/vocab.ts: "ProRes 4444 XQ", "H.264"; absent when the table has no entry' },
     { key: 'video_codec',      name: 'Video codec (raw)', type: 'text', note: 'as ffprobe says it: "prores", "dnxhd", "h264", "exr"' },
     { key: 'codec_profile',    name: 'Codec profile (raw)', type: 'text', note: 'as ffprobe says it: "4444 XQ", "HQ", "High"' },
