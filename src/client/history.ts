@@ -155,6 +155,12 @@ export function inverseOf(state: State, m: Mutation, queuedId: string): Inverse 
         // The sections its fields are grouped into (contract/fieldSections.ts): replaced
         // whole, so the inverse is the whole previous list.
         ...(m.fieldSections !== undefined ? { fieldSections: t.field_sections ?? [] } : {}),
+        // The desktop tools' recipes (contract/tools.ts) and the utility tick (sql/018):
+        // replaced whole too, so the inverse is the whole previous value. Without the
+        // first, undoing a select-to-link conversion left its recipe pointing at a
+        // field the undo had just deleted.
+        ...(m.tools !== undefined ? { tools: (t.tools ?? {}) as never } : {}),
+        ...(m.utility !== undefined ? { utility: t.utility === true } : {}),
       });
     }
 

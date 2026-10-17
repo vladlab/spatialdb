@@ -40,6 +40,10 @@
              @change="actions.setChoices(field.id, ($event.target as HTMLInputElement).value)"
              @keydown.enter="($event.target as HTMLInputElement).blur()" />
       <span v-else class="meta vocab-note" :title="choicesOf(field).join(', ')">{{ choicesOf(field).length }} choices from the built-in list — grows with the app, not editable here</span>
+      <!-- The one type change there is (Oct 17): the choices become a TABLE other tables
+           can link to as well, and a single link stands here; the select stays until deleted. -->
+      <button v-if="field.type === 'select'" class="convert-link" title="Make a table of these choices (a Name and an Aliases column, ticked utility) and put a single link to it in this field's place, every record linked to the row of its value. The File drop output that writes this field writes the link instead. This select is kept, renamed, until you delete it. One Ctrl+Z undoes it all."
+              @click="actions.convertSelectToLink(field.id)">convert to a link…</button>
     </template>
 
     <!-- LINK fields: how their relationships are drawn, on EVERY canvas. -->
@@ -169,6 +173,7 @@ function onVocabulary(id: string) {
 .field-settings.row .meta { width: 140px; }
 .field-settings.row .choices { flex: 1; }
 .vocab { font-size: 11px; }
+.convert-link { font-size: 11px; }
 .vocab-note { flex: 1; }
 .field-settings.row .buttons { margin-left: auto; }
 /* Text inputs only. Applied to every <input>, this gave checkboxes padding and a

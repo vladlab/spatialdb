@@ -22,13 +22,14 @@ import { isMembership } from '../contract/scope';
 import { shapeOptionError } from '../contract/shapes';
 import { SYSTEM_FIELD_TYPES } from '../contract/systemFields';
 import { choicesOf as contractChoices } from '../contract/values';
-import { vocabularyOptionError } from '../contract/vocab';
+import { ALIASES_KEY, vocabularyOptionError } from '../contract/vocab';
 import { REQUIRED, analyzerOf, defaultRecipe, fieldAccepts, toolsProblem, type Output, type TablesTools } from '../contract/tools';
 import { fieldsOf, recordsOf, tablesSorted, type FieldRow } from './state';
+import { notice } from './desktop';
 import { junctionOf, junctionProblem, type JunctionConfig } from '../contract/junction';
 import { linkMatchError, type MatchPair } from '../contract/match';
 import {
-  addSection as arrAddSection, appendFields, arrangementOf, fieldFirst, fieldSectionsOf, fieldSectionsProblem, flatOrder,
+  addSection as arrAddSection, appendFields, arrangementOf, fieldFirst, fieldSectionsOf, fieldSectionsProblem, flatOrder, placeField,
   removeSection as arrRemoveSection, sameSections, stepField, updateSection as arrUpdateSection, type Arrangement,
 } from '../contract/fieldSections';
 import type { Store } from './store';
@@ -206,6 +207,87 @@ export function useSchemaActions(store: Store) {
     if (tableA === tableB) joinLastSection(tableA, [colA, colB]);
     else { joinLastSection(tableA, [colA]); joinLastSection(tableB, [colB]); }
     return id;
+  }
+
+
+  /* ── a select into a link: a vocabulary table (Oct 17) ───────────────────────
+
+     The one type change allowed, and it is not a change: "convert into a NEW field,
+     leaving the original until you delete it" (FieldSettings.vue's own rule). A
+     select's choices become a TABLE — one row per choice, and per value stored under
+     the select that is not a choice (a bound list may have shrunk), with a Name and
+     an Aliases column, ticked utility — and a single link to it stands where the
+     select stood, every record linked to the row of its value. The recipe's output
+     that wrote the select now writes the link. One synchronous run: one Ctrl+Z.
+     The select stays, renamed "(old select)", so nothing is lost until someone has
+     looked and deletes it — compare pairs and views that named it still do. */
+  async function convertSelectToLink(fieldId: string): Promise<string | null> {
+    const f = store.state.fields.get(fieldId);
+    if (!f || f.type !== 'select') return null;
+    const tableId = f.table_id, name = f.name, oldKey = f.key;
+    const r = await askFull({
+      title: `Convert “${f.name}” into a link`, label: 'Name of the new table', initial: f.name, okText: 'Convert',
+      body: `A new table gets one row per choice (a Name and an Aliases column), ticked “utility” so it folds away in the tree. `
+        + `A single link to it takes this field's place and every record is linked to the row of its value; a File drop output mapped here is re-pointed. `
+        + `This select stays as “${f.name} (old select)” until you delete it. One Ctrl+Z undoes the lot.`,
+    });
+    const tableName = r?.value.trim();
+    if (!tableName) return null;
+    // Every record, so every stored value gets its row and its link.
+    await store.loadTable(tableId);
+    const have = new Set(fields(tableId).map((x) => x.key));
+    const base = deriveKey(name) || 'link';
+    let key = base; for (let i = 2; have.has(key); i++) key = `${base}_${i}`;
+    const values: string[] = [...(contractChoices(f.options) ?? [])];
+    for (const rec of recordsOf(store.state, tableId)) { const v = rec.data[oldKey]; if (typeof v === 'string' && v.trim() && !values.includes(v)) values.push(v); }
+
+    // ── one synchronous run from here ──
+    const newTable = crypto.randomUUID();
+    const tpos = Math.max(0, ...tablesSorted(store.state).map((t) => t.position ?? 0)) + 1;
+    store.mutate({ type: 'table.create', id: newTable, name: tableName, singularName: '', color: '', icon: '' });
+    const nameField = crypto.randomUUID(), aliasField = crypto.randomUUID();
+    store.mutate({ type: 'field.create', id: nameField, tableId: newTable, name: 'Name', key: 'name', fieldType: 'text', options: {}, required: false });
+    store.mutate({ type: 'field.update', id: nameField, position: 0 });
+    store.mutate({ type: 'field.create', id: aliasField, tableId: newTable, name: 'Aliases', key: ALIASES_KEY, fieldType: 'long_text', options: {}, required: false });
+    store.mutate({ type: 'field.update', id: aliasField, position: 1 });
+    store.mutate({ type: 'table.update', id: newTable, position: tpos, utility: true });
+    const rowOf = new Map<string, string>();
+    for (const v of values) { const id = crypto.randomUUID(); rowOf.set(v, id); store.mutate({ type: 'record.create', id, tableId: newTable, data: { name: v } }); }
+
+    const linkId = crypto.randomUUID();
+    store.mutate({ type: 'field.create', id: linkId, tableId, name, key, fieldType: 'link', options: { target_table_id: newTable, single: true }, required: false });
+    store.mutate({ type: 'field.update', id: linkId, position: Math.max(0, ...fields(tableId).map((x) => x.position)) + 1 });
+    store.mutate({ type: 'field.update', id: fieldId, name: `${name} (old select)` });
+    // In the select's place: the same section, right after it.
+    const a = arrangement(tableId);
+    const sec = a.sections.find((s) => s.fields.includes(fieldId));
+    const group = sec ? sec.fields : a.top;
+    const after = group[group.indexOf(fieldId) + 1] ?? null;
+    setArrangement(tableId, placeField(a, linkId, sec?.id ?? null, after === linkId ? null : after), true);
+    pairLink(linkId, tableId, newTable, name);
+    for (const rec of recordsOf(store.state, tableId)) {
+      const v = rec.data[oldKey];
+      const row = typeof v === 'string' ? rowOf.get(v) : undefined;
+      if (row) store.mutate({ type: 'link.add', id: crypto.randomUUID(), fieldId: linkId, fromRecord: rec.id, toRecord: row });
+    }
+    // The recipe: an output that wrote the select writes the link now — when it may
+    // (a vocabulary output; "media" into a link is refused by the rule both sides run).
+    const t = store.state.tables.get(tableId);
+    const tools = t?.tools as TablesTools | undefined;
+    if (tools?.file_drop) {
+      let changed = false;
+      const steps = tools.file_drop.steps.map((step) => {
+        const map = { ...step.map };
+        for (const [k, id] of Object.entries(map)) {
+          const out = analyzerOf(step.analyzer)?.outputs.find((o) => o.key === k);
+          if (id === fieldId && out && fieldAccepts(out, { id: linkId, type: 'link', options: { target_table_id: newTable } })) { map[k] = linkId; changed = true; }
+        }
+        return { ...step, map };
+      });
+      if (changed) store.mutate({ type: 'table.update', id: tableId, tools: { ...tools, file_drop: { ...tools.file_drop, steps } } });
+    }
+    notice(`“${name}” is a link to ${tableName} now (${values.length} row${values.length === 1 ? '' : 's'}); the old select is kept as “${name} (old select)” — delete it once you have looked`);
+    return newTable;
   }
 
   function renameTable(id: string, rawName: string) {
@@ -694,7 +776,7 @@ export function useSchemaActions(store: Store) {
   }
 
   return {
-    createTable, createJunction, renameTable, deleteTable, setJunction,
+    createTable, createJunction, renameTable, deleteTable, setJunction, convertSelectToLink,
     draftError, createField, renameField, setChoices, moveField, reorderFields, makePrimary, isPrimary,
     arrangement, setArrangement, addSection, updateSection, removeSection,
     canBePrimary, deleteField,
