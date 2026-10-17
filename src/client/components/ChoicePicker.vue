@@ -4,10 +4,16 @@
   give up. Used by CellEditor for select and multi_select, in the grid and the tray,
   so a vocabulary of a hundred codecs is as quick to set as a yes/no.
 
-  It owns the keys that MEAN something inside the list (arrows, Enter, Escape) and
-  lets everything else — Tab, in particular — bubble to CellEditor, which knows how
-  to leave a cell. On Tab it first picks the highlighted choice (synchronously, so
-  the parent's handler sees the new draft).
+  It owns the keys that MEAN something inside the list (arrows, Enter, Escape, and
+  Tab when there is something to pick). A pick says HOW the edit should end — the
+  `exit` of CellEditor's contract — so Enter moves down and Tab moves right, as they
+  do in every other cell; a mouse pick ends it in place ('none'). Tab with nothing
+  to pick (the highlight is on the current value, nothing typed) bubbles to
+  CellEditor, which leaves the cell with the draft unchanged.
+
+  A mouse pick STOPS its mousedown. The grid opens an editor on "the selected cell,
+  clicked again": the pick closed the editor, the same mousedown reached the cell,
+  and it reopened one — empty — over the value just written (Oct 17).
 -->
 <template>
   <div class="cp">
@@ -18,7 +24,7 @@
          positioned inside them was cut to two rows or hidden outright. -->
     <ul v-if="ranked.length" class="cp-list" role="listbox" :style="listPos">
       <li v-for="(c, i) in ranked.slice(0, 40)" :key="c" class="cp-item" :class="{ hi: i === hi, current: c === current }" role="option"
-          @mousedown.prevent="pick(c)" @mousemove="hi = i">{{ c }}<span v-if="c === current" class="cp-tick">✓</span></li>
+          @mousedown.prevent.stop="pick(c, 'none')" @mousemove="hi = i">{{ c }}<span v-if="c === current" class="cp-tick">✓</span></li>
     </ul>
     <p v-else class="cp-none" :style="listPos">{{ query ? 'no choice matches' : 'no choices' }}</p>
   </div>
@@ -36,7 +42,8 @@ const props = defineProps<{
   seed?: string;
   placeholder?: string;
 }>();
-const emit = defineEmits<{ pick: [value: string]; escape: []; blur: [] }>();
+export type PickExit = 'down' | 'right' | 'left' | 'none';
+const emit = defineEmits<{ pick: [value: string, exit: PickExit]; escape: []; blur: [] }>();
 
 const input = ref<HTMLInputElement>();
 const query = ref(props.seed ?? '');
@@ -60,7 +67,7 @@ onMounted(() => { place(); window.addEventListener('resize', place); window.addE
 onUnmounted(() => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true); });
 watch(query, place);
 
-function pick(c: string) { emit('pick', c); }
+function pick(c: string, exit: PickExit) { emit('pick', c, exit); }
 function onKey(e: KeyboardEvent) {
   switch (e.key) {
     case 'ArrowDown': e.preventDefault(); e.stopPropagation(); hi.value = Math.min(ranked.value.length - 1, hi.value + 1); return;
@@ -68,11 +75,15 @@ function onKey(e: KeyboardEvent) {
     case 'Enter': {
       e.preventDefault(); e.stopPropagation();
       const c = ranked.value[hi.value];
-      if (c) pick(c); else if (!query.value.trim()) emit('pick', '');   // Enter on an empty query with nothing to pick: clear
+      if (c) pick(c, 'down'); else if (!query.value.trim()) pick('', 'down');   // Enter on an empty query with nothing to pick: clear
       return;
     }
     case 'Escape': e.preventDefault(); e.stopPropagation(); emit('escape'); return;
-    case 'Tab': { const c = ranked.value[hi.value]; if (c && (query.value.trim() || c !== props.current)) pick(c); return; }   // then bubbles: the cell moves on
+    case 'Tab': {
+      const c = ranked.value[hi.value];
+      if (c && (query.value.trim() || c !== props.current)) { e.preventDefault(); e.stopPropagation(); pick(c, e.shiftKey ? 'left' : 'right'); }
+      return;   // nothing to pick: bubbles, and the cell moves on with its draft
+    }
     default: return;
   }
 }

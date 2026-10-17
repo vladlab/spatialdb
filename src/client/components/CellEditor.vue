@@ -45,10 +45,11 @@
 
     <!-- SELECT: a searching picker, not a native dropdown (ChoicePicker.vue). A stored
          value that is no longer among the choices stays as the draft, so Enter on an
-         untouched editor does not silently blank it. Picking writes at once and leaves. -->
+         untouched editor does not silently blank it. Picking writes at once and leaves —
+         the way the pick says: Enter down, Tab right, a click in place. -->
     <ChoicePicker v-else-if="field.type === 'select'" ref="el" :choices="choicesWithDraft" :current="draft" :seed="seed"
                   placeholder="type to search choices…" :class="{ invalid }" :title="invalid || undefined"
-                  @pick="(v) => { draft = v; if (commit()) finish('none'); }" @escape="cancelEdit()" @blur="onBlur" />
+                  @pick="(v, exit) => { draft = v; if (commit()) finish(exit); }" @escape="cancelEdit()" @blur="onBlur" />
 
     <template v-else-if="field.type === 'multi_select'">
       <span v-for="c in picked" :key="c" class="chip choice">
@@ -56,7 +57,7 @@
       </span>
       <!-- The same picker over the REMAINING choices; each pick writes and stays open. -->
       <ChoicePicker ref="el" class="chip-add" :choices="remaining" :seed="seed" placeholder="+ add…"
-                    @pick="(v) => { if (v) { toggle(v); (el as any)?.clear?.(); } }" @escape="cancelEdit()" @blur="onBlur" />
+                    @pick="(v, exit) => { if (v) { toggle(v); (el as any)?.clear?.(); } if (exit === 'right' || exit === 'left') finish(exit); }" @escape="cancelEdit()" @blur="onBlur" />
     </template>
 
     <input v-else-if="field.type === 'date'" ref="el" v-model="draft" type="date"
