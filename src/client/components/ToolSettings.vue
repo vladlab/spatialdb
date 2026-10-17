@@ -73,7 +73,7 @@
               <span class="otype">{{ out.type.replace('structured:', '') }}</span>
               <select :value="step.map[out.key] ?? ''" @change="setMap(i, out.key, ($event.target as HTMLSelectElement).value)">
                 <option value="">{{ isHashStep(step) ? '(no column)' : '(not written)' }}</option>
-                <option v-for="f in accepting(out)" :key="f.id" :value="f.id">{{ f.name }}</option>
+                <option v-for="f in accepting(out)" :key="f.id" :value="f.id">{{ f.name }}{{ f.type === 'link' ? ` (link → ${tableNameOf(f.options?.target_table_id)})` : '' }}</option>
               </select>
               <button v-if="!step.map[out.key] && !hasKey(out.key)" class="plain mini" title="make a field for this output and map it" @click="addField(i, out)">+ field</button>
             </div>
@@ -137,6 +137,8 @@ const versionOf = (id: string) => versions.value[id] ?? '';
 const summary = computed(() => recipe.value ? describe(recipe.value, fields.value, versions.value) : []);
 
 const accepting = (out: Output) => fields.value.filter((f) => fieldAccepts(out, f));
+/** A vocabulary output may land in a LINK (contract/vocab.ts `resolveRow`): say where it leads. */
+const tableNameOf = (id: unknown) => props.store.state.tables.get(String(id ?? ''))?.name ?? '?';
 const hasKey = (key: string) => fields.value.some((f) => f.key === key);
 const isRequired = (analyzer: string, key: string) => REQUIRED.some((r) => r.analyzer === analyzer && r.key === key);
 const mediaOn = (step: Step, m: Media) => { const r = runsOnOf(step); return !r.media || r.media.includes(m); };

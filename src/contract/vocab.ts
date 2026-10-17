@@ -15,8 +15,19 @@
  *  on the field, so every bound select — on Files, on Deliverables — grows when
  *  this list grows, and nobody can add a near-duplicate through the UI. That is
  *  deliberate friction: the list is versioned with the code and grows by review.
- *  Not a table, not a link field: a Files table built once should not bring a
- *  utility table along with it (the owner's call, Sept 28).
+ *
+ *  Since Oct 17 the same output may also land in a LINK field, to a table the
+ *  owner maintains ("Containers": one row per container, a Name and an optional
+ *  Aliases column). The code's lookup still does the normalising — raw → canonical
+ *  name — and the drop then finds the ROW with that name (`resolveRow`); what the
+ *  code does not know, a row's aliases can teach it. The owner's reasons (Oct 17):
+ *  a vocabulary has to be SHARED between the spec side (Deliverables) and the file
+ *  side (Files) — two selects each own their choices, one table that both link to
+ *  cannot disagree — and a real project wanted "MXF OP1a" vs "MXF OP-Atom", which
+ *  no built-in list had. (That supersedes the Sept 28 call that a Files table
+ *  should not bring a utility table along; the table is the point now.)
+ *  VOCABULARIES.md lists every entry below with the raw spellings it accepts; it is
+ *  generated from this file (`npm run vocab:doc`) and test/tools.ts keeps it current.
  *
  *  Five lists (Oct 15): the video codec, the audio codec, the container, and the
  *  three colour signals — primaries, transfer, matrix. Each is the same machine:
@@ -254,6 +265,51 @@ export function lookup(vocabulary: string, raw: Record<string, string | undefine
 /** The video codec for ffprobe's `codec_name` + `profile`. */
 export const lookupCodec = (codec: string | undefined, profile: string | undefined): VocabEntry | undefined =>
   codec ? lookup('video_codec', { codec, profile }) : undefined;
+
+/* ── a vocabulary TABLE: finding the row ──────────────────────────────────── */
+
+/**
+ * A row of a vocabulary table as the resolver sees it: its primary text and the
+ * contents of its Aliases column (a text or long-text field whose key is
+ * `aliases`), when it has one.
+ */
+export interface VocabRow { id: string; name: string; aliases?: unknown }
+export const ALIASES_KEY = 'aliases';
+
+/** One alias per line, or comma- or semicolon-separated; trimmed, empties dropped. */
+export function splitAliases(text: unknown): string[] {
+  return typeof text === 'string' ? text.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean) : [];
+}
+/** The raw values as ONE spelling a person can paste into Aliases: "prores / 4444 XQ". */
+export const rawSpelling = (raw: readonly string[]): string => raw.join(' / ');
+
+const norm = (s: string) => s.trim().toLowerCase();
+
+/**
+ * Which row of a vocabulary table a drop should link, given what the code's lookup
+ * made of the raw values (`canonical`, or undefined when the list has no entry) and
+ * the raw values themselves. In order, case-insensitively:
+ *   1. a row NAMED the canonical name — the ordinary case;
+ *   2. a row with the canonical name among its aliases — the owner spells it
+ *      differently ("QuickTime" is their "MOV");
+ *   3. a row with the raw spelling (`rawSpelling`) or any single raw value among its
+ *      aliases — what the code does not know, the table teaches it ("op1a").
+ * Undefined when nothing matches: the drop writes no link and says so, naming the
+ * spelling that would have matched. Never a guess.
+ */
+export function resolveRow<R extends VocabRow>(rows: readonly R[], canonical: string | undefined, raw: readonly string[] = []): R | undefined {
+  const c = canonical === undefined ? undefined : norm(canonical);
+  const aliasesOf = (r: R) => splitAliases(r.aliases).map(norm);
+  if (c !== undefined) {
+    const named = rows.find((r) => norm(r.name) === c);
+    if (named) return named;
+    const aliased = rows.find((r) => aliasesOf(r).includes(c));
+    if (aliased) return aliased;
+  }
+  const spellings = [rawSpelling(raw), ...raw].map(norm).filter(Boolean);
+  if (!spellings.length) return undefined;
+  return rows.find((r) => { const a = aliasesOf(r); return spellings.some((s) => a.includes(s)); });
+}
 
 /** Could these two spellings accept one and the same raw value? */
 function spellingsOverlap(a: string, b: string): boolean {

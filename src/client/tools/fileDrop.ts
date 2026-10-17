@@ -29,10 +29,10 @@
 import type { Store, MutateOptions } from '../store';
 import type { FieldRow, RecordRow } from '../state';
 export type { Step };
-import { fieldsOf, recordsOf } from '../state';
+import { fieldsOf, linkKey, primaryKeys, recordsOf } from '../state';
 import { validateValue } from '../../contract/values';
 import { analyzerOf, intoManifest, isHashStep, isManual, resolveMap, stepApplies, type Recipe, type Step, type TablesTools } from '../../contract/tools';
-import { lookup } from '../../contract/vocab';
+import { ALIASES_KEY, lookup, rawSpelling, resolveRow, type VocabRow } from '../../contract/vocab';
 import { invoke, jobs, notice } from '../desktop';
 import { confirmDialog, askFull } from '../dialogs';
 
@@ -95,12 +95,15 @@ const CANONICAL: ReadonlyArray<{ key: string; name: string; vocabulary: string; 
  * Outputs an analyzer reports RAW, normalised through the contract's vocabularies.
  * An unknown raw value yields no canonical output; the raw value stays, and the
  * caller reports it (`unknown`, keyed by the canonical output so only a table that
- * WANTED the canonical name hears about it).
+ * WANTED the canonical name hears about it). `raws` keeps, per canonical output,
+ * the raw values the lookup read — what a vocabulary TABLE's aliases are matched
+ * against (`routeLinks`), and the spelling a notice tells the person to add.
  */
-export function withVocabulary(analyzer: string, outputs: Record<string, unknown>, unit?: { extension?: string }): { outputs: Record<string, unknown>; unknown: Array<{ key: string; message: string }> } {
+export function withVocabulary(analyzer: string, outputs: Record<string, unknown>, unit?: { extension?: string }): { outputs: Record<string, unknown>; unknown: Array<{ key: string; message: string }>; raws: Record<string, string[]> } {
   const out = { ...outputs };
   const unknown: Array<{ key: string; message: string }> = [];
-  if (analyzer !== 'ffprobe') return { outputs: out, unknown };
+  const raws: Record<string, string[]> = {};
+  if (analyzer !== 'ffprobe') return { outputs: out, unknown, raws };
   for (const c of CANONICAL) {
     const raw: Record<string, string | undefined> = {};
     for (const [k, from] of Object.entries(c.raw)) {
@@ -110,11 +113,101 @@ export function withVocabulary(analyzer: string, outputs: Record<string, unknown
     // Nothing raw to look up (an audio-only file has no primaries): nothing to say.
     const primary = Object.keys(c.raw)[0];
     if (raw[primary] === undefined) continue;
+    raws[c.key] = Object.keys(c.raw).map((k) => raw[k]).filter((v): v is string => v !== undefined);
     const hit = lookup(c.vocabulary, raw);
     if (hit) out[c.key] = hit.name;
     else unknown.push({ key: c.key, message: `${c.name}: ${Object.entries(raw).map(([k, v]) => `${k} ${v}`).join(' / ')} is not in the ${c.vocabulary} vocabulary (contract/vocab.ts)` });
   }
-  return { outputs: out, unknown };
+  return { outputs: out, unknown, raws };
+}
+
+/* ── vocabulary outputs into LINK fields ───────────────────────────────────── */
+
+/** A vocabulary table's rows as the resolver reads them: `rowsOf(tableId)`. */
+export type RowsOf = (tableId: string) => VocabRow[];
+
+export interface RoutedLinks {
+  /** The outputs with the link-routed keys TAKEN OUT (a link is not a value). */
+  outputs: Record<string, unknown>;
+  /** One link per resolved vocabulary output: the field, and the row to link. */
+  links: Array<{ fieldId: string; toRecord: string; name: string }>;
+  /** What found no row — one line each, naming what to add. Keyed by the output. */
+  unresolved: Array<{ key: string; message: string }>;
+}
+
+/**
+ * The canonical outputs that this recipe step maps to LINK fields, resolved to
+ * rows of the fields' target tables (contract/vocab.ts `resolveRow`): by the
+ * canonical name, else by an alias on a row — which is how the table teaches the
+ * drop a spelling the code does not know. Pure: the rows come from `rowsOf`.
+ * `tableNameOf` only names tables in the messages.
+ */
+export function routeLinks(outputs: Record<string, unknown>, raws: Record<string, string[]>, map: Map<string, string>, fields: FieldRow[], rowsOf: RowsOf, tableNameOf: (id: string) => string = (id) => id): RoutedLinks {
+  const byKey = new Map(fields.map((f) => [f.key, f]));
+  const out = { ...outputs };
+  const links: RoutedLinks['links'] = [];
+  const unresolved: RoutedLinks['unresolved'] = [];
+  for (const c of CANONICAL) {
+    const key = map.get(c.key);
+    const field = key === undefined ? undefined : byKey.get(key);
+    if (!field || field.type !== 'link') continue;
+    const canonical = typeof out[c.key] === 'string' ? (out[c.key] as string) : undefined;
+    delete out[c.key];
+    const raw = raws[c.key];
+    if (!raw) continue;                         // nothing was read for it (an audio-only file has no codec): nothing to say
+    const target = String(field.options?.target_table_id ?? '');
+    const row = resolveRow(rowsOf(target), canonical, raw);
+    if (row) { links.push({ fieldId: field.id, toRecord: row.id, name: row.name }); continue; }
+    const table = tableNameOf(target);
+    unresolved.push({ key: c.key, message: canonical !== undefined
+      ? `${field.name}: ${table} has no row named “${canonical}” — add one, or give a row the alias “${canonical}”`
+      : `${field.name}: ${rawSpelling(raw)} is not in the built-in ${c.vocabulary} list, and no ${table} row has it as an alias — add a row with the alias “${rawSpelling(raw)}”` });
+  }
+  return { outputs: out, links, unresolved };
+}
+
+/** The link fields a recipe's vocabulary outputs are mapped to — whose target tables a drop must have loaded. */
+export function vocabularyLinkFields(recipe: Recipe, fields: FieldRow[]): FieldRow[] {
+  const byId = new Map(fields.map((f) => [f.id, f]));
+  const keys = new Set(CANONICAL.map((c) => c.key));
+  const out: FieldRow[] = [];
+  for (const step of recipe.steps) for (const [k, id] of Object.entries(step.map)) {
+    const f = byId.get(id);
+    if (keys.has(k) && f?.type === 'link' && !out.includes(f)) out.push(f);
+  }
+  return out;
+}
+
+/** Load the vocabulary tables a recipe links into, so their rows are there to resolve against. */
+async function loadVocabularyTables(store: Store, recipe: Recipe, fields: FieldRow[]) {
+  for (const f of vocabularyLinkFields(recipe, fields)) {
+    const target = String(f.options?.target_table_id ?? '');
+    if (store.state.tables.has(target)) await store.loadTable(target);
+  }
+}
+
+/** A table's rows as `resolveRow` reads them: the primary text and the Aliases column (key `aliases`), when there is one. */
+export function vocabRowsOf(store: Store): RowsOf {
+  const primary = primaryKeys(store.state);
+  return (tableId) => {
+    const nameKey = primary.get(tableId);
+    const aliasKey = fieldsOf(store.state, tableId).find((f) => f.key === ALIASES_KEY && (f.type === 'text' || f.type === 'long_text'))?.key;
+    return recordsOf(store.state, tableId).map((r) => ({ id: r.id, name: nameKey ? String(r.data[nameKey] ?? '') : '', aliases: aliasKey ? r.data[aliasKey] : undefined }));
+  };
+}
+
+/**
+ * Write a resolved link the way a drop writes a select value: the ONE row, replacing
+ * whatever the field held (a re-drop corrects, it does not accumulate). Same
+ * synchronous run as the values, so the same batch and the same undo.
+ */
+function writeLinks(store: Store, recordId: string, links: RoutedLinks['links'], options: MutateOptions) {
+  for (const l of links) {
+    for (const x of store.state.links.values()) {
+      if (x.field_id === l.fieldId && x.from_record === recordId && x.to_record !== l.toRecord) store.mutate({ type: 'link.remove', fieldId: l.fieldId, fromRecord: recordId, toRecord: x.to_record }, options);
+    }
+    if (!store.state.links.has(linkKey(l.fieldId, recordId, l.toRecord))) store.mutate({ type: 'link.add', id: crypto.randomUUID(), fieldId: l.fieldId, fromRecord: recordId, toRecord: l.toRecord }, options);
+  }
 }
 
 /**
@@ -229,6 +322,11 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
 
   // Matching: the same absolute path already in this table → update, not duplicate.
   await store.loadTable(tableId);
+  // The vocabulary tables the recipe links into (Containers, Codecs…): their rows
+  // are what the canonical names are resolved against, so they have to be here.
+  await loadVocabularyTables(store, recipe, fields);
+  const rowsOf = vocabRowsOf(store);
+  const tableNameOf = (id: string) => store.state.tables.get(id)?.name ?? 'the target table';
   const byPath = new Map<string, RecordRow>();
   for (const r of recordsOf(store.state, tableId)) { const p = r.data[pathKey]; if (typeof p === 'string') byPath.set(p, r); }
   const onto = target.canvas?.onto && target.canvas.onto.tableId === tableId ? target.canvas.onto.recordId : null;
@@ -281,14 +379,21 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
       jobs.set(id, { label: a?.program ?? a?.name ?? step.analyzer, manual: false });
       try {
         const raw = await invoke<{ outputs: Record<string, unknown> }>('analyze', { unit, analyzer: step.analyzer });
-        const { outputs, unknown } = withVocabulary(step.analyzer, raw.outputs, unit);
+        const { outputs, unknown, raws } = withVocabulary(step.analyzer, raw.outputs, unit);
+        const routed = routeLinks(outputs, raws, map, fields, rowsOf, tableNameOf);
         const hashing = isHashStep(step);
-        const placed = hashing ? withHashes(outputs, unit, manifestKey ? store.state.records.get(id)?.data[manifestKey] : undefined) : outputs;
+        const placed = hashing ? withHashes(routed.outputs, unit, manifestKey ? store.state.records.get(id)?.data[manifestKey] : undefined) : routed.outputs;
         const { data, skipped } = mappedData(placed, hashing ? hashMap(step, map, manifestKey) : map, fields);
-        if (Object.keys(data).length && store.state.records.has(id)) store.mutate({ type: 'record.update', id, set: data, unset: [] }, FOLLOW_UP);
+        if (store.state.records.has(id)) {
+          if (Object.keys(data).length) store.mutate({ type: 'record.update', id, set: data, unset: [] }, FOLLOW_UP);
+          writeLinks(store, id, routed.links, FOLLOW_UP);
+        }
         for (const sk of skipped) notice(`${unit.name}: not written — ${sk}`, 'warn');
-        // Only worth saying when the table wanted the canonical name.
-        for (const u of unknown) if (map.has(u.key)) notice(`${unit.name}: not written — ${u.message}`, 'warn');
+        for (const u of routed.unresolved) notice(`${unit.name}: not linked — ${u.message}`, 'warn');
+        // Only worth saying when the table wanted the canonical name — and a link
+        // field has already had its say above (an alias may even have resolved it).
+        const linked = new Set(routed.links.map((l) => l.fieldId)), said = new Set(routed.unresolved.map((u) => u.key));
+        for (const u of unknown) if (map.has(u.key) && !said.has(u.key) && !linked.has(fields.find((f) => f.key === map.get(u.key))?.id ?? '')) notice(`${unit.name}: not written — ${u.message}`, 'warn');
       } catch (e) { notice(`${unit.name}: ${a?.name ?? step.analyzer} — ${String(e)}`, 'error'); }
       jobs.delete(id);
     }
@@ -351,16 +456,24 @@ export async function runManualStep(store: Store, recordId: string, stepIndex: n
   const label = a?.name ?? step.analyzer;
   jobs.set(recordId, { label: a?.program ?? label, manual: true });
   try {
+    await loadVocabularyTables(store, { steps: [step] }, fields);
     const r = await invoke<{ unit: Unit; outputs: Record<string, unknown> }>('analyze_path', { path, analyzer: step.analyzer });
     if (!stepApplies(step, r.unit)) { notice(`${r.unit.name}: ${label} does not run on ${r.unit.media} ${r.unit.kind.replace('_', ' ')}s (the step's "runs on")`, 'warn'); return; }
-    const { outputs, unknown } = withVocabulary(step.analyzer, r.outputs, r.unit);
+    const { outputs, unknown, raws } = withVocabulary(step.analyzer, r.outputs, r.unit);
+    const routed = routeLinks(outputs, raws, map, fields, vocabRowsOf(store), (id) => store.state.tables.get(id)?.name ?? 'the target table');
     const hashing = isHashStep(step);
-    const placed = hashing ? withHashes(outputs, r.unit, manifestKey ? record.data[manifestKey] : undefined) : outputs;
+    const placed = hashing ? withHashes(routed.outputs, r.unit, manifestKey ? record.data[manifestKey] : undefined) : routed.outputs;
     const { data, skipped } = mappedData(placed, hashing ? hashMap(step, map, manifestKey) : map, fields);
-    if (Object.keys(data).length && store.state.records.has(recordId)) { store.mutate({ type: 'record.update', id: recordId, set: data, unset: [] }, VIA); notice(`${r.unit.name}: ${label} done`); }
-    else if (!skipped.length) notice(`${r.unit.name}: ${label} produced nothing for this table's fields`, 'warn');
+    if ((Object.keys(data).length || routed.links.length) && store.state.records.has(recordId)) {
+      if (Object.keys(data).length) store.mutate({ type: 'record.update', id: recordId, set: data, unset: [] }, VIA);
+      writeLinks(store, recordId, routed.links, VIA);
+      notice(`${r.unit.name}: ${label} done`);
+    }
+    else if (!skipped.length && !routed.unresolved.length) notice(`${r.unit.name}: ${label} produced nothing for this table's fields`, 'warn');
     for (const sk of skipped) notice(`${r.unit.name}: not written — ${sk}`, 'warn');
-    for (const u of unknown) if (map.has(u.key)) notice(`${r.unit.name}: not written — ${u.message}`, 'warn');
+    for (const u of routed.unresolved) notice(`${r.unit.name}: not linked — ${u.message}`, 'warn');
+    const said = new Set(routed.unresolved.map((u) => u.key)), linked = new Set(routed.links.map((l) => l.fieldId));
+    for (const u of unknown) if (map.has(u.key) && !said.has(u.key) && !linked.has(fields.find((f) => f.key === map.get(u.key))?.id ?? '')) notice(`${r.unit.name}: not written — ${u.message}`, 'warn');
   } catch (e) { notice(`${label} — ${String(e)}`, 'error'); }
   finally { jobs.delete(recordId); }
 }

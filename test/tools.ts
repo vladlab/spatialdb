@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { mountApp, sleep } from './uiHarness.js';
 import { ANALYZERS, MEDIA, TablesTools, Via, describe, fieldAccepts, resolveMap, stepApplies, toolsProblem } from '../src/contract/tools.js';
 import { MutationRequest } from '../src/contract/mutations.js';
-import { VIDEO_CODECS, VOCABULARIES, VOCABULARY_TABLES, ambiguities, lookup, lookupCodec, vocabularyOptionError } from '../src/contract/vocab.js';
+import { VIDEO_CODECS, VOCABULARIES, VOCABULARY_TABLES, ambiguities, lookup, lookupCodec, rawSpelling, resolveRow, splitAliases, vocabularyOptionError } from '../src/contract/vocab.js';
 import { choicesOf, validateValue } from '../src/contract/values.js';
 import { StreamEvent } from '../src/contract/events.js';
 
@@ -121,6 +121,16 @@ async function main() {
     const codecOut = ANALYZERS.find((a) => a.id === 'ffprobe')!.outputs.find((o) => o.key === 'codec')!;
     check('the ffprobe "Codec" output is a select bound to video_codec', codecOut.type === 'select' && codecOut.vocabulary === 'video_codec');
     check('fieldAccepts: a vocabulary output goes into a select bound to the SAME vocabulary, or a text field — never a select with typed choices', fieldAccepts(codecOut, rowFor('x', 'video_codec')) && fieldAccepts(codecOut, { id: 'y', type: 'text', options: {} }) && !fieldAccepts(codecOut, rowFor('z', undefined, ['ProRes 4444 XQ'])) && !fieldAccepts(codecOut, rowFor('w')));
+    const mediaOut = ANALYZERS.find((a) => a.id === 'filesystem')!.outputs.find((o) => o.key === 'media')!;
+    check('…and into a LINK field (a vocabulary table of the owner\'s rows, Oct 17) — a plain select output such as "media" does not', fieldAccepts(codecOut, { id: 'l', type: 'link', options: { target_table_id: 'codecs', single: true } }) && !fieldAccepts(mediaOut, { id: 'l', type: 'link', options: { target_table_id: 'x' } }));
+
+    console.log('\nT1d. resolveRow — the canonical name, or an alias, finds the ROW of a vocabulary table');
+    const vrows = [{ id: 'a', name: 'QuickTime', aliases: 'MOV\nmov,mp4,m4a,3gp,3g2,mj2 / qt / mov' }, { id: 'b', name: 'MXF OP1a', aliases: 'MXF; op1a' }, { id: 'c', name: 'MXF OP-Atom', aliases: 'op-atom, opatom' }, { id: 'd', name: 'MP4' }];
+    check('splitAliases: one per line, or comma- or semicolon-separated, trimmed', JSON.stringify(splitAliases('MXF; op1a')) === '["MXF","op1a"]' && JSON.stringify(splitAliases(' a ,\n b ;; c ')) === '["a","b","c"]' && splitAliases(undefined).length === 0 && splitAliases(3).length === 0);
+    check('1. a row NAMED the canonical name, case-insensitively', resolveRow(vrows, 'mp4', ['x'])?.id === 'd' && resolveRow(vrows, 'QuickTime')?.id === 'a');
+    check('2. else a row with the canonical name among its ALIASES ("MXF" → the OP1a row the owner made the default)', resolveRow(vrows, 'MXF', ['mxf'])?.id === 'b');
+    check('3. else the raw spelling, or any one raw value, among the aliases — what the code did not know', resolveRow(vrows, undefined, ['opatom'])?.id === 'c' && resolveRow(vrows, undefined, ['mov,mp4,m4a,3gp,3g2,mj2', 'qt', 'mov'])?.id === 'a' && rawSpelling(['prores', '4444 XQ']) === 'prores / 4444 XQ');
+    check('nothing matches → undefined, never a guess; nothing raw and no name → undefined', resolveRow(vrows, 'WAV', ['wav']) === undefined && resolveRow(vrows, undefined, ['wav']) === undefined && resolveRow(vrows, undefined, []) === undefined && resolveRow([], 'MP4') === undefined);
 
     /* ── T2. Storing it ─────────────────────────────────────────────────── */
     console.log('\nT2. tables.tools — written by table.update, validated against the table\'s fields');

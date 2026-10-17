@@ -302,6 +302,72 @@ async function main() {
       && w.findAll('.record-panel .mv-member-hash').every((c: any) => /^xxh3:/.test(c.text()) && /^xxh3:[0-9a-f]{16}$/.test(c.attributes('title') ?? '')), w.findAll('.record-panel .mv-member-hash').map((c: any) => c.text()).join('|'));
     check('the Summary says so', describe({ steps: [{ analyzer: 'hash-md5', when: 'manual', map: {} }] }, [])[0].endsWith('Hash (md5) → into the manifest.') && /Hash \(xxh3\) → Hash → Hash\.$/.test(describe({ steps: [{ analyzer: 'hash-xxh3', into_manifest: false, map: { hash: 'x' } }] }, [{ id: 'x', name: 'Hash' }])[0]));
 
+    console.log('\nF6f. Vocabulary outputs into LINK fields — a table of the owner\'s rows (Oct 17)');
+    // Containers (Name, Aliases) and Codecs (Name, Aliases) are the owner's vocabulary
+    // tables; Masters links into both. The code still normalises raw → canonical; the
+    // rows are found by that name, else by an alias on a row.
+    const tCont = randomUUID(), tCodecs = randomUUID(), tMasters = randomUUID();
+    const g = { cName: randomUUID(), cAliases: randomUUID(), kName: randomUUID(), kAliases: randomUUID(), path: randomUUID(), name: randomUUID(), container: randomUUID(), codec: randomUUID(), rawCodec: randomUUID() };
+    const rowQt = randomUUID(), rowOp1a = randomUUID(), rowXq = randomUUID(), rowMystery = randomUUID();
+    const r6f = await post([
+      { type: 'table.create', id: tCont, name: 'Containers' }, { type: 'table.create', id: tCodecs, name: 'Codecs' }, { type: 'table.create', id: tMasters, name: 'Masters' },
+      { type: 'field.create', id: g.cName, tableId: tCont, name: 'Name', key: 'name', fieldType: 'text' }, pos(g.cName, 0),
+      { type: 'field.create', id: g.cAliases, tableId: tCont, name: 'Aliases', key: 'aliases', fieldType: 'long_text' }, pos(g.cAliases, 1),
+      { type: 'field.create', id: g.kName, tableId: tCodecs, name: 'Name', key: 'name', fieldType: 'text' }, pos(g.kName, 0),
+      { type: 'field.create', id: g.kAliases, tableId: tCodecs, name: 'Aliases', key: 'aliases', fieldType: 'text' }, pos(g.kAliases, 1),
+      { type: 'record.create', id: rowQt, tableId: tCont, data: { name: 'QuickTime' } },
+      { type: 'record.create', id: rowOp1a, tableId: tCont, data: { name: 'MXF OP1a', aliases: 'MXF' } },
+      { type: 'record.create', id: rowXq, tableId: tCodecs, data: { name: 'Apple ProRes 4444 XQ', aliases: 'ProRes 4444 XQ, PR4444XQ' } },
+      { type: 'record.create', id: rowMystery, tableId: tCodecs, data: { name: 'Mystery codec' } },
+      { type: 'field.create', id: g.path, tableId: tMasters, name: 'Path', key: 'path', fieldType: 'file_path' }, pos(g.path, 0),
+      { type: 'field.create', id: g.name, tableId: tMasters, name: 'Name', key: 'name', fieldType: 'text' }, pos(g.name, 1),
+      { type: 'field.create', id: g.container, tableId: tMasters, name: 'Container', key: 'container', fieldType: 'link', options: { target_table_id: tCont, single: true } }, pos(g.container, 2),
+      { type: 'field.create', id: g.codec, tableId: tMasters, name: 'Codec', key: 'codec', fieldType: 'link', options: { target_table_id: tCodecs } }, pos(g.codec, 3),
+      { type: 'field.create', id: g.rawCodec, tableId: tMasters, name: 'Raw codec', key: 'video_codec', fieldType: 'text' }, pos(g.rawCodec, 4),
+      { type: 'table.update', id: tMasters, tools: { file_drop: { steps: [
+        { analyzer: 'filesystem', map: { path: g.path, name: g.name } },
+        { analyzer: 'ffprobe', map: { container: g.container, codec: g.codec, video_codec: g.rawCodec } },
+      ] } } },
+    ]);
+    check('the server accepts a recipe mapping the Container and Codec outputs to LINK fields', r6f.status === 200, (await r6f.text()).slice(0, 300));
+    const { routeLinks: route } = await import('../src/client/tools/fileDrop.js');
+    const mfields = [{ id: g.container, table_id: tMasters, name: 'Container', key: 'container', type: 'link', options: { target_table_id: tCont }, position: 0, required: false }, { id: g.name, table_id: tMasters, name: 'Name', key: 'name', type: 'text', options: {}, position: 1, required: false }] as any;
+    const rowsOf = (id: string) => (id === tCont ? [{ id: rowQt, name: 'QuickTime' }, { id: rowOp1a, name: 'MXF OP1a', aliases: 'MXF' }] : []);
+    const rt = route({ container: 'QuickTime', name: 'a.mov', codec: 'MXF' }, { container: ['mov,mp4,m4a,3gp,3g2,mj2', 'qt  ', 'mov'] }, new Map([['container', 'container'], ['name', 'name']]), mfields, rowsOf, () => 'Containers');
+    check('routeLinks (pure): a link-mapped canonical output becomes a link to the row of that name and LEAVES the values; an unmapped one is untouched', rt.links.length === 1 && rt.links[0].toRecord === rowQt && rt.links[0].fieldId === g.container && rt.outputs.container === undefined && rt.outputs.name === 'a.mov' && rt.outputs.codec === 'MXF' && rt.unresolved.length === 0, JSON.stringify(rt));
+    const rt2 = route({}, { container: ['wav'] }, new Map([['container', 'container']]), mfields, rowsOf, () => 'Containers');
+    check('…no canonical name and no alias: no link, and the message names the raw spelling to add', rt2.links.length === 0 && /wav is not in the built-in container list, and no Containers row has it as an alias — add a row with the alias “wav”/.test(rt2.unresolved[0]?.message ?? ''), JSON.stringify(rt2.unresolved));
+    const rt3 = route({ container: 'MP4' }, { container: ['mov,mp4,m4a,3gp,3g2,mj2', 'isom', 'mp4'] }, new Map([['container', 'container']]), mfields, rowsOf, () => 'Containers');
+    check('…a canonical name with no row: the message says which row to add', /Containers has no row named “MP4” — add one, or give a row the alias “MP4”/.test(rt3.unresolved[0]?.message ?? ''), JSON.stringify(rt3.unresolved));
+
+    await go(tMasters);
+    const mlinks = (name: string) => rows(`select l.field_id, l.to_record from links l join records r on r.id = l.from_record where r.table_id = '${tMasters}' and r.data->>'name' = '${name}'`);
+    drop(['/mnt/san/b.mov', '/mnt/san/mix2.wav']);
+    let ml = await untilDb(`select l.field_id, l.to_record from links l join records r on r.id = l.from_record where r.table_id = '${tMasters}' and r.data->>'name' = 'b.mov'`, (x) => x.length === 2);
+    check('dropping a QuickTime ProRes 4444 XQ links Container → the "QuickTime" row (by name) and Codec → "Apple ProRes 4444 XQ" (by its ALIAS "ProRes 4444 XQ")', ml.some((l) => l.field_id === g.container && l.to_record === rowQt) && ml.some((l) => l.field_id === g.codec && l.to_record === rowXq), JSON.stringify(ml));
+    check('the raw codec is still written as a value beside the link; the canonical name is NOT written anywhere as text', (await rows(`select data from records where table_id = '${tMasters}' and data->>'name' = 'b.mov'`))[0].data.video_codec === 'prores' && JSON.stringify((await rows(`select data from records where table_id = '${tMasters}' and data->>'name' = 'b.mov'`))[0].data).includes('QuickTime') === false);
+    check('the wav: WAV has no row in Containers — not linked, and the notice says which row to add', await until(() => /mix2\.wav: not linked — Container: Containers has no row named “WAV” — add one, or give a row the alias “WAV”/.test(noticesText())) && (await mlinks('mix2.wav')).length === 0, noticesText());
+    check('the grid shows the linked rows as pills', await until(() => w.findAll('.gridview tr.row').some((r: any) => /b\.mov/.test(r.text()) && /QuickTime/.test(r.text()) && /Apple ProRes 4444 XQ/.test(r.text()))));
+    check('every link of the drop is tagged via file_drop and is NOT its own undo step', (await rows(`select via from mutations where type = 'link.add' and (payload->>'fromRecord')::uuid in (select id from records where table_id = '${tMasters}')`)).every((m) => m.via === 'file_drop'));
+
+    // What the code does not know, an alias teaches: "prores / Something New" on the Mystery row.
+    drop(['/mnt/san/weird.mov']);
+    check('an unknown profile with no alias: not linked, and the notice gives the exact spelling to paste into Aliases', await until(() => /weird\.mov: not linked — Codec: prores \/ Something New is not in the built-in video_codec list, and no Codecs row has it as an alias — add a row with the alias “prores \/ Something New”/.test(noticesText())), noticesText());
+    check('…and no separate "not in the vocabulary" notice for the same output — one message, the link\'s', !/weird\.mov: not written — Codec/.test(noticesText()));
+    await post([{ type: 'record.update', id: rowMystery, set: { aliases: 'prores / Something New' }, unset: [] }]);
+    await sleep(300);
+    drop(['/mnt/san/weird.mov']);
+    ml = await untilDb(`select l.field_id, l.to_record from links l join records r on r.id = l.from_record where r.table_id = '${tMasters}' and r.data->>'name' = 'weird.mov'`, (x) => x.some((l) => l.field_id === g.codec));
+    check('re-dropped after the alias was added, the SAME record (matched by path) gets Codec → Mystery codec', ml.find((l) => l.field_id === g.codec)?.to_record === rowMystery && (await rows(`select id from records where table_id = '${tMasters}' and data->>'name' = 'weird.mov'`)).length === 1, JSON.stringify(ml));
+
+    // A re-drop REPLACES a link the way it overwrites a select: set Container to OP1a by hand, drop b.mov again.
+    const bId = (await rows(`select id from records where table_id = '${tMasters}' and data->>'name' = 'b.mov'`))[0].id;
+    await post([{ type: 'link.remove', fieldId: g.container, fromRecord: bId, toRecord: rowQt }, { type: 'link.add', id: randomUUID(), fieldId: g.container, fromRecord: bId, toRecord: rowOp1a }]);
+    await untilDb(`select to_record from links where field_id = '${g.container}' and from_record = '${bId}'`, (x) => x.length === 1 && x[0].to_record === rowOp1a);
+    drop(['/mnt/san/b.mov']);
+    ml = await untilDb(`select to_record from links where field_id = '${g.container}' and from_record = '${bId}'`, (x) => x.length === 1 && x[0].to_record === rowQt);
+    check('a re-drop replaces the hand-set Container with what the file is (QuickTime) — one link, not two', ml.length === 1 && ml[0].to_record === rowQt);
+
     console.log('\nF7. Dropping on a canvas');
     win.location.hash = `#/all/canvas`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange'));
     await nav.newCanvas('Board A');

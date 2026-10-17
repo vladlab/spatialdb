@@ -34,6 +34,11 @@
  *  (values.ts refuses nulls; absent IS empty). A `select` output is written only
  *  when the value is one of the field's choices; otherwise the cell is left alone
  *  and the client reports it — a tool never changes a schema as a side effect.
+ *  A VOCABULARY output (a canonical name looked up in contract/vocab.ts) may also
+ *  be mapped to a LINK field: the drop then links the row of the target table
+ *  named that way, or one whose Aliases say so (`resolveRow`), replacing whatever
+ *  the field held — as it would overwrite a select. No row: no link, and a notice
+ *  that names the spelling to add. A tool never creates a row either.
  */
 
 import { z } from 'zod';
@@ -81,7 +86,8 @@ export interface Output {
   /** For `select` outputs: the values the analyzer can produce (so the UI can make the field). */
   choices?: readonly string[];
   /** For `select` outputs normalised through a built-in list (contract/vocab.ts): the
-   *  target select must be bound to the SAME vocabulary (or be a text field). */
+   *  target select must be bound to the SAME vocabulary, or be a text field — or be a
+   *  LINK to a table of the owner's own rows, found by name or alias (`resolveRow`). */
   vocabulary?: string;
   note?: string;
 }
@@ -90,6 +96,11 @@ export interface Output {
 export interface ToolFieldLike { id: string; type: string; options?: Record<string, unknown> | null }
 
 export function fieldAccepts(out: Output, field: ToolFieldLike): boolean {
+  // A vocabulary output into a link: any link field — the target table is the
+  // owner's vocabulary, whatever it is called; whether a row exists is the drop's
+  // business, per file. Only VOCABULARY outputs: "media" or "kind" into a link would
+  // need rows that mean nothing to anyone.
+  if (out.vocabulary && field.type === 'link') return true;
   if (!ACCEPTS[out.type].some((a) => a.type === field.type && (!a.shape || field.options?.shape === a.shape))) return false;
   // A vocabulary output into a select: only one bound to the same list — a select
   // with its own typed choices would silently refuse most values.
