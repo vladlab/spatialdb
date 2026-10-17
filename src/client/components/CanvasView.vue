@@ -304,10 +304,24 @@
         <button class="danger stack-remove" @click="menuDo((m) => removeStack(m.stackId!))">Remove stack and its cards…</button>
       </template>
 
+      <!-- WHICH FIELDS the cards of this table show here — and, per field, PIN: keep it
+           on the card even when it is empty, once "hide empty" (below) is on. The list
+           scrolls on its own, so a forty-field table never pushes the switch and the
+           reset off the bottom. -->
       <template v-else-if="menu.kind === 'fields'">
         <p class="ctx-title">{{ tableNameOf(menu.recordId!) }} cards on this canvas show</p>
-        <label v-for="f in fieldChoices" :key="f.id" class="ctx-check">
-          <input type="checkbox" :checked="f.on" @change="toggleCardField(f.id)" /> {{ f.name }}
+        <div class="ctx-scroll">
+          <div v-for="f in fieldChoices" :key="f.id" class="ctx-check field-choice" :data-field="f.id">
+            <label class="field-on"><input type="checkbox" :checked="f.on" @change="toggleCardField(f.id)" /> {{ f.name }}</label>
+            <label class="field-pin" :class="{ dim: !hideEmpty, on: f.pinned }"
+                   :title="hideEmpty ? 'Shown on the card even when empty' : 'Shown even when empty — once “hide empty fields” is on'">
+              <input type="checkbox" :checked="f.pinned" :disabled="!f.on" @change="togglePin(f.id)" /> pin
+            </label>
+          </div>
+        </div>
+        <hr />
+        <label class="ctx-check hide-empty" title="A card leaves out the fields that have no value — except the pinned ones. For this canvas, for everyone.">
+          <input type="checkbox" :checked="hideEmpty" @change="setHideEmpty(($event.target as HTMLInputElement).checked)" /> Hide empty fields on this canvas
         </label>
         <p class="ctx-note">The title is always the primary field (★ in the grid).</p>
         <button v-if="hasCustomFields" @click="resetCardFields">Reset to default</button>
@@ -346,8 +360,8 @@ import { choicesOf } from '../../contract/values';
 import type { ArrowLink } from './ArrowLayer.vue';
 import { linkKey } from '../state';
 import { bezierPath, rectsIntersect, type AnchorSide, type Point } from '../canvas/geometry';
-import { CanvasConfig, cardFieldsFor } from '../../contract/canvasConfig';
-import { CARD_W, defaultCardWidth, effectiveHeight, fitCardWidth, lineCount, linkHandleAt } from '../canvas/cardLayout';
+import { CanvasConfig, cardFieldsFor, hidesEmpty, pinnedFieldsFor } from '../../contract/canvasConfig';
+import { CARD_W, defaultCardWidth, effectiveHeight, fitCardWidth, lineCount, linkHandleAt, visibleRows } from '../canvas/cardLayout';
 import { capsuleWidth, JUMP_PAD, pairSlot, textWidth } from '../textWidth';
 import type { CardRow } from './RecordCard.vue';
 import type { Rect } from '../canvas/geometry';
@@ -459,6 +473,19 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
  *           — and no empty 150px hole — which only changes its height, not its rows.
  */
 const rowFields = (tableId: string) => shownFields(tableId).filter((f) => f.type !== 'rich_text');
+/**
+ * The rows ONE card draws. With the canvas's "hide empty" on (contract/canvasConfig.ts)
+ * the empty ones are left out — unless the field is pinned on this canvas — so two
+ * cards of a table may show different rows. Nothing hangs on a row's index any more
+ * (cardLayout.ts, `rowPortY`), and heights count the lines a card actually has.
+ */
+const hideEmpty = computed(() => hidesEmpty(canvasConfig.value));
+const pinnedOf = (tableId: string) => pinnedFieldsFor(canvasConfig.value, tableId);
+function cardRows(rec: RecordRow): CardRow[] {
+  const verdicts = derived.fieldVerdicts(rec.id);
+  const rows = rowFields(rec.table_id).map((f) => { const r = rowFor(rec, f); const v = verdicts.get(f.id); return v ? { ...r, verdict: v } : r; });
+  return visibleRows(rows, hideEmpty.value, pinnedOf(rec.table_id));
+}
 const richBlocks = (rec: RecordRow) => shownFields(rec.table_id)
   .filter((f) => f.type === 'rich_text' && !isEmptyRichText(rec.data[f.key]))
   .map((f) => ({ id: f.id, name: f.name, value: rec.data[f.key] }));
@@ -519,8 +546,6 @@ const baseCards = computed(() =>
     const rec = store.state.records.get(p.record_id);
     if (!rec) return [];   // placement without its record: mid-sync, skip a frame
     const table = store.state.tables.get(rec.table_id);
-    // ✓ / ⚠ per row from comparing links (COMPARE-BRIEF.md) — derived, live.
-    const verdicts = derived.fieldVerdicts(p.record_id);
     const title = labelFrom(rec.data, labelKeys.value.get(rec.table_id), '');
     return [{
       recordId: p.record_id,
@@ -528,7 +553,8 @@ const baseCards = computed(() =>
       tableName: table?.name ?? 'unknown',
       tableColor: colorOf(rec.table_id),
       title,
-      rows: rowFields(rec.table_id).map((f) => { const r = rowFor(rec, f); const v = verdicts.get(f.id); return v ? { ...r, verdict: v } : r; }),
+      // ✓ / ⚠ per row from comparing links (COMPARE-BRIEF.md) — derived, live — ride on the rows.
+      rows: cardRows(rec),
       rich: richBlocks(rec),
       collapsed: p.collapsed,
       // No width of its own: as wide as its name (cardLayout.ts) — resolved HERE, once, so the
@@ -1699,7 +1725,10 @@ const menu = ref<Menu | null>(null);
    left only, and once per menu, so it never chases the pointer. */
 const menuRef = ref<HTMLElement | null>(null);
 watch(menu, (m, was) => {
-  if (!m || (was && was.x === m.x && was.y === m.y)) return;
+  // …and again when the menu CHANGES SHAPE in place: "Fields on … cards" turns the
+  // card menu into the (much taller) field list at the same x/y, which near the bottom
+  // edge was cut off. Caught by the owner on a canvas with a long schema.
+  if (!m || (was && was.x === m.x && was.y === m.y && was.kind === m.kind)) return;
   void nextTick(() => {
     const el = menuRef.value, box = containerRef.value?.getBoundingClientRect();
     if (!el || !box || menu.value !== m || !el.offsetWidth) return;
@@ -1872,7 +1901,7 @@ function placeMany(records: RecordRow[], clientX: number, clientY: number, optio
   let z = placements.value.reduce((n, p) => Math.max(n, p.z), 0);
   let col = 0, row = 0, y = at.y;
   for (const rec of fresh) {
-    const h = effectiveHeight(null, rowFields(rec.table_id).length, false, richBlocks(rec).length);
+    const h = effectiveHeight(null, lineCount(cardRows(rec)), false, richBlocks(rec).length);
     store.mutate({
       type: 'placement.add', id: crypto.randomUUID(), canvasId: props.canvasId, recordId: rec.id,
       x: Math.round(at.x + col * (CARD_W + DROP_GAP)), y: Math.round(y), w: null, h: null, z: ++z,
@@ -1906,9 +1935,10 @@ const menuTableId = computed(() => store.state.records.get(menu.value?.recordId 
 const fieldChoices = computed(() => {
   const on = new Set(shownFields(menuTableId.value).map((f) => f.id));
   const primaryKey = labelKeys.value.get(menuTableId.value);
+  const pinned = pinnedOf(menuTableId.value);
   return fieldsOf(store.state, menuTableId.value)
     .filter((f) => f.key !== primaryKey)          // the title; always shown, never listed
-    .map((f) => ({ id: f.id, name: f.name, on: on.has(f.id) }));
+    .map((f) => ({ id: f.id, name: f.name, on: on.has(f.id), pinned: pinned.has(f.id) }));
 });
 // A FUNCTION DECLARATION, deliberately: it is hoisted. As a `const` arrow it sat below
 // the defaults bar's setup code, which reads the config immediately (an `immediate`
@@ -1937,6 +1967,23 @@ function toggleCardField(fieldId: string) {
   saveCardFields(tableId, next);
 }
 function resetCardFields() { saveCardFields(menuTableId.value, null); }
+/* HIDE EMPTY and PINS (contract/canvasConfig.ts) — merged into the config like the
+   fields are. A pin is kept while "hide empty" is off: it costs nothing, and the next
+   time the switch goes on the card is as it was. Reset-to-default (above) leaves pins
+   alone: it is about which fields, not which of them may be empty. */
+function setHideEmpty(on: boolean) {
+  const { hideEmpty: _, ...rest } = parsedConfig();
+  store.mutate({ type: 'canvas.update', id: props.canvasId, config: on ? { ...rest, hideEmpty: true } : rest });
+}
+function togglePin(fieldId: string) {
+  const tableId = menuTableId.value;
+  const pinnedFields = { ...(parsedConfig().pinnedFields ?? {}) };
+  const now = new Set(pinnedFields[tableId] ?? []);
+  if (now.has(fieldId)) now.delete(fieldId); else now.add(fieldId);
+  if (now.size) pinnedFields[tableId] = [...now]; else delete pinnedFields[tableId];
+  const { pinnedFields: _, ...rest } = parsedConfig();
+  store.mutate({ type: 'canvas.update', id: props.canvasId, config: Object.keys(pinnedFields).length ? { ...rest, pinnedFields } : rest });
+}
 
 function unplace(recordId: string) {
   store.mutate({ type: 'placement.remove', canvasId: props.canvasId, recordId });
@@ -2103,6 +2150,15 @@ onUnmounted(() => {
    Here: where the canvas's sits, and the parts only it has. */
 .ctx { position: absolute; z-index: 40; }
 .ctx-check { display: flex; gap: 6px; align-items: center; padding: 3px 8px; cursor: pointer; }
+/* The field list: its own scroll, so the switch under it and the reset stay in reach. */
+.ctx-scroll { max-height: min(40vh, 320px); overflow-y: auto; overscroll-behavior: contain; }
+.field-choice { padding: 0; }
+.field-choice .field-on { flex: 1; min-width: 0; display: flex; gap: 6px; align-items: center; padding: 3px 8px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.field-choice .field-pin { flex: none; display: flex; gap: 4px; align-items: center; padding: 3px 8px 3px 4px; cursor: pointer; font-size: 11px; color: var(--text-muted); }
+.field-choice .field-pin.on { color: var(--text-primary); }
+.field-choice .field-pin.dim { opacity: 0.55; }
+.field-choice .field-pin input:disabled { opacity: 0.3; }
+.ctx-check.hide-empty { font-weight: 500; }
 /* The two link menus: a WAY is a row — its colour, its name, and (right-aligned,
    quieter) what choosing it does. In the new-link menu "find…" sits beside it. */
 .ctx { max-height: calc(100% - 8px); overflow-y: auto; }

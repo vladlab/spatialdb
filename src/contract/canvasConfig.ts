@@ -45,8 +45,33 @@ export const CanvasConfig = z.strictObject({
    * OPTIONAL, not defaulted, like `defaults`.
    */
   stacks: z.array(StackDef).max(40).optional(),
+  /**
+   * HIDE EMPTY: a card leaves out the rows that have nothing in them. A Files table
+   * carries thirty attribute fields and a given file fills ten; the other twenty were
+   * twenty lines of "—". The card keeps its chosen fields (`cardFields`) — what it
+   * COULD show — and drops, per record, the ones with no value. Per canvas, saved
+   * with it: the board reads the same for everyone, like `cardFields`.
+   *
+   * PINNED: fields shown even when empty — because the gap is the information
+   * ("no deliverable yet", "QC: —"). Per table, like `cardFields`, and only meaningful
+   * with `hideEmpty` on; kept when it is off, so switching it back on needs no re-ticking.
+   * OPTIONAL, not defaulted, like `defaults`: every saved config predates them.
+   */
+  hideEmpty: z.boolean().optional(),
+  pinnedFields: z.record(uuid, z.array(uuid).max(40)).optional(),
 });
 export type CanvasConfig = z.infer<typeof CanvasConfig>;
+
+/** Whether this canvas's cards leave out their empty rows (`hideEmpty`). */
+export function hidesEmpty(config: unknown): boolean {
+  const parsed = CanvasConfig.safeParse(config ?? {});
+  return parsed.success && parsed.data.hideEmpty === true;
+}
+/** The fields of `tableId` pinned on this canvas — shown on its cards even when empty. */
+export function pinnedFieldsFor(config: unknown, tableId: string): Set<string> {
+  const parsed = CanvasConfig.safeParse(config ?? {});
+  return new Set(parsed.success ? parsed.data.pinnedFields?.[tableId] ?? [] : []);
+}
 
 /** Cards show at most this many fields by default; a 40-field table is not a card. */
 export const DEFAULT_CARD_FIELDS = 5;

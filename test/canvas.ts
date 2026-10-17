@@ -23,10 +23,10 @@ import {
   rectsIntersect, toWorld, zoomAbout, type Rect,
 } from '../src/client/canvas/geometry.js';
 import { createStore } from '../src/client/store.js';
-import { cardHeight, effectiveHeight, rowPortY, CARD_RICH_H, CARD_ROW_H, CARD_MAX_LINES, lineCount, rowLines } from '../src/client/canvas/cardLayout.js';
+import { cardHeight, effectiveHeight, rowPortY, CARD_RICH_H, CARD_ROW_H, CARD_MAX_LINES, lineCount, rowLines, rowIsEmpty, visibleRows } from '../src/client/canvas/cardLayout.js';
 import { arrowStyleError, arrowStyleOf } from '../src/contract/arrows.js';
 import { bezierMid } from '../src/client/canvas/geometry.js';
-import { CanvasConfig, defaultLinkField } from '../src/contract/canvasConfig.js';
+import { CanvasConfig, defaultLinkField, hidesEmpty, pinnedFieldsFor } from '../src/contract/canvasConfig.js';
 import { cardFieldsFor, DEFAULT_CARD_FIELDS } from '../src/contract/canvasConfig.js';
 import { placementKey } from '../src/client/state.js';
 
@@ -479,6 +479,22 @@ async function partB() {
     cardFieldsFor({ cardFields: { [tableId]: [u2, gone, u1] } }, tableId, [F(u1), F(u2)], undefined).map((f) => f.id).join() === `${u2},${u1}`);
   check('a malformed config falls back to the default rather than throwing',
     cardFieldsFor({ cardFields: 'nope' }, 't', fs6, 'p').length === DEFAULT_CARD_FIELDS);
+
+  console.log('\nB8d. Hiding empty rows, and pins');
+  const R = (id: string, text: string, more: Record<string, unknown> = {}) => ({ id, text, ...more });
+  check('empty: no text, no pills, no count — a broken field is never "empty"',
+    rowIsEmpty(R('a', '')) && rowIsEmpty(R('a', '', { ids: [], lines: undefined })) && rowIsEmpty(R('a', '', { count: undefined }))
+    && !rowIsEmpty(R('a', 'x')) && !rowIsEmpty(R('a', '', { ids: ['r1'] })) && !rowIsEmpty(R('a', '', { count: 3 })) && !rowIsEmpty(R('a', '', { lines: ['a', 'b'] }))
+    && !rowIsEmpty(R('a', '', { broken: true })));
+  const rows4 = [R('a', 'x'), R('b', ''), R('c', '', { ids: ['r'] }), R('d', '')];
+  check('hide empty off: every row; on: the filled ones, plus the pinned',
+    visibleRows(rows4, false, new Set()).length === 4 && visibleRows(rows4, true, new Set()).map((r) => r.id).join('') === 'ac'
+    && visibleRows(rows4, true, new Set(['d'])).map((r) => r.id).join('') === 'acd');
+  check('the config carries both, optional and strict; a saved config without them reads as off / nothing pinned',
+    hidesEmpty({ cardFields: {} }) === false && hidesEmpty({ cardFields: {}, hideEmpty: true }) && hidesEmpty('junk') === false
+    && pinnedFieldsFor({ cardFields: {} }, tableId).size === 0 && pinnedFieldsFor({ cardFields: {}, pinnedFields: { [tableId]: [u1] } }, tableId).has(u1)
+    && CanvasConfig.safeParse({ cardFields: {}, hideEmpty: true, pinnedFields: { [tableId]: [u1] } }).success
+    && !CanvasConfig.safeParse({ cardFields: {}, hideEmpty: 'yes' }).success && !CanvasConfig.safeParse({ cardFields: {}, pinnedFields: { [tableId]: ['x'] } }).success);
 
   const nameField = [...A.state.fields.values()].find((f) => f.table_id === tableId && f.key === 'name')!;
   A.mutate({ type: 'canvas.update', id: canvasId, config: { cardFields: { [tableId]: [nameField.id] } } });

@@ -805,8 +805,10 @@ async function main() {
   await cardBy('reel_10').trigger('contextmenu', { clientX: 100, clientY: 80 });
   check('right-click on a card opens its menu', ctx().exists() && /Open record/.test(ctx().text()));
   await ctx().findAll('button').find((b) => /Fields on Files cards/.test(b.text()))!.trigger('click');
-  const choice = (name: string) => ctx().findAll('.ctx-check').find((l) => l.text().trim() === name)!.find('input');
-  for (const name of ctx().findAll('.ctx-check').map((l) => l.text().trim())) {
+  // Each field is a line: its "shown" tick and name, then its "pin" tick (B8c below).
+  const fieldLine = (name: string) => ctx().findAll('.field-choice').find((l) => l.find('.field-on').text().trim() === name)!;
+  const choice = (name: string) => fieldLine(name).find('.field-on input');
+  for (const name of ctx().findAll('.field-choice').map((l) => l.find('.field-on').text().trim())) {
     const want = name === 'Show' || name === 'Status';
     if ((choice(name).element as HTMLInputElement).checked !== want) await choice(name).setValue(want);
   }
@@ -818,6 +820,27 @@ async function main() {
   check('and is saved on the canvas, so everyone sees the board the same way', cfg[0].config.cardFields[filesId].length === 2, JSON.stringify(cfg[0].config));
   await bg().trigger('pointerdown', { button: 0, clientX: 5, clientY: 5 });
   check('clicking away closes the menu', !ctx().exists());
+
+  // HIDE EMPTY (contract/canvasConfig.ts): the card made on the canvas has a name and
+  // nothing else — with the switch on, its Status and Show rows go; reel_10 keeps what
+  // it has. A PINNED field stays even when empty. Both are saved with the canvas.
+  const filled = Object.keys(rowsOf(cardBy('reel_10'))).filter((k) => (rowsOf(cardBy('reel_10'))[k] ?? '') !== '' && rowsOf(cardBy('reel_10'))[k] !== '—');
+  await cardBy('made on canvas').trigger('contextmenu', { clientX: 100, clientY: 80 });
+  await ctx().findAll('button').find((b) => /Fields on Files cards/.test(b.text()))!.trigger('click');
+  check('the field list offers "hide empty fields on this canvas", off, and a pin per field', ctx().find('.hide-empty input').exists() && !(ctx().find('.hide-empty input').element as HTMLInputElement).checked
+    && fieldLine('Status').find('.field-pin input').exists(), ctx().text());
+  await ctx().find('.hide-empty input').setValue(true);
+  check('on: the empty card loses its empty rows, the filled card keeps its filled ones',
+    await until(() => Object.keys(rowsOf(cardBy('made on canvas'))).length === 0 && Object.keys(rowsOf(cardBy('reel_10'))).join() === filled.join()),
+    JSON.stringify([rowsOf(cardBy('made on canvas')), rowsOf(cardBy('reel_10')), filled]));
+  await fieldLine('Status').find('.field-pin input').setValue(true);
+  check('pinning Status brings it back on the empty card, as a gap', await until(() => Object.keys(rowsOf(cardBy('made on canvas'))).join() === 'Status'), JSON.stringify(rowsOf(cardBy('made on canvas'))));
+  const cfgE = await untilDb(`select config from canvases where id = '${boardId}'`, (r) => r[0].config.hideEmpty === true && (r[0].config.pinnedFields?.[filesId] ?? []).length === 1);
+  check('both are saved on the canvas, beside the fields — and the fields were not touched', cfgE[0].config.hideEmpty === true && cfgE[0].config.pinnedFields[filesId].length === 1 && cfgE[0].config.cardFields[filesId].length === 2, JSON.stringify(cfgE[0].config));
+  await ctx().find('.hide-empty input').setValue(false);
+  check('off again: every chosen row is back, the pin kept for next time', await until(() => Object.keys(rowsOf(cardBy('made on canvas'))).join() === 'Status,Show')
+    && (await untilDb(`select config from canvases where id = '${boardId}'`, (r) => r[0].config.hideEmpty === undefined))[0].config.pinnedFields?.[filesId]?.length === 1);
+  await bg().trigger('pointerdown', { button: 0, clientX: 5, clientY: 5 });
 
   await cardBy('reel_10').find('.card-fold').trigger('click');
   check('folding leaves the title and hides the fields',

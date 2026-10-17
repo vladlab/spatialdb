@@ -106,6 +106,31 @@ export function rowLines(row: RowShape): number {
 }
 export const lineCount = (rows: RowShape[]): number => rows.reduce((n, r) => n + rowLines(r), 0);
 
+/* ── EMPTY ROWS ─────────────────────────────────────────────────────────────
+   A canvas can hide the rows that have nothing in them (contract/canvasConfig.ts,
+   `hideEmpty`), except the fields it PINS. So a card's rows are no longer the same
+   list for every card of a table — a thing the layout used to promise while arrows
+   hung on row ports. They hang on the card's edge now (`rowPortY` is unused), and
+   the card's height already counts the lines each record actually has, so a row
+   that is not there is simply not counted. */
+
+/** What a row carries that would show on the card; `broken` is a signal, never "empty". */
+export interface RowFill { text: string; lines?: string[]; count?: number; ids?: string[]; broken?: boolean }
+/**
+ * No text, no pills, no count — nothing a card would draw but the label. (A structured
+ * value that exists always has a summary, "no tracks" included: a layout someone typed
+ * as empty is a value, not a gap. A video layout's strip comes with its summary, so it
+ * needs no rule of its own.)
+ */
+export function rowIsEmpty(row: RowFill): boolean {
+  if (row.broken) return false;
+  return row.text === '' && !row.count && !row.ids?.length && !row.lines?.length;
+}
+/** The rows a card draws: all of them, or — with `hideEmpty` — the filled ones and the pinned ones. */
+export function visibleRows<R extends RowFill & { id: string }>(rows: R[], hideEmpty: boolean, pinned: Set<string>): R[] {
+  return hideEmpty ? rows.filter((r) => pinned.has(r.id) || !rowIsEmpty(r)) : rows;
+}
+
 /** Height for `rows` LINES (see `rowLines`) — the name is historical. */
 export function cardHeight(rows: number, collapsed: boolean, rich = 0): number {
   const chrome = CARD_BORDER + CARD_HEAD_H + CARD_TITLE_H;

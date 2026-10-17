@@ -210,6 +210,17 @@ primary, which is the card's title). Replaced whole on update, like a view's
 config; ids that no longer resolve are skipped at render time. Per-card things
 (`collapsed`, size, z) stay on the placement.
 
+Two more, optional, beside it (the same send-the-whole-config rule as `defaults`):
+
+```jsonc
+{ "hideEmpty": true,                                    // cards leave out rows with no value
+  "pinnedFields": { "<tableId>": ["<fieldId>", "…"] } }  // …except these, shown as a gap
+```
+
+`hideEmpty` is per canvas, for everyone; which fields it may hide is still
+`cardFields` (what a card COULD show). A pin is kept while the switch is off. Both are
+set from the card menu's "Fields on … cards…", and neither needs a migration.
+
 ### Lookup fields
 
 A `lookup` field has no value of its own. It follows one of its table's link
