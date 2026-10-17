@@ -62,7 +62,7 @@ const shell = {
               ? { 'ffprobe.version': '7.1', container_raw: 'wav', audio_codec_raw: 'pcm_s24le', audio_channels: 2, audio_layout: { tracks: [{ name: 'A1', channels: ['L', 'R'] }] } }
               : args.unit.path.includes('weird')
                 ? { 'ffprobe.version': '7.1', container_raw: 'mov,mp4,m4a,3gp,3g2,mj2', major_brand: 'qt  ', video_codec: 'prores', codec_profile: 'Something New', width: 1920 }
-                : { 'ffprobe.version': '7.1', container_raw: 'mov,mp4,m4a,3gp,3g2,mj2', major_brand: 'qt  ', video_codec: 'prores', codec_profile: '4444 XQ', width: 1920, height: 1080, frame_rate: 23.976, scan: 'progressive', color_range: 'legal', color_primaries_raw: 'bt709', color_transfer_raw: 'bt709', color_matrix_raw: 'bt709' } };
+                : { 'ffprobe.version': '7.1', raw_dump: '{\n  "streams": [\n    { "codec_name": "prores" }\n  ]\n}', container_raw: 'mov,mp4,m4a,3gp,3g2,mj2', major_brand: 'qt  ', video_codec: 'prores', codec_profile: '4444 XQ', width: 1920, height: 1080, frame_rate: 23.976, scan: 'progressive', color_range: 'legal', color_primaries_raw: 'bt709', color_transfer_raw: 'bt709', color_matrix_raw: 'bt709' } };
           }
           return hashOutputs(args.unit, args.analyzer);
         case 'analyze_path': {
@@ -118,7 +118,7 @@ async function main() {
 
     console.log('\nF2. Setup: a Files table with File drop mapped');
     const tFiles = randomUUID(), tPlain = randomUUID(), tBoards = randomUUID();
-    const f = { name: randomUUID(), path: randomUUID(), kind: randomUUID(), manifest: randomUUID(), size: randomUUID(), width: randomUUID(), rate: randomUUID(), layout: randomUUID(), hash: randomUUID(), media: randomUUID(), codec: randomUUID(), rawCodec: randomUUID(), container: randomUUID(), audioCodec: randomUUID(), primaries: randomUUID(), plainName: randomUUID() };
+    const f = { name: randomUUID(), path: randomUUID(), kind: randomUUID(), manifest: randomUUID(), size: randomUUID(), width: randomUUID(), rate: randomUUID(), layout: randomUUID(), hash: randomUUID(), media: randomUUID(), codec: randomUUID(), rawCodec: randomUUID(), container: randomUUID(), audioCodec: randomUUID(), primaries: randomUUID(), dump: randomUUID(), plainName: randomUUID() };
     const pos = (id: string, position: number) => ({ type: 'field.update', id, position });
     const r = await post([
       { type: 'table.create', id: tFiles, name: 'Files' }, { type: 'table.create', id: tPlain, name: 'Notes' }, ...boardsTableMutations(tBoards),
@@ -137,12 +137,13 @@ async function main() {
       { type: 'field.create', id: f.container, tableId: tFiles, name: 'Container', key: 'container', fieldType: 'select', options: { vocabulary: 'container' } }, pos(f.container, 12),
       { type: 'field.create', id: f.audioCodec, tableId: tFiles, name: 'Audio codec', key: 'audio_codec', fieldType: 'select', options: { vocabulary: 'audio_codec' } }, pos(f.audioCodec, 13),
       { type: 'field.create', id: f.primaries, tableId: tFiles, name: 'Primaries', key: 'color_primaries', fieldType: 'text' }, pos(f.primaries, 14),
+      { type: 'field.create', id: f.dump, tableId: tFiles, name: 'ffprobe', key: 'raw_dump', fieldType: 'long_text' }, pos(f.dump, 15),
       { type: 'field.create', id: f.plainName, tableId: tPlain, name: 'Name', key: 'name', fieldType: 'text' }, pos(f.plainName, 0),
       // The recipe: filesystem for everything; ffprobe on video and audio (its default);
       // an xxh3 hash of everything. The order is the order the analyzers run.
       { type: 'table.update', id: tFiles, tools: { file_drop: { steps: [
         { analyzer: 'filesystem', map: { path: f.path, name: f.name, kind: f.kind, manifest: f.manifest, total_size: f.size, media: f.media } },
-        { analyzer: 'ffprobe', map: { width: f.width, frame_rate: f.rate, audio_layout: f.layout, codec: f.codec, video_codec: f.rawCodec, container: f.container, audio_codec: f.audioCodec, color_primaries: f.primaries } },
+        { analyzer: 'ffprobe', map: { width: f.width, frame_rate: f.rate, audio_layout: f.layout, codec: f.codec, video_codec: f.rawCodec, container: f.container, audio_codec: f.audioCodec, color_primaries: f.primaries, raw_dump: f.dump } },
         { analyzer: 'hash-xxh3', map: { hash: f.hash } },
       ] } } },
     ]);
@@ -177,6 +178,7 @@ async function main() {
     fr = await untilDb(`select id, data from records where table_id = '${tFiles}' order by created_at`, (x) => x.length === 2 && x[0].data.width === 1920 && x[1].data.audio_layout);
     check('ffprobe facts ARRIVE AFTERWARDS: width and rate on the movie, an audio layout on the wav', fr[0].data.width === 1920 && fr[0].data.frame_rate === 23.976 && fr[1].data.audio_layout?.tracks?.[0]?.channels?.join() === 'L,R', JSON.stringify(fr.map((x) => x.data)));
     check('the CANONICAL codec is written from the raw pair through the vocabulary, beside the raw name', fr[0].data.codec === 'ProRes 4444 XQ' && fr[0].data.video_codec === 'prores' && fr[1].data.codec === undefined, JSON.stringify(fr[0].data));
+    check('the RAW DUMP — everything ffprobe said, pretty-printed JSON — lands in the long-text field for the single file; the wav\'s fake reports none', fr[0].data.raw_dump?.startsWith('{\n  "streams"') && fr[1].data.raw_dump === undefined, JSON.stringify(fr[0].data.raw_dump));
     check('…and so are the container (the QuickTime family + the "qt  " brand → QuickTime; wav → WAV), the audio codec (pcm_s24le → PCM) and the primaries (bt709 → Rec. 709, into a plain text field)',
       fr[0].data.container === 'QuickTime' && fr[1].data.container === 'WAV' && fr[1].data.audio_codec === 'PCM' && fr[0].data.audio_codec === undefined && fr[0].data.color_primaries === 'Rec. 709' && fr[1].data.color_primaries === undefined, JSON.stringify(fr.map((x) => x.data)));
     fr = await untilDb(`select id, data from records where table_id = '${tFiles}' order by created_at`, (x) => x.length === 2 && x[0].data.hash && x[1].data.hash);
@@ -240,7 +242,7 @@ async function main() {
       { type: 'field.create', id: md5Field, tableId: tFiles, name: 'MD5', key: 'md5', fieldType: 'text' }, pos(md5Field, 15),
       { type: 'table.update', id: tFiles, tools: { file_drop: { steps: [
         { analyzer: 'filesystem', map: { path: f.path, name: f.name, kind: f.kind, manifest: f.manifest, total_size: f.size, media: f.media } },
-        { analyzer: 'ffprobe', map: { width: f.width, frame_rate: f.rate, audio_layout: f.layout, codec: f.codec, video_codec: f.rawCodec, container: f.container, audio_codec: f.audioCodec, color_primaries: f.primaries } },
+        { analyzer: 'ffprobe', map: { width: f.width, frame_rate: f.rate, audio_layout: f.layout, codec: f.codec, video_codec: f.rawCodec, container: f.container, audio_codec: f.audioCodec, color_primaries: f.primaries, raw_dump: f.dump } },
         { analyzer: 'hash-xxh3', map: { hash: f.hash } },
         { analyzer: 'hash-md5', when: 'manual', map: { hash: md5Field } },
       ] } } },

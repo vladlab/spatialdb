@@ -90,6 +90,10 @@ pub fn probe(unit: &Unit) -> Result<Probed, String> {
     }
     let Some(target) = &unit.probe_target else { return Ok(Probed { outputs: o }) };
     let v = run_ffprobe(target)?;
+    // The whole of it, for a SINGLE FILE only (the owner's call, Oct 17): a sequence's
+    // first frame or a set's first member would describe one piece of the unit and
+    // read as if it described all of it. Pretty-printed: a person reads this field.
+    if unit.kind == "file" { if let Ok(text) = serde_json::to_string_pretty(&v) { o.insert("raw_dump".into(), json!(text)); } }
     let format = &v["format"];
     // As ffprobe says it, WHOLE: "mov,mp4,m4a,3gp,3g2,mj2" for the QuickTime family.
     // Trimming to "mov" claimed something the demuxer never said; the extension

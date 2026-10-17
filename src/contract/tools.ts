@@ -167,6 +167,7 @@ const FFPROBE: Analyzer = {
   defaultRunsOn: { media: ['video', 'audio'] },
   outputs: [
     { key: 'ffprobe.version',  name: 'ffprobe version', type: 'text',   note: 'provenance: which ffprobe wrote the rest' },
+    { key: 'raw_dump',         name: 'Raw dump',        type: 'text',   note: 'the whole of what ffprobe said (-show_format -show_streams, as JSON) — a long-text field; the fallback for anything the outputs below do not carry. SINGLE FILES only: a sequence\'s frame or a set\'s members get none' },
     { key: 'container',        name: 'Container',       type: 'select', vocabulary: 'container', choices: VOCABULARIES.container.choices, note: 'the CANONICAL name, looked up from the raw format name, brand and extension in contract/vocab.ts: "QuickTime", "MP4", "MXF"; absent when the table has no entry' },
     { key: 'container_raw',    name: 'Container (raw)', type: 'text',   note: 'ffprobe\'s format_name, whole: "mov,mp4,m4a,3gp,3g2,mj2" (the QuickTime family — it cannot tell .mov from .mp4; the brand can), "mxf", "wav"' },
     { key: 'major_brand',      name: 'Brand (raw)',     type: 'text',   note: 'the ftyp atom\'s major_brand: "qt  " is QuickTime, "isom"/"mp42" are MP4; absent when the file has no ftyp' },
