@@ -124,6 +124,10 @@ async function main() {
     const mediaOut = ANALYZERS.find((a) => a.id === 'filesystem')!.outputs.find((o) => o.key === 'media')!;
     check('…and into a LINK field (a vocabulary table of the owner\'s rows, Oct 17) — a plain select output such as "media" does not', fieldAccepts(codecOut, { id: 'l', type: 'link', options: { target_table_id: 'codecs', single: true } }) && !fieldAccepts(mediaOut, { id: 'l', type: 'link', options: { target_table_id: 'x' } }));
 
+    const { vocabularyDoc, DOC_PATH } = await import('../scripts/vocabDoc.js');
+    const { readFileSync } = await import('node:fs');
+    check('VOCABULARIES.md is what the code renders — run `npm run vocab:doc` when this fails', readFileSync(DOC_PATH, 'utf8') === vocabularyDoc(), 'the page is behind contract/vocab.ts');
+
     console.log('\nT1d. resolveRow — the canonical name, or an alias, finds the ROW of a vocabulary table');
     const vrows = [{ id: 'a', name: 'QuickTime', aliases: 'MOV\nmov,mp4,m4a,3gp,3g2,mj2 / qt / mov' }, { id: 'b', name: 'MXF OP1a', aliases: 'MXF; op1a' }, { id: 'c', name: 'MXF OP-Atom', aliases: 'op-atom, opatom' }, { id: 'd', name: 'MP4' }];
     check('splitAliases: one per line, or comma- or semicolon-separated, trimmed', JSON.stringify(splitAliases('MXF; op1a')) === '["MXF","op1a"]' && JSON.stringify(splitAliases(' a ,\n b ;; c ')) === '["a","b","c"]' && splitAliases(undefined).length === 0 && splitAliases(3).length === 0);

@@ -1081,6 +1081,43 @@ contract, no second query language, the preview before the commit.
   it auto-placed (they were not undo steps); they stay, by hand, in the column where
   the stack was. "Remove stack" is the clean way back.
 
+### Vocabulary tables (Oct 17): the lists become rows the owner maintains
+
+On a real project the built-in container list lacked "MXF OP1a" vs "MXF OP-Atom",
+and the owner asked why the vocabularies were not just single-select link fields to
+tables he maintains, kept out of the Projects section. The strongest argument was not
+the missing choice: a vocabulary has to be SHARED between the spec side (Deliverables)
+and the file side (Files), and two selects each own their choices while one table both
+link to cannot disagree. (This supersedes the Sept 28 "not a utility table" call — the
+table is the point now.) Built as planned, in his order:
+
+1. Compare on links — already there (`sameRecord` / `sameSet`, same target table only).
+2. The ffprobe step's canonical outputs may be mapped to a LINK field; the code's
+   lookup still normalises raw → canonical, the drop finds the ROW by that name, else
+   by an **Aliases** column on the row (the canonical name, the raw spelling the
+   notice prints, or any one raw value) — what the code does not know, the table
+   teaches it, no patch. No row → no link, a notice naming the spelling to add; a
+   tool never creates a row (typos would seed garbage into a list he wants clean). A
+   re-drop replaces the link. `routeLinks` is pure; `test/filedrop.ts` F6f.
+3. A select's ⚙ → "convert to a link…": the choices become a table (Name, Aliases,
+   ticked utility), a single link stands in the select's place, every record linked
+   by its value, the recipe re-pointed, the old select kept renamed until deleted —
+   the one type change there is, done as FieldSettings always said it should be.
+   One Ctrl+Z; that exposed `table.update { tools }` having had no undo inverse.
+4. `tables.utility` (sql/018): a tick that folds a table away with the boards and
+   junctions. He almost did not ask for it ("UI creep") and judged it worth having —
+   only really there during the design phase.
+5. `raw_dump`: the whole ffprobe JSON into a long-text field, single files only
+   (multi-file units: no — a first member would read as if it described the unit).
+6. `VOCABULARIES.md`, generated from the code (`npm run vocab:doc`), kept current by
+   `test/tools.ts` — the raw → canonical dictionary as a page.
+
+Known edges: ffprobe mostly says just "mxf", so a file lands on a generic MXF row
+while a spec says OP1a — the compare honestly flags it; the OP is his to set by hand.
+`junction` on `table.update` still has no undo inverse (its first write would invert
+to `{}`, which the server refuses). The convert action does not touch compare pairs
+that name the old select.
+
 ### System fields, everywhere (Oct 17)
 
 "Created" and "Created by" were blank "anywhere" for the owner. Only a TABLE PAGE

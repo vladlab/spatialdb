@@ -50,7 +50,14 @@ API.md "Tools".
   editor shows the same recipe three ways: Steps, JSON, and a Summary in sentences
   ("If video or audio: ffprobe 7.1 → Width → Width"), so whoever reads it in a year
   can tell where every value came from. `contract/tools.ts` is the reference;
-  `src/client/tools/fileDrop.ts` runs it.
+  `src/client/tools/fileDrop.ts` runs it. The canonical outputs (Container, Codec,
+  Audio codec, Primaries, Transfer, Matrix) are looked up in the built-in lists
+  (`VOCABULARIES.md`, generated from `contract/vocab.ts`) and may land in a select
+  bound to the list, a text field, or a LINK to a vocabulary table you keep
+  (Containers, Codecs: a Name and an Aliases column) — the drop links the row named
+  that way, or one whose aliases say so, and tells you the spelling to add when none
+  does (API.md "Vocabulary tables"). `Raw dump` keeps everything ffprobe said, as
+  JSON, for a long-text field — single files only.
 - **Show in folder**: a `⤴ show` button beside every `file_path` value in the record
   panel.
 

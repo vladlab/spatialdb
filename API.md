@@ -448,6 +448,12 @@ RECIPE:
   History, scope and validation apply to tool-written data unchanged, and a script
   with a login token can do the same job.
 
+**`raw_dump`** (Oct 17): an ffprobe output carrying the whole of
+`-show_format -show_streams` as pretty-printed JSON, for a `long_text` field
+(`+ field` makes one) — the fallback for anything the named outputs do not carry.
+SINGLE FILES ONLY: a sequence's first frame or a channel set's members get none
+(probe.rs). A desktop rebuild is needed to produce it.
+
 ### Vocabularies: choices that live in the code
 
 `src/contract/vocab.ts`, `test/tools.ts` T1b/T2d/T5c. A select field may bind to a
@@ -482,12 +488,74 @@ The ffprobe analyzer's canonical outputs (`codec`, `audio_codec`, `container`,
 (`video_codec` + `codec_profile`, `audio_codec_raw`, `container_raw` + `major_brand`
 + the unit's extension, `color_*_raw`); an unknown value writes nothing canonical
 and is reported with the raw values — only to a table that maps the canonical
-output — which is how a list learns. A canonical output maps only into a select
-bound to the same vocabulary, or a text field. Two ffprobe selects are inline
+output — which is how a list learns. A canonical output maps into a select bound
+to the same vocabulary, a text field, or (Oct 17) a **link field** — see
+"Vocabulary tables" below. Every list, entry and accepted spelling is rendered in
+**`VOCABULARIES.md`**, generated from the code by `npm run vocab:doc`; `test/tools.ts`
+fails while that page is behind. Two ffprobe selects are inline
 lists, not vocabularies: `chroma` (4:4:4 / 4:2:2 / 4:2:0 / 4:1:1 / RGB /
 Monochrome) and `color_range` (`legal` / `full` — ffprobe's tv / pc, named as a
 spec names them; a Range field made before Oct 15 has choices tv / pc and refuses
 the new names until its choices are edited).
+
+### Vocabulary tables: the list as rows the owner maintains (Oct 17)
+
+`resolveRow` / `splitAliases` / `rawSpelling` in `src/contract/vocab.ts`;
+`routeLinks` / `vocabularyLinkFields` / `vocabRowsOf` in `src/client/tools/fileDrop.ts`;
+`test/tools.ts` T1d, `test/filedrop.ts` F6f, `test/vocabtables.ts`. The owner's
+reasons: a vocabulary has to be SHARED between the spec side (Deliverables) and the
+file side (Files) — two selects each own their choices, one table both link to cannot
+disagree — and a real project wanted "MXF OP1a" vs "MXF OP-Atom", which no built-in
+list had. The built-in lists stay as the NORMALISER; the table holds the names.
+
+- A canonical ffprobe output may be mapped to ANY link field (`fieldAccepts`; the
+  server's `toolsProblem` agrees). Only vocabulary outputs: `media` or `kind` into a
+  link is still refused. The link's target table is the vocabulary, whatever it is
+  called; a **`single`** link is the sensible shape (the convert action makes one).
+- At the drop (and a manual run), the client loads the target tables, then per
+  record and per link-mapped output finds the row (`resolveRow`), case-insensitively:
+  1. the row whose primary text IS the canonical name; else
+  2. a row whose **Aliases** column lists the canonical name; else
+  3. a row whose Aliases list the raw spelling (`rawSpelling`: the raw values joined
+     by " / ", exactly as the notice prints it — "prores / Something New") or any
+     single raw value — which is how the table teaches the drop what the code does
+     not know, with no patch.
+  The Aliases column is a `text` or `long_text` field with key **`aliases`**
+  (`ALIASES_KEY`); one alias per line, or comma- or semicolon-separated. No column:
+  only rule 1 applies.
+- Found: a `link.add` in the same run as the values (same batch, same `via`, same
+  undo), after a `link.remove` of whatever else the field held — a re-drop
+  **replaces**, as it overwrites a select, single or not. Not found: no link, and
+  one notice naming what to add ("Containers has no row named “MXF” — add one, or
+  give a row the alias “MXF”"; or, with no canonical name either, the raw spelling
+  to paste). A tool never creates a row. The vocabulary's own "not in the list"
+  notice is not repeated for an output a link field has already spoken for.
+- The link renders as a pill like any link, compares with `sameRecord` /
+  `sameSet` (links into the same target table on both sides; `rulesFor`), seeds,
+  filters, groups, and is walked by reports — nothing new there.
+- **Converting an existing select** (a select's ⚙ → "convert to a link…",
+  `convertSelectToLink` in schemaActions.ts): one synchronous run — a new table
+  ticked `utility` with `Name` (text) and `Aliases` (long text), one row per choice
+  (a bound list's whole list, in order) plus any stored value that is not a choice;
+  a `single` link named as the select was, key `<key>_2` (keys are immutable and the
+  select keeps its own), placed in the select's section right after it, with its
+  backlink face on the new table; `link.add` per record by value; the File drop
+  recipe's output that wrote the select re-pointed at the link where
+  `fieldAccepts` allows. The select stays as "<name> (old select)" until deleted
+  (compare pairs and views that name it still do). One Ctrl+Z undoes it all — which
+  needed `history.ts` to invert `table.update { tools }` (and `{ utility }`); it
+  had inverted neither.
+
+### Utility tables: `tables.utility` (Oct 17)
+
+`sql/018`. `table.update { utility: boolean }` (admin), read back on every table
+from `GET /api/schema` and on the stream. NAVIGATION ONLY: `isUtilityTable` (the
+client's one test, already true for boards, reports and junctions by kind) folds the
+table under "show N utility tables" in the tree with a "utility" tag, and keeps it
+out of the pickers that choose a data table (new junction). Links, the link picker,
+the command palette, reports, scope and the file drop see it as any table. A tick
+in Table settings on an ordinary table; the convert action sets it. Undo restores
+the previous value.
 
 **`via` — who wrote a batch.** `MutationRequest.via` is an optional tag
 (`^[a-z][a-z0-9_]{1,39}$`, e.g. `file_drop`) stored on the log row
