@@ -626,8 +626,12 @@ onUnmounted(() => store.stop());
   --border-main: #3a3a3a;
   --text-primary: #e0e0e0;
   --text-secondary: #bbb;
-  --text-muted: #888;
-  --text-faint: #555;
+  /* The ladder of secondary text, each step readable on the app background (Oct 17 —
+     the old faint #555 was 2.1:1 and the # column, group labels and "(empty)" vanished):
+     faint 5.0:1 (4.4:1 on the controls surface), muted 6.3:1, secondary 9:1. Faint is for text that is there to be
+     found, not read first; a line or a dot that is pure decoration uses a border token. */
+  --text-muted: #9e9e9e;
+  --text-faint: #8a8a8a;
   --accent: #42a5f5;
   --accent-ring: rgba(66, 165, 245, 0.22);
   --success: #4caf50;
@@ -649,7 +653,10 @@ onUnmounted(() => store.stop());
   --head-text: #c4c4c4;
   --head-line: #4a4a4a;
   --bg-band: #242424;
-  --bg-group: #2c2c2c;
+  /* Group headers (GridView): tinted bands, outer deeper and inner lighter, each with a
+     rule in a shade of the accent — the owner's pick from mockups, Oct 17. */
+  --bg-group-0: #1b2a3b; --group-rule-0: #3f74a3; --group-edge-0: #2c4258; --group-text-0: #8ab4d8;
+  --bg-group-1: #2d3f50; --group-rule-1: #5a89b2; --group-edge-1: #3a4f63; --group-text-1: #b5d0ea;
   --choice-bg: rgba(255, 255, 255, 0.11);
 }
 * { box-sizing: border-box; }

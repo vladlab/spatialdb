@@ -529,3 +529,11 @@ real browser — if one is off, it goes in the table above.
 | Table tab said "no tables" after creating the first one. | Pickers were only initialised on mount. |
 | Typing a non-number into a number cell ERASED the existing value. | `<input type="number">` reports garbage as `''`, which the grid reads as "clear". Found by `test/ui.ts`, not by a person. |
 | Undo tab said "nothing destructive yet" right after a delete. | Listed once on open, before the delete had flushed. Now follows the stream. Found by `test/ui.ts`. |
+
+## Oct 17 — group bands, contrast
+
+| Finding | Done |
+|---|---|
+| Group headers rendered at row weight: a tiny grey label, the name at body size, a band barely off the rows. Nesting read only from indent. | Every level is a TINTED band with its own rule (the owner's pick, "D", from mockups): the outer level the deeper blue, 38px, name 16px/650; the inner a lighter blue, 34px, 14.5px/600; count badges in the accent tint; rules in shades of the accent, never grid-line grey. The window maths moved from `index × ROW_H` to per-item offsets (`offsets`, binary-searched), so headers may be taller than rows. Tokens: `--bg-group-0/1`, `--group-rule-0/1`, `--group-edge-0/1`, `--group-text-0/1` in App.vue. |
+| Low-contrast text everywhere `--text-faint` (#555, 2.1:1) was used as TEXT: the `#` column, WORK/RECIPIENT labels, "(empty)", view labels, hints, "no choices". And number VALUES were drawn faint and 11px — the bare `.num` rule for the row-number column was catching `span.value.num` too, so the Oct 1 "numbers like any value" never took. | Ladder raised: faint #8a8a8a (5.0:1 on the app background, 4.4:1 on controls), muted #9e9e9e (6.3:1), secondary #bbb (9:1). Row-number styling scoped to `td.num`/`th.num`; a number value has no class of its own and is drawn like text. |
+

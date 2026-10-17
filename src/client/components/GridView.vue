@@ -275,8 +275,8 @@
         <tbody>
           <tr v-if="padTop" aria-hidden="true"><td :colspan="shown.length + 3" :style="{ height: padTop + 'px', padding: 0, border: 0 }" /></tr>
           <template v-for="it in windowed" :key="it.kind === 'group' ? 'g' + it.path : it.record.id">
-          <!-- A GROUP HEADER. Same height as a row — the window maths is `index × ROW_H`
-               and a taller header would put every row below it in the wrong place. -->
+          <!-- A GROUP HEADER. Taller than a row (GROUP_H by level, Oct 17) — the window
+               maths is per-item offsets (`offsets` below), not `index × ROW_H`. -->
           <tr v-if="it.kind === 'group'" class="group-row" :class="`level-${it.level}`" :data-path="it.path">
             <td :colspan="shown.length + 3">
               <div class="group-head" :style="{ paddingLeft: 8 + it.level * 18 + 'px' }">
@@ -413,7 +413,7 @@
                       <span v-if="lookupOf(r.id, f) === null" class="broken" title="This lookup is broken: the link field it follows, or the field it shows, was deleted. Undo that delete, or delete this field.">broken lookup</span>
                       <span v-else class="value looked-up" title="Looked up — edit it on the linked record">{{ lookupOf(r.id, f)!.join(', ') }}</span>
                     </template>
-                    <span v-else class="value" :class="{ num: f.type === 'number' }">{{ f.type === 'created_at' ? formatCreated(r.data[f.key]) : formatNumberField(f, r.data[f.key]) ?? display(r.data[f.key]) }}</span>
+                    <span v-else class="value">{{ f.type === 'created_at' ? formatCreated(r.data[f.key]) : formatNumberField(f, r.data[f.key]) ?? display(r.data[f.key]) }}</span>
                     <!-- The comparison's verdict on this cell — the same ✓ / ⚠ as the tray and cards. -->
                     <span v-if="verdictOf(r.id, f.id)" class="cell-verdict" :class="{ ok: verdictOf(r.id, f.id)!.ok }" :title="verdictOf(r.id, f.id)!.title">{{ verdictOf(r.id, f.id)!.ok ? '✓' : '⚠' }}</span>
                   </span>
@@ -1365,12 +1365,22 @@ function onScroll() {
   if (editing.value && fieldById.value.get(sel.value?.field ?? '')?.type === 'link') stopEdit('none');
 }
 
-const first = computed(() => Math.max(0, Math.floor(scrollTop.value / ROW_H) - OVERSCAN));
-const last = computed(() =>
-  Math.min(items.value.length, Math.ceil((scrollTop.value + viewportH.value) / ROW_H) + OVERSCAN));
+/** A group header's height, by level: the outer band is the tallest. Must match the CSS (.group-row). */
+const GROUP_H: readonly number[] = [38, 34];
+const itemH = (it: { kind: string; level?: number }) => (it.kind === 'group' ? (GROUP_H[it.level ?? 0] ?? GROUP_H[GROUP_H.length - 1]) : ROW_H);
+/** offsets[i] = the top of item i; offsets[n] = the whole height. Rows are ROW_H, headers GROUP_H. */
+const offsets = computed(() => { const o = new Array<number>(items.value.length + 1); o[0] = 0; items.value.forEach((it, i) => { o[i + 1] = o[i] + itemH(it); }); return o; });
+/** The last item whose top is at or above y (binary search over offsets). */
+function itemAt(y: number): number {
+  const o = offsets.value; let lo = 0, hi = o.length - 2;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (o[mid] <= y) lo = mid; else hi = mid - 1; }
+  return lo;
+}
+const first = computed(() => (items.value.length ? Math.max(0, itemAt(scrollTop.value) - OVERSCAN) : 0));
+const last = computed(() => (items.value.length ? Math.min(items.value.length, itemAt(scrollTop.value + viewportH.value) + 1 + OVERSCAN) : 0));
 const windowed = computed(() => items.value.slice(first.value, last.value));
-const padTop = computed(() => first.value * ROW_H);
-const padBottom = computed(() => (items.value.length - last.value) * ROW_H);
+const padTop = computed(() => offsets.value[first.value] ?? 0);
+const padBottom = computed(() => (offsets.value[items.value.length] ?? 0) - (offsets.value[last.value] ?? 0));
 
 /**
  * Scroll row `i` — and, when a field is named, its COLUMN — into view. Done by
@@ -1385,7 +1395,7 @@ function reveal(ri: number, fieldId?: string) {
   if (fieldId) revealCol(fieldId);
   // `ri` counts RECORDS; the scroll position counts ITEMS (group headers take a row each).
   const i = itemIndexOfRow.value[ri] ?? ri;
-  const top = i * ROW_H, bottom = top + ROW_H;
+  const top = offsets.value[i] ?? i * ROW_H, bottom = top + ROW_H;
   if (top < sc.scrollTop) sc.scrollTop = top;
   else if (bottom > sc.scrollTop + sc.clientHeight - HEADER_H) {
     sc.scrollTop = bottom - sc.clientHeight + HEADER_H;
@@ -1629,8 +1639,8 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
    cell on every hover: the column twitched and the row grew a pixel, which in a
    windowed grid (fixed ROW_H) also nudged everything below it. Absolute + a
    fixed-width cell means hovering changes paint, never layout. */
-.num { position: sticky; width: 52px; min-width: 52px; max-width: 52px; box-sizing: border-box; cursor: grab; user-select: none; padding-right: 18px !important; }
-.num:active { cursor: grabbing; }
+.grid td.num, .grid th.num { position: sticky; width: 52px; min-width: 52px; max-width: 52px; box-sizing: border-box; cursor: grab; user-select: none; padding-right: 18px !important; }
+.grid td.num:active { cursor: grabbing; }
 .num .expand {
   position: absolute; top: 0; bottom: 0; right: 0; width: 18px; display: flex; align-items: center; justify-content: center;
   visibility: hidden; background: none; border: none; color: var(--accent);
@@ -1662,21 +1672,30 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .add-group { display: block; width: 100%; text-align: left; background: none; border: none; color: var(--accent); cursor: pointer; font: inherit; padding: 5px 6px; }
 .cell-verdict { color: var(--warning); font-size: 11px; margin-left: 4px; cursor: help; flex: none; }
 .cell-verdict.ok { color: var(--success); opacity: 0.8; }
-.group-row td { padding: 0; background: var(--bg-group); border-bottom: 1px solid var(--border-main); height: 29px; }
-.group-row.level-1 td { background: var(--bg-app); }
-.group-head { display: flex; align-items: center; gap: 8px; height: 29px; box-sizing: border-box; white-space: nowrap; position: sticky; left: 0; max-width: 100vw; }
-.group-fold { background: none; border: none; color: var(--text-muted); cursor: pointer; width: 16px; padding: 0; font: inherit; font-size: 10px; }
-.group-field { color: var(--text-faint); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
-.group-label { font-weight: 600; }
-.group-label.empty { color: var(--text-faint); font-weight: 400; font-style: italic; }
-.group-count { color: var(--text-muted); font-size: 11px; background: var(--bg-app); border: 1px solid var(--border-main); border-radius: 8px; padding: 0 7px; }
-.group-row.level-1 .group-count { background: var(--controls-bg); }
+/* GROUP HEADERS (Oct 17, the owner's pick from mockups): every level is a TINTED band
+   with its own rule, so a group reads as a section and not as one more row — the outer
+   level the deeper blue and the tallest, the inner a lighter blue a step shorter; the
+   names a size up (16px / 14.5px). Heights are GROUP_H in the script: the window maths
+   reads them, so a change here is a change there. The rule above a band is a shade of
+   the accent, never the grid-line grey, so it is told from the rows at a glance. */
+.group-row td { padding: 0; background: var(--bg-group-0); border-top: 2px solid var(--group-rule-0); border-bottom: 1px solid var(--group-edge-0); height: 38px; }
+.group-row.level-1 td, .group-row.level-2 td { background: var(--bg-group-1); border-top: 1px solid var(--group-rule-1); border-bottom: 1px solid var(--group-edge-1); height: 34px; }
+.group-head { display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; white-space: nowrap; position: sticky; left: 0; max-width: 100vw; }
+.group-row.level-1 .group-head, .group-row.level-2 .group-head { height: 32px; }
+.group-fold { background: none; border: none; color: var(--group-text-0); cursor: pointer; width: 16px; padding: 0; font: inherit; font-size: 10px; }
+.group-field { color: var(--group-text-0); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; }
+.group-row.level-1 .group-field, .group-row.level-2 .group-field { color: var(--group-text-1); }
+.group-label { font-weight: 650; font-size: 16px; color: #f4f7fa; letter-spacing: 0.01em; }
+.group-row.level-1 .group-label, .group-row.level-2 .group-label { font-weight: 600; font-size: 14.5px; }
+.group-label.empty { color: var(--group-text-1); font-weight: 400; font-style: italic; font-size: 14px; }
+.group-count { color: #dbeafe; font-size: 11.5px; background: rgba(66, 165, 245, 0.18); border: 1px solid rgba(66, 165, 245, 0.5); border-radius: 9px; padding: 0 8px; line-height: 17px; }
+.group-row.level-1 .group-count, .group-row.level-2 .group-count { background: rgba(66, 165, 245, 0.22); border-color: rgba(66, 165, 245, 0.55); }
 .group-add { background: none; border: 1px solid transparent; border-radius: 3px; color: var(--text-muted); cursor: pointer; padding: 0 6px; font: inherit; }
 .group-add:hover { color: var(--accent); border-color: var(--accent); }
 .scope-note { font-size: 11px; color: var(--accent); border: 1px solid var(--accent); border-radius: 3px; padding: 0 6px; white-space: nowrap; }
 .scope-note.unscoped { color: var(--warning); border-color: var(--warning); }
 .row:hover .num .expand { visibility: visible; }
-.num { color: var(--text-faint); font-size: 11px; text-align: right !important; }
+.grid td.num, .grid th.num { color: var(--text-faint); font-size: 11px; text-align: right !important; }   /* the ROW NUMBER column only — a number VALUE is drawn like any value (Oct 1 asked, Oct 17 done: the bare .num rule had kept catching it) */
 .act { width: 1%; white-space: nowrap; }
 .open-board { background: none; border: 1px solid var(--border-main); color: var(--accent); border-radius: 3px; padding: 0 6px; margin-right: 4px; cursor: pointer; font: inherit; font-size: 11px; }
 
@@ -1696,7 +1715,6 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .cell :deep(.over) { position: absolute; inset: 0; }
 .cell.sized { box-sizing: border-box; }
 .value { overflow: hidden; text-overflow: ellipsis; }
-.value.num { margin-left: auto; font-variant-numeric: tabular-nums; }
 .looked-up { color: var(--text-secondary); font-style: italic; }
 .broken { color: var(--danger); font-size: 11px; }
 .value.note { color: var(--text-secondary); }
