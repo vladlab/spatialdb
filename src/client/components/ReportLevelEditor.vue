@@ -151,13 +151,26 @@
         </div>
       </div>
 
-      <!-- SORT -->
+      <!-- GROUP BY: one field — of this table, or of the pair — splitting the records into labelled runs (Oct 17). -->
+      <div class="rl-block">
+        <span class="rl-label" title="Draw the records in labelled runs by this field's value — a select's choices in their own order, no value last. The sort orders the records within a run.">group by</span>
+        <div class="rl-rows">
+          <div class="rl-line">
+            <select class="group-by" :value="level.groupBy ?? ''" @change="level.groupBy = val($event) || undefined; changed()">
+              <option value="">— none —</option>
+              <option v-for="fl in sortable" :key="fl.id" :value="fl.id">{{ fl.label }}</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- SORT: a field of this table, or — through a junction — of the pair. -->
       <div class="rl-block">
         <span class="rl-label">sort</span>
         <div class="rl-rows">
           <div v-for="(s, i) in level.sort" :key="i" class="rl-line">
             <select :value="s.fieldId" @change="s.fieldId = val($event); changed()">
-              <option v-for="fl in tableFields" :key="fl.id" :value="fl.id">{{ fl.name }}</option>
+              <option v-for="fl in sortable" :key="fl.id" :value="fl.id">{{ fl.label }}</option>
             </select>
             <select :value="s.dir" @change="s.dir = val($event) as 'asc' | 'desc'; changed()">
               <option value="asc">ascending</option><option value="desc">descending</option>
@@ -276,6 +289,11 @@ const schema = computed(() => reportSchema(store.state.fields.values() as Iterab
 const tableChoices = computed(() => [...store.state.tables.values()].filter((t) => !t.kind || t.kind === 'records').sort((a, b) => a.name.localeCompare(b.name)));
 const tableFields = computed(() => (props.table ? fieldsOf(store.state, props.table) : []));
 const filterable = computed(() => tableFields.value.filter((f) => opsFor(f.type).length));
+/** What sort and group-by may name: this table's fields, then the pair's as "Status (of the pair)". */
+const sortable = computed(() => [
+  ...tableFields.value.map((f) => ({ id: f.id, label: f.name })),
+  ...(props.depth > 0 ? pairFields.value.map((f) => ({ id: f.id, label: `${f.name} (of the pair)` })) : []),
+]);
 const fieldById = (id: string) => store.state.fields.get(id);
 const typeOf = (id: string) => fieldById(id)?.type ?? 'text';
 const opsOf = (id: string) => opsFor(typeOf(id));
@@ -294,7 +312,7 @@ function idFor(name: string): string {
 
 function setRootTable(id: string) {
   const r = props.level as RootLevel;
-  r.table = id; r.fields = []; r.filters = []; r.sort = []; r.rollups = []; r.children = [];
+  r.table = id; r.fields = []; r.filters = []; r.sort = []; r.groupBy = undefined; r.rollups = []; r.children = [];
   props.usedIds.delete(r.id); r.id = idFor(store.state.tables.get(id)?.name ?? 'root');
   changed();
 }
@@ -337,7 +355,7 @@ function toggleVia(fieldId: string, on: boolean) {
     }
   } else if (!on && i >= 0) {
     d.value.via.splice(i, 1);
-    if (!d.value.via.length) { d.value.fields = []; d.value.filters = []; d.value.sort = []; d.value.rollups = []; d.value.children = []; d.value.pins = undefined; }
+    if (!d.value.via.length) { d.value.fields = []; d.value.filters = []; d.value.sort = []; d.value.groupBy = undefined; d.value.rollups = []; d.value.children = []; d.value.pins = undefined; }
   }
   prunePair();
   changed();

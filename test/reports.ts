@@ -395,5 +395,32 @@ try { goneB = runReport(bd, noJunction); } catch { /* checked below */ }
 check('read-time: a pin whose junction is gone is skipped, as any deleted pin is — the files of the Work, unpinned, no pair', !!goneB
   && bFiles(node(goneB, 'ProRes 4444 texted'), 'Ep 101').nodes.length === 3 && bFiles(node(goneB, 'ProRes 4444 texted'), 'Ep 101').nodes.every((n) => !n.pair));
 
+console.log('\nR13. Group by, and sorting by a pair field (Oct 17)');
+// By the file's OWN select: runs in the select's choice order (superseded, accepted), the walk's sort kept inside a run.
+const byStatus: ReportDef = JSON.parse(JSON.stringify(deliverables));
+byStatus.root.children[0].children[0].groupBy = fStatus;
+byStatus.root.children[0].children[0].sort = [{ fieldId: F['Files.Name'], dir: 'asc' }];
+const gs = section(node(section(node(runReport(byStatus, ctx), 'Ep 101'), 'delivs')!, 'ProRes 4444 texted'), 'files')!;
+check('a grouped level carries `groups`: labelled runs in the select\'s choice order, each holding its nodes', !!gs.groups
+  && gs.groups!.map((g) => `${g.label}:${g.nodes.map((n) => n.record.label).join('+')}`).join('|') === 'superseded:ep101_prores_v1.mov|accepted:ep101_prores_v2.mov', JSON.stringify(gs.groups?.map((g) => [g.label, g.nodes.length])));
+check('…while `nodes` stays the whole level, flat, for rollups and exports', gs.nodes.length === 2 && roll(node(section(node(runReport(byStatus, ctx), 'Ep 101'), 'delivs')!, 'ProRes 4444 texted'), 'files') === 2);
+const ungrouped = runReport(deliverables, ctx);
+check('a level without group-by has no `groups`', section(node(section(node(ungrouped, 'Ep 101'), 'delivs')!, 'ProRes 4444 texted'), 'files')!.groups === undefined);
+// A file with NO status: the "(empty)" run, last.
+const noStatus: ReportDef = JSON.parse(JSON.stringify(byStatus));
+const withBlank = { ...ctx, recordsOf: (t: string) => (t === T.files ? ctx.recordsOf(t).map((r) => (r.id === f2 ? { ...r, data: { ...r.data, status: undefined } } : r)) : ctx.recordsOf(t)) };
+const gb = section(node(section(node(runReport(noStatus, withBlank), 'Ep 101'), 'delivs')!, 'ProRes 4444 texted'), 'files')!;
+check('a record with no value for the group field is in a last run labelled ""', gb.groups!.map((g) => g.label).join('|') === 'superseded|' && gb.groups!.at(-1)!.nodes[0].record.label === 'ep101_prores_v2.mov', JSON.stringify(gb.groups?.map((g) => g.label)));
+check('group-by a field of another table is refused by the validator', (reportDefError({ ...byStatus, root: { ...byStatus.root, groupBy: fStatus } } as never, fields, tables) ?? '').includes('group-by field'));
+// Through the junction: group AND sort by the PAIR's status.
+const byPair: ReportDef = JSON.parse(JSON.stringify(delivered));
+byPair.root.children[0].children[0].groupBy = jStatus;
+byPair.root.children[0].children[0].sort = [{ fieldId: jStatus, dir: 'desc' }, { fieldId: F['Files.Name'], dir: 'asc' }];
+check('sort and group-by may name a pair field — the validator allows the junction\'s fields', reportDefError(byPair, fields, tables) === null, reportDefError(byPair, fields, tables) ?? '');
+const gp = section(node(section(node(runReport(byPair, ctx), 'Ep 101'), 'delivs')!, 'ProRes 4444 texted'), 'files')!;
+check('grouped by the PAIR\'s status: a run per status, read from each file\'s pair row', !!gp.groups && gp.groups!.map((g) => `${g.label}:${g.nodes.length}`).join('|') === 'Rejected:1|Accepted:1', JSON.stringify(gp.groups?.map((g) => [g.label, g.nodes.length])));
+check('…and sorted by it: a select sorts in CHOICE order (Uploaded, Rejected, Accepted), so desc puts Accepted first', gp.nodes.map((n) => n.pair?.cells.find((c) => c.fieldId === jStatus)?.text).join() === 'Accepted,Rejected', gp.nodes.map((n) => n.pair?.cells.find((c) => c.fieldId === jStatus)?.text).join());
+check('a pair field in sort or group-by on a level with NO junction is refused', (reportDefError({ ...byStatus, root: { ...byStatus.root, children: [{ ...byStatus.root.children[0], children: [{ ...byStatus.root.children[0].children[0], groupBy: jStatus }] }] } }, fields, tables) ?? '').includes('group-by field'));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

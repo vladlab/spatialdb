@@ -683,6 +683,7 @@ onUnmounted(() => store.stop());
      rule in a shade of the accent — the owner's pick from mockups, Oct 17. */
   --bg-group-0: #1b2a3b; --group-rule-0: #3f74a3; --group-edge-0: #2c4258; --group-text-0: #8ab4d8;
   --bg-group-1: #2d3f50; --group-rule-1: #5a89b2; --group-edge-1: #3a4f63; --group-text-1: #b5d0ea;
+  --bg-group-2: #2a2f34; --group-rule-2: #56606a; --group-edge-2: #3a4148; --group-text-2: #aab4be;   /* a third depth (reports): neutral */
   --choice-bg: rgba(255, 255, 255, 0.11);
 }
 * { box-sizing: border-box; }

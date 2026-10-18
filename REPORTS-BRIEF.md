@@ -103,7 +103,12 @@ Level = {
   table: uuid                      // root only; a descent's table is implied by `via`
   fields: uuid[]                   // EXPLICIT columns — see below
   filters: FilterEntry[]           // reused from contract/views.ts, verbatim
-  sort:    SortEntry[]             // same
+  sort:    SortEntry[]             // same — may also name a field of the PAIR (Oct 17)
+  groupBy?: fieldId                // Oct 17: the records in labelled RUNS by one field —
+                                   // of this table, or of the pair ("files by Status");
+                                   // a select's choices in their order, no value last;
+                                   // `sort` orders the records within a run. The result
+                                   // carries `groups` beside the flat `nodes`.
   rollups: Rollup[]
   children: Descent[]
 }
@@ -244,6 +249,18 @@ The flattener is one function over a `ReportNode`. A grid view is a one-level
 report, so "Export CSV" in the table toolbar is `applyView` → wrap as a root node →
 flatten → download. Client-side, no endpoint. Grouped views flatten the same way
 (group values become leading columns). Kanban exports as its grid.
+
+### 3b. How it is drawn (Oct 17)
+
+A level WITH levels beneath it is drawn as BANDS — one per record, tinted by
+depth like the grid's group headers (the outermost the deeper blue, the next the
+lighter, deeper ones neutral) — carrying the level's name, the record's label, a
+count chip per child section ("2 deliverables"), its roles, its pair fields and own
+fields as small name·value pairs, and its rollups at the right ("Accepted 2"). The
+record IS its section's heading. A LEAF level is a table, as before: one header
+line, columns hugging their content, a sizer row per section so a level's tables
+share widths. Groups draw as labelled runs in either shape. Chosen from mockups
+over "tint only the section header line": the layers had to be unmistakable.
 
 ## 7. What this is not, yet
 

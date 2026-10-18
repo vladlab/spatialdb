@@ -120,7 +120,15 @@ const LevelBase = z.strictObject({
   /** EXPLICIT columns. A report is a document: a field added later must not appear uninvited. */
   fields: z.array(uuid).max(200).default([]),
   filters: z.array(FilterEntry).max(32).default([]),
+  /** A field of this level's table — or, for a level through a junction, of the PAIR (Oct 17). */
   sort: z.array(SortEntry).max(8).default([]),
+  /**
+   * GROUP the level's records into labelled runs by one field — of its table, or of the
+   * pair ("files by Status", Oct 17): the grid's "group ·" inside one level. Runs come
+   * in a select's choice order, otherwise sorted; records with no value last, as
+   * "(empty)". The level's `sort` orders the records WITHIN a run.
+   */
+  groupBy: uuid.optional(),
   rollups: z.array(Rollup).max(32).default([]),
 });
 
@@ -290,10 +298,17 @@ export function reportDefError(raw: unknown, fields: Iterable<ReportField>, tabl
       if (!f) return `${path}: field ${id} does not exist`;
       if (f.table_id !== table) return `${path}: '${f.name}' is not a field of this level's table`;
     }
-    for (const e of [...level.filters, ...level.sort]) {
+    for (const e of level.filters) {
       const f = byId.get(e.fieldId);
-      if (!f) return `${path}: filter/sort field ${e.fieldId} does not exist`;
-      if (f.table_id !== table) return `${path}: filter/sort field '${f.name}' is not a field of this level's table`;
+      if (!f) return `${path}: filter field ${e.fieldId} does not exist`;
+      if (f.table_id !== table) return `${path}: filter field '${f.name}' is not a field of this level's table`;
+    }
+    // Sort and group-by may also name a field of the PAIR — the junction this level goes through.
+    const ownPair = 'via' in level ? pairTableOf(ancestors.at(-1)?.table ?? '', level, ancestors, schema) : null;
+    for (const [what, id] of [...level.sort.map((e) => ['sort', e.fieldId] as const), ...(level.groupBy ? [['group-by', level.groupBy] as const] : [])]) {
+      const f = byId.get(id);
+      if (!f) return `${path}: ${what} field ${id} does not exist`;
+      if (f.table_id !== table && f.table_id !== ownPair) return `${path}: ${what} field '${f.name}' is not a field of this level's table${ownPair ? ' or of its pair' : ''}`;
     }
     const childTables = new Map<string, string>();
     const childPairs = new Map<string, string>();   // child level id → its junction table, when it has ONE
@@ -374,8 +389,10 @@ export interface ReportNode {
   /** One section per child level, in definition order; a section may be empty. */
   children: ReportSection[];
 }
-/** `pairTableId`: the junction this level was reached through, when it is ONE. */
-export interface ReportSection { levelId: string; tableId: string; pairTableId?: string; nodes: ReportNode[] }
+/** One run of a GROUPED level: its label (the group field's text; "" = no value), and its nodes — the same objects as the section's `nodes`. */
+export interface ReportGroup { label: string; nodes: ReportNode[] }
+/** `pairTableId`: the junction this level was reached through, when it is ONE. `groups`: present when the level has `groupBy`; `nodes` stays the whole, flat and in order, for rollups and exports. */
+export interface ReportSection { levelId: string; tableId: string; pairTableId?: string; nodes: ReportNode[]; groups?: ReportGroup[] }
 
 export interface ReportContext {
   fields: ReportField[];
@@ -431,8 +448,28 @@ export function runReport(def: ReportDef, ctx: ReportContext): ReportSection {
     return r;
   };
 
-  const shape = (level: RootLevel | Descent, recs: ViewRecord[]): ViewRecord[] =>
-    applyView(recs, ctx.fields, { sort: level.sort, filters: level.filters, hidden: [] }, links, ctx.idsOf ?? ctx.linksFrom);
+  /**
+   * The level's records filtered and SORTED. A sort (or the group-by) may name a field
+   * of the PAIR: for those the grid's sort reads a stand-in record carrying the pair
+   * row's values under the pair fields' keys (prefixed, so a File's `status` and the
+   * pair's `status` never collide), and link-typed pair fields read through the row.
+   */
+  const shape = (level: RootLevel | Descent, recs: ViewRecord[], pairs?: Pairs): ViewRecord[] => {
+    const wanted = [...level.sort.map((e) => e.fieldId), ...(level.groupBy ? [level.groupBy] : [])];
+    const pairFieldIds = new Set(wanted.filter((id) => pairs && byId.get(id)?.table_id === pairs.table));
+    if (!pairs || !pairFieldIds.size) return applyView(recs, ctx.fields, { sort: level.sort, filters: level.filters, hidden: [] }, links, ctx.idsOf ?? ctx.linksFrom);
+    const fields = ctx.fields.map((f) => (pairFieldIds.has(f.id) ? { ...f, key: `\u0000pair:${f.key}` } : f));
+    const rowOf = (id: string) => { const rowId = pairs.of.get(id); return rowId ? recordOf(pairs.table, rowId) : undefined; };
+    const standIn = recs.map((r) => {
+      const row = rowOf(r.id); const data = { ...r.data };
+      for (const id of pairFieldIds) { const f = byId.get(id); if (f && row) data[`\u0000pair:${f.key}`] = row.data[f.key]; }
+      return { ...r, data };
+    });
+    const pairLinks: LinkLabels = (recId, fieldId) => (pairFieldIds.has(fieldId) ? links(rowOf(recId)?.id ?? '', fieldId) : links(recId, fieldId));
+    const pairIds = (recId: string, fieldId: string) => (pairFieldIds.has(fieldId) ? (ctx.idsOf ?? ctx.linksFrom)(rowOf(recId)?.id ?? '', fieldId) : (ctx.idsOf ?? ctx.linksFrom)(recId, fieldId));
+    const byIdOut = new Map(recs.map((r) => [r.id, r]));
+    return applyView(standIn, fields, { sort: level.sort, filters: level.filters, hidden: [] }, pairLinks, pairIds).map((r) => byIdOut.get(r.id)!);
+  };
   /** Which of these records pass these filters — the grid's own reading of them. */
   const passing = (recs: ViewRecord[], filters: z.infer<typeof FilterEntry>[]): Set<string> =>
     new Set(applyView(recs, ctx.fields, { sort: [], filters, hidden: [] }, links, ctx.idsOf ?? ctx.linksFrom).map((r) => r.id));
@@ -445,7 +482,7 @@ export function runReport(def: ReportDef, ctx: ReportContext): ReportSection {
     level: RootLevel | Descent, tableId: string, recs: ViewRecord[], roles: Map<string, string[]>,
     ancestors: Step[], pairs?: Pairs,
   ): ReportNode[] => {
-    return shape(level, recs).map((r) => {
+    return shape(level, recs, pairs).map((r) => {
       const path = [...ancestors, { id: level.id, table: tableId, record: r }];
       const children = level.children.map((c) => walkDescent(c, tableId, r, path));
       const node: ReportNode = {
@@ -462,6 +499,37 @@ export function runReport(def: ReportDef, ctx: ReportContext): ReportSection {
       node.rollups = level.rollups.map((ru) => rollupValue(ru, node));
       return node;
     });
+  };
+
+  /**
+   * The GROUPS of a level's nodes: runs by the group field's text, in a select's
+   * choice order (the one its owner wrote the choices in), else by the text, with
+   * the no-value run last. The nodes keep their sorted order inside each run.
+   */
+  const grouped = (level: RootLevel | Descent, nodes: ReportNode[], tableId: string, pairs?: Pairs): ReportGroup[] | undefined => {
+    const f = level.groupBy ? byId.get(level.groupBy) : undefined;
+    if (!f) return undefined;
+    const fromPair = !!pairs && f.table_id === pairs.table;
+    if (f.table_id !== tableId && !fromPair) return undefined;
+    const textOf = (n: ReportNode): string => {
+      const rec = fromPair ? (n.pair ? recordOf(pairs!.table, n.pair.id) : undefined) : recordOf(tableId, n.record.id);
+      return rec ? cellText(f, rec, links) : '';
+    };
+    const runs = new Map<string, ReportNode[]>();
+    for (const n of nodes) { const t = textOf(n); const run = runs.get(t); if (run) run.push(n); else runs.set(t, [n]); }
+    const choices = f.type === 'select' && Array.isArray(f.options?.choices) ? (f.options!.choices as unknown[]).map(String) : null;
+    const rank = (t: string) => { const i = choices ? choices.indexOf(t) : -1; return i === -1 ? Number.MAX_SAFE_INTEGER : i; };
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+    return [...runs.entries()]
+      .sort(([a], [b]) => (a === '') !== (b === '') ? (a === '' ? 1 : -1) : rank(a) - rank(b) || collator.compare(a, b))
+      .map(([label, ns]) => ({ label, nodes: ns }));
+  };
+  const section = (levelId: string, level: RootLevel | Descent, tableId: string, nodes: ReportNode[], pairTable?: string, pairs?: Pairs): ReportSection => {
+    const s: ReportSection = { levelId, tableId, nodes };
+    if (pairTable) s.pairTableId = pairTable;
+    const g = grouped(level, nodes, tableId, pairs);
+    if (g) s.groups = g;
+    return s;
   };
 
   const walkDescent = (
@@ -521,7 +589,7 @@ export function runReport(def: ReportDef, ctx: ReportContext): ReportSection {
       } else if (d.on === 'level') recs = recs.filter((r) => ctx.linksFrom(r.id, p.fieldId).includes(anc.record.id));
       else recs = recs.filter((r) => ctx.linksFrom(anc.record.id, p.fieldId).includes(r.id));
     }
-    if (!pairTable) return { levelId: c.id, tableId, nodes: build(c, tableId, recs, roles, path) };
+    if (!pairTable) return section(c.id, c, tableId, build(c, tableId, recs, roles, path));
     // The pair of each record: its first row, or — under a pair filter — its first
     // row that passes; a record none of whose rows pass is not at this level.
     const pairs: Pairs = { table: pairTable, of: new Map(), fields: c.pair?.fields ?? [] };
@@ -533,7 +601,7 @@ export function runReport(def: ReportDef, ctx: ReportContext): ReportSection {
       if (row) pairs.of.set(r.id, row);
       return !!row || !ok;
     });
-    return { levelId: c.id, tableId, pairTableId: pairTable, nodes: build(c, tableId, recs, roles, path, pairs) };
+    return section(c.id, c, tableId, build(c, tableId, recs, roles, path, pairs), pairTable, pairs);
   };
 
   const rollupValue = (ru: Rollup, node: ReportNode): ReportRollupValue => {
@@ -576,7 +644,7 @@ export function runReport(def: ReportDef, ctx: ReportContext): ReportSection {
   };
 
   const rootRecs = ctx.recordsOf(def.root.table).filter((r) => (ctx.inScope ? ctx.inScope(r) : true));
-  return { levelId: def.root.id, tableId: def.root.table, nodes: build(def.root, def.root.table, rootRecs, new Map(), []) };
+  return section(def.root.id, def.root, def.root.table, build(def.root, def.root.table, rootRecs, new Map(), []));
 }
 
 /* ── flattening: the tree as rows, for CSV and spreadsheets ───────────────── */
