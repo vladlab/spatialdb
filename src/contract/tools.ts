@@ -44,6 +44,7 @@
 import { z } from 'zod';
 import { MANIFEST_KINDS } from './shapes.js';
 import { VOCABULARIES } from './vocab.js';
+import { FINGERPRINT } from './fingerprint.js';
 
 /* ── what a dropped thing is ─────────────────────────────────────────────── */
 
@@ -208,11 +209,16 @@ const FFPROBE: Analyzer = {
 
 /**
  * Hashes are PER FILE, always: a single file's hash goes to the `hash` output AND
- * into its manifest; a bundle's or channel set's members each get their own, written
- * into the manifest beside the member (the Manifest field the filesystem step maps —
- * the hash step has no manifest output of its own, so two steps never own one
- * field). A sequence is not hashed. A hash step is usually `when: "manual"`: an md5
- * of a 200 GB master is minutes, and a client asks for it once, not on every drop.
+ * into its manifest (`hashes.<algo>`); a bundle's or channel set's members each get
+ * their own, written into the manifest beside the member (the Manifest field the
+ * filesystem step maps — the hash step has no manifest output of its own, so two
+ * steps never own one field). A sequence is not hashed.
+ *
+ * The xxh3 is the FINGERPRINT (contract/fingerprint.ts) and is not a recipe
+ * decision: every table with File drop fingerprints what is dropped, into the
+ * manifest, whether or not a `hash-xxh3` step is in the recipe — a step only adds
+ * a column for it (`fingerprintStep`). md5 and sha256 are a client's checksums:
+ * `when: "manual"`, run from the record once, never read by the app.
  */
 const hashAnalyzer = (algo: string, note: string): Analyzer => ({
   id: `hash-${algo}`, name: `Hash (${algo})`, program: null,
@@ -343,13 +349,24 @@ export function pruneTools(tools: TablesTools, fields: Iterable<ToolFieldLike>):
   return { tools: out, dropped };
 }
 
+/**
+ * The step that writes the fingerprint (contract/fingerprint.ts): the recipe's own
+ * `hash-xxh3` step when it has one that runs at the drop (it may add a column),
+ * else an implicit one into the manifest only. A recipe cannot opt out — a
+ * manual xxh3 step still leaves the implicit one running at the drop.
+ */
+export function fingerprintStep(recipe: Recipe): Step {
+  const own = recipe.steps.find((s) => s.analyzer === 'hash-xxh3' && !isManual(s));
+  return own ?? { analyzer: 'hash-xxh3', map: {} };
+}
+
 /** The effective filter of a step. */
 export const runsOnOf = (step: Step): RunsOn => step.runs_on ?? analyzerOf(step.analyzer)?.defaultRunsOn ?? {};
 /** A step run by hand from the record, not at the drop. */
 export const isManual = (step: Step): boolean => step.when === 'manual';
 export const isHashStep = (step: Step): boolean => step.analyzer.startsWith('hash-');
-/** Does this hash step write into the manifest? (Absent = yes.) */
-export const intoManifest = (step: Step): boolean => isHashStep(step) && step.into_manifest !== false;
+/** Does this hash step write into the manifest? (Absent = yes. The fingerprint always does: the manifest is where it is read.) */
+export const intoManifest = (step: Step): boolean => isHashStep(step) && (step.analyzer === `hash-${FINGERPRINT}` || step.into_manifest !== false);
 
 /** Does a step apply to a dropped thing? An absent list is no constraint. */
 export function stepApplies(step: Step, unit: { media: string; kind: string }): boolean {

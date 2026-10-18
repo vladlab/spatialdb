@@ -12,7 +12,7 @@
 -->
 <template>
   <div v-if="m" class="mv">
-    <p v-if="m.kind === 'file'" class="mv-line">One file · {{ formatBytes(m.size) }}<span v-if="m.hash" class="mv-hash" :title="m.hash"> · {{ short(m.hash) }}</span></p>
+    <p v-if="m.kind === 'file'" class="mv-line">One file · {{ formatBytes(m.size) }}<span v-for="h in hashList(m)" :key="h" class="mv-hash" :title="h"> · {{ short(h) }}</span></p>
 
     <template v-else-if="m.kind === 'sequence'">
       <p class="mv-line"><code>{{ m.pattern }}</code></p>
@@ -30,8 +30,8 @@
               <td v-if="m.kind === 'channel_set'" class="mv-ch">{{ (x as { channel: string }).channel }}</td>
               <td class="mv-path" :title="x.path">{{ x.path }}</td>
               <td v-if="m.kind === 'bundle'" class="mv-size">{{ formatBytes((x as { size: number }).size) }}</td>
-              <!-- A column only once some member HAS a hash; the full value on hover. -->
-              <td v-if="hashed" class="mv-hash mv-member-hash" :title="x.hash ?? 'not hashed'">{{ x.hash ? short(x.hash) : '—' }}</td>
+              <!-- A column only once some member HAS a hash; every hash it carries on hover, the fingerprint shown. -->
+              <td v-if="hashed" class="mv-hash mv-member-hash" :title="hashList(x).join('\n') || 'not hashed'">{{ hashList(x)[0] ? short(hashList(x)[0]) : '—' }}</td>
             </tr>
           </tbody>
         </table>
@@ -44,12 +44,15 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { Manifest, formatBytes } from '../../contract/shapes';
+import { FINGERPRINT, hashesOf } from '../../contract/fingerprint';
 
 const props = defineProps<{ value: unknown }>();
 const m = computed(() => { const r = Manifest.safeParse(props.value); return r.success ? r.data : null; });
 const short = (h: string) => (h.length > 22 ? `${h.slice(0, 20)}…` : h);
+/** The hashes a file carries, the fingerprint first (contract/fingerprint.ts). */
+const hashList = (x: { hash?: string; hashes?: Record<string, string> }) => { const h = hashesOf(x); return Object.keys(h).sort((a, b) => (a === FINGERPRINT ? -1 : b === FINGERPRINT ? 1 : a.localeCompare(b))).map((k) => h[k]); };
 /** Some member of a bundle or channel set carries a hash (hash.rs: per file, into the manifest). */
-const hashed = computed(() => !!m.value && 'members' in m.value && (m.value.members as Array<{ hash?: string }>).some((x) => x.hash));
+const hashed = computed(() => !!m.value && 'members' in m.value && (m.value.members as Array<{ hash?: string; hashes?: Record<string, string> }>).some((x) => hashList(x).length));
 </script>
 
 <style scoped>

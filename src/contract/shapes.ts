@@ -38,16 +38,25 @@ export const MANIFEST_MAX_MEMBERS = 2000;
  * without touching the schema or rewriting old records.
  */
 export const Hash = z.string().regex(/^[a-z0-9_-]{2,20}:[0-9a-f]{8,128}$/i, 'a hash looks like "sha256:9f2c…"');
+/**
+ * Several hashes of ONE file, keyed by algorithm: `{ xxh3: "xxh3:…", md5: "md5:…" }`.
+ * The xxh3 is the FINGERPRINT (contract/fingerprint.ts) — the one the app reads to
+ * decide "is this the same file"; an md5 is a deliverable's checksum, asked for by
+ * hand. They coexist: running one never replaces another (the owner, Oct 18). The
+ * older single `hash` is read as one entry of this map (`hashesOf`) and left alone
+ * on records that still carry it.
+ */
+export const Hashes = z.record(z.string().regex(/^[a-z0-9_-]{2,20}$/i), Hash);
 const bytes = z.number().int().nonnegative();
 /** Relative to the RECORD's path — never absolute, so the cross-machine path question stays in one place. */
 const relPath = z.string().min(1).max(1024).refine((p) => !p.startsWith('/') && !/^[a-z]:[\\/]/i.test(p) && !p.split(/[\\/]/).includes('..'),
   'member paths are relative to the record\'s path (no leading "/", no "..")');
 
 export const Manifest = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('file'), size: bytes, hash: Hash.optional() }),
+  z.strictObject({ kind: z.literal('file'), size: bytes, hash: Hash.optional(), hashes: Hashes.optional() }),
   z.strictObject({
     kind: z.literal('bundle'),                                   // an IMF / DCP folder
-    members: z.array(z.strictObject({ path: relPath, size: bytes, hash: Hash.optional() })).max(MANIFEST_MAX_MEMBERS),
+    members: z.array(z.strictObject({ path: relPath, size: bytes, hash: Hash.optional(), hashes: Hashes.optional() })).max(MANIFEST_MAX_MEMBERS),
     source: z.string().max(200).optional(),                       // "ASSETMAP.xml", "PKL_….xml" — what the list was read from
   }),
   z.strictObject({
@@ -58,7 +67,7 @@ export const Manifest = z.discriminatedUnion('kind', [
   }).refine((s) => s.last >= s.first, 'last frame is before first'),
   z.strictObject({
     kind: z.literal('channel_set'),                              // a multi-mono mix: 6 wavs = one 5.1
-    members: z.array(z.strictObject({ path: relPath, channel: z.string().min(1).max(16), size: bytes.optional(), hash: Hash.optional() })).min(1).max(64),
+    members: z.array(z.strictObject({ path: relPath, channel: z.string().min(1).max(16), size: bytes.optional(), hash: Hash.optional(), hashes: Hashes.optional() })).min(1).max(64),
   }),
 ]);
 export type Manifest = z.infer<typeof Manifest>;

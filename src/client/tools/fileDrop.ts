@@ -212,21 +212,24 @@ function writeLinks(store: Store, recordId: string, links: RoutedLinks['links'],
 
 /**
  * A hash step's outputs, placed: a single file's `hash` is also written into its
- * manifest (`{ kind: 'file', size, hash }`); a set's `member_hashes` go beside the
- * members of the manifest — the record's CURRENT one when it has it (an md5 run
- * after an xxh3 replaces the hashes and keeps everything else), else the unit's
- * fresh one. The manifest is written through the field the FILESYSTEM step maps,
- * since the hash step has no manifest output of its own. Pure.
+ * manifest's `hashes` map under its algorithm (`{ kind: 'file', size, hashes: { xxh3 } }`);
+ * a set's `member_hashes` go beside the members of the manifest — the record's
+ * CURRENT one when it has it, else the unit's fresh one. An md5 run after an xxh3
+ * sits BESIDE it (contract/fingerprint.ts: the xxh3 is what the app compares, the
+ * md5 is what a client verifies); the older single `hash` slot is left as it was.
+ * The manifest is written through the field the FILESYSTEM step maps, since the
+ * hash step has no manifest output of its own. Pure.
  */
 export function withHashes(outputs: Record<string, unknown>, unit: Unit, current: unknown): Record<string, unknown> {
   const out = { ...outputs };
   const members = out.member_hashes as Array<{ path: string; hash: string }> | undefined;
   delete out.member_hashes;
   const base = (current && typeof current === 'object' ? current : unit.manifest) as Record<string, unknown>;
-  if (typeof out.hash === 'string' && base.kind === 'file') out.manifest = { ...base, hash: out.hash };
+  const add = (thing: Record<string, unknown>, hash: string) => ({ ...thing, hashes: { ...(thing.hashes as Record<string, string> | undefined), [hash.split(':')[0]]: hash } });
+  if (typeof out.hash === 'string' && base.kind === 'file') out.manifest = add(base, out.hash);
   else if (members?.length && Array.isArray(base.members)) {
     const byPath = new Map(members.map((m) => [m.path, m.hash]));
-    out.manifest = { ...base, members: (base.members as Array<Record<string, unknown>>).map((m) => (byPath.has(String(m.path)) ? { ...m, hash: byPath.get(String(m.path)) } : m)) };
+    out.manifest = { ...base, members: (base.members as Array<Record<string, unknown>>).map((m) => (byPath.has(String(m.path)) ? add(m, byPath.get(String(m.path))!) : m)) };
   }
   return out;
 }
