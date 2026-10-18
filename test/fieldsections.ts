@@ -430,6 +430,44 @@ async function main() {
     await sec('Created').trigger('click');
     check('"Created" folds like any section', await until(() => secs() === '▸Video,▸Audio,▸Created' && labels() === 'Name,Path'), labels());
     await tray().find('.rp-close').trigger('click');
+
+    /* ───────────────────────────────────────────────────────────────────── */
+    console.log('\nF5. The record tray: rows, and block fields that fold');
+    const fNotes = randomUUID();
+    await post([{ type: 'table.update', id: tFiles, fieldSections: [] }, { type: 'field.create', id: fNotes, tableId: tFiles, name: 'Notes', key: 'notes', fieldType: 'long_text', options: {} }, pos(fNotes, 7),
+      { type: 'record.update', id: recB, set: { notes: 'first line\nsecond line' }, unset: [] }]);
+    await open('b.mov');
+    await until(() => !!pField('Notes'));
+    check('a short field is a ROW (label cell | value cell), with no fold chip', pField('Path').classes('row') && !pField('Path').find('.fold-chip').exists());
+    check('a long text is a BLOCK: a fold chip on its label, and its one-line SUMMARY — the first line, as the card prints it — in the row', pField('Notes').classes('block') && pField('Notes').find('.fold-chip').exists()
+      && pField('Notes').find('.rp-value.summary .text').text() === 'first line', pField('Notes').html());
+    check('a block starts UNFOLDED: its editor hangs under the row', !pField('Notes').classes('folded') && pField('Notes').find('.rp-under').exists());
+    check('every label cell is one width: --label-w is set on the body', /--label-w:\s*\d+px/.test(tray().find('.rp-body').attributes('style') ?? ''), tray().find('.rp-body').attributes('style'));
+    await pField('Notes').find('.fold-chip').trigger('click');
+    check('the chip folds it: the row stays, the editor goes', await until(() => pField('Notes').classes('folded') && !pField('Notes').find('.rp-under').exists() && pField('Notes').find('.rp-value.summary .text').text() === 'first line'));
+    await pField('Path').find('.rp-value').trigger('click');
+    await until(() => pEditor().exists());
+    await pEditor().trigger('keydown', { key: 'Tab' });
+    check('Tab moves to the next field — Spec, in this table\'s order — not into a folded block\'s editor', await until(() => pField('Spec').classes('editing')), tray().findAll('.rp-field.editing').map((f: any) => f.find('.rp-name').text()).join());
+    for (let i = 0; i < 5 && pEditor().exists(); i++) await pEditor().trigger('keydown', { key: 'Tab' });   // Width, Channels, Hash, Spec… through to the end
+    check('…walked to the end, Notes (folded) was never entered', !pField('Notes').classes('editing'));
+    if (pEditor().exists()) await pEditor().trigger('keydown', { key: 'Escape' });
+    await open('a.mov');
+    check('the fold is per FIELD, not per record: on the next file it is still folded', await until(() => pField('Notes').classes('folded')));
+    let rememberedF = '';
+    try { rememberedF = (globalThis as any).localStorage?.getItem('spatialdb.tray.fieldFolds') ?? ''; } catch { /* no storage in this runtime */ }
+    if (rememberedF) {
+      const m = JSON.parse(rememberedF) as Record<string, true>;
+      const k = Object.keys(m);
+      check('…and remembered in this browser, keyed by the VIEW behind the tray (table:<id>) and the field', k.length === 1 && k[0] === `table:${tFiles}:${fNotes}` && m[k[0]] === true, rememberedF);
+    } else console.log('  (no localStorage in this runtime: the per-browser half is not checked)');
+    await pField('Notes').find('.rp-value.summary').trigger('click');
+    check('a click on the summary of a FOLDED block unfolds it (the chip is not the only way back)', await until(() => !pField('Notes').classes('folded') && pField('Notes').find('.rp-under').exists()));
+    await pField('Notes').find('.rp-value.summary').trigger('click');
+    check('…and on an OPEN block it edits, as a click on any row\'s value does', await until(() => pField('Notes').classes('editing') && pEditor().element.tagName === 'TEXTAREA'));
+    await pEditor().trigger('keydown', { key: 'Escape' });
+    try { check('unfolding forgets the entry — only folds are stored', !((globalThis as any).localStorage?.getItem('spatialdb.tray.fieldFolds') ?? '').includes(fNotes)); } catch { /* no storage */ }
+    await tray().find('.rp-close').trigger('click');
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);
     await ui.close();

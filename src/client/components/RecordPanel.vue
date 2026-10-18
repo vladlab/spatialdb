@@ -53,15 +53,16 @@
          of them fail a comparison — so folding a section cannot hide a QC problem).
          "Created" and "Created by" belong to no one's schema and close the list as a
          section of their own. A table with no sections is ONE well, as it always was. -->
-    <!-- DENSITY (Oct 17): a field whose value is SHORT — a line of text, a number, a
-         date, a select, a link or two — is ONE ROW: its name in a label cell on the
-         left, its value beside it, rows butted together under a hairline, as the
-         canvas card lays its fields out. Every row's label cell is the SAME width
-         (`labelW`, the widest short field's name on this record, measured), so the
-         values line up down the whole tray, across sections. A field that needs
-         room — an audio layout, a manifest, long or rich text, an attachment list, a
-         junction's nested table — keeps the tab-on-its-box shape and its full
-         height; it sits between the runs of rows inside the same well. -->
+    <!-- DENSITY (Oct 17–18): EVERY field is ONE ROW of a two-column table — its name in
+         a label cell on the left, its value beside it, rows butted together under a
+         hairline, as the canvas card lays its fields out. Every label cell is the
+         SAME width (`labelW`, the widest field name on this record, measured), so
+         the values line up down the whole tray, across sections.
+         A field that needs room — an audio layout, a manifest, long or rich text,
+         attachments, a junction's nested table — is a BLOCK: its row prints the
+         one-line summary the card prints, and under the row, unless it is folded,
+         hangs its full editor. The chip at the row's left folds it; the fold is this
+         person's, per view (client/fieldFolds.ts). Sections remain the only grouping. -->
     <div class="rp-body" :style="{ '--label-w': labelW + 'px' }">
       <template v-for="g in groups" :key="g.key">
       <button v-if="g.head" class="rp-sec" :class="{ folded: !g.open }" :data-section="g.key" :aria-expanded="g.open"
@@ -71,28 +72,35 @@
         <span v-if="g.warn" class="rp-sec-warn" :title="`${g.warn} field${g.warn === 1 ? '' : 's'} in this section differ${g.warn === 1 ? 's' : ''} from what ${g.warn === 1 ? 'it is' : 'they are'} compared with`">⚠ {{ g.warn }}</span>
       </button>
       <div v-if="g.open" class="rp-well rp-fields" :class="{ sectioned: g.head }">
-      <div v-for="f in g.fields" :key="f.id" class="rp-field" :class="{ editing: editingId === f.id, block: f.type === 'rich_text', readonly: READONLY(f), row: isRow(f), tab: !isRow(f) }">
+      <div v-for="f in g.fields" :key="f.id" class="rp-field" :class="{ editing: editingId === f.id, readonly: READONLY(f), row: isRow(f), block: !isRow(f), folded: !isRow(f) && folded(f) }">
         <!-- A <div>, not a <label>: a label activates its FIRST labelable descendant on
-             any click inside it, so a second button in the tab (▶ md5 beside ⤴ show)
+             any click inside it, so a second button in it (▶ md5 beside ⤴ show)
              clicked the first one too — the "manual hash also showed the file" bug. -->
         <div class="rp-name">
+          <!-- A BLOCK's fold chip: a chevron, right when folded, down when open. -->
+          <button v-if="!isRow(f)" class="fold-chip" :aria-expanded="!folded(f)" :title="folded(f) ? 'Unfold this field' : 'Fold this field to its one line (remembered in this browser, for this view)'" @click.stop="toggleFold(f)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path :d="folded(f) ? 'M6 3.5 10.5 8 6 12.5' : 'M3.5 6 8 10.5 12.5 6'" /></svg>
+          </button>
           <span class="rp-name-text" :title="f.name"><span v-if="f.id === primaryId" class="star" title="Primary field — this record's name">★</span>{{ f.name }}</span>
           <VerdictMark v-if="verdicts.get(f.id)" class="cmp-badge" :kind="verdicts.get(f.id)!.ok ? 'ok' : 'warn'" :title="verdicts.get(f.id)!.title" />
-          <!-- A tab field's tools (⤴ show, ▶ md5, "ffprobe…") ride in the tab as they did;
-               a ROW field's sit at the right end of its value cell, where the label
-               cell's fixed width has no room for them. -->
-          <template v-if="!isRow(f)">{{ ' ' }}<span class="rp-tools">
-            <!-- Desktop app only: select the file in the file manager (never opens it — src-tauri/src/lib.rs). -->
-            <button v-if="desktop && f.type === 'file_path' && typeof record.data[f.key] === 'string'" class="reveal" title="Show in folder"
-                    @click.stop="reveal(String(record.data[f.key]))">⤴ show</button>
+        </div>
+
+        <!-- A BLOCK's row value: the one-line summary the canvas card prints (an audio
+             layout's "2 tracks / 8 ch", a note's first line, "3 files"). A click here is
+             a click on the value: it unfolds a folded block, and edits one that is open
+             (as any row's value does) — only the chip folds. -->
+        <div v-if="!isRow(f)" class="rp-value summary" :class="{ readonly: READONLY(f) }" tabindex="0"
+             :title="folded(f) ? 'Unfold' : undefined" @click="summaryClick(f)" @keydown.enter.prevent.stop="summaryClick(f)">
+          <span v-if="summaryOf(f)" class="text">{{ summaryOf(f) }}</span>
+          <span v-else class="placeholder">empty</span>
+          <span class="rp-tools end">{{ ' ' }}
             <!-- The recipe's MANUAL steps (an md5), on the field they write — the manifest. -->
             <template v-if="manualHome === f.id && !jobs.get(recordId)">
               <button v-for="m in manual" :key="m.index" class="reveal run-step" :title="`Run ${m.name} on this record's file now`"
                       @click.stop="runManualStep(store, recordId, m.index)">▶ {{ m.name }}</button>
             </template>
-            <!-- What is running, drawn ONCE: a drop's steps on the path, a manual step where its ▶ was. -->
             <span v-if="jobHere(f)" class="job">{{ jobs.get(recordId)!.label }}…</span>
-          </span></template>
+          </span>
         </div>
 
         <!-- RICH TEXT is not a click-to-edit value like the rest: it is an editor that
@@ -100,12 +108,13 @@
              wrapper reserves that height while TipTap loads (it is fetched on demand),
              so the fields below do not jump when it arrives. Keyed by record: a
              different record is a different document, not new content for this one. -->
-        <div v-if="f.type === 'rich_text'" class="rp-rich" :style="{ minHeight: richReserve + 'px' }">
+        <div v-if="f.type === 'rich_text' && !folded(f)" class="rp-rich rp-under" :style="{ minHeight: richReserve + 'px' }">
           <RichTextEditor :key="recordId + f.id" :store="store" :record-id="recordId" :field-key="f.key" :value="record.data[f.key]"
                           @set="setRich" @unset="unsetRich" />
         </div>
 
-        <div v-else :ref="(el) => setValueEl(f.id, el)" class="rp-value" :class="{ readonly: READONLY(f), nested: f.type === 'backlink' && !!junctionOf(f) }"
+        <!-- The value cell of a ROW; the editor UNDER a block's row (gone while folded). -->
+        <div v-else-if="isRow(f) || !folded(f)" :ref="(el) => setValueEl(f.id, el)" class="rp-value" :class="{ readonly: READONLY(f), nested: f.type === 'backlink' && !!junctionOf(f), 'rp-under': !isRow(f) }"
              :tabindex="READONLY(f) ? -1 : 0"
              @click="startEdit(f)" @keydown.enter.prevent.stop="startEdit(f)" @copy="onCopy(f, $event)" @paste="onPaste(f, $event)">
           <!-- LINK -->
@@ -187,7 +196,7 @@
             <span v-if="isEmpty(record.data[f.key])" class="placeholder">empty</span>
           </template>
 
-          <!-- A ROW field's tools: see the tab above. -->
+          <!-- A ROW field's tools (⤴ show, "ffprobe…"), at the right end of its value cell. -->
           <span v-if="isRow(f)" class="rp-tools end">
             <button v-if="desktop && f.type === 'file_path' && typeof record.data[f.key] === 'string'" class="reveal" title="Show in folder"
                     @click.stop="reveal(String(record.data[f.key]))">⤴ show</button>
@@ -246,7 +255,6 @@ import { duplicateRecords } from '../duplicate';
 import { clipFromPaste, clipOf, copyCell, pasteCell, uncopyable } from '../cellClipboard';
 import AttachmentField from './AttachmentField.vue';
 import StructuredField from './StructuredField.vue';
-import { formatNumberField } from '../../contract/shapes';
 import { addLink as addLinkVia, addLinkThrough, removeLinkThrough } from '../links';
 import { leadsTo } from '../../contract/backlinks';
 import { beginRecordDrag } from '../recordDrag';
@@ -256,6 +264,9 @@ import SideBySide from './SideBySide.vue';
 import JunctionTable from './JunctionTable.vue';
 import { fieldSectionsOf, groupFields } from '../../contract/fieldSections';
 import { isFolded, setFolded } from '../sectionFolds';
+import { isFieldFolded, setFieldFolded } from '../fieldFolds';
+import { formatNumberField, shapeOf, summarise } from '../../contract/shapes';
+import { richTextToPlain } from '../../contract/richtext';
 
 // Loaded ON DEMAND. TipTap + ProseMirror are most of a megabyte of source, and
 // nothing needs them until a record with a rich_text field is opened — so they
@@ -267,7 +278,7 @@ const reveal = (path: string) => invoke<string>('reveal', { path })
   .then((r) => { if (r === 'folder') notice('The file is not there any more — its folder was opened.', 'info'); })
   .catch((e) => notice(String(e), 'error'));
 
-const props = defineProps<{ store: Store; recordId: string }>();
+const props = defineProps<{ store: Store; recordId: string; /** What is open behind the tray (App.vue): the key a field fold is remembered under. */ viewKey?: string }>();
 const emit = defineEmits<{ close: []; open: [recordId: string]; 'open-board': [recordId: string]; 'open-report': [recordId: string] }>();
 const store = props.store;
 // Declared FIRST: an `immediate` watcher below calls into it during setup, and a
@@ -327,11 +338,31 @@ const groups = computed<Group[]>(() => {
    row must stay a row when its text gets longer (it ellipsizes; the full value is
    there on edit), or the tray would reshape itself under the reader. */
 const ROW_TYPES = new Set<string>(['text', 'number', 'select', 'multi_select', 'date', 'checkbox', 'link', 'backlink', 'file_path', 'dimensions', 'lookup', 'created_at', 'created_by']);
-/** A junction's backlink is a nested table — a tab, however short. */
+/** A junction's backlink is a nested table — a block, however short. */
 const isRow = (f: FieldRow) => ROW_TYPES.has(f.type) && !(f.type === 'backlink' && !!junctionOf(f));
 
-/** The one label-cell width for every row on this record: the widest row field's
-    name (plus its ★ or verdict mark), measured in the label's font — so the value
+/** A block's one line: what the canvas card prints for it (CanvasView.cardRow). */
+function summaryOf(f: FieldRow): string {
+  const v = record.value?.data[f.key];
+  if (f.type === 'structured') return summarise(shapeOf(f), v);
+  if (f.type === 'rich_text') return richTextToPlain(v).split('\n', 1)[0];
+  if (f.type === 'attachment') { const n = Array.isArray(v) ? v.length : 0; return n ? `${n} file${n === 1 ? '' : 's'}` : ''; }
+  if (f.type === 'backlink') { const { texts, broken } = derived.textOf(props.recordId, f); return broken ? 'broken backlink' : texts.join(', '); }
+  return isEmpty(v) ? '' : String(v).split('\n', 1)[0];
+}
+/** A block folded to its line — this person's, for the view behind the tray (client/fieldFolds.ts). */
+const folded = (f: FieldRow) => isFieldFolded(props.viewKey ?? '', f.id);
+function summaryClick(f: FieldRow) {
+  if (folded(f)) setFieldFolded(props.viewKey ?? '', f.id, false); else startEdit(f);
+}
+function toggleFold(f: FieldRow) {
+  const now = !folded(f);
+  if (now && editingId.value === f.id) editingId.value = '';   // its editor is about to go
+  setFieldFolded(props.viewKey ?? '', f.id, now);
+}
+
+/** The one label-cell width for every row on this record: the widest field name
+    (plus its ★, verdict mark or fold chip), measured in the label's font — so the value
     column is straight down the tray, across sections, and no label is cut unless it
     is past the cap (then it ellipsizes with the full name in its title). Measured
     with a canvas; where there is none (tests), a per-character guess. */
@@ -344,8 +375,8 @@ const measurer = (() => { let ctx: CanvasRenderingContext2D | null | undefined; 
 const labelW = computed(() => {
   let w = 0;
   for (const f of fields.value) {
-    if (!isRow(f)) continue;
-    const marks = (f.id === primaryId.value ? 14 : 0) + (verdicts.value.get(f.id) ? 21 : 0);
+    const marks = (f.id === primaryId.value ? 14 : 0) + (verdicts.value.get(f.id) ? 21 : 0) + (isRow(f) ? 0 : 21);   // a block's fold chip
+    
     w = Math.max(w, Math.ceil(measurer(f.name)) + marks);
   }
   return Math.min(180, Math.max(64, w + 17));   // 7px + 8px padding, 2px spare
@@ -482,6 +513,7 @@ const EDITABLE = (f: FieldRow) => !READONLY(f) && !['checkbox', 'attachment', 'r
 
 function startEdit(f: FieldRow) {
   if (!EDITABLE(f) || editingId.value === f.id) return;
+  if (!isRow(f) && folded(f)) setFieldFolded(props.viewKey ?? '', f.id, false);   // its editor lives under the row
   editingId.value = f.id;
 }
 
@@ -489,7 +521,7 @@ function startEdit(f: FieldRow) {
 function onDone(exit: EditExit) {
   const from = editingId.value;
   editingId.value = '';
-  const list = shownFields.value.filter(EDITABLE);   // (a folded section's fields are not there to move to)
+  const list = shownFields.value.filter((f) => EDITABLE(f) && (isRow(f) || !folded(f)));   // (a folded section's, or a folded block's, editor is not there to move to)
   const i = list.findIndex((f) => f.id === from);
   const next = exit === 'down' || exit === 'right' ? list[i + 1] : exit === 'left' ? list[i - 1] : undefined;
   if (next) void nextTick(() => startEdit(next));
@@ -593,41 +625,20 @@ watch(() => props.recordId, () => {
 .rp-cmp-btn { background: none; border: 1px solid var(--border-main); color: var(--text-secondary); border-radius: 4px; padding: 0 7px; cursor: pointer; font: inherit; font-size: 11px; white-space: nowrap; }
 .rp-cmp-btn:hover { color: var(--accent); border-color: var(--accent); }
 .cmp-badge { margin-left: 5px; }
-.rp-field { padding: 6px 0; }
 .reveal { margin-left: 8px; font-size: 10px; background: none; border: 1px solid var(--border-main); color: var(--text-muted); border-radius: 3px; padding: 0 5px; cursor: pointer; }
 .reveal:hover { color: var(--accent); border-color: var(--accent); }
 .run-step { margin-left: 4px; }
 .job { margin-left: 8px; font-size: 10px; color: var(--accent); }
-.rp-field.block { padding: 10px 0; }
 /* min-height is set inline (richReserve): the editor's place, held while it loads. */
 .rp-rich { display: flex; }
-/* THE LABEL IS A TAB ON THE BOX: one shape per field, not a heading floating over
-   a well. The tab shares the box's border and background, sits 1px INTO the box
-   (margin-bottom: -1px, above it in z) so its own background covers the box's top
-   border where they meet, and the box drops its top-left radius so the two corners
-   are one edge. Both borders start at x = 0 — no offsets, nothing to misalign.
-   The border colour of the state (focus, editing, read-only) is set on the field so
-   the tab and the box change together. */
-.rp-field { --fb: var(--border-main); --fs: solid; }
+/* The state colour (focus, editing) is set on the field: its left-edge line and its cells change together. */
+.rp-field { --fb: var(--border-main); }
 .rp-value:focus, .rp-field:focus-within { --fb: var(--accent); }
 .rp-field.editing { --fb: var(--success); }
-.rp-field.readonly { --fs: dashed; }
-.rp-name {
-  display: inline-flex; align-items: center; position: relative; z-index: 1;
-  font-size: 11px; color: var(--text-muted); line-height: 16px;
-  padding: 1px 8px 1px 7px; margin-bottom: -1px; max-width: 100%;
-  border: 1px var(--fs) var(--fb); border-bottom: 0; border-radius: 4px 4px 0 0;
-  background: var(--controls-bg);
-}
 .star { color: var(--warning); margin-right: 3px; }
-.rp-value {
-  position: relative; min-height: 28px; box-sizing: border-box; padding: 4px 8px;
-  display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
-  border: 1px var(--fs) var(--fb); border-radius: 0 4px 4px 4px; cursor: text; outline: none;
-  background: var(--controls-bg);
-}
+.rp-value { position: relative; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; cursor: text; outline: none; }
 .rp-value.readonly { cursor: default; }
-/* A junction's nested table fills the box edge to edge: its own cells carry the padding. */
+/* A junction's nested table fills its box edge to edge: its own cells carry the padding. */
 .rp-value.nested { display: block; padding: 0; overflow: hidden; }
 /* Links one per LINE in the tray: the vertical room is there, and a long deliverable
    name is readable only when it has the whole line. (The "referenced by" list below
@@ -638,54 +649,63 @@ watch(() => props.recordId, () => {
 .rp-tools:empty { display: none; }
 
 /* ── ROWS ────────────────────────────────────────────────────────────────
-   A short field is a row of a two-column table: the label cell, the same width for
+   Every field is a row of a two-column table: the label cell, the same width for
    every row (`--label-w`, set on .rp-body), then the value cell; a hairline under
    each; no gap between rows, no box around a value. The label column is the
    LIGHTER one (the grid's header shade), the value column is the well — the two
-   read apart at a glance without the label needing to be a tab. Focus / editing
-   colour the row's state line as the tab fields' borders do. */
-.rp-field.row { display: grid; grid-template-columns: var(--label-w, 96px) minmax(0, 1fr); padding: 0; margin: 0; }
-/* The well's side padding moves onto the TAB fields, so a row runs from the accent
-   rule to the well's right edge. */
+   read apart at a glance. A row's state (focus, editing) is a line down its left
+   edge and a wash on its value cell. */
+.rp-field { display: grid; grid-template-columns: var(--label-w, 96px) minmax(0, 1fr); padding: 0; margin: 0; box-shadow: inset 2px 0 0 transparent; }
 .rp-well.rp-fields { padding-left: 0; padding-right: 0; }
-.rp-well.rp-fields > .rp-field.tab { margin: 0 10px; }
-.rp-field.row .rp-name {
-  display: flex; align-items: center; gap: 5px; z-index: auto; min-width: 0;
+.rp-name {
+  display: flex; align-items: center; gap: 5px; min-width: 0;
   font-size: 12px; line-height: 16px; color: var(--head-text);
-  padding: 5px 8px 5px 10px; margin: 0; max-width: none;
-  border: 0; border-bottom: 1px solid var(--border-main); border-radius: 0;
+  padding: 5px 8px 5px 10px; border-bottom: 1px solid var(--border-main);
   background: var(--bg-head);
 }
-.rp-field.row .rp-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rp-field.row .cmp-badge { margin-left: 0; flex: none; }
-.rp-field.row .rp-value {
-  min-height: 27px; padding: 3px 10px; gap: 4px 8px;
-  border: 0; border-bottom: 1px solid var(--border-main); border-radius: 0;
-  background: none;
-}
-/* A row's state: a line down its left edge, in the colour the tab fields use on their border. */
-.rp-field.row { box-shadow: inset 2px 0 0 transparent; }
-.rp-field.row:focus-within { box-shadow: inset 2px 0 0 var(--fb); }
-.rp-field.row .rp-value:focus { background: var(--bg-surface-hover); }
-.rp-field.row.editing { box-shadow: inset 2px 0 0 var(--success); }
-.rp-field.row.editing .rp-value { background: var(--bg-surface-hover); }
-.rp-field.row.readonly .rp-name { color: var(--text-muted); }
-/* The last row before a tab field or the well's end carries no hairline into the padding. */
-.rp-well.rp-fields > .rp-field.row:last-child .rp-name, .rp-well.rp-fields > .rp-field.row:last-child .rp-value { border-bottom: 0; }
+.rp-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp-badge { margin-left: 0; flex: none; }
+.rp-value { min-height: 27px; padding: 3px 10px; gap: 4px 8px; border-bottom: 1px solid var(--border-main); }
+.rp-field:focus-within { box-shadow: inset 2px 0 0 var(--fb); }
+.rp-value:focus { background: var(--bg-surface-hover); }
+.rp-field.editing { box-shadow: inset 2px 0 0 var(--success); }
+.rp-field.editing .rp-value:not(.rp-under) { background: var(--bg-surface-hover); }
+.rp-field.readonly .rp-name { color: var(--text-muted); }
+/* The well's last row carries no hairline into its bottom padding. */
+.rp-well.rp-fields > .rp-field:last-child > .rp-name, .rp-well.rp-fields > .rp-field:last-child > .rp-value:last-child, .rp-well.rp-fields > .rp-field:last-child > .rp-under:last-child { border-bottom: 0; }
 /* A LINK row: the pills one per line down the left; "add another…" at the right end of
    the last line — on one link, the same line as the pill. Several links: the pills
    stack, the label stays at the top of the cell. */
-.rp-field.row .rp-value .pills.column { flex: 1 1 auto; width: auto; min-width: 0; }
-.rp-field.row .rp-value .add-link { margin-left: auto; align-self: flex-end; font-size: 11px; }
-.rp-field.row .rp-value:has(.pills.column) { flex-wrap: nowrap; align-items: flex-end; }
-.rp-field.row:has(.pill ~ .pill) .rp-name { align-items: flex-start; }
-.rp-field.row .rp-tools.end { margin-left: auto; gap: 4px; }
-.rp-field.row .rp-tools.end .reveal, .rp-field.row .rp-tools.end .job { margin-left: 0; }
-/* A tab field between rows gets a little air above and below. */
-.rp-well.rp-fields > .rp-field.tab { padding: 8px 0 6px; }
+.rp-value .pills.column { flex: 1 1 auto; width: auto; min-width: 0; }
+.rp-value .add-link { margin-left: auto; align-self: flex-end; font-size: 11px; }
+.rp-value:has(.pills.column) { flex-wrap: nowrap; align-items: flex-end; }
+.rp-field:has(.pill ~ .pill) > .rp-name { align-items: flex-start; }
+.rp-tools.end { margin-left: auto; gap: 4px; }
+.rp-tools.end .reveal, .rp-tools.end .job { margin-left: 0; }
 
-.rp-rich :deep(.rte) { border-radius: 0 6px 6px 6px; }
-.rp-field.block .rp-name { border-radius: 6px 6px 0 0; }
+/* ── BLOCKS ──────────────────────────────────────────────────────────────
+   A field that needs room: its row is label + one-line SUMMARY, with a fold chip
+   at the label's left; unfolded, the editor hangs UNDER the row across both
+   columns, set in from the left with a faint bar so the eye ties it to its row. */
+.fold-chip {
+  flex: none; width: 16px; height: 16px; padding: 1px; box-sizing: border-box; margin-left: -4px;
+  background: var(--card-head-bg); border: 0; border-radius: 3px; cursor: pointer; color: var(--text-secondary);
+}
+.fold-chip:hover { background: var(--border-main); color: var(--text-primary); }
+.fold-chip:focus-visible { outline: 1px solid var(--accent); }
+.fold-chip svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.rp-value.summary { cursor: pointer; flex-wrap: nowrap; }
+.rp-value.summary .text { color: var(--text-primary); min-width: 0; }
+.rp-field.block:not(.folded) > .rp-name, .rp-field.block:not(.folded) > .rp-value.summary { border-bottom-color: transparent; }
+.rp-under {
+  grid-column: 1 / -1; margin: 0 0 0 12px; padding: 4px 10px 10px 10px;
+  box-shadow: inset 3px 0 0 var(--bg-head); border-bottom: 1px solid var(--border-main);
+  min-height: 0; cursor: text;
+}
+.rp-under.readonly, .rp-under.nested { cursor: default; }
+.rp-under.nested { padding: 0 0 8px 10px; }
+.rp-rich.rp-under { display: flex; }
+.rp-rich :deep(.rte) { flex: 1; border-radius: 6px; }
 .text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .text.pre { white-space: pre-wrap; overflow: visible; }
 .placeholder { color: var(--text-faint); font-style: italic; }

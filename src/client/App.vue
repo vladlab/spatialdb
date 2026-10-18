@@ -112,7 +112,9 @@
                  and leaves the bars above both of them at full width. -->
             <template v-if="openRecordId && (view === 'canvas' || view === 'table' || view === 'report')">
               <div class="tray-splitter" title="Drag to resize" @pointerdown="startTrayResize" />
-              <RecordPanel :store="store" :record-id="openRecordId" :style="{ width: trayShown + 'px' }"
+              <!-- `view-key`: what is open behind the tray — a canvas, a table, a report — so a
+                   block field folded here (client/fieldFolds.ts) stays folded on this view only. -->
+              <RecordPanel :store="store" :record-id="openRecordId" :view-key="`${view}:${view === 'canvas' ? canvasId : view === 'table' ? tableId : reportId}`" :style="{ width: trayShown + 'px' }"
                            @close="openRecordId = ''" @open="openRecordId = $event" @open-board="openBoard" @open-report="openReport" />
             </template>
           </div>
