@@ -656,14 +656,7 @@ watch(() => props.recordId, () => {
    read apart at a glance. A row's state (focus, editing) is a line down its left
    edge and a wash on its value cell. */
 .rp-field { display: grid; grid-template-columns: var(--label-w, 96px) minmax(0, 1fr); padding: 0; margin: 0; box-shadow: inset 2px 0 0 transparent; }
-/* The rows sit INSIDE the well, not on its edge: a 6px gutter of well between the
-   accent rule and the label column, so no hairline or label cell touches the rule
-   and nothing pokes past the well's rounded corner; the first and last label cells
-   round their own outer corners. The row's own state line draws in that gutter.
-   (Not overflow: hidden — a link field's picker list hangs below its row.) */
-.rp-well.rp-fields { padding: 0 0 0 6px; }
-.rp-field:first-child > .rp-name { border-top-left-radius: 4px; }
-.rp-field:last-child > .rp-name { border-bottom-left-radius: 4px; }
+.rp-well.rp-fields { padding-left: 0; padding-right: 0; }
 .rp-name {
   display: flex; align-items: center; gap: 5px; min-width: 0;
   font-size: 12px; line-height: 16px; color: var(--head-text);
@@ -705,7 +698,7 @@ watch(() => props.recordId, () => {
 .rp-value.summary .text { color: var(--text-primary); min-width: 0; }
 .rp-field.block:not(.folded) > .rp-name, .rp-field.block:not(.folded) > .rp-value.summary { border-bottom-color: transparent; }
 .rp-under {
-  grid-column: 1 / -1; margin: 0 0 0 10px; padding: 4px 10px 10px 10px;
+  grid-column: 1 / -1; margin: 0 0 0 12px; padding: 4px 10px 10px 10px;
   box-shadow: inset 3px 0 0 var(--bg-head); border-bottom: 1px solid var(--border-main);
   min-height: 0; cursor: text;
 }
