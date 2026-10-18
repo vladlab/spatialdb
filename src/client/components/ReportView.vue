@@ -16,6 +16,7 @@
       <span class="rv-title">{{ title }}</span>
       <span v-if="scopeNote" class="rv-note">{{ scopeNote }}</span>
       <span v-if="loading" class="rv-note">loading…</span>
+      <span v-if="tintLegend.length" class="tint-legend rv-legend"><span v-for="l in tintLegend" :key="l.tint + l.label" :class="`tint-${l.tint}`"><i />{{ l.label }}</span></span>
       <span class="rv-spacer" />
       <span v-if="result" class="rv-count">{{ result.nodes.length }} {{ rootTableName }}</span>
       <button class="rv-def" title="Open the report's record — its definition is edited there" @click="$emit('open-record', reportId)">definition…</button>
@@ -38,6 +39,7 @@ import { useDerived } from '../derived';
 import { SCOPE } from '../scope';
 import { ReportDef, reportDefError, reportSchema, resolvePin, resolveVia, runReport, type Descent, type ReportContext, type ReportField, type ReportSection, type RootLevel } from '../../contract/reports';
 import ReportOutline from './ReportOutline.vue';
+import { legendOf } from '../../contract/colorRules';
 
 const props = defineProps<{ store: Store; reportId: string }>();
 defineEmits<{ 'open-record': [recordId: string] }>();
@@ -67,6 +69,8 @@ const levels = computed(() => {
   if (def.value) walk(def.value.root);
   return m;
 });
+/** The legend of every level's colour rules (contract/colorRules.ts): the chips that print with the report. */
+const tintLegend = computed(() => legendOf([...levels.value.values()].flatMap((l) => l.rules ?? [])));
 
 /** What is wrong enough that nothing can be shown. */
 const problem = computed(() => {
@@ -202,6 +206,7 @@ const sizers = computed(() => {
 .rv-note { color: var(--text-muted); font-size: 11px; }
 .rv-spacer { flex: 1; }
 .rv-count { color: var(--text-muted); font-size: 11px; }
+.rv-legend { margin-left: 6px; }
 .rv-def { background: none; border: 1px solid var(--border-main); color: var(--accent); border-radius: 3px; padding: 1px 8px; cursor: pointer; font: inherit; font-size: 11px; }
 .rv-def:hover { border-color: var(--accent); }
 .rv-body { overflow: auto; padding: 12px 16px 40px; }

@@ -685,7 +685,25 @@ onUnmounted(() => store.stop());
   --bg-group-1: #2d3f50; --group-rule-1: #5a89b2; --group-edge-1: #3a4f63; --group-text-1: #b5d0ea;
   --bg-group-2: #2a2f34; --group-rule-2: #56606a; --group-edge-2: #3a4148; --group-text-2: #aab4be;   /* a third depth (reports): neutral */
   --choice-bg: rgba(255, 255, 255, 0.11);
+  /* The six TINTS of colour rules (contract/colorRules.ts): STATE colours, named, told
+     apart from each other and from any table's identity hex. One base per tint; the
+     surfaces mix their own strengths (`.tint-*` below). Oct 17. */
+  --tint-green: #3fb950; --tint-amber: #d29922; --tint-red: #f85149;
+  --tint-blue: #42a5f5; --tint-violet: #a371f7; --tint-grey: #8b949e;
 }
+/* A painted thing wears ONE of these: `--tint` is the base, and the strengths every
+   surface reads — the WASH behind a grid row or a report band, the CAPSULE a painted
+   cell or card row sits in, the RING and HALO around a card. */
+.tint-green { --tint: var(--tint-green); --tint-wash: rgba(63, 185, 80, 0.13); --tint-cap: rgba(63, 185, 80, 0.3); --tint-ring: rgba(63, 185, 80, 0.75); --tint-halo: rgba(63, 185, 80, 0.38); }
+.tint-amber { --tint: var(--tint-amber); --tint-wash: rgba(210, 153, 34, 0.13); --tint-cap: rgba(210, 153, 34, 0.3); --tint-ring: rgba(210, 153, 34, 0.8); --tint-halo: rgba(210, 153, 34, 0.4); }
+.tint-red { --tint: var(--tint-red); --tint-wash: rgba(248, 81, 73, 0.13); --tint-cap: rgba(248, 81, 73, 0.3); --tint-ring: rgba(248, 81, 73, 0.75); --tint-halo: rgba(248, 81, 73, 0.36); }
+.tint-blue { --tint: var(--tint-blue); --tint-wash: rgba(66, 165, 245, 0.13); --tint-cap: rgba(66, 165, 245, 0.3); --tint-ring: rgba(66, 165, 245, 0.75); --tint-halo: rgba(66, 165, 245, 0.36); }
+.tint-violet { --tint: var(--tint-violet); --tint-wash: rgba(163, 113, 247, 0.13); --tint-cap: rgba(163, 113, 247, 0.3); --tint-ring: rgba(163, 113, 247, 0.75); --tint-halo: rgba(163, 113, 247, 0.36); }
+.tint-grey { --tint: var(--tint-grey); --tint-wash: rgba(139, 148, 158, 0.13); --tint-cap: rgba(139, 148, 158, 0.3); --tint-ring: rgba(139, 148, 158, 0.75); --tint-halo: rgba(139, 148, 158, 0.3); }
+/* A LEGEND CHIP ("■ satisfied"), the same in every bar. */
+.tint-legend { display: inline-flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-secondary); }
+.tint-legend span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.tint-legend i { width: 10px; height: 10px; border-radius: 3px; background: var(--tint); }
 * { box-sizing: border-box; }
 /* Every <select> is drawn by the app, not the platform: WebKitGTK (the desktop
    client) renders a native GTK select in the SYSTEM theme and ignores the

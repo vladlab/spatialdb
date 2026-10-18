@@ -53,6 +53,26 @@
       <button class="hide-empty" :class="{ active: hideEmpty }"
               :title="hideEmpty ? 'Empty fields are hidden on cards — click to show them (for this canvas, for everyone)' : 'Hide the fields that have no value on cards (for this canvas, for everyone)'"
               @click="setHideEmpty(!hideEmpty)">{{ hideEmpty ? 'empty: hidden' : 'empty: shown' }}</button>
+      <!-- COLOUR RULES (contract/colorRules.ts): a canvas-wide setting, so up here. Per
+           TABLE inside: a canvas mixes tables. A matched card wears a glow in the tint. -->
+      <button class="colour" :class="{ active: ruleCount }" :title="ruleCount ? `${ruleCount} colour rule${ruleCount === 1 ? '' : 's'} on this canvas — for everyone` : 'Colour cards by a rule — “Accepted → green” — for this canvas, for everyone'"
+              @click="colourOpen = !colourOpen; legendOpen = false">colour<template v-if="ruleCount"> · {{ ruleCount }}</template></button>
+      <span v-if="tintLegend.length" class="tint-legend"><span v-for="l in tintLegend" :key="l.tint + l.label" :class="`tint-${l.tint}`"><i />{{ l.label }}</span></span>
+      <div v-if="colourOpen" class="colour-pop" @pointerdown.stop @keydown.stop>
+        <div class="colour-tabs">
+          <button v-for="t in ruleTables" :key="t.id" type="button" class="colour-tab" :class="{ on: colourTableOn === t.id }" @click="colourTable = t.id">{{ t.name }}<span v-if="t.n" class="colour-n">{{ t.n }}</span></button>
+          <span class="spacer" />
+          <label class="colour-glow" title="How a matched card is marked: a tinted ring alone (dense boards), or the ring with a halo">
+            <span class="muted">mark</span>
+            <select :value="glow" @change="setGlow(($event.target as HTMLSelectElement).value as 'ring' | 'glow')">
+              <option value="glow">glow</option><option value="ring">ring</option>
+            </select>
+          </label>
+        </div>
+        <ColorRules v-if="colourTableOn" :key="colourTableOn" :store="store" :table-id="colourTableOn" :rules="rulesFor(canvasConfig, colourTableOn)" row-word="card" @update:rules="saveRules(colourTableOn, $event as ColorRule[])" />
+        <p v-else class="legend-note">Place a card first — rules are per table, and this canvas has none.</p>
+        <p class="legend-note">The header keeps the table's colour and pills keep the link's: those say what a card IS. A rule's glow says how it is doing.</p>
+      </div>
       <span class="sep" />
       <button :disabled="!selected.size" @click="unplaceSelected">
         unplace{{ selected.size > 1 ? ` ${selected.size}` : '' }}
@@ -172,6 +192,8 @@
         :stacked="c.stacked"
         :stale="c.stale"
         :claimed="c.stacked && !c.stale"
+        :tint="c.tint"
+        :glow="glow"
         @pointerdown="onCardPointerDown"
         @link-start="startLinkDrag"
         @drag-linked="onDragLinked" @open-linked="(id) => emit('open-record', id)" @jump-linked="jumpTo" @edit-pair="onEditPair"
@@ -366,7 +388,9 @@ import { choicesOf } from '../../contract/values';
 import type { ArrowLink } from './ArrowLayer.vue';
 import { linkKey } from '../state';
 import { bezierPath, rectsIntersect, type AnchorSide, type Point } from '../canvas/geometry';
-import { CanvasConfig, cardFieldsFor, hidesEmpty, pinnedFieldsFor } from '../../contract/canvasConfig';
+import { CanvasConfig, cardFieldsFor, glowOf, hidesEmpty, pinnedFieldsFor, rulesFor } from '../../contract/canvasConfig';
+import { legendOf, paintsOf, type ColorRule, type Paints } from '../../contract/colorRules';
+import ColorRules from './ColorRules.vue';
 import { CARD_W, defaultCardWidth, effectiveHeight, fitCardWidth, lineCount, linkHandleAt, visibleRows } from '../canvas/cardLayout';
 import { capsuleWidth, JUMP_PAD, pairSlot, textWidth } from '../textWidth';
 import type { CardRow } from './RecordCard.vue';
@@ -487,10 +511,56 @@ const rowFields = (tableId: string) => shownFields(tableId).filter((f) => f.type
  */
 const hideEmpty = computed(() => hidesEmpty(canvasConfig.value));
 const pinnedOf = (tableId: string) => pinnedFieldsFor(canvasConfig.value, tableId);
-function cardRows(rec: RecordRow): CardRow[] {
+function cardRows(rec: RecordRow, paint?: Paints): CardRow[] {
   const verdicts = derived.fieldVerdicts(rec.id);
-  const rows = rowFields(rec.table_id).map((f) => { const r = rowFor(rec, f); const v = verdicts.get(f.id); return v ? { ...r, verdict: v } : r; });
+  const rows = rowFields(rec.table_id).map((f) => {
+    const r = rowFor(rec, f); const v = verdicts.get(f.id); const t = paint?.fields[f.id]?.tint;
+    return { ...r, ...(v ? { verdict: v } : {}), ...(t ? { tint: t } : {}) };
+  });
   return visibleRows(rows, hideEmpty.value, pinnedOf(rec.table_id));
+}
+
+/* ── COLOUR RULES (contract/colorRules.ts), per table, saved with the canvas ──────
+   Evaluated over the placed records, once per change; a card reads its row's tint
+   (its glow) and each row its field's. The stacks' census evaluates filters the same
+   way (`stackLinkLabels`), so a rule reads links as a stack's filter does. */
+const glow = computed(() => glowOf(canvasConfig.value));
+const allRules = computed(() => parsedConfig().rules ?? {});
+const ruleCount = computed(() => Object.values(allRules.value).reduce((n, rs) => n + rs.length, 0));
+const tintLegend = computed(() => legendOf(Object.values(allRules.value).flat()));
+const paints = computed(() => {
+  const out = new Map<string, Paints>();
+  const byTable = new Map<string, Map<string, FieldRow>>();
+  for (const p of placements.value) {
+    const rec = store.state.records.get(p.record_id);
+    if (!rec) continue;
+    const rules = allRules.value[rec.table_id];
+    if (!rules?.length) continue;
+    let fields = byTable.get(rec.table_id);
+    if (!fields) { fields = new Map(fieldsOf(store.state, rec.table_id).map((f) => [f.id, f])); byTable.set(rec.table_id, fields); }
+    const got = paintsOf(rec, rules, fields, stackLinkLabels, derived.idsOf);
+    if (got) out.set(rec.id, got);
+  }
+  return out;
+});
+const colourOpen = ref(false);
+const colourTable = ref('');
+/** The tables a rule can be written for: those with a card here, plus any that already have rules. */
+const ruleTables = computed(() => {
+  const ids = new Set([...placedTables.value.split(',').filter(Boolean), ...Object.keys(allRules.value)]);
+  return [...ids].map((id) => ({ id, name: store.state.tables.get(id)?.name ?? '?', n: allRules.value[id]?.length ?? 0 })).sort((a, b) => a.name.localeCompare(b.name));
+});
+/** The tab that is open: the chosen table while it is still one of `ruleTables`, else the first. */
+const colourTableOn = computed(() => (ruleTables.value.some((t) => t.id === colourTable.value) ? colourTable.value : ruleTables.value[0]?.id ?? ''));
+function saveRules(tableId: string, rules: ColorRule[]) {
+  const next = { ...allRules.value };
+  if (rules.length) next[tableId] = rules; else delete next[tableId];
+  const { rules: _, ...rest } = parsedConfig();
+  store.mutate({ type: 'canvas.update', id: props.canvasId, config: Object.keys(next).length ? { ...rest, rules: next } : rest });
+}
+function setGlow(mode: 'ring' | 'glow') {
+  const { glow: _, ...rest } = parsedConfig();
+  store.mutate({ type: 'canvas.update', id: props.canvasId, config: mode === 'ring' ? { ...rest, glow: 'ring' } : rest });
 }
 const richBlocks = (rec: RecordRow) => shownFields(rec.table_id)
   .filter((f) => f.type === 'rich_text' && !isEmptyRichText(rec.data[f.key]))
@@ -560,8 +630,9 @@ const baseCards = computed(() =>
       tableColor: colorOf(rec.table_id),
       title,
       // ✓ / ⚠ per row from comparing links (COMPARE-BRIEF.md) — derived, live — ride on the rows.
-      rows: cardRows(rec),
+      rows: cardRows(rec, paints.value.get(rec.id)),
       rich: richBlocks(rec),
+      tint: paints.value.get(rec.id)?.row?.tint,
       collapsed: p.collapsed,
       // No width of its own: as wide as its name (cardLayout.ts) — resolved HERE, once, so the
       // card, the arrows and the box selection all use the same number.
@@ -1641,6 +1712,7 @@ function onCanvasPointerDown(e: PointerEvent) {
   linkPick.value = null;
   selectedLink.value = null;
   legendOpen.value = false;
+  colourOpen.value = false;
   if (e.button === 1 || spaceHeld.value) { viewport.startPan(e); return; }
   if (e.button !== 0) return;
   if (e.target !== containerRef.value &&
@@ -2170,6 +2242,21 @@ onUnmounted(() => {
 .field-choice .field-pin.dim { opacity: 0.55; }
 .field-choice .field-pin input:disabled { opacity: 0.3; }
 .canvas-controls .hide-empty.active { color: var(--accent); }
+.canvas-controls .colour.active { color: var(--accent); }
+.colour-pop {
+  position: absolute; top: calc(100% + 4px); left: 12px; z-index: 60; width: 560px; max-width: calc(100vw - 24px); padding: 8px;
+  background: var(--controls-bg); border: 1px solid var(--border-main); border-radius: 6px; box-shadow: var(--card-shadow-drag);
+  display: flex; flex-direction: column; gap: 8px; font-size: 12px; max-height: calc(100vh - 160px); overflow-y: auto;
+}
+.colour-tabs { display: flex; gap: 2px; align-items: center; border-bottom: 1px solid var(--border-main); }
+.colour-tab { background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.colour-tab:hover { color: var(--text-primary); }
+.colour-tab.on { color: var(--text-primary); border-bottom-color: var(--accent); }
+.colour-n { margin-left: 5px; font-size: 10px; color: var(--text-faint); }
+.colour-tabs .spacer { flex: 1; }
+.colour-glow { display: flex; align-items: center; gap: 6px; }
+.colour-glow .muted { color: var(--text-muted); font-size: 11px; }
+.colour-glow select { background: var(--bg-app); color: inherit; border: 1px solid var(--border-main); border-radius: 4px; font: inherit; font-size: 11px; padding: 1px 4px; }
 /* The two link menus: a WAY is a row — its colour, its name, and (right-aligned,
    quieter) what choosing it does. In the new-link menu "find…" sits beside it. */
 .ctx { max-height: calc(100% - 8px); overflow-y: auto; }

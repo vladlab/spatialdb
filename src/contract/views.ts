@@ -33,6 +33,11 @@ import { z } from 'zod';
 import { richTextToPlain } from './richtext.js';
 import { shapeOf, summarise } from './shapes.js';
 import { leadsTo } from './backlinks.js';
+// A CYCLE, on purpose: colorRules.ts builds its schema from FilterEntry (here) and
+// evaluates with `passesFilters` (here); this file's ViewConfig holds a list of its
+// rules. The `z.lazy` on `rules` is what keeps either load order from hitting an
+// import before it is initialised.
+import { ColorRule } from './colorRules.js';
 
 const uuid = z.guid();
 
@@ -131,6 +136,13 @@ export const ViewConfig = z.strictObject({
   order: z.array(uuid).max(500).optional(),
   /** Column widths in px, by field id. Absent = auto (sized by content). */
   widths: z.record(uuid, z.number().int().min(MIN_COL_W).max(MAX_COL_W)).optional(),
+  /**
+   * COLOUR RULES (contract/colorRules.ts): conditional colour, saved with the view
+   * — "Accepted → green" is how THIS view reads the table, like its filters. Ordered;
+   * first match wins per target. OPTIONAL, not defaulted, like `groupBy`: read it
+   * with `config.rules ?? []`.
+   */
+  rules: z.array(z.lazy(() => ColorRule)).max(32).optional(),   // 32 = colorRules.ts MAX_RULES, which the cycle keeps out of reach here
 });
 export type ViewConfig = z.infer<typeof ViewConfig>;
 
@@ -256,6 +268,23 @@ function matches(
       return a <= b;
     }
   }
+}
+
+/**
+ * Does this record pass EVERY one of these filters — the reading `applyView` uses,
+ * for anything else that asks the same question of a record (a colour rule,
+ * contract/colorRules.ts). Entries naming a field that no longer exists are ignored,
+ * as in `applyView`: a deleted field never bricks a rule, and its undo revives it.
+ */
+export function passesFilters(
+  rec: ViewRecord, fields: ReadonlyMap<string, ViewField>, filters: readonly z.infer<typeof FilterEntry>[],
+  links: LinkLabels = () => [], linkIds?: LinkIds,
+): boolean {
+  for (const f of filters) {
+    const field = fields.get(f.fieldId);
+    if (field && !matches(rec, field, f, links, linkIds)) return false;
+  }
+  return true;
 }
 
 /**

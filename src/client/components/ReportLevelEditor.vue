@@ -181,6 +181,16 @@
         </div>
       </div>
 
+      <!-- COLOUR: rules painting this level's bands / rows (contract/colorRules.ts) — from its
+           fields, the pair's, or its ROLLUPS ("Accepted ≥ 1 → green" = satisfied). -->
+      <div class="rl-block rl-colour">
+        <span class="rl-label" title="Tint a record's band or row — or one of its cells — when a rule matches. Rules may test this level's fields, its pair's, and its rollups. First match wins.">colour</span>
+        <div class="rl-rows">
+          <ColorRules :store="store" :table-id="table" :pair-table-id="pairTable || undefined" :rules="level.rules ?? []" :row-word="level.children.length ? 'band' : 'row'"
+                      :rollups="level.rollups.map((r) => ({ id: r.id, label: r.label }))" @update:rules="level.rules = $event.length ? $event : undefined; changed()" />
+        </div>
+      </div>
+
       <!-- ROLLUPS: over a direct child level. -->
       <div v-if="level.children.length" class="rl-block">
         <span class="rl-label">rollups</span>
@@ -259,6 +269,7 @@ import type { Store } from '../store';
 import { fieldsOf, type FieldRow } from '../state';
 import { OP_LABEL, relationTargetOf, opsFor, type FilterOp } from '../../contract/views';
 import RecordSelect from './RecordSelect.vue';
+import ColorRules from './ColorRules.vue';
 import { MAX_DEPTH, ROLLUP_LABELS, ROLLUP_OPS, pairTableOf, reportSchema, resolvePin, resolveVia, type Descent, type ReportField, type Rollup, type RollupOp, type RootLevel } from '../../contract/reports';
 import { junctionOf } from '../../contract/junction';
 
@@ -312,7 +323,7 @@ function idFor(name: string): string {
 
 function setRootTable(id: string) {
   const r = props.level as RootLevel;
-  r.table = id; r.fields = []; r.filters = []; r.sort = []; r.groupBy = undefined; r.rollups = []; r.children = [];
+  r.table = id; r.fields = []; r.filters = []; r.sort = []; r.groupBy = undefined; r.rollups = []; r.rules = undefined; r.children = [];
   props.usedIds.delete(r.id); r.id = idFor(store.state.tables.get(id)?.name ?? 'root');
   changed();
 }
@@ -355,7 +366,7 @@ function toggleVia(fieldId: string, on: boolean) {
     }
   } else if (!on && i >= 0) {
     d.value.via.splice(i, 1);
-    if (!d.value.via.length) { d.value.fields = []; d.value.filters = []; d.value.sort = []; d.value.groupBy = undefined; d.value.rollups = []; d.value.children = []; d.value.pins = undefined; }
+    if (!d.value.via.length) { d.value.fields = []; d.value.filters = []; d.value.sort = []; d.value.groupBy = undefined; d.value.rollups = []; d.value.rules = undefined; d.value.children = []; d.value.pins = undefined; }
   }
   prunePair();
   changed();
@@ -544,4 +555,5 @@ input[type="checkbox"] { width: auto; margin: 0; }
 .rl-x:hover { color: var(--danger); }
 .rl-note { margin: 0; color: var(--text-faint); font-style: italic; font-size: 11px; }
 .rl-children { display: flex; flex-direction: column; gap: 4px; }
+.rl-colour :deep(.color-rules) { min-width: 0; }
 </style>

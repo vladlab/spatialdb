@@ -19,7 +19,7 @@
 <template>
   <div
     class="card"
-    :class="[{ selected, opened, flash, refused, dragging, unconfirmed, collapsed, stacked, stale }, linkTarget ? `link-${linkTarget}` : '']"
+    :class="[{ selected, opened, flash, refused, dragging, unconfirmed, collapsed, stacked, stale, tinted: !!tint, ring: glow === 'ring' }, linkTarget ? `link-${linkTarget}` : '', tint ? `tint-${tint}` : '']"
     :style="style"
     @pointerdown="onPointerDown"
     @pointerenter="$emit('hover', recordId)"
@@ -48,7 +48,7 @@
     </div>
 
     <div v-if="!collapsed && (rows.length || rich?.length)" class="card-body">
-      <div v-for="r in rows" :key="r.id" class="card-field" :class="{ 'is-link': r.link, tall: (r.ids?.length ?? 0) > 1 || (r.lines?.length ?? 0) > 1 }">
+      <div v-for="r in rows" :key="r.id" class="card-field" :class="[{ 'is-link': r.link, tall: (r.ids?.length ?? 0) > 1 || (r.lines?.length ?? 0) > 1, tinted: !!r.tint }, r.tint ? `tint-${r.tint}` : '']">
         <span class="card-key"><span v-if="r.color" class="port-dot" :style="{ background: r.color }" />{{ r.name }}</span>
         <!-- Linked records (a link, a backlink, a junction column) are PILLS — the same
              pill as the grid and the tray, in the row's colour: drag one OFF this card
@@ -176,6 +176,8 @@ export interface CardRow {
   /** A link or backlink row whose field has an arrow colour: the row is a PORT,
    *  and the dot ties it to the arrows that leave from (or land on) it. */
   color?: string;
+  /** A colour rule painted THIS field (contract/colorRules.ts): its value sits in the tint's capsule. */
+  tint?: string;
 }
 
 const props = defineProps<{
@@ -220,6 +222,10 @@ const props = defineProps<{
   stale?: boolean;
   /** In a stack AND matching its filter: cannot be removed from the canvas (the stack would place it again), only taken out of the stack. */
   claimed?: boolean;
+  /** A colour rule painted this card (contract/colorRules.ts): it wears a ring and halo in this tint. The header keeps the table's colour. */
+  tint?: string;
+  /** How the tint is worn — the canvas's setting (contract/canvasConfig.ts `glow`). */
+  glow?: 'ring' | 'glow';
 }>();
 
 const emit = defineEmits<{
@@ -318,6 +324,19 @@ function onPointerDown(e: PointerEvent) {
 /* Optimistic rows are faded until the server acknowledges them — the same
    convention as the grid. */
 .card.unconfirmed { opacity: 0.55; }
+/* PAINTED by a colour rule (contract/colorRules.ts): a ring in the tint and — unless
+   the canvas says "ring" — a soft halo around the card. OUTSIDE the card on purpose:
+   the body keeps its contrast for notes and images, and the header keeps the table's
+   colour. Selected / open keep their accent ring; the halo stays under it. */
+.card.tinted { border-color: var(--tint-ring); box-shadow: 0 0 0 1px var(--tint-ring), 0 0 22px 3px var(--tint-halo); }
+.card.tinted.ring { box-shadow: 0 0 0 1px var(--tint-ring); }
+.card.tinted.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring), 0 0 22px 3px var(--tint-halo); }
+.card.tinted.opened { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 0 22px 3px var(--tint-halo); }
+.card.tinted.ring.selected { box-shadow: 0 0 0 2px var(--accent-ring), 0 0 0 1px var(--tint-ring); }
+.card.tinted.ring.opened { box-shadow: 0 0 0 2px var(--accent), 0 0 0 1px var(--tint-ring); }
+.card.tinted.dragging { box-shadow: 0 0 0 1px var(--tint-ring), var(--card-shadow-drag); }
+/* A painted ROW: its value in the tint's capsule — the card's row, not the whole card. */
+.card-field.tinted > .card-val { background: var(--tint-cap); box-shadow: inset 0 0 0 1px var(--tint-ring); border-radius: 9px; padding-left: 6px; padding-right: 6px; }
 
 .card-head {
   display: flex; align-items: center; justify-content: space-between;

@@ -363,6 +363,24 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
 
 ## Needs eyes (built, tested headlessly, never SEEN)
 
+- COLOUR RULES (Oct 17, `src/contract/colorRules.ts`; `npm run test:color`) — the
+  mockups were agreed, the pixels were not seen:
+  * GRID: "colour" in the view bar, beside group. A painted row is a wash over its own
+    background (banding still shows through) plus a 3px stripe on the # cell; a
+    painted CELL is the tint's capsule-strength fill with a hairline ring, empty cells
+    included. Is the wash (0.13) enough, too much? Does the stripe fight the open
+    record's accent stripe on the same cell (the accent wins)?
+  * CANVAS: "colour" on the top bar; per-table tabs inside; "mark: glow / ring". A
+    glow is a 1px tinted ring plus a 22px halo OUTSIDE the card; the header keeps the
+    table's colour. Two glowing cards close together smear — that is what "ring" is
+    for. Check the halo is not clipped at a card's bottom-right (the link handle
+    hangs there) and that fit (Z) leaves room for it — it does not pad for the halo.
+  * REPORT: "colour" block in the level editor (the tray), with "+ rollup…" lines when
+    the level has rollups. A painted band's stripe is 4px at its left; the rule's
+    label sits after the record's name in small caps in the tint.
+  * The six tints are App.vue `--tint-*`; the swatches in the editor are the same six.
+    If grey reads as "disabled" rather than "a state", say so.
+
 - LINKING ON THE CANVAS — everything here is positional, and none of it has been seen:
   * the HANDLE: a 10px ring at the right end of a link row, inside the card's
     padding, appearing when you hover the row or select the card. Is it findable?

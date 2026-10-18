@@ -16,6 +16,7 @@
  */
 import { z } from 'zod';
 import { StackDef } from './canvasStack.js';
+import { ColorRule, MAX_RULES } from './colorRules.js';
 
 const uuid = z.guid();
 
@@ -59,8 +60,30 @@ export const CanvasConfig = z.strictObject({
    */
   hideEmpty: z.boolean().optional(),
   pinnedFields: z.record(uuid, z.array(uuid).max(40)).optional(),
+  /**
+   * COLOUR RULES (contract/colorRules.ts), PER TABLE — a canvas mixes tables, and a
+   * Files rule means nothing on an Edit card. A card whose rule matches wears a
+   * GLOW in the rule's tint around its edge (its header keeps the table's colour,
+   * its pills the arrow's: identity stays where it was); a rule painting one field
+   * tints that row's value instead. Cards in a stack follow the canvas's rules.
+   * `glow` is how strong: 'ring' is the tinted border alone, for a dense board;
+   * 'glow' (the default) adds the halo. Both OPTIONAL, not defaulted, like `defaults`.
+   */
+  rules: z.record(uuid, z.array(ColorRule).max(MAX_RULES)).optional(),
+  glow: z.enum(['ring', 'glow']).optional(),
 });
 export type CanvasConfig = z.infer<typeof CanvasConfig>;
+
+/** The colour rules of `tableId` on this canvas, in order; [] when it has none. */
+export function rulesFor(config: unknown, tableId: string): ColorRule[] {
+  const parsed = CanvasConfig.safeParse(config ?? {});
+  return parsed.success ? parsed.data.rules?.[tableId] ?? [] : [];
+}
+/** How strongly a matched card is marked on this canvas. */
+export function glowOf(config: unknown): 'ring' | 'glow' {
+  const parsed = CanvasConfig.safeParse(config ?? {});
+  return parsed.success && parsed.data.glow === 'ring' ? 'ring' : 'glow';
+}
 
 /** Whether this canvas's cards leave out their empty rows (`hideEmpty`). */
 export function hidesEmpty(config: unknown): boolean {

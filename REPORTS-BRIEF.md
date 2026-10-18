@@ -262,6 +262,32 @@ line, columns hugging their content, a sizer row per section so a level's tables
 share widths. Groups draw as labelled runs in either shape. Chosen from mockups
 over "tint only the section header line": the layers had to be unmistakable.
 
+### 3c. Colour rules (Oct 17)
+
+A level may carry `rules`: conditional colour (`src/contract/colorRules.ts`), the
+same shape a grid VIEW and a CANVAS carry — the owner's rule is that conditional
+formatting belongs to a view, a canvas or a report level, never to the record. The
+colours the app already had (a table's on its card headers, a link field's on its
+arrows and pills, a section's) are IDENTITY: what a thing is. A rule's tint is STATE:
+how it is doing. The two never touch the same pixel, and a rule's colour is one of
+six NAMED tints (green, amber, red, blue, violet, grey), not a hex, so the eye can
+tell a rule's tint from a table's hex at a glance.
+
+```
+rules: [{ id, when: [ FilterEntry | { rollup, op, value } ], tint, paint: 'row' | { field }, label? }]
+```
+
+`when` is ANDed, the same lines as the level's filters — of the level's table, or
+(through a junction) of the PAIR — and may test the level's own ROLLUPS: "Accepted ≥ 1
+→ green, label satisfied" is what says a deliverable is satisfied, without a column
+for it. `paint` is the whole band / row, or ONE field (a cell; a name·value pair on
+a band). Rules are ORDERED and the first match wins PER TARGET — the first row rule
+paints the band, the first rule per field paints that field — so a row rule never
+shadows a cell rule. `label` is what the legend chip says; blank, no chip. The walk
+puts what matched on each node as `paint` (`{ row?, fields }`), so a snapshot would
+keep it; the outline draws a band's wash and stripe over its depth tint, a row's over
+its own, a cell's as the tint's capsule; the legend prints in the report's bar.
+
 ## 7. What this is not, yet
 
 - Not a formula or expression language.

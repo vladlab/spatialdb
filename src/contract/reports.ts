@@ -42,6 +42,7 @@
 
 import { z } from 'zod';
 import { applyView, FilterEntry, SortEntry, type LinkLabels, type ViewField, type ViewRecord } from './views.js';
+import { MAX_RULES, ReportColorRule, isRollupTest, paintsOf, rollupPasses, type Paints } from './colorRules.js';
 import { richTextToPlain } from './richtext.js';
 import { shapeOf, summarise } from './shapes.js';
 import { junctionOf, otherEnd, type JunctionConfig } from './junction.js';
@@ -130,6 +131,13 @@ const LevelBase = z.strictObject({
    */
   groupBy: uuid.optional(),
   rollups: z.array(Rollup).max(32).default([]),
+  /**
+   * COLOUR RULES (contract/colorRules.ts): a band's or a row's tint, from the level's
+   * own fields, the PAIR's (through a junction), or the level's ROLLUPS — "Accepted ≥ 1
+   * → green" is what says a deliverable is satisfied without a column for it. A rule
+   * painting one field tints that cell / that name·value pair. OPTIONAL, like `groupBy`.
+   */
+  rules: z.array(ReportColorRule).max(MAX_RULES).optional(),
 });
 
 export type Descent = z.infer<typeof LevelBase> & {
@@ -340,6 +348,20 @@ export function reportDefError(raw: unknown, fields: Iterable<ReportField>, tabl
         }
       }
     }
+    for (const rule of level.rules ?? []) {
+      const rp = `${path} colour rule '${rule.id}'`;
+      for (const t of rule.when) {
+        if (isRollupTest(t)) { if (!level.rollups.some((x) => x.id === t.rollup)) return `${rp}: '${t.rollup}' is not a rollup of this level`; continue; }
+        const f = byId.get(t.fieldId);
+        if (!f) return `${rp}: condition field ${t.fieldId} does not exist`;
+        if (f.table_id !== table && f.table_id !== ownPair) return `${rp}: condition field '${f.name}' is not a field of this level's table${ownPair ? ' or of its pair' : ''}`;
+      }
+      if (rule.paint !== 'row') {
+        const f = byId.get(rule.paint.field);
+        if (!f) return `${rp}: painted field ${rule.paint.field} does not exist`;
+        if (f.table_id !== table && f.table_id !== ownPair) return `${rp}: painted field '${f.name}' is not a field of this level's table${ownPair ? ' or of its pair' : ''}`;
+      }
+    }
     for (const ru of level.rollups) {
       const rpath = `${path} rollup '${ru.id}'`;
       const over = childTables.get(ru.over);
@@ -388,6 +410,8 @@ export interface ReportNode {
   rollups: ReportRollupValue[];
   /** One section per child level, in definition order; a section may be empty. */
   children: ReportSection[];
+  /** What the level's colour rules painted (contract/colorRules.ts): the band / row, and per field. Absent when nothing did. */
+  paint?: Paints;
 }
 /** One run of a GROUPED level: its label (the group field's text; "" = no value), and its nodes — the same objects as the section's `nodes`. */
 export interface ReportGroup { label: string; nodes: ReportNode[] }
@@ -497,8 +521,31 @@ export function runReport(def: ReportDef, ctx: ReportContext): ReportSection {
       const row = rowId ? recordOf(pairs!.table, rowId) : undefined;
       if (row) node.pair = { id: row.id, tableId: pairs!.table, cells: pairs!.fields.flatMap((id) => { const f = byId.get(id); return f ? [{ fieldId: id, text: cellText(f, row, links) }] : []; }) };
       node.rollups = level.rollups.map((ru) => rollupValue(ru, node));
+      const paint = paintNode(level, node, r, row, pairs?.table);
+      if (paint) node.paint = paint;
       return node;
     });
+  };
+
+  /**
+   * The level's colour rules over one node. A condition on a PAIR field reads the pair
+   * row; one on a rollup reads what was just computed; the rest read the record.
+   * The record and its pair row are presented as ONE stand-in to the evaluator — the
+   * pair's values under the pair fields' keys, prefixed as `shape` does — so a rule
+   * mixing both is one AND, as its editor shows it.
+   */
+  const paintNode = (level: RootLevel | Descent, node: ReportNode, r: ViewRecord, row: ViewRecord | undefined, pairTable?: string): Paints | undefined => {
+    const rules = level.rules ?? [];
+    if (!rules.length) return undefined;
+    const isPair = (id: string) => !!pairTable && byId.get(id)?.table_id === pairTable;
+    const fields = new Map<string, ViewField>();
+    for (const f of ctx.fields) fields.set(f.id, isPair(f.id) ? { ...f, key: `\u0000pair:${f.key}` } : f);
+    const data = { ...r.data };
+    if (row) for (const f of ctx.fields) if (isPair(f.id)) data[`\u0000pair:${f.key}`] = row.data[f.key];
+    const ids = ctx.idsOf ?? ctx.linksFrom;
+    const pairLinks: LinkLabels = (recId, fieldId) => (isPair(fieldId) ? (row ? links(row.id, fieldId) : []) : links(recId, fieldId));
+    const pairIds = (recId: string, fieldId: string) => (isPair(fieldId) ? (row ? ids(row.id, fieldId) : []) : ids(recId, fieldId));
+    return paintsOf({ ...r, data }, rules, fields, pairLinks, pairIds, (t) => rollupPasses(node.rollups.find((x) => x.id === t.rollup)?.value, t));
   };
 
   /**

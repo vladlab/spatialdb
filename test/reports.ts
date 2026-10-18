@@ -422,5 +422,42 @@ check('grouped by the PAIR\'s status: a run per status, read from each file\'s p
 check('…and sorted by it: a select sorts in CHOICE order (Uploaded, Rejected, Accepted), so desc puts Accepted first', gp.nodes.map((n) => n.pair?.cells.find((c) => c.fieldId === jStatus)?.text).join() === 'Accepted,Rejected', gp.nodes.map((n) => n.pair?.cells.find((c) => c.fieldId === jStatus)?.text).join());
 check('a pair field in sort or group-by on a level with NO junction is refused', (reportDefError({ ...byStatus, root: { ...byStatus.root, children: [{ ...byStatus.root.children[0], children: [{ ...byStatus.root.children[0].children[0], groupBy: jStatus }] }] } }, fields, tables) ?? '').includes('group-by field'));
 
+/* ── R14: colour rules on a level (contract/colorRules.ts) ──────────────────────
+   The deliverables report, with the band's tint read from ROLLUPS and the files'
+   from their own fields — and, through the junction, from the PAIR's status. */
+console.log('\nR14. Colour rules: on fields, on rollups, on the pair; first match per target');
+const painted: ReportDef = JSON.parse(JSON.stringify(deliverables));
+painted.root.children[0].rules = [
+  { id: 'ok', when: [{ rollup: 'accepted', op: 'gte', value: 1 }], tint: 'green', paint: 'row', label: 'satisfied' },
+  { id: 'some', when: [{ rollup: 'files', op: 'gte', value: 1 }], tint: 'amber', paint: 'row' },
+  { id: 'none', when: [{ rollup: 'files', op: 'eq', value: 0 }], tint: 'red', paint: 'row', label: 'nothing yet' },
+];
+painted.root.children[0].children[0].rules = [
+  { id: 'acc', when: [{ fieldId: fStatus, op: 'eq', value: 'accepted' }], tint: 'green', paint: 'row' },
+  { id: 'nodate', when: [{ fieldId: fDelivered, op: 'empty' }], tint: 'grey', paint: { field: fDelivered } },
+  { id: 'all', when: [], tint: 'blue', paint: 'row' },   // "everything else"
+];
+check('rules on fields and rollups validate', reportDefError(painted, fields, tables) === null, reportDefError(painted, fields, tables) ?? '');
+check('a rule on a rollup the level does not have is refused', bad((d) => { d.root.children[0].rules = [{ id: 'x', when: [{ rollup: 'nope', op: 'gt', value: 0 }], tint: 'red' }]; }).includes("not a rollup"));
+check('a rule on another table\'s field is refused', bad((d) => { d.root.rules = [{ id: 'x', when: [{ fieldId: fPath, op: 'empty' }], tint: 'red' }]; }).includes('not a field of this level'));
+check('a rule painting another table\'s field is refused', bad((d) => { d.root.rules = [{ id: 'x', when: [], tint: 'red', paint: { field: fPath } }]; }).includes('painted field'));
+const pr = runReport(painted, ctx);
+const p101 = section(node(pr, 'Ep 101'), 'delivs')!;
+check('a deliverable with an accepted file: the band is green, with its label', node(p101, 'ProRes 4444 texted')?.paint?.row?.tint === 'green' && node(p101, 'ProRes 4444 texted')?.paint?.row?.label === 'satisfied', JSON.stringify(node(p101, 'ProRes 4444 texted')?.paint));
+check('a deliverable with no files: red — green and amber did not match first', node(p101, 'DCP 2K Flat')?.paint?.row?.tint === 'red');
+check('a level with no rules paints nothing (no `paint` key at all)', !('paint' in node(pr, 'Ep 101')!));
+const fs101 = section(node(p101, 'ProRes 4444 texted'), 'files')!;
+const acc = node(fs101, 'ep101_prores_v2.mov'), sup = node(fs101, 'ep101_prores_v1.mov');
+check('an accepted file: green row (the first row rule that matched)', acc?.paint?.row?.tint === 'green');
+check('a superseded file: the catch-all blue row, AND its empty Delivered cell grey — first match PER TARGET', sup?.paint?.row?.tint === 'blue' && sup?.paint?.fields[fDelivered]?.tint === 'grey', JSON.stringify(sup?.paint));
+check('an accepted file with a date: no cell paint', acc?.paint?.fields[fDelivered] === undefined);
+// Through the junction: the pair's status paints the file.
+const pj: ReportDef = JSON.parse(JSON.stringify(delivered));
+pj.root.children[0].children[0].rules = [{ id: 'pa', when: [{ fieldId: jStatus, op: 'eq', value: 'Accepted' }], tint: 'green', paint: { field: jStatus } }];
+check('a rule on the PAIR\'s status validates on a level through a junction', reportDefError(pj, fields, tables) === null, reportDefError(pj, fields, tables) ?? '');
+const pjf = section(node(section(node(runReport(pj, ctx), 'Ep 101'), 'delivs')!, 'ProRes 4444 texted'), 'files')!;
+check('…and paints the pair cell of the Accepted pair only', pjf.nodes.filter((n) => n.paint?.fields[jStatus]?.tint === 'green').length === 1 && pjf.nodes.filter((n) => n.paint?.fields[jStatus]).every((n) => n.pair?.cells.find((c) => c.fieldId === jStatus)?.text === 'Accepted'), JSON.stringify(pjf.nodes.map((n) => [n.pair?.cells.find((c) => c.fieldId === jStatus)?.text, n.paint])));
+check('a pair field rule on a level with no junction is refused', (reportDefError({ ...painted, root: { ...painted.root, children: [{ ...painted.root.children[0], children: [{ ...painted.root.children[0].children[0], rules: [{ id: 'x', when: [{ fieldId: jStatus, op: 'empty' }], tint: 'red' }] }] }] } }, fields, tables) ?? '').includes('condition field'));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

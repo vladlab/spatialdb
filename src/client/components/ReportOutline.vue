@@ -39,13 +39,14 @@
           <span class="ro-grp-field">{{ groupFieldName }}</span><span class="ro-grp-label">{{ run.label || '(empty)' }}</span><span class="ro-grp-count">{{ run.nodes.length }}</span>
         </div>
         <template v-for="n in run.nodes" :key="n.record.id">
-          <div class="ro-row ro-band" :data-record="n.record.id" @click="$emit('open', n.record.id)">
+          <div class="ro-row ro-band" :class="[{ painted: !!n.paint?.row }, n.paint?.row ? `tint-${n.paint.row.tint}` : '']" :data-record="n.record.id" @click="$emit('open', n.record.id)">
             <span class="ro-level">{{ singular }}</span>
             <span class="ro-label">{{ n.record.label }}</span>
+            <span v-if="n.paint?.row?.label" class="ro-tint-label">{{ n.paint.row.label }}</span>
             <span v-for="s in n.children" :key="s.levelId" class="ro-chip" :class="{ none: !s.nodes.length }">{{ s.nodes.length }} {{ countNoun(s) }}</span>
             <span v-for="r in n.roles" :key="r" class="ro-role">{{ r }}</span>
-            <span v-for="c in pairColumns" :key="'p' + c.id" class="ro-kv pair" :title="`${pairTableName}: ${c.name} — of the pair, not the ${singular}`"><span class="k">{{ c.name }}</span>{{ pairText(n, c.id) }}</span>
-            <span v-for="c in n.cells" :key="c.fieldId" class="ro-kv"><span class="k">{{ fields.get(c.fieldId)?.name }}</span>{{ c.text }}</span>
+            <span v-for="c in pairColumns" :key="'p' + c.id" class="ro-kv pair" :class="tintClass(n, c.id)" :title="`${pairTableName}: ${c.name} — of the pair, not the ${singular}`"><span class="k">{{ c.name }}</span>{{ pairText(n, c.id) }}</span>
+            <span v-for="c in n.cells" :key="c.fieldId" class="ro-kv" :class="tintClass(n, c.fieldId)"><span class="k">{{ fields.get(c.fieldId)?.name }}</span>{{ c.text }}</span>
             <span class="ro-spacer" />
             <span v-for="r in n.rollups" :key="r.id" class="ro-roll" :class="{ zero: r.value === 0, none: r.value === null }"><span class="k">{{ r.label || r.id }}</span>{{ r.value === null ? '—' : r.value }}</span>
           </div>
@@ -74,11 +75,11 @@
           <tr v-if="run.label !== null" class="ro-grp-row" :class="{ empty: run.label === '' }">
             <td :colspan="span"><div class="ro-grp"><span class="ro-grp-field">{{ groupFieldName }}</span><span class="ro-grp-label">{{ run.label || '(empty)' }}</span><span class="ro-grp-count">{{ run.nodes.length }}</span></div></td>
           </tr>
-          <tr v-for="n in run.nodes" :key="n.record.id" class="ro-row" :class="{ grouped: run.label !== null }" :data-record="n.record.id" @click="$emit('open', n.record.id)">
-            <td class="c-label"><span class="ro-label">{{ n.record.label }}</span></td>
+          <tr v-for="n in run.nodes" :key="n.record.id" class="ro-row" :class="[{ grouped: run.label !== null, painted: !!n.paint?.row }, n.paint?.row ? `tint-${n.paint.row.tint}` : '']" :data-record="n.record.id" @click="$emit('open', n.record.id)">
+            <td class="c-label"><span class="ro-label">{{ n.record.label }}</span><span v-if="n.paint?.row?.label" class="ro-tint-label">{{ n.paint.row.label }}</span></td>
             <td v-if="hasRole" class="c-role"><span v-for="r in n.roles" :key="r" class="ro-role">{{ r }}</span></td>
-            <td v-for="c in pairColumns" :key="'p' + c.id" class="c-field c-pair" :title="pairText(n, c.id)">{{ pairText(n, c.id) }}</td>
-            <td v-for="c in n.cells" :key="c.fieldId" class="c-field" :title="c.text">{{ c.text }}</td>
+            <td v-for="c in pairColumns" :key="'p' + c.id" class="c-field c-pair" :class="tintClass(n, c.id)" :title="pairText(n, c.id)">{{ pairText(n, c.id) }}</td>
+            <td v-for="c in n.cells" :key="c.fieldId" class="c-field" :class="tintClass(n, c.fieldId)" :title="c.text">{{ c.text }}</td>
             <td v-for="r in n.rollups" :key="r.id" class="c-rollup" :class="{ zero: r.value === 0, none: r.value === null }">{{ r.value === null ? '—' : r.value }}</td>
             <td class="c-fill" aria-hidden="true"></td>
           </tr>
@@ -128,6 +129,8 @@ const columns = computed(() => props.level.fields.flatMap((id) => { const f = pr
 const pairColumns = computed(() => (props.section.pairTableId && 'pair' in props.level ? props.level.pair?.fields ?? [] : []).flatMap((id) => { const f = props.fields.get(id); return f ? [f] : []; }));
 const pairTableName = computed(() => props.tables.get(props.section.pairTableId ?? '')?.name ?? 'pair');
 const pairText = (n: ReportNode, fieldId: string) => n.pair?.cells.find((c) => c.fieldId === fieldId)?.text ?? '';
+/** A cell a colour rule painted (contract/colorRules.ts): the tint's classes, else nothing. */
+const tintClass = (n: ReportNode, fieldId: string) => { const p = n.paint?.fields[fieldId]; return p ? ['cell-painted', `tint-${p.tint}`] : undefined; };
 const extra = computed(() => (hasRole.value ? 1 : 0) + pairColumns.value.length + columns.value.length + props.level.rollups.length);
 const span = computed(() => 2 + extra.value);   // the label, the columns, the filler
 /** One line above the rows, only where it says something (see the header comment). */
@@ -151,6 +154,18 @@ const countNoun = (s: ReportSection) => { const t = props.tables.get(s.tableId);
 .ro.d0 > .ro-band { background: var(--bg-group-0); border-top: 2px solid var(--group-rule-0); min-height: 38px; }
 .ro.d1 > .ro-band { background: var(--bg-group-1); border-top: 1px solid var(--group-rule-1); }
 .ro-band:hover { filter: brightness(1.12); }
+/* PAINTED by a colour rule (contract/colorRules.ts): the tint's WASH over the depth
+   tint, a stripe at the left, and the rule's label (if it has one) by the record's name.
+   The depth tint still shows through, so a green band at depth 1 is still a depth-1 band. */
+.ro-band.painted { box-shadow: inset 4px 0 0 var(--tint); background-image: linear-gradient(var(--tint-wash), var(--tint-wash)); padding-left: 14px; }
+.ro-tint-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--tint); white-space: nowrap; }
+/* A painted name·value pair on a band, or cell in a table: the tint's capsule. */
+.ro-kv.cell-painted { background: var(--tint-cap); box-shadow: inset 0 0 0 1px var(--tint-ring); border-radius: 9px; padding: 0 7px; }
+td.cell-painted { background: linear-gradient(var(--tint-cap), var(--tint-cap)), transparent; box-shadow: inset 0 0 0 1px var(--tint-ring); padding-left: 6px; padding-right: 6px !important; }
+tr.ro-row.painted > td { background: var(--tint-wash); }
+tr.ro-row.painted > td.c-label { box-shadow: inset 3px 0 0 var(--tint); padding-left: 8px; }
+tr.ro-row.painted > td .ro-tint-label { margin-left: 8px; }
+tr.ro-row.painted:hover td { background: linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--tint-wash); }
 .ro-band .ro-level { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--group-text-2); }
 .ro.d0 > .ro-band .ro-level { color: var(--group-text-0); }
 .ro.d1 > .ro-band .ro-level { color: var(--group-text-1); }

@@ -183,6 +183,19 @@
         </div>
       </details>
 
+      <!-- COLOUR: conditional colour, saved with the view like its filters
+           (contract/colorRules.ts). A row the first matching rule paints gets a WASH and a
+           stripe on its # cell; a rule painting one field tints that cell's value. -->
+      <details class="menu colour-menu">
+        <summary :class="{ active: rules.length }">
+          colour<template v-if="rules.length"> · {{ rules.length }}</template>
+        </summary>
+        <div class="pop colour-pop">
+          <ColorRules :store="store" :table-id="tableId" :rules="rules" row-word="row" @update:rules="save({ rules: $event.length ? ($event as ColorRule[]) : undefined })" />
+        </div>
+      </details>
+      <span v-if="legend.length" class="tint-legend"><span v-for="l in legend" :key="l.tint + l.label" :class="`tint-${l.tint}`"><i />{{ l.label }}</span></span>
+
       <details class="menu">
         <summary :class="{ active: hiddenCount }">
           fields<template v-if="hiddenCount"> · {{ hiddenCount }} hidden</template>
@@ -292,7 +305,7 @@
                (long) body below; it always renders exactly one row. -->
           <template v-else>
           <tr v-for="r in [it.record]" :key="r.id" class="row"
-              :class="{ pending: store.unconfirmed.value.has(r.id), fresh: fresh.has(r.id), rowsel: rowSel.has(r.id), alt: banded.has(r.id), opened: r.id === openRecordId, menued: rowMenu?.ids.includes(r.id) }"
+              :class="[{ pending: store.unconfirmed.value.has(r.id), fresh: fresh.has(r.id), rowsel: rowSel.has(r.id), alt: banded.has(r.id), opened: r.id === openRecordId, menued: rowMenu?.ids.includes(r.id), painted: !!paints.get(r.id)?.row }, paints.get(r.id)?.row ? `tint-${paints.get(r.id)!.row!.tint}` : '']"
               @contextmenu="onRowMenu(r.id, $event)">
             <!-- The row's HANDLE: click to select the row, drag to carry the selection
                  somewhere (a canvas). The ⤢ keeps to the right edge so it never sits
@@ -305,7 +318,7 @@
               <button class="expand" tabindex="-1" title="Open record (Space)" @pointerdown.stop @mousedown.prevent @click="$emit('open-record', r.id)">⤢</button>
             </td>
             <td v-for="f in shown" :key="f.id"
-                :class="{ sel: isSel(r.id, f.id), rng: inRange(r.id, f.id), editing: isSel(r.id, f.id) && editing, pin: f.id === primaryId, sized: colWidth(f.id) !== undefined }"
+                :class="[{ sel: isSel(r.id, f.id), rng: inRange(r.id, f.id), editing: isSel(r.id, f.id) && editing, pin: f.id === primaryId, sized: colWidth(f.id) !== undefined, 'cell-painted': !!paints.get(r.id)?.fields[f.id] }, paints.get(r.id)?.fields[f.id] ? `tint-${paints.get(r.id)!.fields[f.id].tint}` : '']"
                 :style="colStyle(f.id)"
                 @mousedown="onCellDown(r.id, f, $event)" @dblclick="startEdit(r.id, f)">
               <div class="cell">
@@ -503,6 +516,8 @@ import Popover from './Popover.vue';
 import FieldForm from './FieldForm.vue';
 import FieldSettings from './FieldSettings.vue';
 import FilterLines from './FilterLines.vue';
+import ColorRules from './ColorRules.vue';
+import { legendOf, paintsOf, type ColorRule, type Paints } from '../../contract/colorRules';
 import { useSchemaActions } from '../schemaActions';
 import { useDerived } from '../derived';
 import { ancestorsOf, canMakeColumns, groupRows, type GroupHeader, type GroupValue } from '../../contract/views';
@@ -588,6 +603,7 @@ function summarise(raw: unknown): string {
   if (c.sort.length) bits.push('sorted');
   if (c.kanban) bits.push('board');
   if (c.groupBy?.length) bits.push('grouped');
+  if (c.rules?.length) bits.push('coloured');
   if (c.hidden.length) bits.push(`${c.hidden.length} hidden`);
   return bits.join(' · ') || 'everything, unsorted';
 }
@@ -777,6 +793,19 @@ function sortMark(fieldId: string) {
   if (i === -1) return '';
   return (config.value.sort[i].dir === 'asc' ? '▲' : '▼') + (config.value.sort.length > 1 ? i + 1 : '');
 }
+
+/* ── colour rules (contract/colorRules.ts): evaluated over every matched row ──────
+   Over `matched`, not every record: a row the view filters out is never seen. One
+   pass per change, like applyView; the result is read per row and per cell. */
+const rules = computed(() => config.value.rules ?? []);
+const legend = computed(() => legendOf(rules.value));
+const paints = computed(() => {
+  const out = new Map<string, Paints>();
+  if (!rules.value.length) return out;
+  const byId = new Map(allFields.value.map((f) => [f.id, f]));
+  for (const r of matched.value) { const p = paintsOf(r, rules.value, byId, linkLabels, derived.idsOf); if (p) out.set(r.id, p); }
+  return out;
+});
 
 /* ── filter: the lines themselves are FilterLines.vue (shared with canvas stacks) ──*/
 
@@ -1621,6 +1650,18 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .row.opened.menued { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.08), rgba(66, 165, 245, 0.08)), linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--row-bg); }
 .row.rowsel { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.14), rgba(66, 165, 245, 0.14)), var(--row-bg); }
 .row td { background: var(--cell-bg); }
+/* PAINTED by a colour rule (contract/colorRules.ts): the tint's WASH over the row's
+   own background — banding still shows through — and a stripe on the # cell, which is
+   pinned, so the colour is there however far the grid is scrolled sideways. The
+   states above still layer over it: a selected painted row is both. */
+.row.painted { --row-bg: linear-gradient(var(--tint-wash), var(--tint-wash)), var(--bg-app); }
+.row.painted.alt { --row-bg: linear-gradient(var(--tint-wash), var(--tint-wash)), var(--bg-band); }
+.row.painted td.num { box-shadow: inset 3px 0 0 var(--tint); }
+.row.painted.opened td.num { box-shadow: inset 3px 0 0 var(--accent); }
+/* A painted CELL: the tint's capsule-strength fill with a hairline ring, over whatever
+   the cell shows — a value, pills, or nothing at all ("Deliverable is empty → red" is
+   the point: an empty cell can be painted). The row is untouched. */
+.row td.cell-painted { background: linear-gradient(var(--tint-cap), var(--tint-cap)), var(--cell-bg); box-shadow: inset 0 0 0 1px var(--tint-ring); }
 /* The row menu: at the pointer, over everything in the grid (its sticky header is z 12). */
 .row-menu { position: fixed; z-index: 60; }
 .row.opened td.num { box-shadow: inset 3px 0 0 var(--accent); color: var(--accent); font-weight: 600; }

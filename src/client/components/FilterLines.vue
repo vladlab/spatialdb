@@ -10,6 +10,7 @@
     <div v-for="(f, i) in filters" :key="i" class="line">
       <select :value="f.fieldId" @change="changeField(i, val($event))">
         <option v-for="fl in filterable" :key="fl.id" :value="fl.id">{{ fl.name }}</option>
+        <option v-for="fl in extraFilterable" :key="fl.id" :value="fl.id">{{ fl.name }} (of the pair)</option>
       </select>
       <select :value="f.op" @change="patch(i, { op: val($event) as FilterOp })">
         <option v-for="op in opsOf(f.fieldId)" :key="op" :value="op">{{ OP_LABEL[op] }}</option>
@@ -30,7 +31,7 @@
       </template>
       <button class="x" title="Remove this condition" @click="emit('update:filters', filters.filter((_, j) => j !== i))">×</button>
     </div>
-    <button v-if="filterable.length" class="ghost add-filter" @click="add">+ filter…</button>
+    <button v-if="filterable.length || extraFilterable.length" class="ghost add-filter" @click="add">+ filter…</button>
     <p v-if="note !== ''" class="note">{{ note ?? 'All conditions must match.' }}</p>
   </div>
 </template>
@@ -44,12 +45,19 @@ import { OP_LABEL, relationTargetOf, opsFor, type FilterOp, type ViewConfig } fr
 import RecordSelect from './RecordSelect.vue';
 
 type Filters = ViewConfig['filters'];
-const props = defineProps<{ store: Store; tableId: string; filters: Filters; /** The line under the list; '' for none. */ note?: string }>();
+const props = defineProps<{
+  store: Store; tableId: string; filters: Filters;
+  /** A second table whose fields may be named too — a report level's PAIR (its junction), listed after the table's own. */
+  extraTableId?: string;
+  /** The line under the list; '' for none. */
+  note?: string;
+}>();
 const emit = defineEmits<{ 'update:filters': [filters: Filters] }>();
 
 const val = (e: Event) => (e.target as HTMLInputElement | HTMLSelectElement).value;
 const fields = computed(() => fieldsOf(props.store.state, props.tableId));
 const filterable = computed(() => fields.value.filter((f) => opsFor(f.type).length));
+const extraFilterable = computed(() => (props.extraTableId ? fieldsOf(props.store.state, props.extraTableId).filter((f) => opsFor(f.type).length) : []));
 const fieldById = (id: string) => props.store.state.fields.get(id);
 const typeOf = (id: string) => fieldById(id)?.type ?? 'text';
 const opsOf = (id: string) => opsFor(typeOf(id));
@@ -62,7 +70,7 @@ function choicesOf(id: string): string[] {
 const inputType = (id: string) => ({ number: 'number', date: 'date' } as Record<string, string>)[typeOf(id)] ?? 'text';
 
 function add() {
-  const f = filterable.value[0];
+  const f = filterable.value[0] ?? extraFilterable.value[0];
   if (f) emit('update:filters', [...props.filters, { fieldId: f.id, op: opsFor(f.type)[0] }]);
 }
 function patch(i: number, p: Partial<Filters[number]>) {
