@@ -31,20 +31,32 @@ API.md "Tools".
 - **Six fixed-purpose commands**, arguments built in Rust, never taken from the
   page: `tools_available` (the handshake: version, and every analyzer with the
   version of the program it runs), `server_url`, `set_server` (setup page only),
-  `classify`, `analyze(unit, analyzer)` — the analyzer named by id from the closed
-  set — `analyze_path(path, analyzer)` (a recipe's MANUAL step run from a record,
-  such as an md5) and `reveal`.
+  `classify`, `analyze(unit, analyzer, job?)` — the analyzer named by id from the
+  closed set — `analyze_path(path, analyzer, job?)` (a recipe's MANUAL step run
+  from a record, such as an md5, and the fingerprint run), `hash_cancel(job)`,
+  `allow_paths(paths, why)` and `reveal`. A hash given a `job` id reports
+  `hash-progress` events (bytes done) under it and can be cancelled between
+  chunks; the page's hash line (`client/tools/hashJobs.ts`) runs one at a time
+  and the sidebar footer's strip shows it.
 - **Reads only what you dropped.** `classify` and `analyze` accept a
   path only if it — or a folder containing it — was dropped onto the window this
   session (`Allowed`). So the served JavaScript, even from a compromised server,
   cannot probe or hash arbitrary files. `analyze_path` takes a record's path, which
   the page supplies, so for a file not under something dropped this session it
   first asks in a NATIVE dialog (tauri-plugin-dialog — the page cannot draw or
-  answer it), and a yes allows that path for the rest of the session. `reveal` takes any path (it selects a file in
+  answer it), and a yes allows that path for the rest of the session; `allow_paths`
+  asks the same for a whole batch in ONE dialog (the fingerprint run from the
+  footer, which would otherwise be a dialog per file). `reveal` takes any path (it selects a file in
   the file manager and executes nothing). There is deliberately no "open with the
   default app" command: `xdg-open` on the wrong file runs it.
 - **File drop** (the first tool): drop files or folders onto an open table, or onto a
-  canvas. What it writes is the table's RECIPE — ⚙ Table settings → Desktop tools —
+  canvas. A file whose path is already a record is skipped and offered to open, never
+  updated behind your back; to update a record with a file, drop the file ONTO it —
+  a card, or a grid row — where a ring and a label say which record. The file is
+  compared with the record by its FINGERPRINT (an xxh3 kept in the manifest, taken at
+  every drop): same bytes at another path → the path follows; different bytes →
+  "Replace file info?" first. (TAURI-HANDOFF.md §5.2–3; `contract/fingerprint.ts`.)
+  What it writes is the table's RECIPE — ⚙ Table settings → Desktop tools —
   an ordered list of steps, each an ANALYZER (`filesystem`, `sequence`, `imf`,
   `ffprobe`, a hash…), what it runs on, and which outputs go to which fields. The
   editor shows the same recipe three ways: Steps, JSON, and a Summary in sentences

@@ -78,8 +78,11 @@
    </div>
 
     <!-- The footer: things about the WHOLE app. (A table, a section and a canvas each
-         have their own ⚙ where they are listed.) History lives in here. -->
+         have their own ⚙ where they are listed.) History lives in here; so does the
+         desktop app's fingerprint strip (what the hash line is doing, what still
+         wants a fingerprint), outside the content area so nothing there shifts. -->
     <footer class="tree-foot">
+      <FingerprintStrip :store="store" />
       <button class="row settings-btn" title="Settings — and History: restore something deleted" @click="$emit('settings')">
         <span class="tw">⚙</span>Settings
       </button>
@@ -89,6 +92,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import FingerprintStrip from './FingerprintStrip.vue';
 import type { Store } from '../store';
 import { sectionsSorted } from '../state';
 import type { ScopeApi } from '../scope';

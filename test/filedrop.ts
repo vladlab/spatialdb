@@ -529,6 +529,37 @@ async function main() {
     check('a file whose path is ANOTHER record\'s, dropped onto this one: refused — a path belongs to one record — with a pill to open that record; nothing read, nothing written', await until(() => /a\.mov is already the file of another Files record/.test(noticesText())) && w.find('.desk-notice .notice-pill').exists() && !calls.some((c) => c.cmd === 'analyze') && (await finalData()).path === '/mnt/san/another.mov', noticesText());
     await w.find('.desk-notice .notice-pill').trigger('click');
     check('…the pill opens that record in the tray, the canvas still open', await until(() => w.find('.record-panel').exists() && finalCard().exists()) && (await rows(`select id from records where id = '${aId2}'`)).length === 1);
+
+    console.log('\nF10. The fingerprint strip: what still wants a fingerprint is a QUERY, run from the footer');
+    const strip = () => w.find('.tree-foot .fp');
+    check('every dropped record has its fingerprint, so the strip is not drawn', !strip().exists());
+    // Two records made BY HAND (no drop): a path with no manifest, and a manifest with no hashes.
+    const handA = randomUUID(), handB = randomUUID(), handSeq = randomUUID();
+    await post([
+      { type: 'record.create', id: handA, tableId: tFiles, data: { name: 'hand.mov', path: '/mnt/san/hand.mov' } },
+      { type: 'record.create', id: handB, tableId: tFiles, data: { name: 'typed.wav', path: '/mnt/san/typed.wav', manifest: { kind: 'file', size: 1000 }, total_size: 1000 } },
+      { type: 'record.create', id: handSeq, tableId: tFiles, data: { name: 'frames', path: '/mnt/san/frames', manifest: { kind: 'sequence', pattern: 'f.%04d.exr', first: 1, last: 3, count: 3, gaps: [] } } },
+    ]);
+    check('the strip appears in the sidebar footer: "2 files have no fingerprint" (the sequence never counts) with a Run button, and nothing was read', await until(() => strip().exists() && /2 files have no fingerprint/.test(strip().text())) && strip().find('.fp-run').exists() && !calls.some((c) => c.cmd === 'allow_paths'), strip().exists() ? strip().text() : 'no strip');
+    calls.length = 0;
+    allowPath = false;
+    await strip().find('.fp-run').trigger('click');
+    check('Run asks the shell to ALLOW the whole batch in ONE native dialog (allow_paths, with the two paths and why); declined → nothing read, a notice, the count stays', await until(() => /not run — you did not allow/.test(noticesText())) && calls.filter((c) => c.cmd === 'allow_paths').length === 1 && calls.find((c) => c.cmd === 'allow_paths')?.args.paths.join() === '/mnt/san/hand.mov,/mnt/san/typed.wav' && /fingerprint/.test(calls.find((c) => c.cmd === 'allow_paths')?.args.why) && !calls.some((c) => c.cmd === 'analyze_path') && /2 files have no fingerprint/.test(strip().text()), `${noticesText()} | ${calls.map((c) => c.cmd).join()}`);
+    for (const n of w.findAll('.desk-notice')) await n.trigger('click');
+    allowPath = true;
+    calls.length = 0;
+    manualDelay = 300;
+    await strip().find('.fp-run').trigger('click');
+    check('allowed: the strip turns into the progress line — "Fingerprinting 1 / 2 · hand.mov" — one hash at a time, each a job with an id', await until(() => /Fingerprinting 1 \/ 2 · hand\.mov/.test(strip().text())) && strip().find('.fp-bar').exists(), strip().text());
+    await strip().find('.fp-head').trigger('click');
+    check('…clicked open, it lists the jobs — the running one first, with its state and a × to cancel — and the finished ones after', await until(() => strip().find('.fp-list').exists()) && /hand\.mov/.test(strip().find('.fp-job').text()) && strip().find('.fp-job').classes('running') && strip().find('.fp-job .fp-x').exists(), strip().text());
+    manualDelay = 0;
+    const fp = await untilDb(`select id, data from records where id in ('${handA}', '${handB}') order by data->>'name'`, (x) => x.length === 2 && x.every((r) => r.data.manifest?.hashes?.xxh3), 8000);
+    check('both records get their fingerprint, into the manifest — the hand-made one gets a manifest from the path (classified afresh); each ran through analyze_path with a job id', fp.every((r) => /^xxh3:/.test(r.data.manifest.hashes.xxh3)) && fp[0].data.manifest.kind === 'file' && fp[0].data.manifest.size === 1000 && calls.filter((c) => c.cmd === 'analyze_path' && c.args.analyzer === 'hash-xxh3' && typeof c.args.job === 'number').length === 2, JSON.stringify(fp.map((r) => r.data.manifest)));
+    check('…and the fingerprint column too, the recipe\'s hash step being mapped', fp.every((r) => r.data.hash === r.data.manifest.hashes.xxh3), JSON.stringify(fp.map((r) => r.data.hash)));
+    check('…not as undo steps: Ctrl+Z after the run does not peel a fingerprint off', (() => { win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true })); return true; })());
+    await sleep(300);
+    check('the strip is gone — the query finds nothing left', await until(() => !strip().exists(), 4000) && (await rows(`select data from records where id = '${handA}'`))[0].data.manifest?.hashes?.xxh3 !== undefined, strip().exists() ? strip().text() : 'gone');
   } finally {
     await ui.close();
   }

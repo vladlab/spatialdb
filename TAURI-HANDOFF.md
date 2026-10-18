@@ -148,13 +148,24 @@ These were agreed with the owner. Treat them as constraints, not suggestions.
 ## 5. Open decisions (bring these to the owner; do not guess)
 
 1. ~~§2 — load from server vs bundle~~ — decided: load from the server.
-2. ~~The same file, seen twice~~ — decided (Sept 27): match on the exact absolute
-   path within the table → update that record and say so; dropped ONTO a record of
-   the table → update that record (placeholders); otherwise a new record. Hash
-   matching later.
-3. ~~Which hash~~ — xxh3 by default, computed last and only when a hash field is
-   mapped; the algorithm is in the value (`xxh3:…`), so SHA-256 can be a second
-   output later without touching old rows.
+2. ~~The same file, seen twice~~ — decided (Sept 27), REVISED Oct 18 ("nothing
+   invisible", no path history): on empty space, a path already in the table is
+   SKIPPED and offered (a dialog or a pill to open that record), never updated;
+   dropped ONTO a record (one file; a card or a grid row, with a ring and a label
+   while dragging), the file is compared with the record by size, then by its
+   fingerprint: same bytes, same path → nothing; same bytes, another path → the
+   path and name follow silently (a rename or a move, proven); anything else →
+   "Replace file info?" (both names and paths, the reason), Replace / Cancel. A
+   path another record holds is refused. `contract/fingerprint.ts`,
+   `runFileDrop` in `client/tools/fileDrop.ts`.
+3. ~~Which hash~~ — decided Oct 18: the xxh3 is THE fingerprint, fixed, not a
+   setting — run at every drop into the manifest (`hashes.xxh3`) whether or not
+   the recipe maps a column for it, and offered for every record that still has
+   none (the sidebar footer's strip: "N files have no fingerprint — Run", one
+   native dialog allows the batch, one hash at a time with progress, cancellable;
+   the list is a QUERY over the records, nothing stored). md5 / sha256 are a
+   client's checksums: manual, kept beside the fingerprint (`hashes.md5`), never
+   compared. The algorithm stays in the value (`xxh3:…`).
 4. ~~Paths across machines~~ — plain absolute paths; the finishing systems share a
    mount convention. No storage-root mapping.
 5. ~~Where probing runs~~ — the host's own ffprobe/ffmpeg (and Resolve + Python for
@@ -196,9 +207,10 @@ built: `sql/014_tools.sql`, `src/contract/tools.ts`, `table.update { tools }`,
 checks). See API.md "Tools". Decisions taken with the owner on the way: ONE Files
 table (not per-kind tables); no raw ffprobe kept, only mapped outputs; N loose files
 that form no sequence/bundle/channel set become N records (capped, one Ctrl+Z);
-dropping a file ONTO an existing record of the table updates that record (a
-placeholder made before the file existed); same absolute path already in the table
-→ update it and say so; a tool's follow-up writes are queued `undoable: false`.
+dropping a file ONTO an existing record of the table updates it by the rules of
+§5.2 (compared by fingerprint; a replace asks); same absolute path already in the
+table → skipped and offered, not touched (§5.2); a tool's follow-up writes are
+queued `undoable: false`.
 
 ## 7. The data the tools write into
 
