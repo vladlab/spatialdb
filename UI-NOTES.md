@@ -363,6 +363,35 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
 
 ## Needs eyes (built, tested headlessly, never SEEN)
 
+- DENSE TRAY (Oct 17, `RecordPanel.vue`) — the mockup was agreed (one row per short
+  field, a label cell at a uniform best-fit width, block fields keep their tab):
+  * ROW types: text, number, date, select, multi-select, checkbox, link, backlink,
+    path, dimensions, lookup, Created / Created by. TAB types: long text, rich text,
+    attachments, structured (audio/video layout, manifest), a junction's nested
+    table. By TYPE, so a row never turns into a block when its text grows — a long
+    path ellipsizes (full value on click/edit; `title` on the label too).
+  * The label cell is the LIGHTER column (`--bg-head`, the grid header's shade,
+    `--head-text`) over the well; rows 27px, a hairline under each, no boxes. Is the
+    label/value contrast now right (it was too low in the tabs, and this is one
+    step past the mockup's)? Does the label column at 12px read against 13px values?
+  * `--label-w` is ONE width for the whole tray: the widest row field's name on this
+    table (measured with a canvas in the label font, + ★ / verdict room), clamped
+    64–180px. Past 180 the name ellipsizes. A table whose longest short label is
+    "Input to Online Edits" gets ~150px — check it does not eat the value column at
+    your usual tray width.
+  * Link rows: pills one per line down the left; "add another…" at the RIGHT end
+    of the last line — on one link, the same line as the pill. Several links: the
+    label sits at the top of the cell (`:has(.pill ~ .pill)`).
+  * Editing: the row's left edge carries the state line (accent focused, green
+    editing) and the value cell washes `--bg-surface-hover`, in place of the tab
+    fields' coloured border. The CellEditor input sits in the 27px row — check a
+    date input and a select in Chromium and Firefox.
+  * A row field's ⤴ show / ▶ md5 / "ffprobe…" moved to the right end of the value
+    cell (the label cell has no room); a tab field's stay in its tab.
+  * Rich text keeps `.block` (10px air); every tab field between rows gets 8/6px.
+    The well's side padding now belongs to the tab fields, so rows run from the
+    accent rule to the well's edge.
+
 - COLOUR RULES (Oct 17, `src/contract/colorRules.ts`; `npm run test:color`) — the
   mockups were agreed, the pixels were not seen:
   * GRID: "colour" in the view bar, beside group. A painted row is a wash over its own

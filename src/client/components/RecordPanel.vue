@@ -53,7 +53,16 @@
          of them fail a comparison — so folding a section cannot hide a QC problem).
          "Created" and "Created by" belong to no one's schema and close the list as a
          section of their own. A table with no sections is ONE well, as it always was. -->
-    <div class="rp-body">
+    <!-- DENSITY (Oct 17): a field whose value is SHORT — a line of text, a number, a
+         date, a select, a link or two — is ONE ROW: its name in a label cell on the
+         left, its value beside it, rows butted together under a hairline, as the
+         canvas card lays its fields out. Every row's label cell is the SAME width
+         (`labelW`, the widest short field's name on this record, measured), so the
+         values line up down the whole tray, across sections. A field that needs
+         room — an audio layout, a manifest, long or rich text, an attachment list, a
+         junction's nested table — keeps the tab-on-its-box shape and its full
+         height; it sits between the runs of rows inside the same well. -->
+    <div class="rp-body" :style="{ '--label-w': labelW + 'px' }">
       <template v-for="g in groups" :key="g.key">
       <button v-if="g.head" class="rp-sec" :class="{ folded: !g.open }" :data-section="g.key" :aria-expanded="g.open"
               :title="g.open ? 'Fold this section (remembered in this browser)' : 'Unfold this section'" @click="toggleGroup(g)">
@@ -62,23 +71,28 @@
         <span v-if="g.warn" class="rp-sec-warn" :title="`${g.warn} field${g.warn === 1 ? '' : 's'} in this section differ${g.warn === 1 ? 's' : ''} from what ${g.warn === 1 ? 'it is' : 'they are'} compared with`">⚠ {{ g.warn }}</span>
       </button>
       <div v-if="g.open" class="rp-well rp-fields" :class="{ sectioned: g.head }">
-      <div v-for="f in g.fields" :key="f.id" class="rp-field" :class="{ editing: editingId === f.id, block: f.type === 'rich_text', readonly: READONLY(f) }">
+      <div v-for="f in g.fields" :key="f.id" class="rp-field" :class="{ editing: editingId === f.id, block: f.type === 'rich_text', readonly: READONLY(f), row: isRow(f), tab: !isRow(f) }">
         <!-- A <div>, not a <label>: a label activates its FIRST labelable descendant on
              any click inside it, so a second button in the tab (▶ md5 beside ⤴ show)
              clicked the first one too — the "manual hash also showed the file" bug. -->
         <div class="rp-name">
-          <span v-if="f.id === primaryId" class="star" title="Primary field — this record's name">★</span>{{ f.name }}
+          <span class="rp-name-text" :title="f.name"><span v-if="f.id === primaryId" class="star" title="Primary field — this record's name">★</span>{{ f.name }}</span>
           <VerdictMark v-if="verdicts.get(f.id)" class="cmp-badge" :kind="verdicts.get(f.id)!.ok ? 'ok' : 'warn'" :title="verdicts.get(f.id)!.title" />
-          <!-- Desktop app only: select the file in the file manager (never opens it — src-tauri/src/lib.rs). -->
-          <button v-if="desktop && f.type === 'file_path' && typeof record.data[f.key] === 'string'" class="reveal" title="Show in folder"
-                  @click.stop="reveal(String(record.data[f.key]))">⤴ show</button>
-          <!-- The recipe's MANUAL steps (an md5), on the field they write — the manifest. -->
-          <template v-if="manualHome === f.id && !jobs.get(recordId)">
-            <button v-for="m in manual" :key="m.index" class="reveal run-step" :title="`Run ${m.name} on this record's file now`"
-                    @click.stop="runManualStep(store, recordId, m.index)">▶ {{ m.name }}</button>
-          </template>
-          <!-- What is running, drawn ONCE: a drop's steps on the path, a manual step where its ▶ was. -->
-          <span v-if="jobHere(f)" class="job">{{ jobs.get(recordId)!.label }}…</span>
+          <!-- A tab field's tools (⤴ show, ▶ md5, "ffprobe…") ride in the tab as they did;
+               a ROW field's sit at the right end of its value cell, where the label
+               cell's fixed width has no room for them. -->
+          <template v-if="!isRow(f)">{{ ' ' }}<span class="rp-tools">
+            <!-- Desktop app only: select the file in the file manager (never opens it — src-tauri/src/lib.rs). -->
+            <button v-if="desktop && f.type === 'file_path' && typeof record.data[f.key] === 'string'" class="reveal" title="Show in folder"
+                    @click.stop="reveal(String(record.data[f.key]))">⤴ show</button>
+            <!-- The recipe's MANUAL steps (an md5), on the field they write — the manifest. -->
+            <template v-if="manualHome === f.id && !jobs.get(recordId)">
+              <button v-for="m in manual" :key="m.index" class="reveal run-step" :title="`Run ${m.name} on this record's file now`"
+                      @click.stop="runManualStep(store, recordId, m.index)">▶ {{ m.name }}</button>
+            </template>
+            <!-- What is running, drawn ONCE: a drop's steps on the path, a manual step where its ▶ was. -->
+            <span v-if="jobHere(f)" class="job">{{ jobs.get(recordId)!.label }}…</span>
+          </span></template>
         </div>
 
         <!-- RICH TEXT is not a click-to-edit value like the rest: it is an editor that
@@ -172,6 +186,17 @@
             <span v-else class="text" :class="{ pre: f.type === 'long_text' }">{{ f.type === 'created_at' ? formatCreated(record.data[f.key]) : formatNumberField(f, record.data[f.key]) ?? display(record.data[f.key]) }}</span>
             <span v-if="isEmpty(record.data[f.key])" class="placeholder">empty</span>
           </template>
+
+          <!-- A ROW field's tools: see the tab above. -->
+          <span v-if="isRow(f)" class="rp-tools end">
+            <button v-if="desktop && f.type === 'file_path' && typeof record.data[f.key] === 'string'" class="reveal" title="Show in folder"
+                    @click.stop="reveal(String(record.data[f.key]))">⤴ show</button>
+            <template v-if="manualHome === f.id && !jobs.get(recordId)">
+              <button v-for="m in manual" :key="m.index" class="reveal run-step" :title="`Run ${m.name} on this record's file now`"
+                      @click.stop="runManualStep(store, recordId, m.index)">▶ {{ m.name }}</button>
+            </template>
+            <span v-if="jobHere(f)" class="job">{{ jobs.get(recordId)!.label }}…</span>
+          </span>
         </div>
       </div>
       </div>
@@ -296,6 +321,36 @@ const groups = computed<Group[]>(() => {
   }
   return out;
 });
+/* ── rows and tabs ────────────────────────────────────────────────────────
+   Which fields are ONE ROW (label cell | value cell) and which keep the tab on a
+   box with their full height. By TYPE, not by what the value happens to hold: a
+   row must stay a row when its text gets longer (it ellipsizes; the full value is
+   there on edit), or the tray would reshape itself under the reader. */
+const ROW_TYPES = new Set<string>(['text', 'number', 'select', 'multi_select', 'date', 'checkbox', 'link', 'backlink', 'file_path', 'dimensions', 'lookup', 'created_at', 'created_by']);
+/** A junction's backlink is a nested table — a tab, however short. */
+const isRow = (f: FieldRow) => ROW_TYPES.has(f.type) && !(f.type === 'backlink' && !!junctionOf(f));
+
+/** The one label-cell width for every row on this record: the widest row field's
+    name (plus its ★ or verdict mark), measured in the label's font — so the value
+    column is straight down the tray, across sections, and no label is cut unless it
+    is past the cap (then it ellipsizes with the full name in its title). Measured
+    with a canvas; where there is none (tests), a per-character guess. */
+const LABEL_FONT = '12px';
+const measurer = (() => { let ctx: CanvasRenderingContext2D | null | undefined; return (text: string) => {
+  if (ctx === undefined) { try { ctx = document.createElement('canvas').getContext('2d'); } catch { ctx = null; } }
+  if (!ctx) return text.length * 6.6;
+  try { ctx.font = `${LABEL_FONT} ${getComputedStyle(document.body).fontFamily || 'sans-serif'}`; return ctx.measureText(text).width; } catch { return text.length * 6.6; }
+}; })();
+const labelW = computed(() => {
+  let w = 0;
+  for (const f of fields.value) {
+    if (!isRow(f)) continue;
+    const marks = (f.id === primaryId.value ? 14 : 0) + (verdicts.value.get(f.id) ? 21 : 0);
+    w = Math.max(w, Math.ceil(measurer(f.name)) + marks);
+  }
+  return Math.min(180, Math.max(64, w + 17));   // 7px + 8px padding, 2px spare
+});
+
 /** The fields on screen, in the order they are on screen: what Enter and Tab walk. */
 const shownFields = computed(() => groups.value.filter((g) => g.open).flatMap((g) => g.fields));
 function toggleGroup(g: Group) {
@@ -579,6 +634,56 @@ watch(() => props.recordId, () => {
    the fields stays a flow — short names, many of them.) */
 .rp-value .pills.column { width: 100%; }
 .rp-value .pills.column .pill { justify-content: flex-start; }
+.rp-tools { display: inline-flex; align-items: center; }
+.rp-tools:empty { display: none; }
+
+/* ── ROWS ────────────────────────────────────────────────────────────────
+   A short field is a row of a two-column table: the label cell, the same width for
+   every row (`--label-w`, set on .rp-body), then the value cell; a hairline under
+   each; no gap between rows, no box around a value. The label column is the
+   LIGHTER one (the grid's header shade), the value column is the well — the two
+   read apart at a glance without the label needing to be a tab. Focus / editing
+   colour the row's state line as the tab fields' borders do. */
+.rp-field.row { display: grid; grid-template-columns: var(--label-w, 96px) minmax(0, 1fr); padding: 0; margin: 0; }
+/* The well's side padding moves onto the TAB fields, so a row runs from the accent
+   rule to the well's right edge. */
+.rp-well.rp-fields { padding-left: 0; padding-right: 0; }
+.rp-well.rp-fields > .rp-field.tab { margin: 0 10px; }
+.rp-field.row .rp-name {
+  display: flex; align-items: center; gap: 5px; z-index: auto; min-width: 0;
+  font-size: 12px; line-height: 16px; color: var(--head-text);
+  padding: 5px 8px 5px 10px; margin: 0; max-width: none;
+  border: 0; border-bottom: 1px solid var(--border-main); border-radius: 0;
+  background: var(--bg-head);
+}
+.rp-field.row .rp-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-field.row .cmp-badge { margin-left: 0; flex: none; }
+.rp-field.row .rp-value {
+  min-height: 27px; padding: 3px 10px; gap: 4px 8px;
+  border: 0; border-bottom: 1px solid var(--border-main); border-radius: 0;
+  background: none;
+}
+/* A row's state: a line down its left edge, in the colour the tab fields use on their border. */
+.rp-field.row { box-shadow: inset 2px 0 0 transparent; }
+.rp-field.row:focus-within { box-shadow: inset 2px 0 0 var(--fb); }
+.rp-field.row .rp-value:focus { background: var(--bg-surface-hover); }
+.rp-field.row.editing { box-shadow: inset 2px 0 0 var(--success); }
+.rp-field.row.editing .rp-value { background: var(--bg-surface-hover); }
+.rp-field.row.readonly .rp-name { color: var(--text-muted); }
+/* The last row before a tab field or the well's end carries no hairline into the padding. */
+.rp-well.rp-fields > .rp-field.row:last-child .rp-name, .rp-well.rp-fields > .rp-field.row:last-child .rp-value { border-bottom: 0; }
+/* A LINK row: the pills one per line down the left; "add another…" at the right end of
+   the last line — on one link, the same line as the pill. Several links: the pills
+   stack, the label stays at the top of the cell. */
+.rp-field.row .rp-value .pills.column { flex: 1 1 auto; width: auto; min-width: 0; }
+.rp-field.row .rp-value .add-link { margin-left: auto; align-self: flex-end; font-size: 11px; }
+.rp-field.row .rp-value:has(.pills.column) { flex-wrap: nowrap; align-items: flex-end; }
+.rp-field.row:has(.pill ~ .pill) .rp-name { align-items: flex-start; }
+.rp-field.row .rp-tools.end { margin-left: auto; gap: 4px; }
+.rp-field.row .rp-tools.end .reveal, .rp-field.row .rp-tools.end .job { margin-left: 0; }
+/* A tab field between rows gets a little air above and below. */
+.rp-well.rp-fields > .rp-field.tab { padding: 8px 0 6px; }
+
 .rp-rich :deep(.rte) { border-radius: 0 6px 6px 6px; }
 .rp-field.block .rp-name { border-radius: 6px 6px 0 0; }
 .text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
