@@ -16,7 +16,9 @@
 //!
 //! 3. **Paths come from the user, not the page.** A command that READS a file
 //!    (`classify`, `probe`, `fingerprint`) accepts only paths the user dropped onto
-//!    the window this session, or files inside a dropped folder (`Allowed`).
+//!    the window this session, or files inside a dropped folder (`Allowed`) — or
+//!    paths the user allowed in a NATIVE dialog the page cannot draw or answer
+//!    (`analyze_path` asks for one; `allow_paths` asks for a batch, once).
 //!    Otherwise the served JavaScript could hash or probe anything on disk.
 //!    `reveal` takes any existing path: it selects a file in the file manager and
 //!    runs nothing, and a record's path must be openable long after it was dropped.
@@ -28,8 +30,20 @@
 
 mod tools;
 
-use std::{fs, path::{Path, PathBuf}, sync::Mutex};
+use std::{collections::HashMap, fs, path::{Path, PathBuf}, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}};
 use tauri::{AppHandle, DragDropEvent, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+
+/// Hash jobs in flight, by the id the page gave them: the flag `hash_cancel` raises.
+#[derive(Default)]
+pub struct Jobs(Mutex<HashMap<u64, Arc<AtomicBool>>>);
+impl Jobs {
+    fn start(&self, job: u64) -> Arc<AtomicBool> {
+        let flag = Arc::new(AtomicBool::new(false));
+        self.0.lock().unwrap().insert(job, flag.clone());
+        flag
+    }
+    fn finish(&self, job: u64) { self.0.lock().unwrap().remove(&job); }
+}
 
 /// Paths the user has dropped this session: the roots a reading command may touch.
 #[derive(Default)]
@@ -104,7 +118,7 @@ fn grant(app: &AppHandle, server: &url::Url) -> Result<(), String> {
             "core:webview:allow-internal-toggle-devtools",
             "core:webview:allow-set-webview-zoom",      // the UI size setting (client/uiScale.ts) is the webview's own zoom here
             "allow-tools-available", "allow-server-url",
-            "allow-classify", "allow-analyze", "allow-analyze-path", "allow-reveal",
+            "allow-classify", "allow-analyze", "allow-analyze-path", "allow-hash-cancel", "allow-allow-paths", "allow-reveal",
         ]
     });
     app.add_capability(cap.to_string()).map_err(|e| e.to_string())
@@ -158,7 +172,7 @@ fn tools_available() -> Available {
     analyzers.insert("ffprobe", ffprobe.as_deref().and_then(tools::probe::version));
     Available {
         version: env!("CARGO_PKG_VERSION").to_string(),
-        tools: vec!["file_drop", "reveal"],
+        tools: vec!["file_drop", "reveal", "hash_progress", "allow_paths"],
         analyzers,
         ffprobe_path: ffprobe.map(|p| format!("{}{}", p.display(), if tools::probe::ffprobe_is_bundled() { " (bundled)" } else { "" })),
         platform: std::env::consts::OS,
@@ -195,27 +209,71 @@ fn classify(allowed: State<Allowed>, paths: Vec<String>) -> Result<Vec<tools::cl
 /// Stage 3: run ONE analyzer of the table's recipe on one unit. The analyzer is
 /// named by id from the closed set in contract/tools.ts; the page picks which and
 /// in what order, the arguments are built here. Runs on a blocking thread — a hash
-/// of a large file takes minutes — and the page never waits on it.
+/// of a large file takes minutes — and the page never waits on it. `job`: an id
+/// the page chose for a HASH, under which `hash-progress` events are emitted and
+/// `hash_cancel` is honoured; ignored for anything else.
 #[tauri::command]
-async fn analyze(allowed: State<'_, Allowed>, unit: tools::classify::Unit, analyzer: String) -> Result<tools::probe::Probed, String> {
+async fn analyze(app: AppHandle, allowed: State<'_, Allowed>, jobs: State<'_, Jobs>, unit: tools::classify::Unit, analyzer: String, job: Option<u64>) -> Result<tools::probe::Probed, String> {
     allowed.check_unit(&unit)?;
-    run_analyzer(unit, analyzer).await
+    run_analyzer(app, &jobs, unit, analyzer, job).await
 }
 
-async fn run_analyzer(unit: tools::classify::Unit, analyzer: String) -> Result<tools::probe::Probed, String> {
-    tauri::async_runtime::spawn_blocking(move || match analyzer.as_str() {
+async fn run_analyzer(app: AppHandle, jobs: &Jobs, unit: tools::classify::Unit, analyzer: String, job: Option<u64>) -> Result<tools::probe::Probed, String> {
+    let flag = job.map(|j| jobs.start(j));
+    let r = tauri::async_runtime::spawn_blocking(move || match analyzer.as_str() {
         "ffprobe" => tools::probe::probe(&unit),
         id if id.starts_with("hash-") => {
             // Per file (hash.rs): a single file's own hash, or one per member of a
             // bundle / channel set, which the page writes into the manifest.
-            let h = tools::hash::fingerprint(&unit, &id["hash-".len()..])?;
+            let mut progress = match (job, flag) {
+                (Some(j), Some(f)) => Some(tools::hash::Progress::new(j, app, f, unit.total_size)),
+                _ => None,
+            };
+            let h = tools::hash::fingerprint_with(&unit, &id["hash-".len()..], &mut progress)?;
             let mut outputs = serde_json::Map::new();
             if let Some(hash) = h.hash { outputs.insert("hash".into(), serde_json::Value::String(hash)); }
             if !h.members.is_empty() { outputs.insert("member_hashes".into(), serde_json::to_value(&h.members).map_err(|e| e.to_string())?); }
             Ok(tools::probe::Probed { outputs })
         }
         other => Err(format!("this desktop build has no analyzer called \"{other}\"")),
-    }).await.map_err(|e| e.to_string())?
+    }).await.map_err(|e| e.to_string());
+    if let Some(j) = job { jobs.finish(j); }
+    r?
+}
+
+/// Raise the cancel flag of a hash job the page started (`analyze` / `analyze_path`
+/// with a `job`). The job then fails with "cancelled" between two chunks; nothing
+/// is written. Unknown id: nothing happens (it may have just finished).
+#[tauri::command]
+fn hash_cancel(jobs: State<Jobs>, job: u64) {
+    if let Some(flag) = jobs.0.lock().unwrap().get(&job) { flag.store(true, Ordering::Relaxed); }
+}
+
+/// Allow a BATCH of paths the page holds (records whose files were never dropped
+/// this session — the launch-time fingerprint run) with ONE native dialog listing
+/// them, instead of one per file. Rule 3: the dialog is the shell's, the page
+/// cannot draw or answer it. Paths that do not exist are left out of the question
+/// and the answer (the page learns that when it tries to read them). Returns
+/// whether the person said yes; on yes, every listed path is allowed for the
+/// rest of the session.
+#[tauri::command]
+async fn allow_paths(app: AppHandle, allowed: State<'_, Allowed>, paths: Vec<String>, why: String) -> Result<bool, String> {
+    let wanted: Vec<PathBuf> = paths.iter().map(PathBuf::from).filter(|p| allowed.check(&p.to_string_lossy()).is_err() && p.exists()).collect();
+    if wanted.is_empty() { return Ok(true); }
+    let shown: Vec<String> = wanted.iter().take(12).map(|p| p.to_string_lossy().into_owned()).collect();
+    let more = wanted.len().saturating_sub(shown.len());
+    let list = if more > 0 { format!("{}\n… and {more} more", shown.join("\n")) } else { shown.join("\n") };
+    let n = wanted.len();
+    let h = app.clone();
+    let yes = tauri::async_runtime::spawn_blocking(move || {
+        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+        h.dialog().message(format!("spatialdb wants to read {n} file{} to {why}:\n\n{list}\n\nThey were not dropped onto the window this session.", if n == 1 { "" } else { "s" }))
+            .title("Read files?").kind(MessageDialogKind::Info)
+            .buttons(MessageDialogButtons::OkCancelCustom("Read them".into(), "Cancel".into()))
+            .blocking_show()
+    }).await.map_err(|e| e.to_string())?;
+    if yes { allowed.add(&wanted); }
+    Ok(yes)
 }
 
 #[derive(serde::Serialize)]
@@ -229,7 +287,7 @@ pub struct AnalyzedPath { unit: tools::classify::Unit, outputs: serde_json::Map<
 /// a yes allows that path for the rest of the session. Classified fresh, so a
 /// folder of mono WAVs is hashed as the channel set it is.
 #[tauri::command]
-async fn analyze_path(app: AppHandle, allowed: State<'_, Allowed>, path: String, analyzer: String) -> Result<AnalyzedPath, String> {
+async fn analyze_path(app: AppHandle, allowed: State<'_, Allowed>, jobs: State<'_, Jobs>, path: String, analyzer: String, job: Option<u64>) -> Result<AnalyzedPath, String> {
     if allowed.check(&path).is_err() {
         if !Path::new(&path).exists() { return Err(format!("{path}: not found on this computer")); }
         let (a, p, h) = (analyzer.clone(), path.clone(), app.clone());
@@ -245,7 +303,7 @@ async fn analyze_path(app: AppHandle, allowed: State<'_, Allowed>, path: String,
     }
     let root = allowed.check(&path)?;
     let unit = tools::classify::classify(&[root]).into_iter().next().ok_or_else(|| format!("{path}: nothing there to analyze"))?;
-    let probed = run_analyzer(unit.clone(), analyzer).await?;
+    let probed = run_analyzer(app, &jobs, unit.clone(), analyzer, job).await?;
     Ok(AnalyzedPath { unit, outputs: probed.outputs })
 }
 
@@ -258,8 +316,9 @@ fn reveal(path: String) -> Result<String, String> { tools::reveal::reveal(&path)
 pub fn run() {
     tauri::Builder::default()
         .manage(Allowed::default())
+        .manage(Jobs::default())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![tools_available, server_url, set_server, classify, analyze, analyze_path, reveal])
+        .invoke_handler(tauri::generate_handler![tools_available, server_url, set_server, classify, analyze, analyze_path, hash_cancel, allow_paths, reveal])
         .setup(|app| {
             let handle = app.handle().clone();
             match configured_server(&handle) {

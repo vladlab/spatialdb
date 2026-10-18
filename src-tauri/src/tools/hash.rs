@@ -6,11 +6,50 @@
 //! app writes into the manifest beside each member. A sequence is not hashed — its
 //! manifest never lists its frames, and a thousand per-frame hashes have nowhere
 //! to live until a sidecar is a thing.
+//!
+//! Progress: a hash of a 200 GB master on a NAS is minutes, and the page shows a
+//! bar for it (the sidebar footer). `Progress` is how: bytes done so far, emitted
+//! as `hash-progress` events under a job id the page chose, and a cancel flag the
+//! page can raise (`hash_cancel`), checked between chunks.
 use super::classify::Unit;
 use sha2::Digest;
-use std::{fs::File, io::Read, path::Path};
+use std::{fs::File, io::Read, path::Path, sync::{atomic::{AtomicBool, Ordering}, Arc}, time::{Duration, Instant}};
+use tauri::Emitter;
 
 const CHUNK: usize = 4 << 20;
+/// Emit no more often than this, and at least once per this many bytes.
+const EVERY: Duration = Duration::from_millis(250);
+const EVERY_BYTES: u64 = 64 << 20;
+
+#[derive(serde::Serialize, Clone)]
+pub struct ProgressEvent { pub job: u64, pub path: String, pub done: u64, pub total: u64 }
+
+/// One job's progress: where to emit, the cancel flag, and the running totals.
+pub struct Progress {
+    pub job: u64,
+    pub app: tauri::AppHandle,
+    pub cancel: Arc<AtomicBool>,
+    /// The whole unit's bytes (a set: all members), so a bar can span the unit.
+    pub total: u64,
+    done: u64,
+    last: Instant,
+    last_bytes: u64,
+}
+
+impl Progress {
+    pub fn new(job: u64, app: tauri::AppHandle, cancel: Arc<AtomicBool>, total: u64) -> Self {
+        Progress { job, app, cancel, total, done: 0, last: Instant::now() - EVERY, last_bytes: 0 }
+    }
+    fn advance(&mut self, path: &str, n: u64) -> Result<(), String> {
+        if self.cancel.load(Ordering::Relaxed) { return Err("cancelled".into()); }
+        self.done += n;
+        if self.last.elapsed() >= EVERY || self.done - self.last_bytes >= EVERY_BYTES || self.done >= self.total {
+            self.last = Instant::now(); self.last_bytes = self.done;
+            let _ = self.app.emit("hash-progress", ProgressEvent { job: self.job, path: path.to_string(), done: self.done, total: self.total });
+        }
+        Ok(())
+    }
+}
 
 enum H { X(xxhash_rust::xxh3::Xxh3), S(sha2::Sha256), M(md5::Md5) }
 
@@ -35,8 +74,11 @@ fn hasher(algo: &str) -> Result<H, String> {
     })
 }
 
-/// One file, start to end, in 4 MB chunks.
-pub fn hash_file(path: &str, algo: &str) -> Result<String, String> {
+/// One file, start to end, in 4 MB chunks; with a `Progress` when the page gave the job an id.
+#[cfg(test)]
+pub fn hash_file(path: &str, algo: &str) -> Result<String, String> { hash_file_with(path, algo, &mut None) }
+
+pub fn hash_file_with(path: &str, algo: &str, progress: &mut Option<Progress>) -> Result<String, String> {
     let mut h = hasher(algo)?;
     let mut buf = vec![0u8; CHUNK];
     let mut file = File::open(path).map_err(|e| format!("{path}: {e}"))?;
@@ -44,6 +86,7 @@ pub fn hash_file(path: &str, algo: &str) -> Result<String, String> {
         let n = file.read(&mut buf).map_err(|e| format!("{path}: {e}"))?;
         if n == 0 { break; }
         match &mut h { H::X(x) => x.update(&buf[..n]), H::S(s) => s.update(&buf[..n]), H::M(m) => m.update(&buf[..n]) }
+        if let Some(p) = progress { p.advance(path, n as u64)?; }
     }
     Ok(match h {
         H::X(x) => format!("xxh3:{:016x}", x.digest()),
@@ -52,17 +95,20 @@ pub fn hash_file(path: &str, algo: &str) -> Result<String, String> {
     })
 }
 
-pub fn fingerprint(unit: &Unit, algo: &str) -> Result<Hashed, String> {
+#[cfg(test)]
+pub fn fingerprint(unit: &Unit, algo: &str) -> Result<Hashed, String> { fingerprint_with(unit, algo, &mut None) }
+
+pub fn fingerprint_with(unit: &Unit, algo: &str, progress: &mut Option<Progress>) -> Result<Hashed, String> {
     hasher(algo)?;   // an unknown algorithm fails before any file is opened
     match unit.kind.as_str() {
-        "file" => Ok(Hashed { hash: Some(hash_file(&unit.path, algo)?), members: vec![] }),
+        "file" => Ok(Hashed { hash: Some(hash_file_with(&unit.path, algo, progress)?), members: vec![] }),
         "sequence" => Err("a sequence is not hashed: its manifest lists a frame range, never its files".into()),
         _ => {
             let dir = Path::new(&unit.path);
             let mut members = Vec::with_capacity(unit.members.len());
             for m in &unit.members {
                 let rel = Path::new(m).strip_prefix(dir).map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| m.clone());
-                members.push(MemberHash { path: rel, hash: hash_file(m, algo)? });
+                members.push(MemberHash { path: rel, hash: hash_file_with(m, algo, progress)? });
             }
             Ok(Hashed { hash: None, members })
         }
