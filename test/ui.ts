@@ -827,9 +827,10 @@ async function main() {
   const filled = Object.keys(rowsOf(cardBy('reel_10'))).filter((k) => (rowsOf(cardBy('reel_10'))[k] ?? '') !== '' && rowsOf(cardBy('reel_10'))[k] !== '—');
   await cardBy('made on canvas').trigger('contextmenu', { clientX: 100, clientY: 80 });
   await ctx().findAll('button').find((b) => /Fields on Files cards/.test(b.text()))!.trigger('click');
-  check('the field list offers "hide empty fields on this canvas", off, and a pin per field', ctx().find('.hide-empty input').exists() && !(ctx().find('.hide-empty input').element as HTMLInputElement).checked
+  const hideEmptyBtn = () => w.find('.canvas-controls .hide-empty');
+  check('the toolbar has the canvas-wide "empty: shown/hidden" switch, off; the field list a pin per field', hideEmptyBtn().exists() && !hideEmptyBtn().classes('active')
     && fieldLine('Status').find('.field-pin input').exists(), ctx().text());
-  await ctx().find('.hide-empty input').setValue(true);
+  await hideEmptyBtn().trigger('click');
   check('on: the empty card loses its empty rows, the filled card keeps its filled ones',
     await until(() => Object.keys(rowsOf(cardBy('made on canvas'))).length === 0 && Object.keys(rowsOf(cardBy('reel_10'))).join() === filled.join()),
     JSON.stringify([rowsOf(cardBy('made on canvas')), rowsOf(cardBy('reel_10')), filled]));
@@ -837,7 +838,8 @@ async function main() {
   check('pinning Status brings it back on the empty card, as a gap', await until(() => Object.keys(rowsOf(cardBy('made on canvas'))).join() === 'Status'), JSON.stringify(rowsOf(cardBy('made on canvas'))));
   const cfgE = await untilDb(`select config from canvases where id = '${boardId}'`, (r) => r[0].config.hideEmpty === true && (r[0].config.pinnedFields?.[filesId] ?? []).length === 1);
   check('both are saved on the canvas, beside the fields — and the fields were not touched', cfgE[0].config.hideEmpty === true && cfgE[0].config.pinnedFields[filesId].length === 1 && cfgE[0].config.cardFields[filesId].length === 2, JSON.stringify(cfgE[0].config));
-  await ctx().find('.hide-empty input').setValue(false);
+  check('the menu stays open across the switch (the pins are set there)', ctx().exists() && await until(() => hideEmptyBtn().classes('active')));
+  await hideEmptyBtn().trigger('click');
   check('off again: every chosen row is back, the pin kept for next time', await until(() => Object.keys(rowsOf(cardBy('made on canvas'))).join() === 'Status,Show')
     && (await untilDb(`select config from canvases where id = '${boardId}'`, (r) => r[0].config.hideEmpty === undefined))[0].config.pinnedFields?.[filesId]?.length === 1);
   await bg().trigger('pointerdown', { button: 0, clientX: 5, clientY: 5 });

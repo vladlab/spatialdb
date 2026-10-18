@@ -46,6 +46,13 @@
         </label>
         <p class="legend-note">Colour and direction are set on the link field (⚙ on its column). Shown/hidden is just for you, on this canvas.</p>
       </div>
+      <!-- HIDE EMPTY: cards leave out the rows that have no value (contract/canvasConfig.ts).
+           Up here, not in the card menu: it is a setting of the whole canvas, and a
+           canvas-wide switch inside one card's menu read as local. The pins (which
+           fields stay, empty or not) are per table, so those ARE in the card menu. -->
+      <button class="hide-empty" :class="{ active: hideEmpty }"
+              :title="hideEmpty ? 'Empty fields are hidden on cards — click to show them (for this canvas, for everyone)' : 'Hide the fields that have no value on cards (for this canvas, for everyone)'"
+              @click="setHideEmpty(!hideEmpty)">{{ hideEmpty ? 'empty: hidden' : 'empty: shown' }}</button>
       <span class="sep" />
       <button :disabled="!selected.size" @click="unplaceSelected">
         unplace{{ selected.size > 1 ? ` ${selected.size}` : '' }}
@@ -192,8 +199,11 @@
 
     <!-- Context menu / table chooser / card-fields chooser: one floating panel,
          screen-space, closed by any click outside it. -->
+    <!-- `wheel.stop`: the container's wheel handler (zoom / pan, with preventDefault) sits
+         above this menu in the DOM, so a scroll over the field list used to move the
+         canvas and never the list. -->
     <div v-if="menu" ref="menuRef" class="ctx" :style="{ left: `${menu.x}px`, top: `${menu.y}px` }"
-         @pointerdown.stop @dblclick.stop @contextmenu.prevent.stop @keydown.stop>
+         @pointerdown.stop @dblclick.stop @contextmenu.prevent.stop @keydown.stop @wheel.stop>
       <!-- AN ARROW. Removing a link from the canvas is deliberately three steps — select,
            right-click, confirm — because an arrow is a thin thing to hit by accident and
            what goes is DATA, not a drawing. (It is undoable all the same.) -->
@@ -305,8 +315,8 @@
       </template>
 
       <!-- WHICH FIELDS the cards of this table show here — and, per field, PIN: keep it
-           on the card even when it is empty, once "hide empty" (below) is on. The list
-           scrolls on its own, so a forty-field table never pushes the switch and the
+           on the card even when it is empty, once "hide empty" (the toolbar's switch)
+           is on. The list scrolls on its own, so a forty-field table never pushes the
            reset off the bottom. -->
       <template v-else-if="menu.kind === 'fields'">
         <p class="ctx-title">{{ tableNameOf(menu.recordId!) }} cards on this canvas show</p>
@@ -314,16 +324,12 @@
           <div v-for="f in fieldChoices" :key="f.id" class="ctx-check field-choice" :data-field="f.id">
             <label class="field-on"><input type="checkbox" :checked="f.on" @change="toggleCardField(f.id)" /> {{ f.name }}</label>
             <label class="field-pin" :class="{ dim: !hideEmpty, on: f.pinned }"
-                   :title="hideEmpty ? 'Shown on the card even when empty' : 'Shown even when empty — once “hide empty fields” is on'">
+                   :title="hideEmpty ? 'Shown on the card even when empty' : 'Shown even when empty — once the toolbar\'s “empty: hidden” is on'">
               <input type="checkbox" :checked="f.pinned" :disabled="!f.on" @change="togglePin(f.id)" /> pin
             </label>
           </div>
         </div>
-        <hr />
-        <label class="ctx-check hide-empty" title="A card leaves out the fields that have no value — except the pinned ones. For this canvas, for everyone.">
-          <input type="checkbox" :checked="hideEmpty" @change="setHideEmpty(($event.target as HTMLInputElement).checked)" /> Hide empty fields on this canvas
-        </label>
-        <p class="ctx-note">The title is always the primary field (★ in the grid).</p>
+        <p class="ctx-note">The title is always the primary field (★ in the grid).<template v-if="!hideEmpty"> Empty fields are shown on this canvas — “empty: shown” in the toolbar switches that.</template></p>
         <button v-if="hasCustomFields" @click="resetCardFields">Reset to default</button>
       </template>
     </div>
@@ -2163,7 +2169,7 @@ onUnmounted(() => {
 .field-choice .field-pin.on { color: var(--text-primary); }
 .field-choice .field-pin.dim { opacity: 0.55; }
 .field-choice .field-pin input:disabled { opacity: 0.3; }
-.ctx-check.hide-empty { font-weight: 500; }
+.canvas-controls .hide-empty.active { color: var(--accent); }
 /* The two link menus: a WAY is a row — its colour, its name, and (right-aligned,
    quieter) what choosing it does. In the new-link menu "find…" sits beside it. */
 .ctx { max-height: calc(100% - 8px); overflow-y: auto; }

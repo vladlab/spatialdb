@@ -219,7 +219,8 @@ Two more, optional, beside it (the same send-the-whole-config rule as `defaults`
 
 `hideEmpty` is per canvas, for everyone; which fields it may hide is still
 `cardFields` (what a card COULD show). A pin is kept while the switch is off. Both are
-set from the card menu's "Fields on … cards…", and neither needs a migration.
+set from the canvas: the switch in its toolbar, the pins in the card menu's "Fields on
+… cards…". Neither needs a migration.
 
 ### Lookup fields
 
