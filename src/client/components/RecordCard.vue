@@ -19,7 +19,7 @@
 <template>
   <div
     class="card"
-    :class="[{ selected, opened, flash, refused, dragging, unconfirmed, collapsed, stacked, stale, tinted: !!tint, ring: glow === 'ring' }, linkTarget ? `link-${linkTarget}` : '', tint ? `tint-${tint}` : '']"
+    :class="[{ selected, opened, flash, refused, dragging, unconfirmed, collapsed, stacked, stale, tinted: !!tint, ring: glow === 'ring', 'drop-target': dropTarget }, linkTarget ? `link-${linkTarget}` : '', tint ? `tint-${tint}` : '']"
     :style="style"
     @pointerdown="onPointerDown"
     @pointerenter="$emit('hover', recordId)"
@@ -214,6 +214,8 @@ const props = defineProps<{
   linkTarget?: 'from' | 'ok' | 'over' | 'dim' | 'no' | 'linked' | null;
   /** A link was just dropped here that cannot be made: flash red, once. */
   refused?: boolean;
+  /** A FILE is being dragged over this card (client/tools/fileDrop.ts): letting go updates THIS record — say so, unmistakably. */
+  dropTarget?: boolean;
   dragging: boolean;
   unconfirmed: boolean;
   /** In a STACK (contract/canvasStack.ts): the stack sizes and places it; it cannot be resized sideways. */
@@ -424,6 +426,10 @@ function onPointerDown(e: PointerEvent) {
 .card.link-no { opacity: 0.75; outline: 2px solid var(--danger); outline-offset: 2px; }
 /* Dropped where no link can be made: one red flash over the card, and nothing else
    happens. Paint only (an inset shadow and an outline) — nothing moves. */
+/* A file over the card: a thick dashed ring, over everything else the card may be
+   showing (opened, selected, a tint), so "letting go replaces THIS record" is never
+   in doubt. The overlay's label names the record too (App.vue). */
+.card.drop-target { outline: 3px dashed var(--accent); outline-offset: 3px; box-shadow: 0 0 0 6px var(--accent-ring); }
 .card.refused { animation: card-refused 0.7s ease-out 1; }
 @keyframes card-refused {
   0%, 35% { outline: 2px solid var(--danger); outline-offset: 2px; box-shadow: inset 0 0 0 999px rgba(220, 60, 60, 0.38); }

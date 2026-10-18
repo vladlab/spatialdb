@@ -304,8 +304,8 @@
           <!-- `v-for … in [it.record]` is only a way to NAME the record `r` for the row's
                (long) body below; it always renders exactly one row. -->
           <template v-else>
-          <tr v-for="r in [it.record]" :key="r.id" class="row"
-              :class="[{ pending: store.unconfirmed.value.has(r.id), fresh: fresh.has(r.id), rowsel: rowSel.has(r.id), alt: banded.has(r.id), opened: r.id === openRecordId, menued: rowMenu?.ids.includes(r.id), painted: !!paints.get(r.id)?.row }, paints.get(r.id)?.row ? `tint-${paints.get(r.id)!.row!.tint}` : '']"
+          <tr v-for="r in [it.record]" :key="r.id" class="row" :data-record-id="r.id"
+              :class="[{ pending: store.unconfirmed.value.has(r.id), fresh: fresh.has(r.id), rowsel: rowSel.has(r.id), alt: banded.has(r.id), opened: r.id === openRecordId, menued: rowMenu?.ids.includes(r.id), painted: !!paints.get(r.id)?.row, 'drop-target': r.id === dropTargetId }, paints.get(r.id)?.row ? `tint-${paints.get(r.id)!.row!.tint}` : '']"
               @contextmenu="onRowMenu(r.id, $event)">
             <!-- The row's HANDLE: click to select the row, drag to carry the selection
                  somewhere (a canvas). The ⤢ keeps to the right edge so it never sits
@@ -540,6 +540,8 @@ const props = defineProps<{
   store: Store; tableId: string;
   /** The record open in the tray, or '' — its row (or board card) is marked. */
   openRecordId?: string;
+  /** The row a FILE is being dragged over (App.vue, from the shell's drag stream), or '' — it gets the drop ring. */
+  dropTargetId?: string;
 }>();
 const emit = defineEmits<{ 'open-record': [recordId: string]; 'open-board': [recordId: string]; 'open-report': [recordId: string] }>();
 const store = props.store;
@@ -1538,6 +1540,23 @@ watch(() => active.value?.id, (_now, was) => {
   if (scroller.value) scroller.value.scrollTop = 0;
 });
 watch(() => props.tableId, () => { activeId.value = ''; search.value = ''; });
+
+/**
+ * The record row under a CLIENT point — for a native file drop (client/desktop.ts):
+ * the shell reports where the pointer is, and dropping ONTO a row updates that
+ * record. Through the DOM (`elementsFromPoint`, which sees past the drop overlay),
+ * since rows are laid out by the browser, not by us.
+ */
+function recordAtClient(clientX: number, clientY: number): { recordId: string; tableId: string } | null {
+  const doc = typeof document !== 'undefined' ? document : null;
+  if (!doc?.elementsFromPoint) return null;
+  for (const el of doc.elementsFromPoint(clientX, clientY)) {
+    const row = (el as HTMLElement).closest?.('tr.row[data-record-id]') as HTMLElement | null;
+    if (row?.dataset.recordId) return { recordId: row.dataset.recordId, tableId: props.tableId };
+  }
+  return null;
+}
+defineExpose({ recordAtClient });
 </script>
 
 <style scoped>
@@ -1645,6 +1664,9 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
    grid is scrolled. Under the pointer and when selected the bar stays. */
 .row.opened { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.08), rgba(66, 165, 245, 0.08)), var(--row-bg); }
 .row.opened:hover { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.08), rgba(66, 165, 245, 0.08)), linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--row-bg); }
+/* A file over the row (the desktop app's drag stream): a dashed ring round the whole
+   row and the accent wash — letting go updates THIS record, and nothing else. */
+.row.drop-target { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.16), rgba(66, 165, 245, 0.16)), var(--row-bg); outline: 3px dashed var(--accent); outline-offset: -2px; }
 /* The rows a right-click menu is about hold the hover shade while it is open. */
 .row.menued { --cell-bg: linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--row-bg); }
 .row.opened.menued { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.08), rgba(66, 165, 245, 0.08)), linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--row-bg); }

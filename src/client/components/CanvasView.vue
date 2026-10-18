@@ -189,6 +189,7 @@
         @reveal="revealPath"
         :link-target="linkTargetState(c.recordId)"
         :refused="refused === c.recordId"
+        :drop-target="dropTargetId === c.recordId"
         :stacked="c.stacked"
         :stale="c.stale"
         :claimed="c.stacked && !c.stale"
@@ -405,7 +406,8 @@ import StackEditor from './StackEditor.vue';
 import { STACK_MAX, STACK_MIN_W, STACK_PAD, describeFilters, stackCensus, stackDropLinks, stackLayout, type StackCensus, type StackDef, type StackLayout } from '../../contract/canvasStack';
 import { placementKey, recordsOf } from '../state';
 
-const props = defineProps<{ store: Store; canvasId: string; /** The record open in the tray, or '' — its card is marked. */ openRecordId?: string }>();
+const props = defineProps<{ store: Store; canvasId: string; /** The record open in the tray, or '' — its card is marked. */ openRecordId?: string;
+  /** The card a FILE is being dragged over (App.vue, from the shell's drag stream), or '' — it gets the drop ring. */ dropTargetId?: string }>();
 const emit = defineEmits<{ 'open-record': [recordId: string]; 'open-board': [recordId: string] }>();
 const isBoardRecord = (id: string) => store.state.tables.get(store.state.records.get(id)?.table_id ?? '')?.kind === 'canvas';
 const store = props.store;
@@ -1996,7 +1998,7 @@ function placeMany(records: RecordRow[], clientX: number, clientY: number, optio
 const placedIds = computed(() => new Set(cardRects.value.keys()));
 /** The card under a CLIENT point, for a native file drop (client/desktop.ts). */
 const cardAtClient = (clientX: number, clientY: number) => cardAt(viewport.clientToWorld(clientX, clientY));
-defineExpose({ placeOrJump, placeMany, placedIds, jumpTo, cardAtClient, activeDefaults, resetCascade: () => { cascade = 0; } });
+defineExpose({ placeOrJump, placeMany, placedIds, jumpTo, cardAtClient, activeDefaults, refuse, resetCascade: () => { cascade = 0; } });
 
 /** The one place the canvas can destroy DATA, so it says so, and says it is undoable. */
 async function deleteRecord(recordId: string) {

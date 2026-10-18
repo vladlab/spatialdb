@@ -10,8 +10,9 @@
  *                the classifier already knows) are applied here, with the context
  *                links `createRecord` adds (scope, board defaults) and, on a canvas,
  *                the placements. A unit whose `path` already IS a record of this
- *                table updates that record instead; so does a unit dropped ONTO a
- *                card of this table (a placeholder made before the file existed).
+ *                table is SKIPPED and named (with the record to open); a unit
+ *                dropped ONTO a record is compared with it and updates it only by
+ *                the rules at `runFileDrop` — nothing invisible (Oct 18).
  *   3. ANALYZE   afterwards, per unit, per remaining step that applies to it
  *                (ffprobe, a hash…) in recipe order — each its own `record.update`,
  *                queued `undoable: false` so Ctrl+Z on the drop takes the results
@@ -31,7 +32,10 @@ import type { FieldRow, RecordRow } from '../state';
 export type { Step };
 import { fieldsOf, linkKey, primaryKeys, recordsOf } from '../state';
 import { validateValue } from '../../contract/values';
-import { analyzerOf, intoManifest, isHashStep, isManual, resolveMap, stepApplies, type Recipe, type Step, type TablesTools } from '../../contract/tools';
+import { analyzerOf, fingerprintStep, intoManifest, isHashStep, isManual, resolveMap, stepApplies, type Recipe, type Step, type TablesTools } from '../../contract/tools';
+import { FINGERPRINT, compareAlgorithm, compareManifests } from '../../contract/fingerprint';
+import { Manifest } from '../../contract/shapes';
+import { runHash } from './hashJobs';
 import { ALIASES_KEY, lookup, rawSpelling, resolveRow, type VocabRow } from '../../contract/vocab';
 import { invoke, jobs, notice } from '../desktop';
 import { confirmDialog, askFull } from '../dialogs';
@@ -264,11 +268,13 @@ export function mappedData(outputs: Record<string, unknown>, map: Map<string, st
 /* ── the run ──────────────────────────────────────────────────────────────── */
 
 export interface DropTarget {
-  /** The grid: files go into this table. */
+  /** The grid: files go into this table; `onto` is the row under the pointer, if any. */
   tableId?: string;
   /** The canvas: files become cards here; `onto` is the card under the pointer, if any. */
-  canvas?: { id: string; clientX: number; clientY: number; onto: { recordId: string; tableId: string } | null;
+  canvas?: { id: string; clientX: number; clientY: number;
              place: (records: RecordRow[], clientX: number, clientY: number, options: MutateOptions) => void };
+  /** The record under the pointer — a card, a grid row — when the drop was ONTO one. */
+  onto?: { recordId: string; tableId: string } | null;
 }
 
 export interface DropContext {
@@ -276,7 +282,14 @@ export interface DropContext {
   createRecord: (tableId: string, data: Record<string, unknown>, id: string, context: { defaults?: Array<{ tableId: string; recordId: string }> }, options: MutateOptions) => string;
   /** The canvas's active defaults (the bar), when dropping there. */
   defaults?: Array<{ tableId: string; recordId: string }>;
+  /** Open a record in the tray — what every conflict offers, without leaving the view. */
+  openRecord?: (recordId: string) => void;
+  /** What to call a record in a dialog or notice. */
+  labelOf?: (recordId: string) => string;
 }
+
+/** What a drop came to: `refused` names a record that flashed the drop away (too many files onto one record). */
+export interface DropOutcome { refused?: string }
 
 const enabledTables = (store: Store) => [...store.state.tables.values()]
   .filter((t) => (t.tools as Partial<TablesTools> | undefined)?.file_drop && (!t.kind || t.kind === 'records'))
@@ -285,14 +298,14 @@ const enabledTables = (store: Store) => [...store.state.tables.values()]
 /** Which table takes this drop, or null (with the reason already shown). */
 async function chooseTable(store: Store, target: DropTarget): Promise<string | null> {
   const enabled = enabledTables(store);
+  if (target.onto) {
+    if (enabled.some((t) => t.id === target.onto!.tableId)) return target.onto.tableId;
+    notice(`File drop is not enabled on that record's table`, 'warn');
+    return null;
+  }
   if (target.tableId) {
     if (enabled.some((t) => t.id === target.tableId)) return target.tableId;
     notice(`File drop is not enabled on this table — turn it on under ⚙ Table settings → Desktop tools`, 'warn');
-    return null;
-  }
-  if (target.canvas?.onto) {
-    if (enabled.some((t) => t.id === target.canvas!.onto!.tableId)) return target.canvas.onto.tableId;
-    notice(`File drop is not enabled on that card's table`, 'warn');
     return null;
   }
   if (!enabled.length) { notice(`No table has File drop enabled yet — ⚙ Table settings → Desktop tools on the table the files belong in`, 'warn'); return null; }
@@ -302,28 +315,55 @@ async function chooseTable(store: Store, target: DropTarget): Promise<string | n
   return r?.choice ?? null;
 }
 
-export async function runFileDrop(ctx: DropContext, paths: string[], target: DropTarget): Promise<void> {
+/** A unit's name and path on two lines, for a dialog. */
+const describeUnit = (name: string, path: string) => `  ${name}\n  ${path}`;
+
+/**
+ * The rules of a drop (the owner, Oct 18 — no path history, nothing invisible):
+ *
+ *   ON EMPTY SPACE (the grid, the canvas between cards): a file whose path is
+ *   already a record of the table is NOT touched — it is skipped and the person
+ *   is told, with the record to open. Everything else becomes a new record.
+ *
+ *   ONTO A RECORD (one file only; more flash the card and do nothing): the file is
+ *   compared with what the record describes (contract/fingerprint.ts). Same
+ *   bytes, same path → nothing to do. Same bytes, another path → the path (and
+ *   name) are updated, silently: that is a rename or a move, and the fingerprint
+ *   proves it. Anything else — the sizes differ, the fingerprints differ, the
+ *   record has nothing to compare with — asks: "Replace file info?", showing both
+ *   names and paths; Replace clears every field the recipe writes and runs it
+ *   again; Cancel does nothing. A path already held by ANOTHER record is refused
+ *   with that record to open, so two records never claim one file.
+ *
+ *   The compare needs the dropped file hashed under the record's algorithm
+ *   (its fingerprint, normally). Sizes are checked first, which settles most
+ *   "differs" without a read; the hash, when needed, is a PRIORITY job
+ *   (hashJobs.ts) — someone is waiting on a dialog.
+ */
+export async function runFileDrop(ctx: DropContext, paths: string[], target: DropTarget): Promise<DropOutcome> {
   const { store } = ctx;
   const tableId = await chooseTable(store, target);
-  if (!tableId) return;
+  if (!tableId) return {};
   const table = store.state.tables.get(tableId)!;
   const recipe: Recipe = (table.tools as TablesTools).file_drop!;
   const fields = fieldsOf(store.state, tableId);
   const steps = recipe.steps.map((step) => ({ step, map: resolveMap(step, fields) }));
   const pathKey = steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('path');
-  if (!pathKey) { notice(`File drop on ${table.name}: its Path output is mapped to a field that no longer exists`, 'error'); return; }
+  if (!pathKey) { notice(`File drop on ${table.name}: its Path output is mapped to a field that no longer exists`, 'error'); return {}; }
   const manifestKey = steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('manifest');
+  // The fingerprint runs at every drop whether or not the recipe has the step (contract/tools.ts).
+  if (!steps.some((s) => s.step.analyzer === `hash-${FINGERPRINT}` && !isManual(s.step))) { const step = fingerprintStep(recipe); steps.push({ step, map: resolveMap(step, fields) }); }
   // A MANUAL step (an md5) is the record's to ask for (`runManualStep`), not the drop's.
   // A step with nothing to write is skipped — a hash step writing into the manifest has something.
   const writes = (step: Step, map: Map<string, string>) => map.size > 0 || (intoManifest(step) && !!manifestKey);
   const applying = (u: Unit) => steps.filter(({ step, map }) => writes(step, map) && !isManual(step) && stepApplies(step, u));
+  const labelOf = ctx.labelOf ?? ((id: string) => String(store.state.records.get(id)?.data[pathKey] ?? id));
 
   let units: Unit[];
   try { units = await invoke<Unit[]>('classify', { paths }); }
-  catch (e) { notice(`file drop: ${String(e)}`, 'error'); return; }
-  if (!units.length) { notice('nothing droppable in that (empty folder?)', 'warn'); return; }
+  catch (e) { notice(`file drop: ${String(e)}`, 'error'); return {}; }
+  if (!units.length) { notice('nothing droppable in that (empty folder?)', 'warn'); return {}; }
 
-  // Matching: the same absolute path already in this table → update, not duplicate.
   await store.loadTable(tableId);
   // The vocabulary tables the recipe links into (Containers, Codecs…): their rows
   // are what the canonical names are resolved against, so they have to be here.
@@ -332,59 +372,139 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
   const tableNameOf = (id: string) => store.state.tables.get(id)?.name ?? 'the target table';
   const byPath = new Map<string, RecordRow>();
   for (const r of recordsOf(store.state, tableId)) { const p = r.data[pathKey]; if (typeof p === 'string') byPath.set(p, r); }
-  const onto = target.canvas?.onto && target.canvas.onto.tableId === tableId ? target.canvas.onto.recordId : null;
 
-  const creates = units.filter((u) => !byPath.has(u.path) && !(onto && units.length === 1));
+  /* ── onto a record ── */
+  const onto = target.onto && target.onto.tableId === tableId ? store.state.records.get(target.onto.recordId) : undefined;
+  if (onto) {
+    if (units.length !== 1) { notice(`Only one file can replace a record — ${units.length} were dropped onto ${labelOf(onto.id)}`, 'warn'); return { refused: onto.id }; }
+    const u = units[0];
+    const holder = byPath.get(u.path);
+    if (holder && holder.id !== onto.id) {
+      notice(`${u.name} is already the file of another ${table.name} record — a path belongs to one record`, 'warn', [{ id: holder.id, label: labelOf(holder.id) }]);
+      return {};
+    }
+    const recorded = manifestKey ? (Manifest.safeParse(onto.data[manifestKey]).data ?? null) : null;
+    let dropped = Manifest.safeParse(u.manifest).data ?? null;
+    let verdict = compareManifests(recorded, dropped);
+    const algo = compareAlgorithm(recorded);
+    if (verdict === null && recorded && dropped && algo && dropped.kind !== 'sequence' && dropped.kind === recorded.kind) {
+      // Sizes agree and the record carries a hash: read the dropped file under that
+      // algorithm. Someone is waiting, so this job goes to the front of the line.
+      jobs.set(onto.id, { label: `comparing (${algo})`, manual: false });
+      try {
+        const r = await runHash({ kind: 'unit', unit: u, analyzer: `hash-${algo}` }, { recordId: onto.id, name: u.name, total: u.total_size, priority: true });
+        dropped = Manifest.safeParse(withHashes(r.outputs as Record<string, unknown>, u, u.manifest).manifest).data ?? dropped;
+        verdict = compareManifests(recorded, dropped);
+      } catch (e) { notice(`${u.name}: could not be compared — ${String(e)}`, 'warn'); }
+      finally { jobs.delete(onto.id); }
+    }
+    const current = String(onto.data[pathKey] ?? '');
+    if (verdict?.same) {
+      if (current === u.path) { notice(`${u.name}: nothing to update — it is the file this record describes (same ${verdict.by})`); return {}; }
+      // A rename or a move, proven: the path and name follow; the manifest keeps its hashes; no recipe.
+      const fs = steps.find((s) => s.step.analyzer === 'filesystem')!;
+      const m = mappedData(immediateOutputs('filesystem', u), fs.map, fields);
+      delete m.data[manifestKey ?? '\0'];
+      store.mutate({ type: 'record.update', id: onto.id, set: m.data, unset: [] }, VIA);
+      notice(`${labelOf(onto.id)}: path updated to ${u.path} (same file by ${verdict.by})`);
+      return {};
+    }
+    const why = verdict ? (verdict.by === 'size' ? 'Their sizes differ.' : `Their ${verdict.by} fingerprints differ.`)
+      : !recorded ? 'The record has no manifest to compare with.'
+      : !algo ? 'The record has no fingerprint to compare with.'
+      : recorded.kind !== dropped?.kind ? `The record is a ${recorded.kind.replace('_', ' ')}, the drop a ${dropped?.kind.replace('_', ' ') ?? 'file'}.`
+      : 'They could not be compared.';
+    const ok = await confirmDialog({ title: 'Replace file info?', okText: 'Replace', danger: true,
+      body: `This record describes:\n${describeUnit(String(onto.data[steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('name') ?? ''] ?? labelOf(onto.id)), current || '(no path)')}\n\nYou dropped:\n${describeUnit(u.name, u.path)}\n\n${why}\n\nReplace fills in the fields the drop recipe writes and keeps everything else — status, notes, links.` });
+    if (!ok) return {};
+    if (!store.state.records.has(onto.id)) return {};
+    // ── one synchronous run: clear what the recipe owns, write what is known now ──
+    const data: Record<string, unknown> = {};
+    const allSkipped: string[] = [];
+    for (const { step, map } of applying(u)) {
+      if (!IMMEDIATE.has(step.analyzer)) continue;
+      const m = mappedData(immediateOutputs(step.analyzer, u), map, fields);
+      Object.assign(data, m.data); allSkipped.push(...m.skipped);
+    }
+    const owned = new Set<string>();
+    for (const { map } of steps) for (const key of map.values()) owned.add(key);
+    const unset = [...owned].filter((k) => !(k in data) && onto.data[k] !== undefined);
+    store.mutate({ type: 'record.update', id: onto.id, set: data, unset }, VIA);
+    for (const f of vocabularyLinkFields(recipe, fields)) {
+      for (const x of store.state.links.values()) if (x.field_id === f.id && x.from_record === onto.id) store.mutate({ type: 'link.remove', fieldId: f.id, fromRecord: onto.id, toRecord: x.to_record }, VIA);
+    }
+    // ── end of the undo step ──
+    notice(`${u.name}: file info replaced on ${labelOf(onto.id)}`);
+    for (const sk of new Set(allSkipped)) notice(`not written — ${sk}`, 'warn');
+    await followUp(store, [{ id: onto.id, unit: u }], applying, fields, rowsOf, tableNameOf, manifestKey);
+    return {};
+  }
+
+  /* ── on empty space ── */
+  const existing = units.filter((u) => byPath.has(u.path));
+  const creates = units.filter((u) => !byPath.has(u.path));
+  if (existing.length && !creates.length && units.length === 1) {
+    const r = byPath.get(existing[0].path)!;
+    const open = await confirmDialog({ title: `Already in ${table.name}`, okText: 'Open', cancelText: 'Close',
+      body: `${existing[0].name} is already a record of ${table.name}:\n  ${labelOf(r.id)}\n  ${existing[0].path}\n\nTo update that record with this file, drop the file onto it.` });
+    if (open) ctx.openRecord?.(r.id);
+    return {};
+  }
   if (creates.length > ASK_ABOVE) {
     const ok = await confirmDialog({ title: `Create ${creates.length} records?`, body: `${units.length} items were dropped (${creates.length} new). One Ctrl+Z undoes them all.`, okText: `Create ${creates.length}` });
-    if (!ok) return;
+    if (!ok) return {};
   }
 
   // ── stage 2: one synchronous run from here to the end of the loop ──
   const made: RecordRow[] = [];
   const touched: Array<{ id: string; unit: Unit }> = [];
   const allSkipped: string[] = [];
-  let updated = 0;
-  for (const u of units) {
+  for (const u of creates) {
     const data: Record<string, unknown> = {};
     for (const { step, map } of applying(u)) {
       if (!IMMEDIATE.has(step.analyzer)) continue;
       const m = mappedData(immediateOutputs(step.analyzer, u), map, fields);
       Object.assign(data, m.data); allSkipped.push(...m.skipped);
     }
-    const existing = onto && units.length === 1 ? store.state.records.get(onto) : byPath.get(u.path);
-    if (existing) {
-      store.mutate({ type: 'record.update', id: existing.id, set: data, unset: [] }, VIA);
-      touched.push({ id: existing.id, unit: u });
-      updated++;
-    } else {
-      const id = crypto.randomUUID();
-      ctx.createRecord(tableId, data, id, { defaults: ctx.defaults }, VIA);
-      const row = store.state.records.get(id);
-      if (row) made.push(row);
-      touched.push({ id, unit: u });
-    }
+    const id = crypto.randomUUID();
+    ctx.createRecord(tableId, data, id, { defaults: ctx.defaults }, VIA);
+    const row = store.state.records.get(id);
+    if (row) made.push(row);
+    touched.push({ id, unit: u });
   }
   if (target.canvas && made.length) target.canvas.place(made, target.canvas.clientX, target.canvas.clientY, VIA);
   // ── end of the undo step ──
 
-  const what = `${made.length} new${updated ? `, ${updated} updated` : ''}`;
-  notice(`File drop → ${table.name}: ${what}`);
+  if (made.length) notice(`File drop → ${table.name}: ${made.length} new`);
+  if (existing.length) {
+    notice(`${existing.length === 1 ? `${existing[0].name} is` : `${existing.length} files are`} already in ${table.name} — not added again. To update a record with its file, drop the file onto it.`, 'warn',
+      existing.map((u) => ({ id: byPath.get(u.path)!.id, label: labelOf(byPath.get(u.path)!.id) })));
+  }
   for (const s of new Set(allSkipped)) notice(`not written — ${s}`, 'warn');
+  await followUp(store, touched, applying, fields, rowsOf, tableNameOf, manifestKey);
+  return {};
+}
 
-  // ── stage 3: the analyzers that run a program or read the bytes, in recipe
-  //    order, each its own small update, not undoable ──
+/**
+ * Stage 3: the analyzers that run a program or read the bytes, in recipe order,
+ * each its own small update, not undoable. A hash goes through the hash line
+ * (hashJobs.ts): one at a time, with progress, cancellable.
+ */
+async function followUp(store: Store, touched: Array<{ id: string; unit: Unit }>, applying: (u: Unit) => Array<{ step: Step; map: Map<string, string> }>,
+                        fields: FieldRow[], rowsOf: RowsOf, tableNameOf: (id: string) => string, manifestKey: string | undefined) {
   for (const { id, unit } of touched) {
     for (const { step, map } of applying(unit)) {
       if (IMMEDIATE.has(step.analyzer)) continue;
       if (!store.state.records.has(id)) break;   // undone meanwhile: stop, write nothing
       const a = analyzerOf(step.analyzer);
+      const hashing = isHashStep(step);
       jobs.set(id, { label: a?.program ?? a?.name ?? step.analyzer, manual: false });
       try {
-        const raw = await invoke<{ outputs: Record<string, unknown> }>('analyze', { unit, analyzer: step.analyzer });
-        const { outputs, unknown, raws } = withVocabulary(step.analyzer, raw.outputs, unit);
+        const raw = hashing
+          ? await runHash({ kind: 'unit', unit, analyzer: step.analyzer }, { recordId: id, name: unit.name, total: unit.total_size })
+          : await invoke<{ outputs: Record<string, unknown> }>('analyze', { unit, analyzer: step.analyzer });
+        const { outputs, unknown, raws } = withVocabulary(step.analyzer, raw.outputs as Record<string, unknown>, unit);
         const routed = routeLinks(outputs, raws, map, fields, rowsOf, tableNameOf);
-        const hashing = isHashStep(step);
         const placed = hashing ? withHashes(routed.outputs, unit, manifestKey ? store.state.records.get(id)?.data[manifestKey] : undefined) : routed.outputs;
         const { data, skipped } = mappedData(placed, hashing ? hashMap(step, map, manifestKey) : map, fields);
         if (store.state.records.has(id)) {
@@ -397,7 +517,9 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
         // field has already had its say above (an alias may even have resolved it).
         const linked = new Set(routed.links.map((l) => l.fieldId)), said = new Set(routed.unresolved.map((u) => u.key));
         for (const u of unknown) if (map.has(u.key) && !said.has(u.key) && !linked.has(fields.find((f) => f.key === map.get(u.key))?.id ?? '')) notice(`${unit.name}: not written — ${u.message}`, 'warn');
-      } catch (e) { notice(`${unit.name}: ${a?.name ?? step.analyzer} — ${String(e)}`, 'error'); }
+      } catch (e) {
+        if (!/cancelled/.test(String(e))) notice(`${unit.name}: ${a?.name ?? step.analyzer} — ${String(e)}`, 'error');
+      }
       jobs.delete(id);
     }
   }
@@ -460,7 +582,9 @@ export async function runManualStep(store: Store, recordId: string, stepIndex: n
   jobs.set(recordId, { label: a?.program ?? label, manual: true });
   try {
     await loadVocabularyTables(store, { steps: [step] }, fields);
-    const r = await invoke<{ unit: Unit; outputs: Record<string, unknown> }>('analyze_path', { path, analyzer: step.analyzer });
+    const r = isHashStep(step)
+      ? await runHash({ kind: 'path', path, analyzer: step.analyzer }, { recordId, name: path.split('/').pop() ?? path, total: Number(record.data[steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('total_size') ?? ''] ?? 0) || 0 }) as { unit: Unit; outputs: Record<string, unknown> }
+      : await invoke<{ unit: Unit; outputs: Record<string, unknown> }>('analyze_path', { path, analyzer: step.analyzer });
     if (!stepApplies(step, r.unit)) { notice(`${r.unit.name}: ${label} does not run on ${r.unit.media} ${r.unit.kind.replace('_', ' ')}s (the step's "runs on")`, 'warn'); return; }
     const { outputs, unknown, raws } = withVocabulary(step.analyzer, r.outputs, r.unit);
     const routed = routeLinks(outputs, raws, map, fields, vocabRowsOf(store), (id) => store.state.tables.get(id)?.name ?? 'the target table');
@@ -477,6 +601,6 @@ export async function runManualStep(store: Store, recordId: string, stepIndex: n
     for (const u of routed.unresolved) notice(`${r.unit.name}: not linked — ${u.message}`, 'warn');
     const said = new Set(routed.unresolved.map((u) => u.key)), linked = new Set(routed.links.map((l) => l.fieldId));
     for (const u of unknown) if (map.has(u.key) && !said.has(u.key) && !linked.has(fields.find((f) => f.key === map.get(u.key))?.id ?? '')) notice(`${r.unit.name}: not written — ${u.message}`, 'warn');
-  } catch (e) { notice(`${label} — ${String(e)}`, 'error'); }
+  } catch (e) { if (!/cancelled/.test(String(e))) notice(`${label} — ${String(e)}`, 'error'); }
   finally { jobs.delete(recordId); }
 }

@@ -31,7 +31,7 @@
       <p v-else-if="current.opts.body" class="dlg-body">{{ current.opts.body }}</p>
 
       <footer>
-        <button ref="cancelBtn" class="dlg-cancel" @click="cancel">Cancel</button>
+        <button ref="cancelBtn" class="dlg-cancel" @click="cancel">{{ current.kind === 'confirm' && current.opts.cancelText ? current.opts.cancelText : 'Cancel' }}</button>
         <button ref="okBtn" class="dlg-ok" :class="{ danger: current.opts.danger }" :disabled="blocked" @click="ok">
           {{ current.opts.okText ?? (current.kind === 'confirm' ? 'OK' : 'Create') }}
         </button>

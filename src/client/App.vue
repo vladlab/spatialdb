@@ -90,13 +90,13 @@
               <!-- `open-record-id`: the record in the tray — its card (and, in the grid, its
                    row) is marked, so the tray never has to be matched to its record by name. -->
               <CanvasView v-if="view === 'canvas' && canvasId" ref="canvasRef" :key="canvasId" :store="store" :canvas-id="canvasId" :open-record-id="openRecordId"
-                          @open-record="openRecordId = $event" @open-board="openBoard" />
+                          :drop-target-id="dropTarget?.recordId ?? ''" @open-record="openRecordId = $event" @open-board="openBoard" />
               <p v-else-if="view === 'canvas'" class="hint">No canvas open — pick one in the tree, or press + beside “Canvases” to make one.</p>
 
               <!-- Keyed by table so switching tables is a fresh component: scroll
                    position, search text and the "rows I just made" set all reset. -->
-              <GridView v-if="view === 'table' && tableId" :key="tableId" :store="store" :table-id="tableId" :open-record-id="openRecordId"
-                        @open-record="openRecordId = $event" @open-board="openBoard" @open-report="openReport" />
+              <GridView v-if="view === 'table' && tableId" ref="gridRef" :key="tableId" :store="store" :table-id="tableId" :open-record-id="openRecordId"
+                        :drop-target-id="dropTarget?.recordId ?? ''" @open-record="openRecordId = $event" @open-board="openBoard" @open-report="openReport" />
               <p v-else-if="view === 'table'" class="hint">No table open — pick one in the tree, or press + beside “Tables” to make one.</p>
 
               <!-- A report is DERIVED each time it is looked at (ReportView.vue). Keyed
@@ -139,12 +139,20 @@
 
     <!-- Desktop app only (client/desktop.ts): files being dragged over the window,
          and what the tools are doing. In a browser neither ever appears. -->
-    <div v-if="fileDrag.active" class="file-drop" :class="{ ok: dropReady }">
-      <div class="file-drop-msg">{{ dropMessage }}</div>
+    <!-- Over a RECORD (a card, a row) the overlay goes clear and the label follows the
+         pointer: the ring on the record says which, the label says what letting go does. -->
+    <div v-if="fileDrag.active" class="file-drop" :class="{ ok: dropReady, onto: !!dropTarget }">
+      <div class="file-drop-msg" :class="{ follow: !!dropTarget }" :style="dropTarget ? { left: `${fileDrag.x + 18}px`, top: `${fileDrag.y + 18}px` } : undefined">{{ dropMessage }}</div>
     </div>
     <div v-if="notices.length || jobs.size" class="desk-notices">
       <div v-if="jobs.size" class="desk-job">{{ jobs.size }} file{{ jobs.size === 1 ? '' : 's' }} being read…</div>
-      <div v-for="n in notices.slice(0, 4)" :key="n.id" class="desk-notice" :class="n.kind" @click="dismiss(n.id)">{{ n.text }}</div>
+      <div v-for="n in notices.slice(0, 4)" :key="n.id" class="desk-notice" :class="n.kind" @click="dismiss(n.id)">
+        {{ n.text }}
+        <!-- The records a notice offers to OPEN — in the tray, staying where you are. -->
+        <span v-if="n.records" class="notice-pills">
+          <button v-for="r in n.records" :key="r.id" class="notice-pill" :title="`Open ${r.label} in the tray`" @click.stop="openRecordId = r.id">{{ r.label }}</button>
+        </span>
+      </div>
     </div>
 
     <div v-if="store.errors.value.length" class="errors">
@@ -503,20 +511,50 @@ const dropEnabledHere = computed(() => {
   if (view.value === 'canvas' && canvasId.value) return [...store.state.tables.values()].some((t) => (!t.kind || t.kind === 'records') && on(t));
   return false;
 });
-const dropReady = computed(() => !!dropWhere.value && dropEnabledHere.value);
+/**
+ * The record under the files being dragged — a card on the canvas, a row in the
+ * grid — looked up on every move of the shell's drag stream. Dropping ONTO a
+ * record updates that record (client/tools/fileDrop.ts); dropping anywhere else
+ * adds. So the target must be unmistakable WHILE dragging: the record wears a
+ * dashed ring and the overlay's label names it. One file only: more than one over
+ * a record is refused, and the label says so before letting go.
+ */
+const gridRef = ref<InstanceType<typeof GridView> | null>(null);
+const dropTarget = ref<{ recordId: string; tableId: string } | null>(null);
+function findDropTarget(): { recordId: string; tableId: string } | null {
+  if (!fileDrag.active) return null;
+  if (view.value === 'canvas') return canvasRef.value?.cardAtClient(fileDrag.x, fileDrag.y) ?? null;
+  if (view.value === 'table') return gridRef.value?.recordAtClient(fileDrag.x, fileDrag.y) ?? null;
+  return null;
+}
+watch(() => [fileDrag.active, fileDrag.x, fileDrag.y], () => {
+  const t = findDropTarget();
+  if (t?.recordId !== dropTarget.value?.recordId) dropTarget.value = t;
+});
+const dropReady = computed(() => !!dropWhere.value && dropEnabledHere.value && !(dropTarget.value && fileDrag.count !== 1));
 const dropMessage = computed(() => {
   if (!dropWhere.value) return 'Open a table or canvas first, then drop the files there';
   if (!dropEnabledHere.value) return view.value === 'table'
     ? `File drop is not enabled on ${dropWhere.value} — turn it on under ⚙ Table settings → Desktop tools`
     : `No table has File drop enabled yet — ⚙ Table settings → Desktop tools on the table the files belong in`;
+  if (dropTarget.value) {
+    const name = derived.labelOfId(dropTarget.value.recordId) || 'this record';
+    return fileDrag.count === 1 ? `Update ${name} with this file` : `Only one file can replace a record — ${fileDrag.count} are being dragged`;
+  }
   return `Drop ${fileDrag.count === 1 ? 'to add to' : `${fileDrag.count} items into`} ${dropWhere.value}`;
 });
 function onFilesDropped(paths: string[], x: number, y: number) {
-  const ctx = { store, createRecord: scopeApi.createRecord, defaults: view.value === 'canvas' ? canvasRef.value?.activeDefaults : undefined };
-  if (view.value === 'table' && tableId.value) void runFileDrop(ctx, paths, { tableId: tableId.value });
+  const onto = dropTarget.value ?? findDropTarget();
+  dropTarget.value = null;
+  const ctx = { store, createRecord: scopeApi.createRecord, defaults: view.value === 'canvas' ? canvasRef.value?.activeDefaults : undefined,
+                openRecord: (id: string) => { openRecordId.value = id; }, labelOf: (id: string) => derived.labelOfId(id) || id };
+  const flash = (r: { refused?: string }) => { if (r.refused && view.value === 'canvas') canvasRef.value?.refuse(r.refused); };
+  // A drop that dies half way must SAY so: a swallowed rejection reads as "the drop did nothing".
+  const failed = (e: unknown) => { console.error('[desktop] file drop', e); notice(`file drop: ${String(e)}`, 'error'); };
+  if (view.value === 'table' && tableId.value) runFileDrop(ctx, paths, { tableId: tableId.value, onto }).then(flash).catch(failed);
   else if (view.value === 'canvas' && canvasId.value && canvasRef.value) {
     const c = canvasRef.value;
-    void runFileDrop(ctx, paths, { canvas: { id: canvasId.value, clientX: x, clientY: y, onto: c.cardAtClient(x, y), place: c.placeMany } });
+    runFileDrop(ctx, paths, { canvas: { id: canvasId.value, clientX: x, clientY: y, place: c.placeMany }, onto }).then(flash).catch(failed);
   } else notice('Open a table or canvas first, then drop the files there', 'warn');
 }
 let unlistenDrops: (() => void) | null = null;
@@ -971,7 +1009,13 @@ p.hint { padding: 24px; }
 .file-drop { position: fixed; inset: 0; z-index: 400; pointer-events: none; display: flex; align-items: center; justify-content: center;
              background: rgba(0, 0, 0, 0.35); border: 3px dashed var(--text-muted); }
 .file-drop.ok { border-color: var(--accent); }
+/* Over a record the shade lifts, so the ring on the card or row is what you see. */
+.file-drop.onto { background: transparent; }
 .file-drop-msg { background: var(--bg-app); border: 1px solid var(--border-main); border-radius: 8px; padding: 12px 20px; font-size: 14px; box-shadow: var(--card-shadow-drag); }
+.file-drop-msg.follow { position: fixed; padding: 6px 12px; font-size: 13px; border-color: var(--accent); max-width: 420px; }
+.notice-pills { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 6px; vertical-align: middle; }
+.notice-pill { font: inherit; font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent-ring); color: var(--text-main); cursor: pointer; }
+.notice-pill:hover { background: var(--accent); color: #fff; }
 .desk-notices { position: fixed; right: 12px; bottom: 12px; z-index: 300; display: flex; flex-direction: column; gap: 4px; max-width: 420px; }
 .desk-job { font-size: 11px; color: var(--accent); text-align: right; }
 .desk-notice { background: var(--bg-app); border: 1px solid var(--border-main); border-left: 3px solid var(--accent); border-radius: 4px; padding: 6px 10px; font-size: 12px; cursor: pointer; box-shadow: var(--card-shadow-drag); }

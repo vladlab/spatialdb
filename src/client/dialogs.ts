@@ -46,7 +46,8 @@ export interface AskOptions {
 }
 export interface AskResult { value: string; checks: Record<string, boolean>; choice: string }
 
-export interface ConfirmOptions { title: string; body?: string; okText?: string; danger?: boolean }
+/** `cancelText`: what the second button says when it is not a cancel — "Close" beside an "Open". */
+export interface ConfirmOptions { title: string; body?: string; okText?: string; cancelText?: string; danger?: boolean }
 
 type Pending =
   | { kind: 'ask'; opts: AskOptions; resolve: (r: AskResult | null) => void }

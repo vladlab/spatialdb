@@ -20,6 +20,8 @@ import { reactive, ref } from 'vue';
 interface TauriGlobal {
   core: { invoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> };
   webview: { getCurrentWebview(): { onDragDropEvent(cb: (e: { payload: DragDropPayload }) => void): Promise<() => void> } };
+  /** Absent on an older shell (and in the test fake): then no events, nothing else changes. */
+  event?: { listen<T>(name: string, cb: (e: { payload: T }) => void): Promise<() => void> };
 }
 type DragDropPayload =
   | { type: 'enter'; paths: string[]; position: { x: number; y: number } }
@@ -35,6 +37,13 @@ export function invoke<T = unknown>(cmd: string, args: Record<string, unknown> =
   const t = tauri();
   if (!t) return Promise.reject(new Error('not running in the desktop app'));
   return t.core.invoke<T>(cmd, args);
+}
+
+/** Subscribe to an event the shell emits (`hash-progress`). The unsubscribe; a no-op where there are no events. */
+export async function listenEvent<T>(name: string, cb: (payload: T) => void): Promise<() => void> {
+  const t = tauri();
+  if (!t?.event) return () => {};
+  return t.event.listen<T>(name, (e) => cb(e.payload));
 }
 
 /** The handshake (`tools_available`). Null until asked; `tools: []` in a browser. */
@@ -80,11 +89,16 @@ export async function listenFileDrops(onDrop: (paths: string[], clientX: number,
  * Separate from `store.errors` (which is about the connection): a probe that
  * failed is news about a file, not about the database.
  */
-export interface Notice { id: number; text: string; kind: 'info' | 'warn' | 'error'; at: number }
+/**
+ * `records`: pills the notice offers to OPEN — the record a dropped file already
+ * is, say — in the tray, without leaving the canvas or the grid (the owner, Oct
+ * 18: every conflict should offer "open" without going anywhere).
+ */
+export interface Notice { id: number; text: string; kind: 'info' | 'warn' | 'error'; at: number; records?: Array<{ id: string; label: string }> }
 export const notices = reactive<Notice[]>([]);
 let nextNotice = 1;
-export function notice(text: string, kind: Notice['kind'] = 'info') {
-  notices.unshift({ id: nextNotice++, text, kind, at: Date.now() });
+export function notice(text: string, kind: Notice['kind'] = 'info', records?: Notice['records']) {
+  notices.unshift({ id: nextNotice++, text, kind, at: Date.now(), ...(records?.length ? { records } : {}) });
   if (notices.length > 20) notices.length = 20;
   if (kind === 'info') setTimeout(() => dismiss(nextNotice - 1), 8000);
 }
