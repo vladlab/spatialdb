@@ -72,7 +72,7 @@
         <span v-if="g.warn" class="rp-sec-warn" :title="`${g.warn} field${g.warn === 1 ? '' : 's'} in this section differ${g.warn === 1 ? 's' : ''} from what ${g.warn === 1 ? 'it is' : 'they are'} compared with`">⚠ {{ g.warn }}</span>
       </button>
       <div v-if="g.open" class="rp-well rp-fields" :class="{ sectioned: g.head }">
-      <div v-for="f in g.fields" :key="f.id" class="rp-field" :class="{ editing: editingId === f.id, readonly: READONLY(f), row: isRow(f), block: !isRow(f), folded: !isRow(f) && folded(f) }">
+      <div v-for="f in g.fields" :key="f.id" class="rp-field" :class="{ editing: editingId === f.id, readonly: READONLY(f), row: isRow(f), block: !isRow(f), folded: !isRow(f) && folded(f), open: !isRow(f) && !folded(f) }">
         <!-- A <div>, not a <label>: a label activates its FIRST labelable descendant on
              any click inside it, so a second button in it (▶ md5 beside ⤴ show)
              clicked the first one too — the "manual hash also showed the file" bug. -->
@@ -631,10 +631,6 @@ watch(() => props.recordId, () => {
 .job { margin-left: 8px; font-size: 10px; color: var(--accent); }
 /* min-height is set inline (richReserve): the editor's place, held while it loads. */
 .rp-rich { display: flex; }
-/* The state colour (focus, editing) is set on the field: its left-edge line and its cells change together. */
-.rp-field { --fb: var(--border-main); }
-.rp-value:focus, .rp-field:focus-within { --fb: var(--accent); }
-.rp-field.editing { --fb: var(--success); }
 .star { color: var(--warning); margin-right: 3px; }
 .rp-value { position: relative; box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; cursor: text; outline: none; }
 .rp-value.readonly { cursor: default; }
@@ -653,9 +649,9 @@ watch(() => props.recordId, () => {
    every row (`--label-w`, set on .rp-body), then the value cell; a hairline under
    each; no gap between rows, no box around a value. The label column is the
    LIGHTER one (the grid's header shade), the value column is the well — the two
-   read apart at a glance. A row's state (focus, editing) is a line down its left
-   edge and a wash on its value cell. */
-.rp-field { display: grid; grid-template-columns: var(--label-w, 96px) minmax(0, 1fr); padding: 0; margin: 0; box-shadow: inset 2px 0 0 transparent; }
+   read apart at a glance. Editing is a wash on the value cell — nothing else:
+   the line down a row's left edge means ONE thing, "this block is open" (below). */
+.rp-field { display: grid; grid-template-columns: var(--label-w, 96px) minmax(0, 1fr); padding: 0; margin: 0; }
 .rp-well.rp-fields { padding-left: 0; padding-right: 0; }
 .rp-name {
   display: flex; align-items: center; gap: 5px; min-width: 0;
@@ -666,9 +662,7 @@ watch(() => props.recordId, () => {
 .rp-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmp-badge { margin-left: 0; flex: none; }
 .rp-value { min-height: 27px; padding: 3px 10px; gap: 4px 8px; border-bottom: 1px solid var(--border-main); }
-.rp-field:focus-within { box-shadow: inset 2px 0 0 var(--fb); }
 .rp-value:focus { background: var(--bg-surface-hover); }
-.rp-field.editing { box-shadow: inset 2px 0 0 var(--success); }
 .rp-field.editing .rp-value:not(.rp-under) { background: var(--bg-surface-hover); }
 .rp-field.readonly .rp-name { color: var(--text-muted); }
 /* The well's last row carries no hairline into its bottom padding. */
@@ -684,9 +678,11 @@ watch(() => props.recordId, () => {
 .rp-tools.end .reveal, .rp-tools.end .job { margin-left: 0; }
 
 /* ── BLOCKS ──────────────────────────────────────────────────────────────
-   A field that needs room: its row is label + one-line SUMMARY, with a fold chip
-   at the label's left; unfolded, the editor hangs UNDER the row across both
-   columns, set in from the left with a faint bar so the eye ties it to its row. */
+   A field that needs room: folded, its row is label + one-line SUMMARY, with a
+   fold chip at the label's left. OPEN, the label bar runs the full width (the
+   summary cell takes the label shade and its text wipes out to the right), the
+   editor hangs under it, and an accent line runs down the left of the whole block
+   — header and editor — so where it ends and the next row begins is plain. */
 .fold-chip {
   flex: none; width: 16px; height: 16px; padding: 1px; box-sizing: border-box; margin-left: -4px;
   background: var(--card-head-bg); border: 0; border-radius: 3px; cursor: pointer; color: var(--text-secondary);
@@ -694,16 +690,21 @@ watch(() => props.recordId, () => {
 .fold-chip:hover { background: var(--border-main); color: var(--text-primary); }
 .fold-chip:focus-visible { outline: 1px solid var(--accent); }
 .fold-chip svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.rp-value.summary { cursor: pointer; flex-wrap: nowrap; }
-.rp-value.summary .text { color: var(--text-primary); min-width: 0; }
-.rp-field.block:not(.folded) > .rp-name, .rp-field.block:not(.folded) > .rp-value.summary { border-bottom-color: transparent; }
+.rp-value.summary { cursor: pointer; flex-wrap: nowrap; overflow: hidden; transition: background-color 0.18s ease; }
+.rp-value.summary .text, .rp-value.summary .placeholder { color: var(--text-primary); min-width: 0; transition: opacity 0.18s ease, transform 0.18s ease; }
+.rp-value.summary .placeholder { color: var(--text-faint); }
+.rp-field.block.open { box-shadow: inset 2px 0 0 var(--accent); }
+.rp-field.block.open > .rp-name { border-bottom-color: transparent; }
+.rp-field.block.open > .rp-value.summary { background: var(--bg-head); border-bottom-color: transparent; cursor: default; }
+.rp-field.block.open > .rp-value.summary .text, .rp-field.block.open > .rp-value.summary .placeholder { opacity: 0; transform: translateX(10px); }
+@media (prefers-reduced-motion: reduce) { .rp-value.summary, .rp-value.summary .text, .rp-value.summary .placeholder { transition: none; } }
 .rp-under {
-  grid-column: 1 / -1; margin: 0 0 0 12px; padding: 4px 10px 10px 10px;
-  box-shadow: inset 3px 0 0 var(--bg-head); border-bottom: 1px solid var(--border-main);
+  grid-column: 1 / -1; margin: 0; padding: 6px 10px 10px 10px;
+  border-bottom: 1px solid var(--border-main);
   min-height: 0; cursor: text;
 }
 .rp-under.readonly, .rp-under.nested { cursor: default; }
-.rp-under.nested { padding: 0 0 8px 10px; }
+.rp-under.nested { padding: 0 0 8px 0; }
 .rp-rich.rp-under { display: flex; }
 .rp-rich :deep(.rte) { flex: 1; border-radius: 6px; }
 .text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

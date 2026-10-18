@@ -441,7 +441,7 @@ async function main() {
     check('a short field is a ROW (label cell | value cell), with no fold chip', pField('Path').classes('row') && !pField('Path').find('.fold-chip').exists());
     check('a long text is a BLOCK: a fold chip on its label, and its one-line SUMMARY — the first line, as the card prints it — in the row', pField('Notes').classes('block') && pField('Notes').find('.fold-chip').exists()
       && pField('Notes').find('.rp-value.summary .text').text() === 'first line', pField('Notes').html());
-    check('a block starts UNFOLDED: its editor hangs under the row', !pField('Notes').classes('folded') && pField('Notes').find('.rp-under').exists());
+    check('a block starts UNFOLDED (.open): its editor hangs under the row', !pField('Notes').classes('folded') && pField('Notes').classes('open') && pField('Notes').find('.rp-under').exists());
     check('every label cell is one width: --label-w is set on the body', /--label-w:\s*\d+px/.test(tray().find('.rp-body').attributes('style') ?? ''), tray().find('.rp-body').attributes('style'));
     await pField('Notes').find('.fold-chip').trigger('click');
     check('the chip folds it: the row stays, the editor goes', await until(() => pField('Notes').classes('folded') && !pField('Notes').find('.rp-under').exists() && pField('Notes').find('.rp-value.summary .text').text() === 'first line'));

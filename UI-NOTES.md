@@ -377,11 +377,16 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
     width — the value column must not starve.
   * BLOCKS — long text, rich text, attachments, structured (audio/video layout,
     manifest), a junction's nested table: the row prints the card's one-line summary
-    ("2 tracks / 8 ch", a note's first line, "3 files"); the editor hangs UNDER the
-    row across both columns, set in 12px with a faint bar. A chevron CHIP at the
-    label's left folds it (right = folded, down = open). A click on the summary
-    unfolds a folded block and EDITS an open one (as any row's value does) — only
-    the chip folds. Is the chip the right weight? Too heavy, drop its background.
+    ("2 tracks / 8 ch", a note's first line, "3 files") while FOLDED. OPEN, the
+    label bar runs the full width (the summary cell takes the label shade and its
+    text wipes out to the right, 0.18s), the editor hangs under it, and an ACCENT
+    LINE runs down the left of the whole block — header and editor — so where it
+    ends and the next row begins is plain. That line means one thing only; the
+    focus/editing left line is gone (editing = a wash on the value cell). A chevron
+    CHIP at the label's left folds it (right = folded, down = open). A click on the
+    summary unfolds a folded block and EDITS an open one — only the chip folds. Is
+    the chip the right weight? Too heavy, drop its background. (A 6px gutter between
+    the accent rule and the rows was tried and reverted: messy.)
   * Folds are per browser, per VIEW and field (`spatialdb.tray.fieldFolds`,
     `table:<id>:<field>` / `canvas:<id>:…` / `report:<id>:…`): a layout folded in
     the Files grid stays folded on the next file there, and is open on the canvas.
