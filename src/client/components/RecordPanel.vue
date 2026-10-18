@@ -35,7 +35,7 @@
          from". Derived, live; nothing here is stored. -->
     <div v-if="comparisons.length" class="rp-compare rp-well">
       <div v-for="c in comparisons" :key="c.link.id + c.target" class="rp-cmp" :class="{ same: c.result?.same }">
-        <span class="rp-cmp-verdict">{{ c.result ? (c.result.same ? '✓' : '✗') : '…' }}</span>
+        <VerdictMark v-if="c.result" class="rp-cmp-verdict" :kind="c.result.same ? 'ok' : 'bad'" /><span v-else class="rp-cmp-verdict">…</span>
         <span class="rp-cmp-text"><b>{{ c.link.name }}</b> → {{ c.targetLabel }}<template v-if="c.result && !c.result.same">: {{ c.diffs }} difference{{ c.diffs === 1 ? '' : 's' }}</template></span>
         <button class="rp-cmp-btn sbs-btn" @click="sideBySide = sideBySide?.target === c.target && sideBySide.linkId === c.link.id ? null : { linkId: c.link.id, target: c.target }">side by side</button>
         <button class="rp-cmp-btn seed-btn" :title="`Copy ${c.targetLabel}'s paired values into this record's EMPTY fields (one Ctrl+Z)`" @click="seedFrom(c.link.id, c.target)">seed from</button>
@@ -68,7 +68,7 @@
              clicked the first one too — the "manual hash also showed the file" bug. -->
         <div class="rp-name">
           <span v-if="f.id === primaryId" class="star" title="Primary field — this record's name">★</span>{{ f.name }}
-          <span v-if="verdicts.get(f.id)" class="cmp-badge" :class="{ ok: verdicts.get(f.id)!.ok }" :title="verdicts.get(f.id)!.title">{{ verdicts.get(f.id)!.ok ? '✓' : '⚠' }}</span>
+          <VerdictMark v-if="verdicts.get(f.id)" class="cmp-badge" :kind="verdicts.get(f.id)!.ok ? 'ok' : 'warn'" :title="verdicts.get(f.id)!.title" />
           <!-- Desktop app only: select the file in the file manager (never opens it — src-tauri/src/lib.rs). -->
           <button v-if="desktop && f.type === 'file_path' && typeof record.data[f.key] === 'string'" class="reveal" title="Show in folder"
                   @click.stop="reveal(String(record.data[f.key]))">⤴ show</button>
@@ -214,6 +214,7 @@ import CellEditor, { type EditExit } from './CellEditor.vue';
 import { invoke, isDesktop, jobs, notice } from '../desktop';
 import { manualHomeField, manualSteps, pathKeyOf, runManualStep } from '../tools/fileDrop';
 import LinkPicker from './LinkPicker.vue';
+import VerdictMark from './VerdictMark.vue';
 import JunctionEditor from './JunctionEditor.vue';
 import RecordPill from './RecordPill.vue';
 import { duplicateRecords } from '../duplicate';
@@ -532,13 +533,11 @@ watch(() => props.recordId, () => {
 .rp-sec-warn { color: var(--warning); font-weight: 600; font-size: 11px; margin-left: 6px; white-space: nowrap; }
 .rp-fields.sectioned { margin-top: 2px; }
 .rp-cmp { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 3px 0; }
-.rp-cmp-verdict { font-weight: 700; color: var(--danger); width: 14px; }
-.rp-cmp.same .rp-cmp-verdict { color: var(--success); }
+.rp-cmp-verdict { width: 16px; flex: none; }
 .rp-cmp-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rp-cmp-btn { background: none; border: 1px solid var(--border-main); color: var(--text-secondary); border-radius: 4px; padding: 0 7px; cursor: pointer; font: inherit; font-size: 11px; white-space: nowrap; }
 .rp-cmp-btn:hover { color: var(--accent); border-color: var(--accent); }
-.cmp-badge { color: var(--warning); margin-left: 5px; cursor: help; font-size: 12px; }
-.cmp-badge.ok { color: var(--success); opacity: 0.8; }
+.cmp-badge { margin-left: 5px; }
 .rp-field { padding: 6px 0; }
 .reveal { margin-left: 8px; font-size: 10px; background: none; border: 1px solid var(--border-main); color: var(--text-muted); border-radius: 3px; padding: 0 5px; cursor: pointer; }
 .reveal:hover { color: var(--accent); border-color: var(--accent); }

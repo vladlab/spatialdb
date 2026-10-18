@@ -78,7 +78,7 @@
           <span v-if="r.lines.length > CARD_MAX_LINES" class="card-line more">+{{ r.lines.length - CARD_MAX_LINES }} more</span>
         </span>
         <span v-else class="card-val" :class="{ empty: !r.text, derived: r.derived, broken: r.broken }"><VideoLayoutStrip v-if="r.strip !== undefined" mini :value="r.strip" />{{ r.text || '—' }}</span>
-        <span v-if="r.verdict" class="card-warn" :class="{ ok: r.verdict.ok }" :title="r.verdict.title">{{ r.verdict.ok ? '✓' : '⚠' }}</span>
+        <VerdictMark v-if="r.verdict" class="card-warn" :kind="r.verdict.ok ? 'ok' : 'warn'" :title="r.verdict.title" />
       </div>
       <!-- NOTES: formatted, with their images, in a window of FIXED height that scrolls
            inside itself (cardLayout.ts says why it cannot be as tall as its content).
@@ -134,6 +134,7 @@ import { textOn } from '../colorText';
 import { computed, defineAsyncComponent } from 'vue';
 import RecordPill from './RecordPill.vue';
 import VideoLayoutStrip from './VideoLayoutStrip.vue';
+import VerdictMark from './VerdictMark.vue';
 import type { Store } from '../store';
 import {
   CARD_BODY_PAD, CARD_HEAD_H, CARD_RICH_H, CARD_RICH_LABEL_H, CARD_ROW_H, CARD_TITLE_H, CARD_TITLE_PX, CARD_W, LINK_HANDLE_OUT, LINK_HANDLE_SIZE, effectiveHeight, lineCount,
@@ -455,8 +456,7 @@ function onPointerDown(e: PointerEvent) {
 .card-list.pairs .pill.junction :deep(.pill-text) { display: flex; flex: 1 1 auto; }
 .card-list.pairs .pill.junction :deep(.pill-slot) { flex: none; width: min(var(--pair-slot), calc(100% - min(var(--pair-status, 0px), 60%) - 6px)); }
 .card-field { align-items: flex-start; }
-.card-warn { color: var(--warning); font-size: 11px; margin-left: 3px; flex: none; }
-.card-warn.ok { color: var(--success); opacity: 0.8; }
+.card-warn { margin-left: 3px; }
 .card-val {
   color: var(--text-primary); overflow: hidden; min-width: 0;
   text-overflow: ellipsis; white-space: nowrap;

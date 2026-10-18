@@ -12,7 +12,8 @@
       <button class="sbs-close" title="Close" @click="$emit('close')">×</button>
     </header>
     <p class="sbs-verdict" :class="{ same: result?.same }">
-      {{ result ? (result.same ? '✓ No differences' : `✗ ${result.results.filter((r) => r.status === 'differ' || r.status === 'missing').length} difference(s)`) : 'loading…' }}
+      <template v-if="result"><VerdictMark :kind="result.same ? 'ok' : 'bad'" /> {{ result.same ? 'No differences' : `${result.results.filter((r) => r.status === 'differ' || r.status === 'missing').length} difference(s)` }}</template>
+      <template v-else>loading…</template>
     </p>
     <table v-if="result" class="sbs-table">
       <tbody>
@@ -20,7 +21,7 @@
           <tr class="sbs-row" :class="r.status">
             <td class="sbs-name">{{ nameOf(r.pair.from) }}</td>
             <td class="sbs-val">{{ r.found }}</td>
-            <td class="sbs-rule" :title="r.detail">{{ mark(r.status) }} <span class="sbs-rulename">{{ RULE_LABELS[r.pair.rule] }}</span></td>
+            <td class="sbs-rule" :title="r.detail"><VerdictMark v-if="r.status === 'match' || r.status === 'differ'" :kind="r.status === 'match' ? 'ok' : 'bad'" :size="14" /><template v-else>{{ mark(r.status) }}</template> <span class="sbs-rulename">{{ RULE_LABELS[r.pair.rule] }}</span></td>
             <td class="sbs-val">{{ r.expected }}</td>
             <td class="sbs-name">{{ nameOf(r.pair.to) }}</td>
           </tr>
@@ -52,6 +53,7 @@
 import { computed } from 'vue';
 import type { Store } from '../store';
 import { useDerived } from '../derived';
+import VerdictMark from './VerdictMark.vue';
 import { RULE_LABELS, type PairResult, type Status } from '../../contract/compare';
 import { trackFormat, type AudioTrack } from '../../contract/shapes';
 
@@ -62,7 +64,8 @@ const result = computed(() => derived.compare(props.linkId, props.ownerId, props
 const ownerLabel = computed(() => derived.labelOfId(props.ownerId));
 const targetLabel = computed(() => derived.labelOfId(props.targetId));
 const nameOf = (id: string) => props.store.state.fields.get(id)?.name ?? '?';
-const mark = (s: Status) => ({ match: '✓', differ: '✗', missing: '∅', unspecified: '·' }[s]);
+/** The two statuses without an icon (VerdictMark draws match and differ). */
+const mark = (s: Status) => ({ match: '', differ: '', missing: '∅', unspecified: '·' }[s]);
 /** "5.1 · Full mix · L R C LFE Ls Rs · en" — or "—" for a track the other side has and this one lacks. */
 const trackText = (t: AudioTrack | undefined) => (t ? [trackFormat(t), t.name || '(unnamed)', t.channels.join(' '), t.language ?? ''].filter(Boolean).join(' · ') : '—');
 /** Is track `i` (1-based in the diff) one the diff points at, or beyond the shorter layout? */
@@ -82,7 +85,7 @@ function trackOff(r: PairResult, i: number): boolean {
 .sbs-col i { color: var(--text-faint); font-size: 10px; font-style: normal; text-transform: uppercase; letter-spacing: 0.05em; margin-left: 4px; }
 .sbs-mid { width: 90px; }
 .sbs-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; }
-.sbs-verdict { margin: 0; padding: 4px 8px; font-weight: 600; color: var(--danger); border-bottom: 1px solid var(--border-main); }
+.sbs-verdict { display: flex; align-items: center; gap: 6px; margin: 0; padding: 4px 8px; font-weight: 600; color: var(--danger); border-bottom: 1px solid var(--border-main); }
 .sbs-verdict.same { color: var(--success); }
 .sbs-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .sbs-row td { padding: 3px 6px; border-bottom: 1px solid var(--border-main); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -40,7 +40,7 @@
                           @open="$emit('open-record', namedBy(f, id))" @edit="$emit('open-record', id)" />
             </span>
             <span v-else class="kcard-val">{{ valueText(r, f) }}</span>
-            <span v-if="verdictOf(r.id, f.id)" class="kcard-verdict" :class="{ ok: verdictOf(r.id, f.id)!.ok }" :title="verdictOf(r.id, f.id)!.title">{{ verdictOf(r.id, f.id)!.ok ? '✓' : '⚠' }}</span>
+            <VerdictMark v-if="verdictOf(r.id, f.id)" class="kcard-verdict" :kind="verdictOf(r.id, f.id)!.ok ? 'ok' : 'warn'" :title="verdictOf(r.id, f.id)!.title" />
           </div>
         </article>
         <p v-if="!c.records.length" class="kcol-empty">drop here</p>
@@ -57,6 +57,7 @@ import { useDerived } from '../derived';
 import { beginRecordDrag, registerDropTarget } from '../recordDrag';
 import { addLink } from '../links';
 import RecordPill from './RecordPill.vue';
+import VerdictMark from './VerdictMark.vue';
 import { kanbanColumns, type GroupValue } from '../../contract/views';
 import { richTextToPlain } from '../../contract/richtext';
 import { formatNumberField, shapeOf, summarise } from '../../contract/shapes';
@@ -198,8 +199,7 @@ function dropInto(toKey: string, records: RecordRow[]) {
 /* Pills on a board card: the card's smaller line, and the row's whole width (the room a pill's floating actions use). */
 .kcard-val.pills { flex: 1; }
 .kcard-val :deep(.pill) { font-size: 11px; line-height: 16px; }
-.kcard-verdict { color: var(--warning); font-size: 11px; margin-left: auto; flex: none; cursor: help; }
-.kcard-verdict.ok { color: var(--success); opacity: 0.8; }
+.kcard-verdict { margin-left: auto; }
 .kcol-empty { margin: 0; color: var(--text-faint); font-size: 11px; text-align: center; padding: 8px; }
 .kanban.dragging .kcol-empty { color: var(--text-muted); }
 </style>

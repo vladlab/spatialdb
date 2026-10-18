@@ -414,8 +414,8 @@
                       <span v-else class="value looked-up" title="Looked up — edit it on the linked record">{{ lookupOf(r.id, f)!.join(', ') }}</span>
                     </template>
                     <span v-else class="value">{{ f.type === 'created_at' ? formatCreated(r.data[f.key]) : formatNumberField(f, r.data[f.key]) ?? display(r.data[f.key]) }}</span>
-                    <!-- The comparison's verdict on this cell — the same ✓ / ⚠ as the tray and cards. -->
-                    <span v-if="verdictOf(r.id, f.id)" class="cell-verdict" :class="{ ok: verdictOf(r.id, f.id)!.ok }" :title="verdictOf(r.id, f.id)!.title">{{ verdictOf(r.id, f.id)!.ok ? '✓' : '⚠' }}</span>
+                    <!-- The comparison's verdict on this cell — the same icon as the tray and cards (VerdictMark). -->
+                    <VerdictMark v-if="verdictOf(r.id, f.id)" class="cell-verdict" :kind="verdictOf(r.id, f.id)!.ok ? 'ok' : 'warn'" :title="verdictOf(r.id, f.id)!.title" />
                   </span>
                   <!-- The DROPDOWN ARROW, on the selected cell only: a column of arrows is noise,
                        and beside several capsules it reads as one more of them. Laid OVER the
@@ -498,6 +498,7 @@ import LinkPicker from './LinkPicker.vue';
 import JunctionEditor from './JunctionEditor.vue';
 import RecordPill from './RecordPill.vue';
 import CellPills from './CellPills.vue';
+import VerdictMark from './VerdictMark.vue';
 import Popover from './Popover.vue';
 import FieldForm from './FieldForm.vue';
 import FieldSettings from './FieldSettings.vue';
@@ -1676,8 +1677,7 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .view-row.builtin .view-title { font-weight: 600; }
 .hint-line { margin: 6px 6px 2px; color: var(--text-faint); font-size: 11px; line-height: 1.4; white-space: normal; max-width: 360px; }
 .add-group { display: block; width: 100%; text-align: left; background: none; border: none; color: var(--accent); cursor: pointer; font: inherit; padding: 5px 6px; }
-.cell-verdict { color: var(--warning); font-size: 11px; margin-left: 4px; cursor: help; flex: none; }
-.cell-verdict.ok { color: var(--success); opacity: 0.8; }
+.cell-verdict { margin-left: 4px; }
 /* GROUP HEADERS (Oct 17, the owner's pick from mockups): every level is a TINTED band
    with its own rule, so a group reads as a section and not as one more row — the outer
    level the deeper blue and the tallest, the inner a lighter blue a step shorter; the
