@@ -75,10 +75,10 @@
       <NavTree v-if="treeOpen" :store="store" :section-key="sectionKey" :scope="scopeApi"
                @go-section="goSection" @section-settings="sectionSettings = $event" @settings="settingsOpen = true">
         <template #contents>
-          <NavContents :tables="treeTables" :canvases="canvasRows" :reports="reportRows" :view="view" :table-id="tableId" :canvas-id="canvasId" :report-id="reportId"
+          <NavContents :tables="treeTables" :canvases="canvasRows" :reports="reportRows" :calendars="calendarRows" :view="view" :table-id="tableId" :canvas-id="canvasId" :report-id="reportId" :calendar-id="calendarId"
                        :scoped-table-ids="scopedTableIds"
-                       @open-table="openTable" @open-canvas="openBoard" @open-report="openReport"
-                       @table-settings="tableSettings = $event" @new-table="newTable" @new-canvas="newCanvas" @new-report="newReport" />
+                       @open-table="openTable" @open-canvas="openBoard" @open-report="openReport" @open-calendar="openCalendar"
+                       @table-settings="tableSettings = $event" @new-table="newTable" @new-canvas="newCanvas" @new-report="newReport" @new-calendar="newCalendar" />
         </template>
       </NavTree>
 
@@ -96,7 +96,7 @@
               <!-- Keyed by table so switching tables is a fresh component: scroll
                    position, search text and the "rows I just made" set all reset. -->
               <GridView v-if="view === 'table' && tableId" ref="gridRef" :key="tableId" :store="store" :table-id="tableId" :open-record-id="openRecordId"
-                        :drop-target-id="dropTarget?.recordId ?? ''" @open-record="openRecordId = $event" @open-board="openBoard" @open-report="openReport" />
+                        :drop-target-id="dropTarget?.recordId ?? ''" @open-record="openRecordId = $event" @open-board="openBoard" @open-report="openReport" @open-calendar="openCalendar" />
               <p v-else-if="view === 'table'" class="hint">No table open — pick one in the tree, or press + beside “Tables” to make one.</p>
 
               <!-- A report is DERIVED each time it is looked at (ReportView.vue). Keyed
@@ -105,17 +105,22 @@
                           @open-record="openRecordId = $event" />
               <p v-else-if="view === 'report'" class="hint">No report open — pick one in the tree, or press + beside “Reports” to make one.</p>
 
+              <!-- A calendar is DERIVED each time it is looked at (CalendarView.vue). -->
+              <CalendarView v-if="view === 'calendar' && calendarId" :key="calendarId" :store="store" :calendar-id="calendarId"
+                            @open-record="openRecordId = $event" />
+              <p v-else-if="view === 'calendar'" class="hint">No calendar open — pick one in the tree, or press + beside “Calendars” to make one.</p>
+
             </div>
 
             <!-- A TRAY, not a float: a sibling of the view's body in the stage grid, so
                  opening it makes the body narrower instead of covering its right edge —
                  and leaves the bars above both of them at full width. -->
-            <template v-if="openRecordId && (view === 'canvas' || view === 'table' || view === 'report')">
+            <template v-if="openRecordId && (view === 'canvas' || view === 'table' || view === 'report' || view === 'calendar')">
               <div class="tray-splitter" title="Drag to resize" @pointerdown="startTrayResize" />
               <!-- `view-key`: what is open behind the tray — a canvas, a table, a report — so a
                    block field folded here (client/fieldFolds.ts) stays folded on this view only. -->
-              <RecordPanel :store="store" :record-id="openRecordId" :view-key="`${view}:${view === 'canvas' ? canvasId : view === 'table' ? tableId : reportId}`" :style="{ width: trayShown + 'px' }"
-                           @close="openRecordId = ''" @open="openRecordId = $event" @open-board="openBoard" @open-report="openReport" />
+              <RecordPanel :store="store" :record-id="openRecordId" :view-key="`${view}:${viewTarget}`" :style="{ width: trayShown + 'px' }"
+                           @close="openRecordId = ''" @open="openRecordId = $event" @open-board="openBoard" @open-report="openReport" @open-calendar="openCalendar" />
             </template>
           </div>
         </template>
@@ -171,7 +176,7 @@ import { CANVAS_JUMP } from './canvasJump';
 import { formatScope, parseScope } from '../contract/scope';
 import { dragGhost } from './recordDrag';
 import { createStore } from './store';
-import { boardsOf, isBoardsTable, isReportsTable, isUtilityTable, reportsOf, tablesOfSection, tablesSorted } from './state';
+import { boardsOf, calendarsOf, isBoardsTable, isCalendarsTable, isReportsTable, isUtilityTable, reportsOf, tablesOfSection, tablesSorted } from './state';
 import { useDerived } from './derived';
 import { formatRoute, lastRoute, parseRoute, rememberRoute, sameRoute, startHash, type Route, type ViewName } from './router';
 import HomePage from './components/HomePage.vue';
@@ -179,6 +184,7 @@ import SectionSettings from './components/SectionSettings.vue';
 import CanvasView from './components/CanvasView.vue';
 import GridView from './components/GridView.vue';
 import ReportView from './components/ReportView.vue';
+import CalendarView from './components/CalendarView.vue';
 import RecordPanel from './components/RecordPanel.vue';
 import CommandPalette from './components/CommandPalette.vue';
 import type { RecordRow } from './state';
@@ -246,6 +252,10 @@ const statusText = computed(() => {
 const canvasId = ref<string>('');
 const tableId = ref<string>('');
 const reportId = ref<string>('');
+const calendarId = ref<string>('');
+/** What is open in the current view — a canvas, a table, a report or a calendar id. */
+const viewTarget = computed(() => (view.value === 'canvas' ? canvasId.value : view.value === 'table' ? tableId.value
+  : view.value === 'report' ? reportId.value : view.value === 'calendar' ? calendarId.value : ''));
 
 /* ── sections: where you are ──────────────────────────────────────────────
    null = the home page · 'all' = Everything · otherwise a section id.
@@ -308,6 +318,7 @@ async function newTable() {
       { value: 'records', label: 'Ordinary table' },
       { value: 'canvas', label: 'A table of boards — every record is a canvas' },
       { value: 'report', label: 'A table of reports — every record is a report' },
+      { value: 'calendar', label: 'A table of calendars — every record is a calendar' },
       { value: 'junction', label: 'A junction — every record pairs a record of one table with one of another' },
     ] },
   });
@@ -331,7 +342,7 @@ async function newTable() {
   }
   // Ask FIRST, mutate after: everything below is one synchronous run, so the
   // table, its first field and its filing under the section are one Ctrl+Z.
-  const kind = r.choice === 'canvas' || r.choice === 'report' ? r.choice : 'records';
+  const kind = r.choice === 'canvas' || r.choice === 'report' || r.choice === 'calendar' ? r.choice : 'records';
   const id = schema.createTable(r.value, kind);
   if (!id) return;
   fileTable(id);
@@ -427,9 +438,46 @@ async function newReport() {
   openRecordId.value = id;    // straight to the definition: a report with none shows nothing
 }
 
-/** The last crumb: the table, canvas or report you are looking at. */
+/* ── calendars ────────────────────────────────────────────────────────────
+   The same arrangement again (VIEWS-BRIEF.md B7): a calendar is a RECORD in a
+   table of kind 'calendar' (sql/020). */
+const calendarTables = computed(() => tables.value.filter(isCalendarsTable));
+watch(calendarTables, (ts) => { for (const t of ts) void store.loadTable(t.id); }, { immediate: true });
+const calendarRows = computed(() => calendarsOf(store.state, new Set(calendarTables.value.map((t) => t.id)))
+  .filter((r) => scopeApi.filterFor(r.table_id)?.(r) ?? true)
+  .map((r) => ({ id: r.id, name: derived.labelOfId(r.id) }))
+  .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })));
+function openCalendar(id: string) {
+  if (openRecordId.value === id) openRecordId.value = '';
+  calendarId.value = id;
+  view.value = 'calendar';
+}
+/** "+ calendar": a new record in a calendars table — made first, as "Calendars", if the section has none. */
+async function newCalendar() {
+  const many = calendarTables.value.length > 1;
+  const r = await askFull({
+    title: 'New calendar', label: 'Name',
+    ...(many ? { select: { label: 'In', options: calendarTables.value.map((t) => ({ value: t.id, label: t.name })), initial: calendarTables.value[0].id } } : {}),
+  });
+  const name = r?.value.trim();
+  if (!name) return;
+  let table = (many ? calendarTables.value.find((t) => t.id === r!.choice) : undefined) ?? calendarTables.value[0];
+  let nameKey = 'name';
+  if (!table) {
+    const id_ = schema.createTable('Calendars', 'calendar')!;
+    fileTable(id_);
+    table = store.state.tables.get(id_)!;
+  } else nameKey = derived.labelKeys.value.get(table.id) ?? 'name';
+  const id = crypto.randomUUID();
+  scopeApi.createRecord(table.id, { [nameKey]: name }, id);
+  openCalendar(id);
+  openRecordId.value = id;    // straight to the settings: a calendar with no sources shows nothing
+}
+
+/** The last crumb: the table, canvas, report or calendar you are looking at. */
 const currentName = computed(() => (view.value === 'table' ? store.state.tables.get(tableId.value)?.name
   : view.value === 'report' ? reportRows.value.find((c) => c.id === reportId.value)?.name
+  : view.value === 'calendar' ? calendarRows.value.find((c) => c.id === calendarId.value)?.name
   : canvases.value.find((c) => c.id === canvasId.value)?.name) ?? '');
 
 function openTable(id: string) { tableId.value = id; view.value = 'table'; }
@@ -598,7 +646,7 @@ let booted = false;
 const currentRoute = (): Route => ({
   section: sectionKey.value,
   view: view.value,
-  target: view.value === 'canvas' ? canvasId.value : view.value === 'table' ? tableId.value : view.value === 'report' ? reportId.value : '',
+  target: viewTarget.value,
   record: openRecordId.value,
   scope: formatScope(scopeApi.scope.value),
 });
@@ -610,7 +658,10 @@ function applyRoute(r: Route) {
   // lands on Home rather than on an empty shell.
   sectionKey.value = r.section && r.section !== 'all' && !store.state.sections.has(r.section) ? null : r.section;
   view.value = r.view;
-  if (r.target) { if (r.view === 'canvas') canvasId.value = r.target; else if (r.view === 'report') reportId.value = r.target; else tableId.value = r.target; }
+  if (r.target) {
+    if (r.view === 'canvas') canvasId.value = r.target; else if (r.view === 'report') reportId.value = r.target;
+    else if (r.view === 'calendar') calendarId.value = r.target; else tableId.value = r.target;
+  }
   openRecordId.value = r.record;
   // After the section has switched (the scope composable resets on that), and only
   // if the link actually names a scope — a bare link keeps whatever you had.
@@ -625,7 +676,7 @@ function goSection(key: string) {
   sectionKey.value = key;
   // The open record stays open across a section change too: it persists ALL navigation.
 }
-watch([sectionKey, view, tableId, canvasId, reportId, openRecordId, scopeApi.scope], () => {
+watch([sectionKey, view, tableId, canvasId, reportId, calendarId, openRecordId, scopeApi.scope], () => {
   if (applying) return;
   if (!booted && currentRoute().section === null) return;
   const hash = formatRoute(currentRoute(), section.value?.name);

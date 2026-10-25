@@ -257,6 +257,34 @@ async function main() {
     check('the tray shows the report field with "edit as JSON…" (the editor is a later step)', !!pField('Report') && pField('Report').find('.edit-json').exists());
     const ts = (await pool.query(`select options from fields where id = $1`, [fDelName])).rows;
     check('the field form does not offer "report" as a shape — only a table of reports makes one', ts.length === 1 && !w.findAll('.gridview select.shape option').some((o: any) => o.text() === 'Report definition'));
+
+    console.log('\nT9b. A table of calendars (sql/020, VIEWS-BRIEF.md Part B)');
+    await nav.newTable('Calendars', 'calendar');
+    const cal = await untilDb(`select t.id, t.kind, (select json_agg(json_build_object('key', key, 'type', type, 'shape', options->>'shape') order by position) from fields where table_id = t.id) fs from tables t where name = 'Calendars'`, (r) => r.length === 1 && r[0].fs?.length === 2);
+    const tCal = cal[0].id;
+    check('the new-table dialog makes a table of CALENDARS: kind calendar, with a Name and a structured "calendar" field', cal[0].kind === 'calendar' && JSON.stringify(cal[0].fs) === JSON.stringify([{ key: 'name', type: 'text', shape: null }, { key: 'calendar', type: 'structured', shape: 'calendar' }]), JSON.stringify(cal[0]));
+    await until(() => w.find('.tree .show-utility').exists());
+    if (!w.find('.tree').text().includes('calendars')) await w.find('.tree .show-utility').trigger('click');
+    check('the tree tags it "calendars", in the utility group', await until(() => w.findAll('.tree .tag').some((t: any) => t.text() === 'calendars')));
+    const fDue = randomUUID();
+    await post([{ type: 'field.create', id: fDue, tableId: tFiles, name: 'Due', key: 'due', fieldType: 'date' }]);
+    const calRefused = async (data: Record<string, unknown>) => { const r = await post([{ type: 'record.create', id: randomUUID(), tableId: tCal, data }]); return `${r.status} ${await r.text()}`; };
+    const cBadShape = await calRefused({ name: 'bad', calendar: { v: 1, sources: 'all of them' } });
+    check('a calendar of the wrong SHAPE is refused, naming the field', /^400 .*'calendar' \(calendar\)/.test(cBadShape), cBadShape);
+    const src = { id: 's1', tableId: tFiles, start: fDue, label: [fFileName], tint: 'blue' };
+    const cBadRef = await calRefused({ name: 'bad', calendar: { v: 1, sources: [{ ...src, start: fDelName }] } });
+    check('a calendar naming a field of another table is refused (the server checks the schema)', /^400 .*is not a field of Files/.test(cBadRef), cBadRef);
+    const cNotDate = await calRefused({ name: 'bad', calendar: { v: 1, sources: [{ ...src, start: fFileName }] } });
+    check('…or a start that is not a date field', /^400 .*not a date field/.test(cNotDate), cNotDate);
+    const cNoLane = await calRefused({ name: 'bad', calendar: { v: 1, layout: 'resource', rows: { tableId: tDel }, sources: [src] } });
+    check('…or rows with a source that has no lane to them', /^400 .*needs a lane/.test(cNoLane), cNoLane);
+    const cOk = await post([{ type: 'record.create', id: randomUUID(), tableId: tCal, data: { name: 'Due dates', calendar: { v: 1, sources: [src] } } }]);
+    check('a sound calendar is accepted', cOk.status === 200, (await cOk.text()).slice(0, 200));
+    const cEmpty = await post([{ type: 'record.create', id: randomUUID(), tableId: tCal, data: { name: 'Empty', calendar: { v: 1, sources: [] } } }]);
+    check('…and so is an empty one — a new calendar is saved before it has sources', cEmpty.status === 200, (await cEmpty.text()).slice(0, 200));
+    await go(tCal);
+    check('the grid cell summarises it structurally: "1 source"', await until(() => cellOf('Due dates', 'Calendar').text() === '1 source'), cellOf('Due dates', 'Calendar').text());
+    check('the field form does not offer "calendar" as a shape either', !w.findAll('.gridview select.shape option').some((o: any) => o.text() === 'Calendar definition'));
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);
     await ui.close();

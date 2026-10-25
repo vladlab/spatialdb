@@ -1,5 +1,5 @@
 <!--
-  What is INSIDE the current location of the tree: its tables, canvases and reports,
+  What is INSIDE the current location of the tree: its tables, canvases, reports and calendars,
   under their own subheaders (the owner's call — "Tables:" and "Canvases:" read
   better than icons alone).
 
@@ -39,6 +39,7 @@
           <span v-if="scopedTableIds?.has(t.id)" class="tag scoped" title="Its rows belong to a project: inside one, this table shows only that project's">scoped</span>
           <span v-if="t.kind === 'canvas'" class="tag" title="A table of boards: each record is a canvas">boards</span>
           <span v-if="t.kind === 'report'" class="tag" title="A table of reports: each record is a report">reports</span>
+          <span v-if="t.kind === 'calendar'" class="tag" title="A table of calendars: each record is a calendar">calendars</span>
           <span v-if="t.kind === 'junction'" class="tag" title="A junction: each record pairs a record of one table with one of another">junction</span>
           <span v-if="t.utility && (!t.kind || t.kind === 'records')" class="tag" title="Ticked “utility” in its Table settings: a table other tables link to (a vocabulary such as Containers), kept out of the way here">utility</span>
           <button class="act" title="Table settings" @click.stop="$emit('table-settings', t.id)">⚙</button>
@@ -68,6 +69,17 @@
       <span class="name">{{ r.name }}</span>
     </div>
     <p v-if="!reports.length" class="empty">none yet</p>
+
+    <div class="sub">
+      <span>Calendars</span>
+      <button class="add new-calendar-btn" title="New calendar" @click="$emit('new-calendar')">+</button>
+    </div>
+    <div v-for="c in calendars" :key="c.id" class="row leaf calendar-row" :class="{ on: view === 'calendar' && c.id === calendarId }"
+         :data-calendar="c.id" @click="$emit('open-calendar', c.id)">
+      <span class="swatch calendar" />
+      <span class="name">{{ c.name }}</span>
+    </div>
+    <p v-if="!calendars.length" class="empty">none yet</p>
   </div>
 </template>
 
@@ -79,12 +91,13 @@ const props = defineProps<{
   tables: TableRow[];
   canvases: Array<{ id: string; name: string; cards?: number }>;
   reports: Array<{ id: string; name: string }>;
-  view: string; tableId: string; canvasId: string; reportId: string;
+  calendars: Array<{ id: string; name: string }>;
+  view: string; tableId: string; canvasId: string; reportId: string; calendarId: string;
   scopedTableIds?: Set<string>;
 }>();
 defineEmits<{
-  'open-table': [id: string]; 'open-canvas': [id: string]; 'open-report': [id: string];
-  'table-settings': [id: string]; 'new-table': []; 'new-canvas': []; 'new-report': [];
+  'open-table': [id: string]; 'open-canvas': [id: string]; 'open-report': [id: string]; 'open-calendar': [id: string];
+  'table-settings': [id: string]; 'new-table': []; 'new-canvas': []; 'new-report': []; 'new-calendar': [];
 }>();
 
 const dataTables = computed(() => props.tables.filter((t) => !isUtilityTable(t)));
@@ -108,6 +121,7 @@ const showUtility = ref(false);
 .swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
 .swatch.board { border: 1px solid var(--text-faint); background: none; }
 .swatch.report { border: 1px solid var(--text-faint); background: none; border-radius: 0; height: 9px; width: 7px; }
+.swatch.calendar { border: 1px solid var(--text-faint); border-top-width: 3px; background: none; border-radius: 1px; height: 8px; width: 8px; box-sizing: border-box; }
 .name { overflow: hidden; text-overflow: ellipsis; flex: 1; }
 .tag { font-size: 10px; color: var(--text-faint); }
 .tag.scoped { color: var(--accent); opacity: 0.85; }

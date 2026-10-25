@@ -56,8 +56,8 @@ import { junctionOf } from '../contract/junction.js';
 export interface TableRow {
   id: string; name: string; singular_name: string;
   color: string; icon: string; position: number;
-  /** 'canvas' = a table of BOARDS: each record is a canvas (sql/010); 'report' = a table of REPORTS: each record is a report (sql/013); 'junction' = a table of PAIRS connecting two tables (sql/016). */
-  kind?: 'records' | 'canvas' | 'report' | 'junction';
+  /** 'canvas' = a table of BOARDS: each record is a canvas (sql/010); 'report' = a table of REPORTS: each record is a report (sql/013); 'junction' = a table of PAIRS connecting two tables (sql/016); 'calendar' = a table of CALENDARS: each record is a calendar (sql/020). */
+  kind?: 'records' | 'canvas' | 'report' | 'junction' | 'calendar';
   /** The desktop client's tools on this table — `{ toolId: { map } }` (contract/tools.ts). */
   tools?: Record<string, unknown>;
   /** A junction's endpoints, status and match pairs (contract/junction.ts). */
@@ -641,8 +641,8 @@ export function ingestCanvases(
 /** Tables whose records are pairs (sql/016). */
 export const isJunctionTable = (t: TableRow | undefined) => t?.kind === 'junction';
 /** Tables that are navigation utilities rather than data: boards, reports, junctions. */
-/** Folded away in the tree: a table of boards, reports or pairs BY KIND, or one the owner ticked "utility" (sql/018). */
-export const isUtilityTable = (t: TableRow | undefined) => t?.kind === 'canvas' || t?.kind === 'report' || t?.kind === 'junction' || t?.utility === true;
+/** Folded away in the tree: a table of boards, reports, calendars or pairs BY KIND, or one the owner ticked "utility" (sql/018). */
+export const isUtilityTable = (t: TableRow | undefined) => t?.kind === 'canvas' || t?.kind === 'report' || t?.kind === 'junction' || t?.kind === 'calendar' || t?.utility === true;
 
 /** The junction rows linking TO `recordId` through an endpoint field of any junction table. */
 export function junctionRowsOf(state: State, recordId: string): string[] {
@@ -666,6 +666,17 @@ export const reportFieldOf = (state: State, tableId: string): FieldRow | undefin
 export function reportsOf(state: State, tableIds?: ReadonlySet<string>): RecordRow[] {
   return [...state.records.values()].filter((r) =>
     isReportsTable(state.tables.get(r.table_id)) && (!tableIds || tableIds.has(r.table_id)));
+}
+
+/** Tables whose records are calendars (VIEWS-BRIEF.md Part B). */
+export const isCalendarsTable = (t: TableRow | undefined) => t?.kind === 'calendar';
+/** The one field of a calendars table that holds the definition: structured, shape 'calendar'. */
+export const calendarFieldOf = (state: State, tableId: string): FieldRow | undefined =>
+  fieldsOf(state, tableId).find((f) => f.type === 'structured' && f.options?.shape === 'calendar');
+/** Every calendar the client knows of, optionally only those in the given tables. */
+export function calendarsOf(state: State, tableIds?: ReadonlySet<string>): RecordRow[] {
+  return [...state.records.values()].filter((r) =>
+    isCalendarsTable(state.tables.get(r.table_id)) && (!tableIds || tableIds.has(r.table_id)));
 }
 
 /** Every board the client knows of, optionally only those in the given tables. */

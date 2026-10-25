@@ -396,6 +396,24 @@ review of the shape. Where the code differs from B2–B6, the code is the record
 - `EMPTY_CALENDAR()` (no sources) is valid, because the record is saved the moment
   it is made; it draws nothing and says "no sources yet".
 
+**Status (Oct 25 2026): round 3 built** — steps 2 and 5 together (the editor moved up:
+without it there is nothing to test a layout with). `sql/020`, the `calendar` kind and
+shape, the server's check on write, "+ calendar" in the tree, the address
+`#/…/calendar/<id>`, the tray's "▥ open calendar", "▥ open" on a Calendars row,
+`CalendarView.vue` (bar, layout buttons, legend toggles kept per browser in
+`client/calendarPrefs.ts`, problems, an interim count per source) and
+`CalendarEditor.vue`. Tests: `test/structured.ts` T9b, `test/calendarview.ts`. The
+owner chose (option a) that a layout switch while the definition has a problem works
+for that screen only and says so; nothing is sent, so nothing is refused.
+
+**Found while building round 3 — for the owner:** a junction holds ONE row per pair,
+and every row must link exactly one record at EACH end (sql/016, enforced in
+apply.ts). So the worked example cannot be stored as written: Color 01 booked on Duke
+in two bouts is two rows for one pair (refused), and a booking with no computer yet is
+a row with an empty end (refused) — a junction source never fills Unassigned. The
+calendar contract does not care which it is (a lane is any link to the rows); the
+choice is how Bookings is modelled. Undecided.
+
 1. `contract/calendar.ts` + `test/calendar.ts`: def, validation, `runCalendar`,
    `placeEvents`, `agendaGroups`. **Stop for the owner's review of the shape.**
 2. `sql/020_calendars.sql` (the kind; same two lines as 013), the `calendar` shape

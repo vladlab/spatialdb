@@ -26,6 +26,7 @@
       <h2 class="rp-title" :class="{ empty: !title }">{{ title || 'untitled' }}</h2>
       <button v-if="table?.kind === 'canvas'" class="rp-open-board" title="This record is a canvas — open it" @click="$emit('open-board', recordId)">▦ open board</button>
       <button v-if="table?.kind === 'report'" class="rp-open-board rp-open-report" title="This record is a report — open it" @click="$emit('open-report', recordId)">▤ open report</button>
+      <button v-if="table?.kind === 'calendar'" class="rp-open-board rp-open-calendar" title="This record is a calendar — open it" @click="$emit('open-calendar', recordId)">▥ open calendar</button>
       <button v-if="table?.kind !== 'junction'" class="rp-dup" title="Duplicate this record (its values and links; created now, by you)" @click="duplicate">⧉ duplicate</button>
       <button class="rp-close" title="Close (Esc)" @click="$emit('close')">×</button>
     </header>
@@ -279,7 +280,7 @@ const reveal = (path: string) => invoke<string>('reveal', { path })
   .catch((e) => notice(String(e), 'error'));
 
 const props = defineProps<{ store: Store; recordId: string; /** What is open behind the tray (App.vue): the key a field fold is remembered under. */ viewKey?: string }>();
-const emit = defineEmits<{ close: []; open: [recordId: string]; 'open-board': [recordId: string]; 'open-report': [recordId: string] }>();
+const emit = defineEmits<{ close: []; open: [recordId: string]; 'open-board': [recordId: string]; 'open-report': [recordId: string]; 'open-calendar': [recordId: string] }>();
 const store = props.store;
 // Declared FIRST: an `immediate` watcher below calls into it during setup, and a
 // `const` used before its declaration line is a runtime error typecheck cannot see.

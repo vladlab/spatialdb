@@ -465,6 +465,7 @@
               <!-- In a table of BOARDS every row is a canvas: this goes to it. -->
               <button v-if="isBoards" class="open-board" title="Open this board" @click="$emit('open-board', r.id)">▦ open</button>
               <button v-if="isReports" class="open-board open-report" title="Open this report" @click="$emit('open-report', r.id)">▤ open</button>
+              <button v-if="isCalendars" class="open-board open-calendar" title="Open this calendar" @click="$emit('open-calendar', r.id)">▥ open</button>
               <button class="x" :title="isBoards ? 'Delete this board and everything placed on it (undoable)' : 'Delete record (undoable)'" @click="remove(r.id)">×</button>
             </td>
           </tr>
@@ -491,6 +492,7 @@
       <button class="open-record" @click="rowMenuDo((m) => emit('open-record', m.id))">{{ rowMenu.ids.length > 1 ? `Open “${labelFor(rowMenu.id) || 'untitled'}”` : 'Open record' }}</button>
       <button v-if="isBoards" class="open-board-item" @click="rowMenuDo((m) => emit('open-board', m.id))">▦ Open this board</button>
       <button v-if="isReports" class="open-report-item" @click="rowMenuDo((m) => emit('open-report', m.id))">▤ Open this report</button>
+      <button v-if="isCalendars" class="open-calendar-item" @click="rowMenuDo((m) => emit('open-calendar', m.id))">▥ Open this calendar</button>
       <button v-if="!isJunction" class="duplicate-record" @click="rowMenuDo((m) => duplicateRows(m.ids))">{{ rowMenu.ids.length > 1 ? `Duplicate ${rowMenu.ids.length} records` : 'Duplicate record' }}</button>
       <hr />
       <button class="danger delete-record" @click="rowMenuDo((m) => deleteRows(m.ids))">{{ rowMenu.ids.length > 1 ? `Delete ${rowMenu.ids.length} records…` : 'Delete record…' }}</button>
@@ -550,7 +552,7 @@ const props = defineProps<{
   /** The row a FILE is being dragged over (App.vue, from the shell's drag stream), or '' — it gets the drop ring. */
   dropTargetId?: string;
 }>();
-const emit = defineEmits<{ 'open-record': [recordId: string]; 'open-board': [recordId: string]; 'open-report': [recordId: string] }>();
+const emit = defineEmits<{ 'open-record': [recordId: string]; 'open-board': [recordId: string]; 'open-report': [recordId: string]; 'open-calendar': [recordId: string] }>();
 const store = props.store;
 
 /* ── schema, in place ─────────────────────────────────────────────────────
@@ -574,6 +576,7 @@ const fmtN = (n: number) => n.toLocaleString();
 const allFields = computed(() => fieldsOf(store.state, props.tableId));
 const isBoards = computed(() => store.state.tables.get(props.tableId)?.kind === 'canvas');
 const isReports = computed(() => store.state.tables.get(props.tableId)?.kind === 'report');
+const isCalendars = computed(() => store.state.tables.get(props.tableId)?.kind === 'calendar');
 const isJunction = computed(() => store.state.tables.get(props.tableId)?.kind === 'junction');
 const fieldById = computed(() => new Map(allFields.value.map((f) => [f.id, f])));
 const views = computed(() => viewsOf(store.state, props.tableId));

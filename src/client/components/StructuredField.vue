@@ -7,6 +7,8 @@
                    hand-edited one would describe nothing.
     audio_layout   AudioLayoutEditor — tracks, presets, split/merge, copy/paste, compare.
     video_layout   VideoLayoutEditor — a strip of blocks over the list they are typed in.
+    report         ReportEditor — the walk's levels.
+    calendar       CalendarEditor — sources and rows (VIEWS-BRIEF.md B8).
     json           the raw editor below.
 
   EVERY shape also has "edit as JSON", behind a toggle: the escape hatch for fixing
@@ -26,6 +28,8 @@
                          @set="(v) => $emit('set', field.key, v)" @unset="$emit('unset', field.key)" />
       <ReportEditor v-else-if="shape === 'report'" :store="store" :record-id="recordId" :field="field" :value="value"
                     @set="(v) => $emit('set', field.key, v)" />
+      <CalendarEditor v-else-if="shape === 'calendar'" :store="store" :record-id="recordId" :field="field" :value="value"
+                      @set="(v) => $emit('set', field.key, v)" />
     </template>
 
     <div v-if="raw" class="sf-raw">
@@ -48,10 +52,12 @@ import type { FieldRow } from '../state';
 import { shapeOf, summarise } from '../../contract/shapes';
 import { validateValue } from '../../contract/values';
 import { reportDefError } from '../../contract/reports';
+import { calendarDefError } from '../../contract/calendar';
 import ManifestView from './ManifestView.vue';
 import AudioLayoutEditor from './AudioLayoutEditor.vue';
 import VideoLayoutEditor from './VideoLayoutEditor.vue';
 import ReportEditor from './ReportEditor.vue';
+import CalendarEditor from './CalendarEditor.vue';
 
 const props = defineProps<{ store: Store; recordId: string; field: FieldRow; value: unknown }>();
 const emit = defineEmits<{ set: [key: string, value: unknown]; unset: [key: string] }>();
@@ -72,7 +78,8 @@ function saveRaw() {
   // The same checks the server makes, in the same order: the shape (values.ts),
   // then — for a report — that what it names exists (contract/reports.ts).
   const err = validateValue(props.field as any, parsed)
-    ?? (shape.value === 'report' ? reportDefError(parsed, [...props.store.state.fields.values()] as any, [...props.store.state.tables.values()]) : null);
+    ?? (shape.value === 'report' ? reportDefError(parsed, [...props.store.state.fields.values()] as any, [...props.store.state.tables.values()]) : null)
+    ?? (shape.value === 'calendar' ? calendarDefError(parsed, [...props.store.state.fields.values()] as any, [...props.store.state.tables.values()]) : null);
   if (err) { error.value = err; return; }
   emit('set', props.field.key, parsed);
   raw.value = false;

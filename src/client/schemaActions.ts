@@ -145,7 +145,7 @@ export function useSchemaActions(store: Store) {
   /* ── tables ───────────────────────────────────────────────────────────── */
 
   /** Returns the new table's id, or null for a blank name. */
-  function createTable(rawName: string, kind: 'records' | 'canvas' | 'report' = 'records'): string | null {
+  function createTable(rawName: string, kind: 'records' | 'canvas' | 'report' | 'calendar' = 'records'): string | null {
     const name = rawName.trim();
     if (!name) return null;
     const id = crypto.randomUUID();
@@ -161,6 +161,9 @@ export function useSchemaActions(store: Store) {
     }
     if (kind === 'report') {
       store.mutate({ type: 'field.create', id: crypto.randomUUID(), tableId: id, name: 'Report', key: 'report', fieldType: 'structured', options: { shape: 'report' }, required: false });
+    }
+    if (kind === 'calendar') {
+      store.mutate({ type: 'field.create', id: crypto.randomUUID(), tableId: id, name: 'Calendar', key: 'calendar', fieldType: 'structured', options: { shape: 'calendar' }, required: false });
     }
     store.mutate({ type: 'table.update', id, position: pos });
     return id;
@@ -335,6 +338,7 @@ export function useSchemaActions(store: Store) {
     const n = recordsOf(store.state, id).length;
     const boards = t.kind === 'canvas' ? ' Every record in it is a canvas — the boards and everything placed on them go too.'
       : t.kind === 'report' ? ' Every record in it is a report — their definitions and any snapshots attached to them go too.'
+      : t.kind === 'calendar' ? ' Every record in it is a calendar — their definitions go too (the records they show do not).'
       : t.kind === 'junction' ? ' Every record in it is a pair — the columns it put on the two tables it connects go too.' : '';
     const p = await previewOf({ type: 'table.delete', id });
     if (p?.truncated) {

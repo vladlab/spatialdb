@@ -102,14 +102,15 @@ export const LAYOUT_PRESETS: Array<{ id: string; label: string; channels: string
 
 /* ── the registry ─────────────────────────────────────────────────────────── */
 
-export const SHAPES = ['manifest', 'audio_layout', 'video_layout', 'json', 'report'] as const;
+export const SHAPES = ['manifest', 'audio_layout', 'video_layout', 'json', 'report', 'calendar'] as const;
 export type Shape = (typeof SHAPES)[number];
 export const SHAPE_LABELS: Record<Shape, string> = {
-  manifest: 'File manifest', audio_layout: 'Audio layout', video_layout: 'Video layout', json: 'Generic JSON', report: 'Report definition',
+  manifest: 'File manifest', audio_layout: 'Audio layout', video_layout: 'Video layout', json: 'Generic JSON', report: 'Report definition', calendar: 'Calendar definition',
 };
 /**
- * 'report' is a shape only a table of REPORTS makes (sql/013), so the field form does
- * not offer it. Its schema is in contract/reports.ts, which imports views.ts, which
+ * 'report' is a shape only a table of REPORTS makes (sql/013), and 'calendar' one
+ * only a table of CALENDARS makes (sql/020), so the field form offers neither. The
+ * same cycle rule applies to contract/calendar.ts (it imports reports.ts). Its schema is in contract/reports.ts, which imports views.ts, which
  * imports THIS file — so the report parse is done by values.ts (which imports both),
  * never here: a cycle through zod schemas evaluated at module load would be a TDZ
  * error the moment views.ts is imported first.
@@ -135,7 +136,7 @@ export function structuredError(key: string, shape: Shape | null, value: unknown
   if (shape === 'manifest') { const r = Manifest.safeParse(value); return r.success ? null : `'${key}' (manifest) — ${first(r.error)}`; }
   if (shape === 'audio_layout') { const r = AudioLayout.safeParse(value); return r.success ? null : `'${key}' (audio layout) — ${first(r.error)}`; }
   if (shape === 'video_layout') { const r = VideoLayout.safeParse(value); return r.success ? null : `'${key}' (video layout) — ${first(r.error)}`; }
-  return null;                                                  // 'json' (an object is enough), or 'report' (values.ts parses it)
+  return null;                                                  // 'json' (an object is enough), or 'report' / 'calendar' (values.ts parses those)
 }
 
 /* ── summaries: the one line a grid cell or a card row shows ───────────────── */
@@ -215,6 +216,12 @@ export function summarise(shape: Shape | null, value: unknown, detail = false): 
     const walk = (l: { rollups?: unknown[]; children?: unknown[] }) => { levels++; rollups += l.rollups?.length ?? 0; for (const c of l.children ?? []) walk(c as typeof l); };
     walk(root as { rollups?: unknown[]; children?: unknown[] });
     return `${levels} level${levels === 1 ? '' : 's'}${rollups ? `, ${rollups} rollup${rollups === 1 ? '' : 's'}` : ''}`;
+  }
+  if (shape === 'calendar') {
+    // Structural, without the schema, like a report's: "2 sources · resource".
+    const v = value as { sources?: unknown[]; rows?: unknown };
+    const n = Array.isArray(v.sources) ? v.sources.length : 0;
+    return `${n ? `${n} source${n === 1 ? '' : 's'}` : 'no sources'}${v.rows ? ' · resource' : ''}`;
   }
   const keys = Object.keys(value as object);
   return keys.length ? `{ ${keys.slice(0, 4).join(', ')}${keys.length > 4 ? ', …' : ''} }` : '{ }';

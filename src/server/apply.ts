@@ -40,6 +40,7 @@ import { assetIdsIn } from '../contract/richtext.js';
 import { membershipError } from '../contract/scope.js';
 import { shapeOptionError } from '../contract/shapes.js';
 import { reportDefError } from '../contract/reports.js';
+import { calendarDefError } from '../contract/calendar.js';
 import { toolsProblem } from '../contract/tools.js';
 import { vocabularyOptionError } from '../contract/vocab.js';
 import { junctionColumnTarget, junctionOf, junctionProblem } from '../contract/junction.js';
@@ -381,6 +382,16 @@ async function assertValuesValid(
       ]);
       const rerr = reportDefError(data[f.key], fields.rows, tables.rows);
       if (rerr) throw new MutationError(`'${f.key}': ${rerr}`);
+    }
+    // A calendar definition likewise names tables and fields (contract/calendar.ts).
+    // `utility`: a table ticked utility may not be a calendar's row table.
+    if (f.type === 'structured' && f.options?.shape === 'calendar' && data[f.key] !== undefined) {
+      const [fields, tables] = await Promise.all([
+        db.query(`select id, key, name, type, table_id, options from fields`),
+        db.query(`select id, name, kind, junction, utility from tables`),
+      ]);
+      const cerr = calendarDefError(data[f.key], fields.rows, tables.rows);
+      if (cerr) throw new MutationError(`'${f.key}': ${cerr}`);
     }
   }
 

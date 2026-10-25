@@ -23,8 +23,8 @@
  * ignored when parsing, so an old link survives a rename too.
  */
 
-export type ViewName = 'canvas' | 'table' | 'report';
-const VIEWS: readonly ViewName[] = ['canvas', 'table', 'report'];
+export type ViewName = 'canvas' | 'table' | 'report' | 'calendar';
+const VIEWS: readonly ViewName[] = ['canvas', 'table', 'report', 'calendar'];
 /** Addresses from when Schema, Undo and History were tabs. They land on the table;
  *  App.vue also opens Settings (where History lives) for the last two. */
 const OLD_VIEWS: Record<string, ViewName> = { schema: 'table', undo: 'table', history: 'table' };
@@ -33,7 +33,7 @@ export interface Route {
   /** null = the home page. 'all' = the built-in "Everything" section. */
   section: string | 'all' | null;
   view: ViewName;
-  /** The table, canvas or report open in that view, if any. */
+  /** The table, canvas, report or calendar open in that view, if any. */
   target: string;
   /** The record whose panel is open, if any. */
   record: string;

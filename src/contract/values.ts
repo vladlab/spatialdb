@@ -34,6 +34,7 @@ import { attachmentError, richTextError } from './richtext.js';
 import { dimensionsError } from './dimensions.js';
 import { shapeOf, structuredError } from './shapes.js';
 import { ReportDef } from './reports.js';
+import { CalendarDef } from './calendar.js';
 
 export type FieldType = (typeof FIELD_TYPES)[number];
 
@@ -153,7 +154,16 @@ export function validateValue(field: FieldShape, value: unknown): string | null 
     {
       const shape = shapeOf(field);
       const err = structuredError(field.key, shape, value);
-      if (err || shape !== 'report') return err;
+      if (err) return err;
+      if (shape === 'calendar') {
+        // The calendar definition's SHAPE; whether what it names exists is
+        // `calendarDefError` — the server runs it in apply.ts, the editor before saving.
+        const c = CalendarDef.safeParse(value);
+        if (c.success) return null;
+        const ci = c.error.issues[0];
+        return `'${field.key}' (calendar) — ${ci.path.length ? ci.path.join('.') + ': ' : ''}${ci.message}`;
+      }
+      if (shape !== 'report') return null;
       // The definition's SHAPE, on both sides. Whether the fields and tables it names
       // exist is `reportDefError`, which needs the schema: the server runs it in
       // apply.ts, the report editor runs it before saving.

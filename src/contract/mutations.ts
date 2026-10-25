@@ -94,12 +94,13 @@ const TableCreate = z.strictObject({
    * 'canvas' = a table of BOARDS: every record in it is a canvas (sql/010).
    * 'report' = a table of REPORTS: every record in it is a report (sql/013).
    * 'junction' = a table of PAIRS: every record connects one record of table A
-   * with one of table B and carries the relationship's attributes (sql/016). Set
-   * here and nowhere else — table.update deliberately cannot change it.
+   * with one of table B and carries the relationship's attributes (sql/016).
+   * 'calendar' = a table of CALENDARS: every record in it is a calendar (sql/020).
+   * Set here and nowhere else — table.update deliberately cannot change it.
    */
   // optional, not defaulted: every table.create already in the log (and in callers)
   // predates it, and absent must keep meaning an ordinary table.
-  kind: z.enum(['records', 'canvas', 'report', 'junction']).optional(),
+  kind: z.enum(['records', 'canvas', 'report', 'junction', 'calendar']).optional(),
 });
 
 const TableUpdate = z.strictObject({

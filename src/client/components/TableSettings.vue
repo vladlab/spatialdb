@@ -41,6 +41,7 @@
       <p class="info">
         <template v-if="table.kind === 'canvas'"><b>▦ A table of boards.</b> Every record in it is a canvas. This is set when a table is made and cannot be changed.</template>
         <template v-else-if="table.kind === 'report'"><b>▤ A table of reports.</b> Every record in it is a report: its “Report” field holds the definition. This is set when a table is made and cannot be changed.</template>
+        <template v-else-if="table.kind === 'calendar'"><b>▥ A table of calendars.</b> Every record in it is a calendar: its “Calendar” field holds the definition. This is set when a table is made and cannot be changed.</template>
         <template v-else-if="table.kind === 'junction'"><!-- JunctionSettings below says it all --></template>
         <template v-else>An ordinary table. (Tables of boards, reports or junctions are chosen in the new-table dialog.)</template>
       </p>
