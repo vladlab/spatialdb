@@ -245,6 +245,76 @@ export function monthGrid(ym: string): { weeks: string[][]; inMonth: (iso: strin
   return { weeks, inMonth: (iso) => iso.slice(0, 7) === ym };
 }
 
+/* ── the period on screen ──────────────────────────────────────────────────── */
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTH_SHORT = MONTH_NAMES.map((m) => m.slice(0, 3));
+export const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];   // WEEK_START = Monday
+
+export interface Period {
+  /** The rows a grid draws, first day of the week first: 4–6 for a month, 1 for a week. */
+  weeks: string[][];
+  /** First and last day drawn (inclusive) — what `runCalendar` is asked for. */
+  from: string;
+  to: string;
+  /** "October 2026" · "Oct 19 – 25, 2026" · "Sep 28 – Oct 4, 2026" · "Dec 28, 2026 – Jan 3, 2027" */
+  label: string;
+  /** For a month: the days of THAT month (others are drawn dimmed). For a week: every day. */
+  inPeriod: (iso: string) => boolean;
+}
+
+const ymd = (iso: string) => iso.split('-').map(Number) as [number, number, number];
+
+/** A week's label, as people write it: the year once, the month once if it does not change. */
+export function weekLabel(from: string, to: string): string {
+  const [y1, m1, d1] = ymd(from), [y2, m2, d2] = ymd(to);
+  if (y1 !== y2) return `${MONTH_SHORT[m1 - 1]} ${d1}, ${y1} – ${MONTH_SHORT[m2 - 1]} ${d2}, ${y2}`;
+  if (m1 !== m2) return `${MONTH_SHORT[m1 - 1]} ${d1} – ${MONTH_SHORT[m2 - 1]} ${d2}, ${y1}`;
+  return `${MONTH_SHORT[m1 - 1]} ${d1} – ${d2}, ${y1}`;
+}
+
+/**
+ * What a layout shows around `anchor` (any day in it). Month: the month grid of the
+ * anchor's month. Week (and, until they get their own, the other layouts): the week
+ * holding the anchor.
+ */
+export function periodOf(layout: Layout, anchor: string): Period {
+  if (layout === 'month') {
+    const ym = anchor.slice(0, 7);
+    const g = monthGrid(ym);
+    const [y, m] = ymd(`${ym}-01`);
+    return { weeks: g.weeks, from: g.weeks[0][0], to: g.weeks[g.weeks.length - 1][6], label: `${MONTH_NAMES[m - 1]} ${y}`, inPeriod: g.inMonth };
+  }
+  const w = weekDays(anchor);
+  return { weeks: [w], from: w[0], to: w[6], label: weekLabel(w[0], w[6]), inPeriod: () => true };
+}
+
+/**
+ * The anchor `n` periods away: whole months (landing on the 1st, so Jan 31 + 1 is
+ * February, not March) or whole weeks.
+ */
+export function shiftAnchor(layout: Layout, anchor: string, n: number): string {
+  if (layout === 'month') {
+    const [y, m] = ymd(anchor);
+    const t = y * 12 + (m - 1) + n;
+    return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}-01`;
+  }
+  return addDays(anchor, 7 * n);
+}
+
+/** The day number and short month, for a day cell: "1 Nov" on the 1st, else "14". */
+export function dayCellLabel(iso: string): string {
+  const [, m, d] = ymd(iso);
+  return d === 1 ? `${d} ${MONTH_SHORT[m - 1]}` : String(d);
+}
+
+/** "Oct 5" or "Oct 5 – 9" or "Sep 28 – Oct 4" — for a chip's tooltip and the agenda. */
+export function spanLabel(start: string, end: string): string {
+  const [, m1, d1] = ymd(start), [, m2, d2] = ymd(end);
+  if (start === end) return `${MONTH_SHORT[m1 - 1]} ${d1}`;
+  return m1 === m2 ? `${MONTH_SHORT[m1 - 1]} ${d1} – ${d2}` : `${MONTH_SHORT[m1 - 1]} ${d1} – ${MONTH_SHORT[m2 - 1]} ${d2}`;
+}
+
 /* ── the result ───────────────────────────────────────────────────────────── */
 
 export interface CalendarEvent {

@@ -12,15 +12,22 @@
   that write, so the switch then works for this screen only and says so
   (owner's call, Oct 25 2026: option a).
 
-  Round 3 draws no layouts yet: the bar, the legend, the problems, and a count per
-  source — enough to check a definition made in the editor. Month and week come in
-  round 4, agenda in 5, resource in 7.
+  Month and week are drawn by CalendarGrid (round 4); the PERIOD on screen (‹ today ›)
+  is per browser, per calendar — client/calendarPrefs.ts — so two people can look at
+  different months of one calendar. Agenda (round 5) and resource (round 7) still
+  show the interim count per source.
 -->
 <template>
   <div class="calendarview">
     <div class="cv-bar context-bar">
       <span class="cv-kind">▥ calendar</span>
       <span class="cv-title">{{ title }}</span>
+      <span v-if="layout === 'month' || layout === 'week'" class="cv-nav">
+        <button class="cv-prev" :title="`Previous ${layout}`" @click="go(-1)">‹</button>
+        <button class="cv-today" title="Back to today" :disabled="period.from <= today && today <= period.to && (layout !== 'month' || period.inPeriod(today))" @click="goToday">today</button>
+        <button class="cv-next" :title="`Next ${layout}`" @click="go(1)">›</button>
+        <span class="cv-period">{{ period.label }}</span>
+      </span>
       <span class="cv-layouts" role="group" aria-label="Layout">
         <button v-for="l in LAYOUTS" :key="l" class="cv-layout" :class="{ on: layout === l }" :data-layout="l"
                 :disabled="l === 'resource' && !def?.rows"
@@ -40,14 +47,17 @@
     </div>
 
     <p v-if="problem" class="hint stage-body">{{ problem }}</p>
-    <div v-else class="cv-body stage-body">
+    <div v-else class="cv-body stage-body" :class="{ gridded: layout === 'month' || layout === 'week' }" @click="selectedId = ''">
       <p v-if="localOnly" class="cv-warning cv-local">The layout is not saved while the definition has a problem — this switch is for this screen only. Fix it in settings: {{ invalid }}</p>
       <p v-else-if="invalid" class="cv-warning">⚠ {{ invalid }}</p>
       <ul v-if="result?.problems.length" class="cv-problems">
         <li v-for="p in result.problems" :key="p">{{ p }}</li>
       </ul>
-      <!-- Interim (round 3): what each source contributes, until the layouts draw. -->
-      <table v-if="result && def?.sources.length" class="cv-sources">
+      <CalendarGrid v-if="result && (layout === 'month' || layout === 'week')" :weeks="period.weeks" :events="result.events" :in-period="period.inPeriod"
+                    :today="today" :tall="layout === 'week'" :selected-id="selectedId" :open-record-id="openRecordId" :table-names="tableNames"
+                    @select="selectedId = $event" @open="$emit('open-record', $event)" />
+      <!-- Interim: what each source contributes, until agenda (round 5) and resource (round 7) draw. -->
+      <table v-if="result && def?.sources.length && !(layout === 'month' || layout === 'week')" class="cv-sources">
         <tr v-for="s in perSource" :key="s.sourceId" :data-source="s.sourceId">
           <td><span class="tint-legend"><span :class="`tint-${s.tint}`"><i />{{ s.tableName }}</span></span></td>
           <td class="n">{{ s.hidden ? 'hidden here' : `${s.n} event${s.n === 1 ? '' : 's'}` }}</td>
@@ -55,7 +65,7 @@
         </tr>
         <tr v-if="result.lanes"><td>rows</td><td class="n">{{ result.lanes.length - 1 }} lane{{ result.lanes.length === 2 ? '' : 's' }} + Unassigned</td><td /></tr>
       </table>
-      <p class="cv-soon">The {{ LAYOUT_LABELS[layout].toLowerCase() }} layout is drawn in a later round.</p>
+      <p v-if="!(layout === 'month' || layout === 'week')" class="cv-soon">The {{ LAYOUT_LABELS[layout].toLowerCase() }} layout is drawn in a later round.</p>
     </div>
   </div>
 </template>
@@ -66,13 +76,18 @@ import type { Store } from '../store';
 import { calendarFieldOf, type RecordRow } from '../state';
 import { useDerived } from '../derived';
 import { SCOPE } from '../scope';
-import { hiddenSources, toggleSource } from '../calendarPrefs';
+import { anchorOf, hiddenSources, localToday, setAnchor, toggleSource } from '../calendarPrefs';
 import {
-  CalendarDef, LAYOUTS, LAYOUT_LABELS, calendarDefError, runCalendar,
+  CalendarDef, LAYOUTS, LAYOUT_LABELS, calendarDefError, periodOf, runCalendar, shiftAnchor,
   type CalendarContext, type CalendarField, type Layout,
 } from '../../contract/calendar';
+import CalendarGrid from './CalendarGrid.vue';
 
-const props = defineProps<{ store: Store; calendarId: string }>();
+const props = defineProps<{
+  store: Store; calendarId: string;
+  /** The record open in the tray — its chips wear the ring. */
+  openRecordId?: string;
+}>();
 defineEmits<{ 'open-record': [recordId: string] }>();
 
 const store = props.store;
@@ -143,6 +158,17 @@ const scopeNote = computed(() => {
 
 const hidden = computed(() => hiddenSources(props.calendarId));
 
+/* ── the period on screen ── */
+const today = localToday();
+const anchor = computed(() => anchorOf(props.calendarId));
+const period = computed(() => periodOf(layout.value, anchor.value));
+const go = (n: number) => setAnchor(props.calendarId, shiftAnchor(layout.value, anchor.value, n));
+const goToday = () => setAnchor(props.calendarId, today);
+const selectedId = ref('');
+const tableNames = computed(() => new Map([...store.state.tables.values()].map((t) => [t.id, t.name])));
+/** Month and week ask only for what they draw; agenda and resource (for now) for everything. */
+const range = computed(() => (layout.value === 'month' || layout.value === 'week' ? { from: period.value.from, to: period.value.to } : undefined));
+
 const ctx = computed<CalendarContext>(() => {
   const byTable = new Map<string, RecordRow[]>();
   for (const r of store.state.records.values()) { const a = byTable.get(r.table_id); if (a) a.push(r); else byTable.set(r.table_id, [r]); }
@@ -157,6 +183,7 @@ const ctx = computed<CalendarContext>(() => {
     // Scope narrows each table it applies to — every source, and the rows.
     inScope: scopeApi ? (r) => scopeApi.filterFor((r as RecordRow).table_id)?.(r as RecordRow) ?? true : undefined,
     hidden: hidden.value,
+    range: range.value,
   };
 });
 const result = computed(() => (def.value ? runCalendar(def.value, ctx.value) : null));
@@ -175,6 +202,11 @@ const perSource = computed(() => (result.value ? result.value.legend.map((l) => 
 .cv-bar > * { white-space: nowrap; }
 .cv-kind { color: var(--text-faint); font-size: 11px; }
 .cv-title { font-weight: 600; color: var(--text-primary); }
+.cv-nav { display: inline-flex; align-items: center; gap: 2px; }
+.cv-nav button { background: none; border: 1px solid var(--border-main); color: var(--text-secondary); border-radius: 3px; padding: 0 7px; cursor: pointer; font: inherit; font-size: 11px; line-height: 18px; }
+.cv-nav button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.cv-nav button:disabled { opacity: 0.35; cursor: default; }
+.cv-period { font-weight: 600; margin-left: 6px; min-width: 9em; font-variant-numeric: tabular-nums; }
 .cv-layouts { display: inline-flex; }
 .cv-layout { background: none; border: 1px solid var(--border-main); color: var(--text-secondary); padding: 1px 9px; cursor: pointer; font: inherit; font-size: 11px; margin-left: -1px; }
 .cv-layout:first-child { border-radius: 3px 0 0 3px; margin-left: 0; }
@@ -190,6 +222,8 @@ const perSource = computed(() => (result.value ? result.value.legend.map((l) => 
 .cv-def { background: none; border: 1px solid var(--border-main); color: var(--accent); border-radius: 3px; padding: 1px 8px; cursor: pointer; font: inherit; font-size: 11px; }
 .cv-def:hover { border-color: var(--accent); }
 .cv-body { overflow: auto; padding: 12px 16px 40px; }
+.cv-body.gridded { padding: 0 0 24px; display: flex; flex-direction: column; }
+.cv-body.gridded > .cv-warning, .cv-body.gridded > .cv-problems { margin: 8px 16px; }
 .cv-warning { margin: 0 0 10px; color: var(--warning); font-size: 12px; }
 .cv-problems { margin: 0 0 12px; padding-left: 18px; color: var(--warning); font-size: 12px; }
 .cv-sources { border-collapse: collapse; font-size: 12px; margin-bottom: 12px; }

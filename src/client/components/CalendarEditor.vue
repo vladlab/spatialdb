@@ -176,9 +176,21 @@ const schemaFields = () => [...store.state.fields.values()] as CalendarField[];
 const lanesFor = (t: string) => (draft.value.rows ? laneCandidates(t, draft.value.rows.tableId, schemaFields(), store.state.tables.values()) : []);
 
 /* ── edits ── */
+/**
+ * The row table a calendar most likely means: one EVERY source can lane to (Bookings
+ * links to Computers and Projects → Computers, first by name), else one ANY source
+ * links to, else the first table of things. Never a source's own table.
+ */
+function guessRowTable(): TableRow | undefined {
+  const own = new Set(draft.value.sources.map((s) => s.tableId));
+  const options = rowTables.value.filter((t) => !own.has(t.id));
+  const reach = (t: TableRow) => draft.value.sources.filter((s) => laneCandidates(s.tableId, t.id, schemaFields(), store.state.tables.values()).length).length;
+  const n = draft.value.sources.length;
+  return (n ? options.find((t) => reach(t) === n) ?? options.find((t) => reach(t) > 0) : undefined) ?? options[0] ?? rowTables.value[0];
+}
 function toggleRows(on: boolean) {
   if (on) {
-    const t = rowTables.value[0];
+    const t = guessRowTable();
     if (!t) return;
     draft.value.rows = { tableId: t.id, filters: [], sort: [] };
     for (const s of draft.value.sources) s.lane = lanesFor(s.tableId)[0]?.field.id;

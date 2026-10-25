@@ -349,15 +349,17 @@ style of `ReportEditor.vue` — picks only, no ids typed, one draft saved once:
 ### B10. Worked example to build against
 
 Tables: `Computers` (name, kind select, room), `Projects` (name, start, end — Projects
-is the section's scope table), `Bookings` — a junction, `a` → Computers (single),
-`b` → Projects (single), status select {Planned, Confirmed, Done}, start, end, note.
-Also `Milestones` (name, date, project link) as a second, one-day source.
+is the section's scope table), `Bookings` — a PLAIN table (owner, Oct 25 2026; see
+"Found while building round 3" below and API.md, Junctions) with `Computer` (single
+link → Computers), `Project` (single link → Projects), status select {Planned,
+Confirmed, Done}, start, end, note. Also `Milestones` (name, date, project link) as a
+second, one-day source.
 
 Calendar "Machine room":
 
 ```
 rows:    Computers, sorted by name
-sources: Bookings   start/end   label [Project (b), Status]  tint blue   tintBy status {Confirmed→green, Done→grey}   lane a
+sources: Bookings   start/end   label [Project, Status]      tint blue   tintBy status {Confirmed→green, Done→grey}   lane Computer
          Milestones date        label [Name]                 tint amber  lane — via Projects? NO: Milestones has no link to Computers
 ```
 
@@ -412,7 +414,29 @@ apply.ts). So the worked example cannot be stored as written: Color 01 booked on
 in two bouts is two rows for one pair (refused), and a booking with no computer yet is
 a row with an empty end (refused) — a junction source never fills Unassigned. The
 calendar contract does not care which it is (a lane is any link to the rows); the
-choice is how Bookings is modelled. Undecided.
+choice is how Bookings is modelled.
+
+**Decided (Oct 25 2026): Bookings is a plain table** with two single links. Junctions
+stay as they are, for what they fit: one fact about a pair whose ends always exist
+(Work × Deliverable). The rule is written into API.md ("Junctions — when to use
+one"). A plain Bookings row survives the deletion of its computer and lands in
+Unassigned. The cost — a plain table needs a primary field to be named by, and
+"Color 01 on Duke, Oct 5–9" has none — is Part C (label fields), after the calendar.
+
+**Status (Oct 25 2026): round 4 built** (build-order step 3). `CalendarGrid.vue`
+draws month (4–6 Monday-first rows, other months' days dimmed) and week (one row,
+tall chips with their dates, dates in the header); `CalendarChip.vue` is the tinted
+wash + stripe, drawn OPEN on a side where it continues past the row; click selects,
+double-click opens the record, the record in the tray wears the ring. ‹ today › and
+the period label; the period on screen is per browser, per calendar
+(`client/calendarPrefs.ts`), never in the definition. Month and week ask
+`runCalendar` only for the days they draw, so the bar's count is "events in view".
+Today is marked and weekends lightly shaded already (from step 8). Contract:
+`periodOf`, `shiftAnchor` (months land on the 1st), `weekLabel`, `dayCellLabel`,
+`spanLabel`, tested in `test/calendar.ts` C2b. Turning Rows on now guesses the row
+table every source can lane to (Bookings → Computers), never a source's own table.
+The UI suite uses a plain Bookings table (two bouts of one pair, one with no
+computer, one crossing the month).
 
 1. `contract/calendar.ts` + `test/calendar.ts`: def, validation, `runCalendar`,
    `placeEvents`, `agendaGroups`. **Stop for the owner's review of the shape.**
@@ -424,7 +448,8 @@ choice is how Bookings is modelled. Undecided.
 4. Agenda layout.
 5. The editor in the tray.
 6. Drag to move, edge drag to resize, draw to create (month/week).
-7. Resource layout: lanes, Unassigned, zoom, draw-on-lane creating the junction row.
+7. Resource layout: lanes, Unassigned, zoom, draw-on-lane creating a record in the
+   source table with its lane link set (a plain Bookings row).
 8. Polish: today marker, weekend shade, keyboard ‹ › for period, print stylesheet
    (reports' print CSS is the template).
 
@@ -439,3 +464,23 @@ Float's real feature, later). Recurring events. Rollups on calendars. A lane via
 backlink or lookup. iCal import/export (a plausible later export, like CSV on reports).
 Colour rules on calendars beyond `tintBy` (when the conditional-colour feature grows
 a calendar target, it slots in next to `tintBy`).
+
+---
+
+## Part C — label fields: naming a record by what it links to
+
+Agreed Oct 25 2026, to be built after Part B. A table may name its records by an
+ORDERED LIST of fields, joined " · " — so a Booking reads "Color 01 · Duke ·
+2026-10-05" with no typed Name. The same `label: [fieldId, …]` idea as a calendar
+chip, and the calendar editor's picker is the UI to reuse.
+
+- Stored as one nullable list on `tables` (a migration and a `table.update` option),
+  set in Table settings. Absent = today's rule (the first plain field by position),
+  so no existing table changes.
+- ONE HOP, never recursive: a link in a label resolves to the target record's
+  plain-field label (its own primary field), never to that record's label fields.
+  No cycles to detect; the server needs at most one extra query.
+- `labelFrom` (contract/labels.ts) takes a resolver for linked records instead of
+  only the record's own data; its consumers (derived.ts, state.ts, LinkPicker,
+  CanvasView, RecordPanel, fileDrop, server reads) change by a line each.
+- Identity is untouched: records are UUIDs; a label is display only.

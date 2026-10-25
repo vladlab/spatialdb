@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import {
   calendarDefError, runCalendar, laneCandidates, laneEvents, placeEvents, agendaGroups, moveEvent, monthGrid, weekDays,
   dayNumber, daysBetween, weekdayIndex, isWeekend, addDays, EMPTY_CALENDAR, UNASSIGNED,
+  periodOf, shiftAnchor, weekLabel, dayCellLabel, spanLabel,
   type CalendarDef, type CalendarField, type CalendarTable, type CalendarContext, type CalendarEvent,
 } from '../src/contract/calendar.js';
 import type { ViewRecord } from '../src/contract/views.js';
@@ -171,6 +172,20 @@ check('weekends', isWeekend('2026-10-24') && isWeekend('2026-10-25') && !isWeeke
   const feb = monthGrid('2027-02');
   check('February 2027 starts on a Monday and ends on a Sunday: exactly four rows', feb.weeks.length === 4 && feb.weeks[0][0] === '2027-02-01' && feb.weeks[3][6] === '2027-02-28');
   check('a nonsense month gives nothing', monthGrid('2026-13').weeks.length === 0);
+}
+
+console.log('\nC2b. The period on screen');
+{
+  const m = periodOf('month', '2026-10-25');
+  check('month: the grid of the anchor\'s month, labelled in words', m.label === 'October 2026' && m.weeks.length === 5 && m.from === '2026-09-28' && m.to === '2026-11-01');
+  check('…days of other months are not in the period (drawn dimmed)', m.inPeriod('2026-10-31') && !m.inPeriod('2026-11-01'));
+  const w = periodOf('week', '2026-10-25');
+  check('week: the Monday-first week holding the anchor', w.weeks.length === 1 && w.from === '2026-10-19' && w.to === '2026-10-25' && w.label === 'Oct 19 – 25, 2026', w.label);
+  check('week labels say the month and year once where they can', weekLabel('2026-09-28', '2026-10-04') === 'Sep 28 – Oct 4, 2026' && weekLabel('2026-12-28', '2027-01-03') === 'Dec 28, 2026 – Jan 3, 2027');
+  check('next month from Jan 31 is February (lands on the 1st), and back across a year', shiftAnchor('month', '2026-01-31', 1) === '2026-02-01' && shiftAnchor('month', '2026-01-15', -1) === '2025-12-01' && shiftAnchor('month', '2026-11-03', 14) === '2028-01-01');
+  check('weeks move by seven days', shiftAnchor('week', '2026-10-25', 1) === '2026-11-01' && shiftAnchor('week', '2026-10-25', -2) === '2026-10-11');
+  check('a day cell says the month on the 1st only', dayCellLabel('2026-11-01') === '1 Nov' && dayCellLabel('2026-10-14') === '14');
+  check('span labels', spanLabel('2026-10-05', '2026-10-05') === 'Oct 5' && spanLabel('2026-10-05', '2026-10-09') === 'Oct 5 – 9' && spanLabel('2026-09-28', '2026-10-04') === 'Sep 28 – Oct 4');
 }
 
 /* ── C3. the result ───────────────────────────────────────────────────────── */

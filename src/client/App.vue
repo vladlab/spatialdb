@@ -106,7 +106,7 @@
               <p v-else-if="view === 'report'" class="hint">No report open — pick one in the tree, or press + beside “Reports” to make one.</p>
 
               <!-- A calendar is DERIVED each time it is looked at (CalendarView.vue). -->
-              <CalendarView v-if="view === 'calendar' && calendarId" :key="calendarId" :store="store" :calendar-id="calendarId"
+              <CalendarView v-if="view === 'calendar' && calendarId" :key="calendarId" :store="store" :calendar-id="calendarId" :open-record-id="openRecordId"
                             @open-record="openRecordId = $event" />
               <p v-else-if="view === 'calendar'" class="hint">No calendar open — pick one in the tree, or press + beside “Calendars” to make one.</p>
 

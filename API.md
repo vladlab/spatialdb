@@ -1089,6 +1089,18 @@ Not a paired second link field: that would be two copies of one fact.
 
 ### Junctions: a relationship that has attributes
 
+**When to use one — and when a plain table is right** (decided Oct 25 2026, after the
+calendar's Bookings could not be a junction). A junction is an ADJECTIVE ABOUT A PAIR:
+one fact per pair, and both ends always exist — the status of this file for that
+deliverable, the role of a deliverable on a work. Everything a junction adds (the
+"Target › Verb" pill on both sides, the nested pair table in the tray, a report
+walking through it in one level, unlink = delete the row) is only coherent because of
+that. A NOUN that points at two things — a booking, a delivery event, anything with
+its own dates, identity and lifecycle — is a PLAIN TABLE with two single links: it may
+repeat for the same pair (two bouts of Color 01 on Duke), may lack an end for a while
+(no computer assigned yet), and SURVIVES the deletion of either end (its link just
+empties), where a junction row dies with its endpoints.
+
 A table of kind `junction` (`sql/016`, **`src/contract/junction.ts`**, `test/junction.ts`,
 `test/junctionui.ts`). Each record is one PAIR — this file, that deliverable — and
 carries what the pair carries: a status, notes, any fields added. "Satisfied" is
