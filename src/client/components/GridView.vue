@@ -144,16 +144,22 @@
            file under "Ep 101" links it to Ep 101 (client/scope.ts, createRecord). -->
       <!-- A BOARD: which field makes the columns, and what a drag does. -->
       <details v-if="kanban" class="menu kanban-menu">
-        <summary class="active">columns · {{ fieldName(kanban.fieldId) }}</summary>
+        <summary class="active">stack by · {{ fieldName(kanban.fieldId) }}</summary>
         <div class="pop">
-          <div class="line"><span class="muted">columns by</span>
+          <div class="line"><span class="muted">stack by</span>
+            <!-- Changing the field drops `hideEmpty`: its default depends on the field's type. -->
             <select class="kanban-field" :value="kanban.fieldId" @change="save({ kanban: { fieldId: ($event.target as HTMLSelectElement).value } })">
               <option v-for="f in kanbanable" :key="f.id" :value="f.id">{{ f.name }}</option>
             </select>
           </div>
-          <p class="hint-line">Columns come from a single select, or a link ticked “single” (in the field's ⚙). Dragging a card moves it. Filters, sort and hidden fields apply to the cards.</p>
+          <p class="hint-line">A stack per choice of a select, per record of a link ticked “single” (in the field's ⚙), or per distinct value of a text or number field. Dragging a card moves it — onto a text or number stack, it writes that value. Filters, sort and hidden fields apply to the cards.</p>
         </div>
       </details>
+      <!-- A view-wide setting, so it sits on the bar itself (UI-NOTES: never inside a local menu). -->
+      <!-- Same words and look as the canvas's "empty: hidden / shown" toggle. -->
+      <button v-if="kanban && kanbanField" class="kanban-hide-empty" :class="{ active: kanbanHideEmpty }"
+              :title="(kanbanHideEmpty ? 'Stacks with no cards are hidden — click to show them' : 'Hide stacks with no cards in them') + ' (for this board, for everyone). While you search, stacks with no matches are always hidden.'"
+              @click="save({ kanban: { ...kanban, hideEmpty: !kanbanHideEmpty } })">{{ kanbanHideEmpty ? 'empty stacks: hidden' : 'empty stacks: shown' }}</button>
 
       <details v-if="!kanban" class="menu group-menu">
         <summary :class="{ active: groupBy.length }">
@@ -245,7 +251,8 @@
       </span>
     </div>
 
-    <KanbanView v-if="kanban && kanbanField" class="stage-body" :store="store" :records="matched" :field="kanbanField"
+    <KanbanView v-if="kanban && kanbanField" class="stage-body" :store="store" :records="matched" :universe="viewedRecs" :field="kanbanField"
+                :hide-empty="kanbanHideEmpty" :searching="search.trim() !== ''"
                 :card-fields="shown.filter((f) => f.id !== primaryField?.id)" :primary="primaryField" :open-id="openRecordId"
                 @open-record="$emit('open-record', $event)" @create="createInColumn" />
     <div v-else ref="scroller" class="scroller stage-body" tabindex="0" @scroll.passive="onScroll" @keydown="onGridKey" @copy="onCopy" @paste="onPaste">
@@ -520,7 +527,7 @@ import ColorRules from './ColorRules.vue';
 import { legendOf, paintsOf, type ColorRule, type Paints } from '../../contract/colorRules';
 import { useSchemaActions } from '../schemaActions';
 import { useDerived } from '../derived';
-import { ancestorsOf, canMakeColumns, groupRows, type GroupHeader, type GroupValue } from '../../contract/views';
+import { ancestorsOf, canMakeColumns, defaultColumnField, defaultHideEmpty, groupRows, type GroupHeader, type GroupValue } from '../../contract/views';
 import { ask, confirmDialog } from '../dialogs';
 import { richTextToPlain } from '../../contract/richtext';
 import { formatNumberField, shapeOf, summarise as summariseValue } from '../../contract/shapes';
@@ -732,7 +739,7 @@ async function newView(kind: 'grid' | 'kanban' = 'grid') {
   if (!name) return;
   const id = crypto.randomUUID();
   if (kind === 'kanban') {
-    const f = kanbanable.value[0];
+    const f = defaultColumnField(allFields.value);
     if (!f) return;
     store.mutate({ type: 'view.create', id, tableId: props.tableId, name, config: { ...config.value, groupBy: [], kanban: { fieldId: f.id } } });
     store.mutate({ type: 'view.update', id, position: views.value.length });
@@ -892,8 +899,10 @@ const all = computed(() => {
 });
 const total = computed(() => all.value.length);
 
-/** Every record the view, the search and the scope let through — before grouping. */
-const matched = computed(() => {
+/** Every record the view and the scope let through — BEFORE the quick search. A board
+    takes its text/number stacks from this, so a search narrows the cards and never
+    the set of stacks it can drop into. */
+const viewedRecs = computed(() => {
   let viewed = applyView(all.value, allFields.value, config.value, linkLabels, derived.idsOf);
   // Just-created rows are exempt from the view's FILTER (a blank row matches
   // nothing, and would vanish before you could type in it)…
@@ -902,12 +911,15 @@ const matched = computed(() => {
     const pinned = all.value.filter((r) => fresh.has(r.id) && !have.has(r.id));
     if (pinned.length) viewed = [...viewed, ...pinned];
   }
+  return viewed;
+});
+/** Every record the view, the search and the scope let through — before grouping. */
+const matched = computed(() => {
   // …but NOT from the search box. Search is an explicit "find this"; a row that
   // does not match has no business in the results just because it is new. This
   // ordering was wrong at first and hidden by another bug: the first header click
   // used to clear `fresh` by accident.
-  const found = quickSearch(viewed, shown.value, search.value, linkLabels);
-  return found;
+  return quickSearch(viewedRecs.value, shown.value, search.value, linkLabels);
 });
 
 /* CellEditor has already validated against contract/values.ts by the time
@@ -1045,6 +1057,7 @@ const kanbanable = computed(() => allFields.value.filter(canMakeColumns));
 // A board whose field can no longer make columns (its "single" tick removed) falls back to the grid.
 const kanban = computed(() => (config.value.kanban && kanbanable.value.some((f) => f.id === config.value.kanban!.fieldId) ? config.value.kanban : undefined));
 const kanbanField = computed(() => (kanban.value ? store.state.fields.get(kanban.value.fieldId) : undefined));
+const kanbanHideEmpty = computed(() => kanban.value?.hideEmpty ?? (kanbanField.value ? defaultHideEmpty(kanbanField.value) : false));
 const primaryField = computed(() => shown.value.find((f) => f.id === primaryId.value) ?? shown.value[0]);
 /** "+" in a column: a record that starts out IN that column. */
 function createInColumn(v: GroupValue) {
@@ -1577,6 +1590,11 @@ defineExpose({ recordAtClient });
 }
 .menu summary::-webkit-details-marker { display: none; }
 .menu summary.active { color: var(--accent); border-color: var(--accent); }
+.kanban-hide-empty {
+  font: inherit; cursor: pointer; color: var(--text-secondary); background: none; white-space: nowrap;
+  border: 1px solid var(--border-main); border-radius: 4px; padding: 2px 8px;
+}
+.kanban-hide-empty.active { color: var(--accent); border-color: var(--accent); }
 .pop {
   position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 320px;
   background: var(--controls-bg); border: 1px solid var(--border-main); border-radius: 6px;

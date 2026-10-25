@@ -113,16 +113,28 @@ export const ViewConfig = z.strictObject({
    */
   groupBy: z.array(uuid).max(2).optional(),
   /**
-   * Present = this view is a KANBAN BOARD, not a grid. One column per value of
+   * Present = this view is a KANBAN BOARD, not a grid. One STACK per value of
    * `fieldId`, plus "(none)"; a drag MOVES a card between them. Only SINGLE-VALUED
-   * fields may make columns — a select, or a link ticked "single" — so every card is
-   * in exactly one column and a drag has one obvious meaning. (A first cut allowed
-   * multi-valued fields with cards in several columns and a move/add setting; the
-   * owner pulled it the same day: "let's not break things before we build them.")
+   * fields may make stacks, so every card is in exactly one and a drag has one
+   * obvious meaning. (A first cut allowed multi-valued fields with cards in several
+   * columns and a move/add setting; the owner pulled it the same day: "let's not
+   * break things before we build them.")
+   *
+   * Which fields (VIEWS-BRIEF.md Part A, Oct 25 2026): a select (a stack per
+   * choice), a link ticked "single" (a stack per target record) — and, since then,
+   * any text-like or number field, one stack per distinct value: "a simple
+   * horizontal canvas for searching and seeing multiple cards with data at once."
+   * Dropping a card on such a stack WRITES that value.
+   *
+   * `hideEmpty`: draw no stack that has no cards. Absent = the field type's default
+   * (`defaultHideEmpty`): off for a select, whose empty columns are the point of a
+   * kanban; on for everything else. While the quick-search box is non-empty, empty
+   * stacks are hidden whatever this says (`visibleColumns`).
+   *
    * Filters, sort and hidden fields still apply: which cards, in what order, showing
    * what.
    */
-  kanban: z.strictObject({ fieldId: uuid }).optional(),
+  kanban: z.strictObject({ fieldId: uuid, hideEmpty: z.boolean().optional() }).optional(),
   /**
    * COLUMN ORDER, per view — like `hidden`, and for the same reason: two views of one
    * table are two ways of looking at it. Ids not listed follow, in schema order, so a
@@ -555,8 +567,29 @@ export function ancestorsOf<R>(items: GridItem<R>[], path: string): GroupHeader[
  *  Kanban columns
  * ──────────────────────────────────────────────────────────────────────────*/
 
-/** Which fields may make a board's columns: single-valued ones. */
-export const canMakeColumns = (f: ViewField): boolean => f.type === 'select' || (f.type === 'link' && f.options?.single === true);
+/**
+ * Field types whose stacks are DERIVED from the values the records hold — one per
+ * distinct value — rather than from a fixed list (a select's choices, a link's
+ * target records).
+ */
+const VALUE_STACK_TYPES = new Set(['text', 'number', 'file_path', 'dimensions']);
+
+/** Which fields may make a board's stacks: single-valued ones (see `kanban` above). */
+export const canMakeColumns = (f: ViewField): boolean =>
+  f.type === 'select' || (f.type === 'link' && f.options?.single === true) || VALUE_STACK_TYPES.has(f.type);
+
+/**
+ * The field a NEW board stacks by: a select if there is one, then a single link,
+ * then whatever else can. (Stacking a fresh board by the primary text field would
+ * give one stack per record — technically a board, never what anyone wanted.)
+ */
+export function defaultColumnField<F extends ViewField>(fields: F[]): F | undefined {
+  const ok = fields.filter(canMakeColumns);
+  return ok.find((f) => f.type === 'select') ?? ok.find((f) => f.type === 'link') ?? ok[0];
+}
+
+/** `kanban.hideEmpty` when the view says nothing: off for a select, on otherwise. */
+export const defaultHideEmpty = (f: ViewField): boolean => f.type !== 'select';
 
 export interface KanbanColumn<R> {
   key: string;
@@ -566,25 +599,50 @@ export interface KanbanColumn<R> {
   records: R[];
 }
 
+/** A text-like value as a stack sees it: trimmed; blank = no value. Numbers as they are. */
+function stackValue(f: ViewField, v: unknown): string | number | undefined {
+  if (isEmpty(v)) return undefined;
+  if (f.type === 'number') return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+  const t = String(v).trim();
+  return t === '' ? undefined : t;
+}
+
 /**
- * The columns of a board over `field` (a select, or a "single" link), in a fixed
- * order that does not depend on which records happen to exist: a select's CHOICES,
- * in their order; a link's target records, in the `targets` order given (the caller
- * decides — usually the target table's records, sorted by label). Empty columns
- * exist, because a column is a place to drop things. "(none)" is always last. Every
- * record lands in exactly one column — a record that somehow still has several
- * links (linked before the field was ticked single) is shown under the first.
+ * The columns of a board over `field`, "(none)" always last. Every record lands in
+ * exactly one column.
+ *
+ *  - A SELECT: its CHOICES, in their order, empty ones too (a column is a place to
+ *    drop things). A value that is no longer a choice (renamed, removed) still gets
+ *    a column, so nothing disappears.
+ *  - A "single" LINK: its target records, in the `targets` order given (the caller
+ *    decides — usually by label). A record that somehow still has several links
+ *    (linked before the field was ticked single) is shown under the first.
+ *  - TEXT-LIKE / NUMBER: one column per distinct value — text trimmed and compared
+ *    exactly (case counts), numbers numerically — taken from `universe` (default:
+ *    `records`). Text sorts as people read it ("ep2" before "ep10"), numbers by
+ *    value. The caller passes as `universe` the records the view lets through
+ *    BEFORE the quick search, so a search narrows the cards without inventing or
+ *    losing stacks, and a filtered board never shows stacks from outside its filter.
  */
 export function kanbanColumns<R extends ViewRecord>(
   records: R[], field: ViewField, linkIds: LinkIds,
   targets: Array<{ id: string; label: string }> = [],
+  universe?: R[],
 ): KanbanColumn<R>[] {
   const cols = new Map<string, KanbanColumn<R>>();
   const col = (key: string, label: string, value: GroupValue) => { if (!cols.has(key)) cols.set(key, { key, label, value, records: [] }); return cols.get(key)!; };
+  const byValue = VALUE_STACK_TYPES.has(field.type);
   if (field.type === 'select') {
     for (const c of (field.options?.choices as string[] | undefined) ?? []) col('v:' + c, c, { kind: 'value', value: c });
   } else if (field.type === 'link') {
     for (const t of targets) col('l:' + t.id, t.label, { kind: 'links', ids: [t.id] });
+  } else if (byValue) {
+    const seen = new Map<string, string | number>();
+    for (const r of universe ?? records) { const v = stackValue(field, r.data[field.key]); if (v !== undefined) seen.set(String(v), v); }
+    const vals = [...seen.values()].sort((a, b) => (typeof a === 'number' && typeof b === 'number'
+      ? a - b : String(a).localeCompare(String(b), undefined, { numeric: true })));
+    // The column keeps the value ITSELF — a number stays a number when a drop writes it.
+    for (const v of vals) col('v:' + String(v), String(v), { kind: 'value', value: v });
   }
   const none = col('\u0000', '(none)', { kind: 'empty' });
 
@@ -592,17 +650,24 @@ export function kanbanColumns<R extends ViewRecord>(
     const v = r.data[field.key];
     let key: string | undefined;
     if (field.type === 'link') { const id = linkIds(r.id, field.id)[0]; if (id && cols.has('l:' + id)) key = 'l:' + id; }
-    // A value that is no longer a choice (renamed, removed) still gets a column, so
-    // nothing disappears; it just cannot be re-created by dragging.
+    else if (byValue) { const sv = stackValue(field, v); if (sv !== undefined) key = 'v:' + String(sv); }
     else if (!isEmpty(v)) key = 'v:' + String(v);
     const home = key ? (cols.get(key) ?? col(key, key.slice(2), { kind: 'value', value: key.slice(2) })) : none;
     home.records.push(r);
   }
   const out = [...cols.values()];
-  // "(none)" last; everything else keeps insertion order.
   return [...out.filter((c) => c !== none), none];
+}
+
+/**
+ * Which columns a board DRAWS. A column with cards is always drawn. An empty one is
+ * drawn only when `hideEmpty` is off AND nothing is being searched for: a search is
+ * "show me where X is", and a column where it is not is noise.
+ */
+export function visibleColumns<R>(cols: KanbanColumn<R>[], o: { hideEmpty: boolean; searching: boolean }): KanbanColumn<R>[] {
+  return cols.filter((c) => c.records.length > 0 || (!o.hideEmpty && !o.searching));
 }
 
 /** Whether a field can hold only ONE value — then a board drag is always a move, and a picker replaces. */
 export const isSingleValued = (f: ViewField): boolean =>
-  f.type === 'select' || f.type === 'checkbox' || (f.type === 'link' && f.options?.single === true);
+  f.type === 'select' || f.type === 'checkbox' || (f.type === 'link' && f.options?.single === true) || VALUE_STACK_TYPES.has(f.type);

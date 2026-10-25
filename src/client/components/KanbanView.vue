@@ -5,16 +5,21 @@
   from the same toolbar apply — they choose and order the cards and decide what a
   card shows. What is here is only the columns, the drag, and "+" per column.
 
-  Columns come only from a SINGLE-VALUED field — a select, or a link ticked "single" —
-  so every card is in exactly one column and a drag has one meaning: it MOVES the
-  card (one batch, one Ctrl+Z). Dropping on "(none)" clears the value.
+  Columns ("stacks") come only from a SINGLE-VALUED field — a select, a link ticked
+  "single", or a text-like / number field (one stack per distinct value) — so every
+  card is in exactly one and a drag has one meaning: it MOVES the card (one batch,
+  one Ctrl+Z), writing the stack's value. Dropping on "(none)" clears the value.
+
+  Which stacks are DRAWN is `visibleColumns`: empty ones only when hide-empty is off
+  and nothing is being searched for (VIEWS-BRIEF.md A3–A4).
 
   Dragging uses client/recordDrag.ts (pointer events, not HTML5 drop — the desktop
   client claims those). Each column is a drop target.
 -->
 <template>
   <div class="kanban" :class="{ dragging: dragFrom !== null }">
-    <div v-for="c in columns" :key="c.key" class="kcol" :class="{ none: c.value.kind === 'empty', over: overKey === c.key }" :ref="(el) => colRef(c.key, el as HTMLElement | null)">
+    <p v-if="!shownColumns.length" class="kanban-nothing">{{ searching ? 'Nothing matches the search.' : 'No cards.' }}</p>
+    <div v-for="c in shownColumns" :key="c.key" class="kcol" :class="{ none: c.value.kind === 'empty', over: overKey === c.key }" :ref="(el) => colRef(c.key, el as HTMLElement | null)">
       <header class="kcol-head">
         <span class="kcol-label" :title="c.label">{{ c.label }}</span>
         <span class="kcol-count">{{ c.records.length }}</span>
@@ -58,7 +63,7 @@ import { beginRecordDrag, registerDropTarget } from '../recordDrag';
 import { addLink } from '../links';
 import RecordPill from './RecordPill.vue';
 import VerdictMark from './VerdictMark.vue';
-import { kanbanColumns, type GroupValue } from '../../contract/views';
+import { kanbanColumns, visibleColumns, type GroupValue } from '../../contract/views';
 import { richTextToPlain } from '../../contract/richtext';
 import { formatNumberField, shapeOf, summarise } from '../../contract/shapes';
 
@@ -72,6 +77,12 @@ const props = defineProps<{
   primary: FieldRow | undefined;
   /** The record open in the tray, or '' — its card is marked. */
   openId?: string;
+  /** The records the view lets through BEFORE the quick search: where text/number stacks come from. */
+  universe?: RecordRow[];
+  /** Draw no stack without cards (the view's `kanban.hideEmpty`, or its default). */
+  hideEmpty?: boolean;
+  /** The quick-search box is not empty: stacks with no matches are not drawn. */
+  searching?: boolean;
 }>();
 const emit = defineEmits<{ 'open-record': [id: string]; create: [value: GroupValue] }>();
 const derived = useDerived(props.store);
@@ -86,7 +97,8 @@ const targets = computed(() => {
     .map((r) => ({ id: r.id, label: derived.labelOfId(r.id) }))
     .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
 });
-const columns = computed(() => kanbanColumns(props.records, props.field, (rid, fid) => derived.linksFrom(rid, fid), targets.value));
+const columns = computed(() => kanbanColumns(props.records, props.field, (rid, fid) => derived.linksFrom(rid, fid), targets.value, props.universe));
+const shownColumns = computed(() => visibleColumns(columns.value, { hideEmpty: !!props.hideEmpty, searching: !!props.searching }));
 
 const verdictOf = (recordId: string, fieldId: string) => derived.fieldVerdicts(recordId).get(fieldId);
 const labelOf = (r: RecordRow) => (props.primary ? valueText(r, props.primary) : '') || '(untitled)';
@@ -200,6 +212,7 @@ function dropInto(toKey: string, records: RecordRow[]) {
 .kcard-val.pills { flex: 1; }
 .kcard-val :deep(.pill) { font-size: 11px; line-height: 16px; }
 .kcard-verdict { margin-left: auto; }
+.kanban-nothing { margin: 0; color: var(--text-faint); font-size: 12px; padding: 8px; }
 .kcol-empty { margin: 0; color: var(--text-faint); font-size: 11px; text-align: center; padding: 8px; }
 .kanban.dragging .kcol-empty { color: var(--text-muted); }
 </style>

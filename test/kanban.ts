@@ -1,7 +1,8 @@
 /**
  * The kanban board: a view whose body is columns of cards. Columns by a select and
  * by a link; drag = move or add; drop on "(none)"; "+" per column; a "single" link
- * field's picker REPLACES. The pure column rule and the server's "single" check are
+ * field's picker REPLACES. K4: stacks by a text and a number field, the
+ * hide-empty toggle on the bar, and search hiding stacks with no matches. The pure column rule and the server's "single" check are
  * in test/grid.ts.
  */
 import { randomUUID } from 'node:crypto';
@@ -70,7 +71,8 @@ async function main() {
     check('a board is a VIEW: saved, shared, listed', await until(() => board().exists()) && /board/.test(viewMenu().text()));
     check('one column per choice (empty ones too), "(none)" last, cards where their status says', await until(() => cols() === 'todo[a.mov] doing[] done[b.mov] (none)[c.mov]'), cols());
     check('the grid\'s toolbar is still there (filter, sort, fields) and the group menu is not', w.find('.gridview .kanban-menu').exists() && !w.find('.gridview .group-menu').exists());
-    check('a plain (multi) link may NOT make columns — only the select is offered', w.findAll('.gridview .kanban-field option').map((o: any) => o.text()).join() === 'Status', w.find('.gridview .kanban-field').text());
+    check('a new board stacks by the SELECT, not the primary text field that comes first', w.find('.gridview .kanban-menu summary').text() === 'stack by · Status', w.find('.gridview .kanban-menu summary').text());
+    check('a plain (multi) link may NOT make stacks — the text Name and the select are offered', w.findAll('.gridview .kanban-field option').map((o: any) => o.text()).join() === 'Name,Status', w.find('.gridview .kanban-field').text());
 
     await dragTo('todo', 'a.mov', 'doing');
     check('dragging a card to a column sets the value', (await untilDb(`select data->>'status' s from records where id = '${a}'`, (r) => r[0].s === 'doing'))[0].s === 'doing' && await until(() => cols() === 'todo[] doing[a.mov] done[b.mov] (none)[c.mov]'), cols());
@@ -89,8 +91,13 @@ async function main() {
     console.log('\nK2. Columns by a "single" link');
     await post([{ type: 'field.update', id: fWork, options: { target_table_id: tWorks, single: true } }]);
     (w.find('.gridview .kanban-menu').element as HTMLDetailsElement).open = true;
-    check('ticked single, the link is offered for columns', await until(() => w.findAll('.gridview .kanban-field option').map((o: any) => o.text()).join() === 'Status,Work'));
+    check('ticked single, the link is offered for columns', await until(() => w.findAll('.gridview .kanban-field option').map((o: any) => o.text()).join() === 'Name,Status,Work'));
     await w.find('.gridview .kanban-field').setValue(fWork);
+    const hideBtn = () => w.find('.gridview .kanban-hide-empty');
+    check('a link board hides empty stacks by default — the toggle on the bar says so', await until(() => hideBtn().exists() && hideBtn().text() === 'empty stacks: hidden'), hideBtn().exists() ? hideBtn().text() : 'no toggle');
+    await hideBtn().trigger('click');     // off for the rest of K2: its checks walk through empty columns
+    check('the toggle saves into the VIEW', (await untilDb(`select config->'kanban'->'hideEmpty' h from views where table_id = '${tFiles}' and (config->'kanban') is not null`, (r) => r[0]?.h === false))[0].h === false
+      && await until(() => hideBtn().text() === 'empty stacks: shown'));
     check('a column per target record; every card in exactly one', await until(() => cols() === 'Ep 101[a.mov] Ep 102[b.mov] (none)[c.mov]'), cols());
     await dragTo('Ep 101', 'a.mov', 'Ep 102');
     check('a drag MOVES — the link is replaced, in one batch', await until(() => cols() === 'Ep 101[] Ep 102[a.mov,b.mov] (none)[c.mov]')
@@ -132,6 +139,54 @@ async function main() {
     await w.findAll('.picker .list li').find((li: any) => /Ep 102/.test(li.text()))!.trigger('mousedown');
     const links = await untilDb(`select to_record from links where field_id = '${fWork}' and from_record = '${a}'`, (r) => r.length === 1 && r[0].to_record === ep2);
     check('picking another record in the grid\'s link picker REPLACES on a single field (the server would refuse a second)', links.length === 1 && links[0].to_record === ep2 && !w.find('.errors').exists());
+
+    console.log('\nK4. Stacks by a text and a number field; hide-empty; search');
+    const fClient = randomUUID(), fReel = randomUUID();
+    await post([
+      { type: 'field.create', id: fClient, tableId: tFiles, name: 'Client', key: 'client', fieldType: 'text' }, pos(fClient, 3),
+      { type: 'field.create', id: fReel, tableId: tFiles, name: 'Reel', key: 'reel', fieldType: 'number' }, pos(fReel, 4),
+      { type: 'record.update', id: a, set: { client: 'Duke', reel: 2 }, unset: [] },
+      { type: 'record.update', id: b, set: { client: 'Novak', reel: 10 }, unset: [] },
+    ]);
+    (viewMenu().element as HTMLDetailsElement).open = true;
+    await viewMenu().findAll('.view-row').find((r: any) => /By status/.test(r.text()))!.trigger('click');
+    await until(() => board().exists(), 8000);
+    (viewMenu().element as HTMLDetailsElement).open = false;
+    (w.find('.gridview .kanban-menu').element as HTMLDetailsElement).open = true;
+    check('text and number fields are offered', await until(() => w.findAll('.gridview .kanban-field option').map((o: any) => o.text()).join() === 'Name,Status,Work,Client,Reel'),
+      w.findAll('.gridview .kanban-field option').map((o: any) => o.text()).join());
+    await w.find('.gridview .kanban-field').setValue(fClient);
+    check('a stack per distinct text value, "(none)" last', await until(() => cols() === 'Duke[a.mov] Novak[b.mov] (none)[c.mov]'), cols());
+    check('changing the field forgets hide-empty: a text board hides empties by default', await until(() => hideBtn().text() === 'empty stacks: hidden'), hideBtn().text());
+    await dragTo('Duke', 'a.mov', 'Novak');
+    check('dropping on a text stack WRITES its value', (await untilDb(`select data->>'client' c from records where id = '${a}'`, (r) => r[0].c === 'Novak'))[0].c === 'Novak');
+    check('…and the stack that is now empty is gone (it only existed because a card had that value)', await until(() => cols() === 'Novak[a.mov,b.mov] (none)[c.mov]'), cols());
+    win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
+    check('one Ctrl+Z puts it back', await until(() => cols() === 'Duke[a.mov] Novak[b.mov] (none)[c.mov]'), cols());
+
+    await w.find('.gridview .kanban-field').setValue(fReel);
+    check('number stacks sort by value: 2 before 10', await until(() => cols() === '2[a.mov] 10[b.mov] (none)[c.mov]'), cols());
+    await dragTo('10', 'b.mov', '2');
+    const reel = await untilDb(`select jsonb_typeof(data->'reel') t, data->'reel' v from records where id = '${b}'`, (r) => r[0].t === 'number' && Number(r[0].v) === 2);
+    check('dropping on a number stack writes the NUMBER, not the text "2"', reel[0].t === 'number' && Number(reel[0].v) === 2, JSON.stringify(reel[0]));
+    win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
+    await until(() => cols() === '2[a.mov] 10[b.mov] (none)[c.mov]');
+
+    await w.find('.gridview .kanban-field').setValue(fStatus);
+    (w.find('.gridview .kanban-menu').element as HTMLDetailsElement).open = false;
+    check('back on the select, empty columns are shown by default', await until(() => hideBtn().text() === 'empty stacks: shown' && /done\[\]|doing\[\]|todo\[\]/.test(cols())), cols());
+    const before = cols();
+    await hideBtn().trigger('click');
+    check('hide-empty on: columns with no cards go, the rest stay', await until(() => hideBtn().text() === 'empty stacks: hidden' && !/\w\[\]/.test(cols()) && cols() !== before), cols());
+    await hideBtn().trigger('click');
+    await until(() => cols() === before);
+
+    await w.find('.gridview input.search').setValue('b.mov');
+    check('searching hides every stack with no match — even with hide-empty off', await until(() => board().findAll('.kcol').length === 1 && cols().includes('b.mov') && !cols().includes('a.mov')), cols());
+    await w.find('.gridview input.search').setValue('zzz-nothing');
+    check('a search that matches nothing says so instead of drawing an empty board', await until(() => board().findAll('.kcol').length === 0 && /Nothing matches/.test(board().text())), board().text());
+    await w.find('.gridview input.search').setValue('');
+    check('clearing the search brings every column back', await until(() => cols() === before), cols());
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);
     await ui.close();

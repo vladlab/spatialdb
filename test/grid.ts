@@ -16,7 +16,7 @@
 import pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import { bootServer, type ServerHandle } from './harness.js';
-import { applyView, quickSearch, ViewConfig, type ViewField, ancestorsOf, canMakeColumns, groupRows, kanbanColumns, moveColumn, orderFields, type GroupHeader } from '../src/contract/views.js';
+import { applyView, quickSearch, ViewConfig, type ViewField, ancestorsOf, canMakeColumns, defaultColumnField, defaultHideEmpty, groupRows, kanbanColumns, visibleColumns, moveColumn, orderFields, type GroupHeader } from '../src/contract/views.js';
 import { lookupConfigError, lookupText, lookupValues } from '../src/contract/lookups.js';
 import { backlinkConfigError, backlinkRecords } from '../src/contract/backlinks.js';
 import { fuzzyRank, fuzzyScore, parsePaletteQuery, rankChoices } from '../src/client/fuzzy.js';
@@ -436,9 +436,38 @@ function pure() {
   const lcols = kanbanColumns(kRecs, kLink, (id) => kL[id as keyof typeof kL] ?? [], [{ id: 'w1', label: 'Ep 101' }, { id: 'w2', label: 'Ep 102' }, { id: 'w3', label: 'Ep 103' }]);
   check('a single link: a column per TARGET record in the given order; every card in exactly ONE column (a leftover second link is ignored — first wins)', shapeK(lcols) === 'Ep 101[ab] Ep 102[d] Ep 103[] (none)[c]', shapeK(lcols));
   check('a column knows how to put a record IN it', lcols[0].value.kind === 'links' && (lcols[0].value as any).ids[0] === 'w1' && cols[0].value.kind === 'value' && (cols[0].value as any).value === 'todo' && cols[4].value.kind === 'empty');
-  check('only single-valued fields may make columns: a select, a link ticked "single" — not a plain link, not a multi-select',
-    canMakeColumns(kSel) && canMakeColumns(kLink) && !canMakeColumns({ ...kLink, options: { target_table_id: 'x' } }) && !canMakeColumns({ id: 'm', key: 'm', type: 'multi_select' }));
-  check('a view config with `kanban` parses; a stray key does not', ViewConfig.safeParse({ kanban: { fieldId: randomUUID() } }).success && !ViewConfig.safeParse({ kanban: { fieldId: randomUUID(), mode: 'add' } }).success);
+  check('only single-valued fields may make columns: a select, a link ticked "single", text-like and number fields — not a plain link, not a multi-select, not long text',
+    canMakeColumns(kSel) && canMakeColumns(kLink) && !canMakeColumns({ ...kLink, options: { target_table_id: 'x' } }) && !canMakeColumns({ id: 'm', key: 'm', type: 'multi_select' })
+    && ['text', 'number', 'file_path', 'dimensions'].every((type) => canMakeColumns({ id: type, key: type, type }))
+    && !canMakeColumns({ id: 'l', key: 'l', type: 'long_text' }) && !canMakeColumns({ id: 'r', key: 'r', type: 'rich_text' }) && !canMakeColumns({ id: 'd', key: 'd', type: 'date' }));
+  check('a view config with `kanban` parses (with or without hideEmpty); a stray key does not',
+    ViewConfig.safeParse({ kanban: { fieldId: randomUUID() } }).success && ViewConfig.safeParse({ kanban: { fieldId: randomUUID(), hideEmpty: false } }).success
+    && !ViewConfig.safeParse({ kanban: { fieldId: randomUUID(), mode: 'add' } }).success && !ViewConfig.safeParse({ kanban: { fieldId: randomUUID(), hideEmpty: 'yes' } }).success);
+
+  console.log('\nG1m2. Stacks by a text or number field (VIEWS-BRIEF.md Part A)');
+  const kTxt: ViewField = { id: randomUUID(), key: 'client', type: 'text' };
+  const tRecs = [{ id: 'a', data: { client: 'Duke' } }, { id: 'b', data: { client: ' Duke ' } }, { id: 'c', data: { client: 'duke' } },
+    { id: 'd', data: { client: 'ep10' } }, { id: 'e', data: { client: 'ep2' } }, { id: 'f', data: { client: '   ' } }, { id: 'g', data: {} }];
+  const tcols = kanbanColumns(tRecs, kTxt, () => []);
+  check('text: one stack per distinct value, trimmed, case counts ("Duke" ≠ "duke"), read-order sort ("ep2" before "ep10"); blank and missing land in "(none)", last',
+    shapeK(tcols) === 'duke[c] Duke[ab] ep2[e] ep10[d] (none)[fg]', shapeK(tcols));
+  check('a text stack knows its value (trimmed) for a drop or a "+"', tcols[1].value.kind === 'value' && (tcols[1].value as any).value === 'Duke');
+  const kNum: ViewField = { id: randomUUID(), key: 'reel', type: 'number' };
+  const nRecs = [{ id: 'a', data: { reel: 10 } }, { id: 'b', data: { reel: 2 } }, { id: 'c', data: { reel: 2 } }, { id: 'd', data: { reel: 0 } }, { id: 'e', data: {} }];
+  const ncols = kanbanColumns(nRecs, kNum, () => []);
+  check('number: sorted by value (2 before 10), 0 is a value not "none"', shapeK(ncols) === '0[d] 2[bc] 10[a] (none)[e]', shapeK(ncols));
+  check('a number stack keeps the NUMBER — a drop must not write "10"', (ncols[2].value as any).value === 10 && typeof (ncols[2].value as any).value === 'number');
+  const narrowed = kanbanColumns([tRecs[3]], kTxt, () => [], [], tRecs);
+  check('stacks come from the universe (pre-search) when given; the cards from the records', shapeK(narrowed) === 'duke[] Duke[] ep2[] ep10[d] (none)[]', shapeK(narrowed));
+  check('hide-empty defaults: off for a select, on for a link, text and number', !defaultHideEmpty(kSel) && defaultHideEmpty(kLink) && defaultHideEmpty(kTxt) && defaultHideEmpty(kNum));
+  const vis = (o: { hideEmpty: boolean; searching: boolean }) => visibleColumns(cols, o).map((c) => c.label).join();
+  check('visibleColumns: hide-empty off and no search → every column; on → only columns with cards ("(none)" too)',
+    vis({ hideEmpty: false, searching: false }) === 'todo,doing,done,gone,(none)' && vis({ hideEmpty: true, searching: false }) === 'todo,done,gone,(none)'
+    && visibleColumns(kanbanColumns([kRecs[0]], kSel, () => []), { hideEmpty: true, searching: false }).map((c) => c.label).join() === 'todo', vis({ hideEmpty: true, searching: false }));
+  check('…and while searching, empty columns go whatever hide-empty says', vis({ hideEmpty: false, searching: true }) === 'todo,done,gone,(none)');
+  check('a new board stacks by a select first, then a single link, then anything else — never the primary text field just because it is first',
+    defaultColumnField([kTxt, kLink, kSel])?.id === kSel.id && defaultColumnField([kTxt, kLink])?.id === kLink.id && defaultColumnField([kTxt])?.id === kTxt.id
+    && defaultColumnField([{ id: 'm', key: 'm', type: 'multi_select' }]) === undefined);
 
   {
   console.log('\nG1n. The comparison engine (contract/compare.ts)');

@@ -28,6 +28,16 @@ Two parts. They are independent; Part A is small and goes first.
 
 ## Part A — the kanban becomes "stack by any field"
 
+**Status (Oct 25 2026): built** — `kanban-stacks.patch`, one commit on `3b80e34`.
+`test/grid.ts` G1m2 (pure) and `test/kanban.ts` K4 (UI). Decided with the owner while
+building: the week starts on Monday (Part B); the ⤢ button stays on board cards (a
+later "double-click edits a field, ⤢ expands" split); the hide-empty toggle is offered
+for every field type, with a tooltip. Built as the canvas's toggle is drawn ("empty
+stacks: hidden / shown"), not a checkbox. A new board stacks by a select first, then a
+single link, then anything else — never the primary text field by default. Text
+stacks sort locale-aware with numeric collation ("duke" before "Duke", "ep2" before
+"ep10").
+
 ### A1. What changes
 
 Today (`contract/views.ts` → `canMakeColumns`, `kanbanColumns`; `KanbanView.vue`;
@@ -215,8 +225,8 @@ Pure, in `contract/calendar.ts`, tested without a DOM (`test/calendar.ts`). Scop
 applies to every source through the existing scope filter, the same way the grid and
 reports already honour it. Layout helpers live beside it and are also pure:
 
-- `monthGrid(ym)`, `weekDays(iso)` — day cells, Monday-first (the owner's locale;
-  make the week start a single constant).
+- `monthGrid(ym)`, `weekDays(iso)` — day cells, **Monday-first** (confirmed by the
+  owner Oct 25; keep the week start a single constant).
 - `placeEvents(events, days)` — the classic span-packing: for a row of days, assign
   each event a *track* so overlapping spans stack without colliding; returns
   `{ event, fromCol, toCol, track }`. Used by month, week and resource alike.
