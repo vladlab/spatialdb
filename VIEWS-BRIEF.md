@@ -373,6 +373,29 @@ month layout the same bars span days; agenda lists them under their first day.
 
 ### B11. Build order
 
+**Status (Oct 25 2026): step 1 built** — `src/contract/calendar.ts`, `test/calendar.ts`
+(88 pure checks, red-checked by seven deliberate mutations). Awaiting the owner's
+review of the shape. Where the code differs from B2–B6, the code is the record:
+
+- The definition has `v: 1` (as reports do), and `filters` / `sort` keep the grid's
+  names (`filter` in B2 was a typo for it). `zoom` sits at the top level, not under
+  `resource`.
+- A STALE `tintMap` key (a choice renamed or removed since) is tolerated, not
+  refused: otherwise renaming a status would make every later write of the calendar
+  — even switching its layout — fail.
+- A chip may also print a lookup or a checkbox. The junction pair label (B5) is not
+  automatic: the label fields say what a chip prints (Machine room's are
+  `[Project, Status]`), and an event with no label text falls back to the record's
+  label.
+- Events carry `hasEnd`: a move writes the end only when the record has one, so
+  dragging a one-day booking never invents an end date. `moveEvent` (the
+  `record.update` a drag makes) and `laneCandidates` (the editor's lane picker) are
+  in the contract, tested.
+- An event linking only to row records that the rows' filter hides is on NO lane —
+  not Unassigned. Unassigned means "linked to nothing".
+- `EMPTY_CALENDAR()` (no sources) is valid, because the record is saved the moment
+  it is made; it draws nothing and says "no sources yet".
+
 1. `contract/calendar.ts` + `test/calendar.ts`: def, validation, `runCalendar`,
    `placeEvents`, `agendaGroups`. **Stop for the owner's review of the shape.**
 2. `sql/020_calendars.sql` (the kind; same two lines as 013), the `calendar` shape
