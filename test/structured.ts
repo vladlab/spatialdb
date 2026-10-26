@@ -118,7 +118,7 @@ async function main() {
     const form = () => w.find('.gridview .popover');
     await form().find('input.name').setValue('Manifest');
     await form().find('select.type').setValue('structured');
-    check('choosing "structured" asks for a SHAPE', form().find('select.shape').exists() && form().findAll('select.shape option').map((o: any) => o.text()).join() === 'shape…,File manifest,Audio layout,Video layout,Generic JSON');
+    check('choosing "structured" asks for a SHAPE', form().find('select.shape').exists() && form().findAll('select.shape option').map((o: any) => o.text()).join() === 'shape…,File manifest,Audio layout,Video layout,Timeline audio,Generic JSON');
     await form().find('button.add').trigger('click');
     check('…and will not create the field without one', await until(() => /needs a shape/.test(form().text())) && (await pool.query(`select 1 from fields where key = 'manifest'`)).rowCount === 0, form().text());
     await form().find('select.shape').setValue('manifest');
@@ -285,6 +285,25 @@ async function main() {
     await go(tCal);
     check('the grid cell summarises it structurally: "1 source"', await until(() => cellOf('Due dates', 'Calendar').text() === '1 source'), cellOf('Due dates', 'Calendar').text());
     check('the field form does not offer "calendar" as a shape either', !w.findAll('.gridview select.shape option').some((o: any) => o.text() === 'Calendar definition'));
+
+    console.log('\nT-R. Timeline audio (the Resolve tool\'s shape, RESOLVE-BRIEF.md R1.3) — through the server');
+    const fTl = randomUUID(), tl = randomUUID();
+    const tlValue = { tracks: [
+      { index: 1, name: 'A1', format: 'stereo', clips: [{ name: 'EP101_Mix_ST.wav', path: '/mnt/post/EP101_Mix_ST.wav', start: '00:59:30:00', end: '01:52:14:08', frames: 75968 }] },
+      { index: 2, name: 'A2', format: '5.1', clips: [{ name: 'tone', start: '00:58:30:00', end: '00:59:30:00', frames: 1440 }, { name: 'EP101_Mix_51.wav', start: '00:59:30:00', end: '01:52:14:08', frames: 75968 }] },
+    ] };
+    const tlField = await post([{ type: 'field.create', id: fTl, tableId: tFiles, name: 'Timeline audio', key: 'timeline_audio', fieldType: 'structured', options: { shape: 'timeline_audio' } }]);
+    check('a structured field of shape timeline_audio can be created', tlField.status === 200, (await tlField.text()).slice(0, 200));
+    const tlOk = await post([{ type: 'record.create', id: tl, tableId: tFiles, data: { name: 'EP101_OEV3', timeline_audio: tlValue } }]);
+    check('a timeline\'s audio tracks are accepted and stored', tlOk.status === 200 && (await untilDb(`select data->'timeline_audio'->'tracks'->1->'clips'->0->>'name' n from records where id = '${tl}'`, (r) => r[0]?.n === 'tone'))[0].n === 'tone');
+    const tlBad = await post([{ type: 'record.update', id: tl, set: { timeline_audio: { tracks: [{ ...tlValue.tracks[0], muted: true }] } }, unset: [] }]);
+    const tlBadText = `${tlBad.status} ${await tlBad.text()}`;
+    check('an unknown key (a "muted" flag) is refused by the server, naming the field and shape', /^400 .*'timeline_audio' \(timeline audio\)/.test(tlBadText), tlBadText);
+    const tlBadTc = await post([{ type: 'record.update', id: tl, set: { timeline_audio: { tracks: [{ ...tlValue.tracks[0], clips: [{ ...tlValue.tracks[0].clips[0], start: '59:30:00' }] }] } }, unset: [] }]);
+    check('…and so is a clip start that is not a timecode label', tlBadTc.status === 400);
+    check('the refused writes changed nothing', (await pool.query(`select data->'timeline_audio' v from records where id = $1`, [tl])).rows[0].v.tracks.length === 2);
+    await go(tFiles);
+    check('the grid cell is the one-line summary: "A1 stereo · A2 5.1 (2)"', await until(() => cellOf('EP101_OEV3', 'Timeline audio')?.text() === 'A1 stereo · A2 5.1 (2)'), cellOf('EP101_OEV3', 'Timeline audio')?.text());
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);
     await ui.close();

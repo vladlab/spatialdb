@@ -328,7 +328,7 @@ its internal CA is a few lines.
 A `structured` field holds a JSON **object** whose SHAPE is named in the field's
 options: `field.create { fieldType: 'structured', options: { shape } }`.
 
-- `shape` must be one of **`manifest` · `audio_layout` · `video_layout` · `json` · `report`** (the last only in a table of reports, below). An unknown name is a
+- `shape` must be one of **`manifest` · `audio_layout` · `video_layout` · `timeline_audio` · `json` · `report`** (the last only in a table of reports, below). An unknown name is a
   400 at field creation (not "generic JSON": a typo must not switch validation off —
   generic is spelled `json`). **A field's shape cannot be changed afterwards**; every
   stored value was validated against it.
@@ -355,7 +355,28 @@ type VideoLayout = {                      // contract/videoLayout.ts, over contr
     duration?: string;                    // "HH:MM:SS:FF" a length · "open" length unknown (the program) · absent: a MARKER
   }[];
 };
+
+type TimelineAudio = {                    // a Resolve timeline's audio tracks, as the Resolve tool reads them (RESOLVE-BRIEF.md)
+  tracks: {                               // ≤ 128
+    index: number;                        // Resolve's track index, from 1 (A1)
+    name: string;                         // "A1", "Mix", "M&E"
+    format: string;                       // Resolve's word: mono · stereo · 5.1 · 5.1film · 7.1 · 7.1film · adaptive1…36
+    clips: {                              // ≤ 500 per track
+      name: string;
+      path?: string;                      // the media file, absolute; absent when there is none (a generator, tone)
+      start: string; end: string;         // timecode labels; end EXCLUSIVE. Checked for form only — the base is another field
+      frames: number;
+    }[];
+  }[];                                    // NO mute flag: what is muted is ephemeral (the owner, Oct 26)
+};
 ```
+
+- A **timeline audio** value is what is ON a timeline, not what a file carries: a
+  track is a lane with clips, where an audio layout's track is a container with
+  channels. `layoutFromTimeline` derives the layout it renders to (one track per
+  Resolve track, channels by format — `RESOLVE_TRACK_CHANNELS`; an unknown format
+  is one `?` channel and a problem), so `diffLayouts` can compare it. Summary:
+  `A1 stereo · A2 5.1 · A3 stereo (3)` — the clip count only when it is not 1.
 
 - **Member paths are relative to the record's own path** (a `file_path` field): no
   leading `/`, no `..`, no drive letter. Absolute paths are refused.
@@ -409,7 +430,8 @@ differently), and — only when the grouping matches — `name` / `language` per
 
 `sql/014` + `sql/015`, rules in the twelfth shared contract file,
 **`src/contract/tools.ts`**, and `test/tools.ts`. A TOOL is code compiled into the
-desktop client (file drop; later a Resolve timeline reader and QC). **The server
+desktop client: `file_drop`, and `resolve` (the Resolve timeline tool, below; later
+QC). **The server
 never runs one and never sends anything to execute.** Its whole knowledge of a
 tool is that file plus one column, `tables.tools`, which for File drop holds a
 RECIPE:
@@ -464,6 +486,21 @@ RECIPE:
   in the same `POST /api/mutate` batches the web app sends — so undo, the stream,
   History, scope and validation apply to tool-written data unchanged, and a script
   with a login token can do the same job.
+
+**The Resolve timeline tool** (`resolve`, Oct 26; RESOLVE-BRIEF.md; `test/resolve.ts`).
+Run by hand from ONE record ("Ingest info from Resolve…"), it writes what the
+running Resolve says about one timeline onto that record. Its recipe is a single
+step, `{ "resolve": { "steps": [{ "analyzer": "resolve", "map": { … } }] } }`:
+exactly one step, no `runs_on` / `when` / `into_manifest`, nothing required.
+Every analyzer belongs to one tool (`Analyzer.tool`); naming another tool's
+analyzer is a 400. Outputs: `resolve.version`, `project`, `timeline_name`,
+`dimensions` / `width` / `height`, `frame_rate`, `drop_frame` (→ checkbox),
+`start_timecode`, `end_timecode` (exclusive), `duration`, `duration_frames`,
+`audio_tracks` (→ a `timeline_audio` field), `audio_layout` (derived, → an
+`audio_layout` field), and `audio_files` — the first output of type **`link`**: the
+clips' paths, linked to records of the field's target table whose path matches
+EXACTLY; never creates a row. A `link` output may go into any link field and
+nothing else. Two tools may map the same field (each runs by a separate act).
 
 **`raw_dump`** (Oct 17): an ffprobe output carrying the whole of
 `-show_format -show_streams` as pretty-printed JSON, for a `long_text` field

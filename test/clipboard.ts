@@ -65,6 +65,7 @@ async function main() {
       s_manifest: { kind: 'file', size: 1234 },
       s_audio_layout: { tracks: [{ name: 'Stereo', channels: ['L', 'R'] }] },
       s_video_layout: { rate: 23.976, drop: false, items: [{ label: 'black', start: '00:59:57:00', duration: '00:00:03:00' }, { label: 'picture', duration: 'open' }] },
+      s_timeline_audio: { tracks: [{ index: 1, name: 'A1', format: 'stereo', clips: [{ name: 'mix.wav', path: '/mnt/post/mix.wav', start: '00:59:30:00', end: '01:00:30:00', frames: 1440 }] }] },
       s_json: { any: 'thing', n: 1 },
     };
     const recs = await post([
@@ -122,7 +123,7 @@ async function main() {
     const canon = (v: unknown): unknown => (Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, canon((v as Record<string, unknown>)[k])])) : v);
     const same = (k: string) => JSON.stringify(canon(bd[k])) === JSON.stringify(canon(values[k]));
     check('…and the server has them all, byte for byte (video layout, audio layout, manifest, json, rich text, attachment, the plain ones)',
-      ['notes', 'n', 'status', 'tags', 'due', 'ok', 'path', 'size', 'doc', 'files', 's_manifest', 's_audio_layout', 's_video_layout', 's_json'].every(same), JSON.stringify(bd));
+      ['notes', 'n', 'status', 'tags', 'due', 'ok', 'path', 'size', 'doc', 'files', 's_manifest', 's_audio_layout', 's_video_layout', 's_timeline_audio', 's_json'].every(same), JSON.stringify(bd));
     const bl = await untilDb(`select to_record from links where from_record='${b}' and field_id='${F.work}'`, (x) => x.length === 2, 4000);
     check('…links included', bl.length === 2);
     check('no notice complained along the way', !/cannot be copied|Not pasted/.test(w.find('.desk-notices').exists() ? w.find('.desk-notices').text() : ''), w.find('.desk-notices').exists() ? w.find('.desk-notices').text() : '');

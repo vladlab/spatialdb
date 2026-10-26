@@ -83,7 +83,7 @@
         <div class="add">
           <select v-model="addId">
             <option value="">Add a step…</option>
-            <option v-for="a in ANALYZERS" :key="a.id" :value="a.id">{{ a.name }}{{ a.program ? ` (${a.program})` : '' }}</option>
+            <option v-for="a in analyzersOf('file_drop')" :key="a.id" :value="a.id">{{ a.name }}{{ a.program ? ` (${a.program})` : '' }}</option>
           </select>
           <button class="plain" :disabled="!addId" @click="addStep">Add</button>
         </div>
@@ -116,7 +116,7 @@ import type { Store } from '../store';
 import { fieldsOf } from '../state';
 import { useSchemaActions } from '../schemaActions';
 import { available, notice } from '../desktop';
-import { ANALYZERS, KINDS, MEDIA, REQUIRED, analyzerOf, describe, fieldAccepts, intoManifest, isHashStep, isManual, pruneTools, runsOnOf, toolsProblem, type Kind, type Media, type Output, type Recipe, type Step, type TablesTools } from '../../contract/tools';
+import { analyzersOf, KINDS, MEDIA, REQUIRED, analyzerOf, describe, fieldAccepts, intoManifest, isHashStep, isManual, pruneTools, runsOnOf, toolsProblem, type Kind, type Media, type Output, type Recipe, type Step, type TablesTools } from '../../contract/tools';
 
 const props = defineProps<{ store: Store; tableId: string }>();
 const actions = useSchemaActions(props.store);

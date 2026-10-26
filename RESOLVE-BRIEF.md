@@ -131,15 +131,13 @@ export const TimelineAudio = z.strictObject({
 
 - Registered beside the others: `SHAPES`, `SHAPE_LABELS` ("Timeline audio"),
   `FIELD_FORM_SHAPES` (a person may make such a field by hand, like `audio_layout`),
-  `structuredError`, the 256 KB cap. Timecode labels are validated with
-  `contract/timecode.ts` `tcError` at the base the value implies? No — the shape has
-  no base; labels are stored as Resolve printed them and checked only for the
-  eight-digit form (`TC_RE`). A base-aware check would need the record's frame
-  rate, which is another field; the compare engine, not the shape, is where a base
-  belongs.
+  `structuredError`, the 256 KB cap. Clip timecodes are checked for their FORM only
+  (eight digits, `isTcLabel` in `contract/timecode.ts`): the base they count at is
+  another field of the record (Frame rate, Drop frame), and a shape never reads a
+  second field. A base-aware check belongs to the compare engine.
 - `summarise('timeline_audio', v)`: `A1 stereo · A2 5.1 · A3 stereo (3)` — track
   name and format, clip count in brackets only when it is not 1; `detail = true`
-  adds the first clip's name per track. This is what cards, grid cells and the
+  (search, filter, sort) names every clip, so a mix file's name finds the record. The plain line is what cards, grid cells and the
   folded tray block print.
 - Tray block (`StructuredField.vue` → a small `TimelineAudioView.vue`): a read-only
   nested table in the junction-table style — a header row per track (name · format), one row per clip (name, start, end, duration as a label). A clip
@@ -161,9 +159,9 @@ named after it, channels by format:
 | `5.1` | `L R C LFE Ls Rs` (the preset) |
 | `5.1film` | `L C R Ls Rs LFE` — as Resolve orders it |
 | `7.1` | `L R C LFE Ls Rs Lrs Rrs` (the house preset) |
-| `7.1film` | `L C R Lss Rss Lsr Rsr LFE` — as Resolve orders it |
+| `7.1film` | `L C R Ls Rs Lrs Rrs LFE` — house labels, Resolve's order |
 | `adaptiveN` (N = 1…36) | `ch1 … chN` |
-| anything else | `ch1` and a problem string, so the clip count is still right |
+| anything else | one `?` channel and a problem string, so a compare fails on the count rather than passing on a guess |
 
 Mute is NOT read anywhere in this tool (the owner, Oct 26): what is muted is
 ephemeral and says nothing worth tracking — every track is ingested, every track

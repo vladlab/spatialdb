@@ -43,6 +43,10 @@ const dropPerMinute = (fps: number): number => Math.round(fps / 15);
 export const baseLabel = (b: TcBase): string => `${b.rate}${b.drop ? ' DF' : ''}`;
 
 const TC_RE = /^(\d{2}):(\d{2}):(\d{2})([:;])(\d{2})$/;
+/** Eight digits and three separators, at no particular base: whether `tc` LOOKS like a
+ *  timecode label. For a value stored without its base (`timeline_audio` clips, whose
+ *  rate is another field of the record); `tcError` is the check when the base is known. */
+export const isTcLabel = (tc: string): boolean => TC_RE.test(tc);
 
 /** hh:mm:ss:ff split, or null when the text is not eight digits and three separators. */
 function parts(tc: string): { h: number; m: number; s: number; f: number; sep: string } | null {

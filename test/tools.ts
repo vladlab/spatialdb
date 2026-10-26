@@ -65,7 +65,7 @@ async function main() {
     check('the SAME output twice (a repeated step) may write the same field — not a race, an idempotent re-run', toolsProblem(rcp(fs({ path: fPath }), ff({ width: fWidth }), ff({ width: fWidth })), fields) === null);
     check('runs_on is validated: an unknown media class is refused', toolsProblem(rcp(fs({ path: fPath }), ff({ width: fWidth }, { media: ['vidoe'] })), fields) !== null);
     check('runs_on with known classes passes', toolsProblem(rcp(fs({ path: fPath }), ff({ width: fWidth }, { media: ['video', 'other'], kind: ['file'] })), fields) === null);
-    check('every analyzer\'s output types are ones the rule knows', ANALYZERS.every((a) => a.outputs.every((o) => ['text', 'number', 'date', 'checkbox', 'select', 'file_path', 'dimensions', 'structured:manifest', 'structured:audio_layout'].includes(o.type))));
+    check('every analyzer\'s output types are ones the rule knows', ANALYZERS.every((a) => a.outputs.every((o) => ['text', 'number', 'date', 'checkbox', 'select', 'file_path', 'dimensions', 'structured:manifest', 'structured:audio_layout', 'structured:timeline_audio', 'link'].includes(o.type))));
     check('output keys are unique within each analyzer', ANALYZERS.every((a) => new Set(a.outputs.map((o) => o.key)).size === a.outputs.length));
     check('every select output declares its choices (so the UI can make the field)', ANALYZERS.every((a) => a.outputs.filter((o) => o.type === 'select').every((o) => (o.choices?.length ?? 0) > 0)));
     check('every analyzer that runs a program offers its version as an output (provenance)', ANALYZERS.filter((a) => a.program).every((a) => a.outputs.some((o) => o.key === `${a.id}.version`)));

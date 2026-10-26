@@ -25,6 +25,7 @@
 
 import { z } from 'zod';
 import { VideoLayout, summariseVideoLayout } from './videoLayout.js';
+import { isTcLabel } from './timecode.js';
 
 export const STRUCTURED_MAX_BYTES = 256 * 1024;
 export const MANIFEST_MAX_MEMBERS = 2000;
@@ -100,12 +101,100 @@ export const LAYOUT_PRESETS: Array<{ id: string; label: string; channels: string
   { id: '7.1', label: '7.1', channels: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs', 'Lrs', 'Rrs'] },   // house spelling (Sept 29): Ls/Rs side, Lrs/Rrs rear — what the desktop's ffprobe mapping and qt_chan_tag_inplace.py write
 ];
 
+/* ── timeline audio (the Resolve tool) ────────────────────────────────────── */
+
+/**
+ * What a Resolve timeline's audio tracks ARE — the lanes, their format, and the
+ * clips on each — as the desktop's Resolve tool reads them (RESOLVE-BRIEF.md R1.3).
+ * NOT an `audio_layout`: there a track is a CONTAINER and its channels the content
+ * (what a file carries, what a deliverable asks for); here a track is a LANE with
+ * clips on it, and the question is "which mix files are on this timeline". The
+ * layout a timeline would render to is derived from this (`layoutFromTimeline`).
+ *
+ * Read-only by intent: Resolve is the source of truth. Change it there, ingest again.
+ *
+ * - `format` is Resolve's own word for the track (GetTrackSubType): "mono",
+ *   "stereo", "5.1", "5.1film", "7.1", "7.1film", "adaptive6" — kept as Resolve
+ *   says it, so a reader can trust it; the channel names are the derivation's job.
+ * - Clip `start`/`end` are timecode LABELS on the timeline, `end` EXCLUSIVE (the
+ *   frame after the last), as `video_layout` has it. Checked only for the
+ *   eight-digit form: the base they count at (rate, drop) is another field of the
+ *   record, and a shape never reads a second field.
+ * - `path` is absent for a clip with no file behind it (a generator, tone made in
+ *   Fairlight). It is what the tool links File records by, exactly.
+ * - Mute is NOT recorded (the owner, Oct 26): what is muted at the moment of an
+ *   ingest is ephemeral and says nothing worth tracking.
+ */
+const tcLabel = z.string().refine(isTcLabel, 'a timecode label looks like "01:00:00:00" (";" before the frames at a drop base)');
+export const TimelineAudio = z.strictObject({
+  tracks: z.array(z.strictObject({
+    index: z.number().int().positive(),                          // Resolve's 1-based track index: A1 is 1
+    name: z.string().max(80),                                     // GetTrackName: "A1", "Mix", "M&E"
+    format: z.string().min(1).max(16),                            // GetTrackSubType, as Resolve says it
+    clips: z.array(z.strictObject({
+      name: z.string().max(255),                                  // the item's name on the timeline
+      path: z.string().min(1).max(1024).optional(),               // the media file, absolute, as Resolve has it
+      start: tcLabel,
+      end: tcLabel,                                               // exclusive
+      frames: z.number().int().nonnegative(),
+    })).max(500),
+  })).max(128),
+});
+export type TimelineAudio = z.infer<typeof TimelineAudio>;
+
+/**
+ * Resolve's track formats → the channels of the `audio_layout` track they make.
+ * Labels are the HOUSE spelling (`LAYOUT_PRESETS`: Ls/Rs side, Lrs/Rrs rear) in
+ * the order Resolve carries them — the "film" formats put C second and LFE last.
+ * The film orders are from Resolve's documentation and unverified against a real
+ * timeline (RESOLVE-BRIEF.md R6, needs eyes).
+ */
+export const RESOLVE_TRACK_CHANNELS: Record<string, readonly string[]> = {
+  mono: ['M'],
+  stereo: ['L', 'R'],
+  '5.1': ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'],
+  '5.1film': ['L', 'C', 'R', 'Ls', 'Rs', 'LFE'],
+  '7.1': ['L', 'R', 'C', 'LFE', 'Ls', 'Rs', 'Lrs', 'Rrs'],
+  '7.1film': ['L', 'C', 'R', 'Ls', 'Rs', 'Lrs', 'Rrs', 'LFE'],
+};
+/** Fairlight's adaptive tracks: "adaptive1" … "adaptive36", unnamed channels. */
+const ADAPTIVE = /^adaptive([1-9]|[12]\d|3[0-6])$/;
+
+/** The channels of one Resolve track format, or null when the format is not one this knows. */
+export function resolveTrackChannels(format: string): string[] | null {
+  const f = format.trim().toLowerCase();
+  const known = RESOLVE_TRACK_CHANNELS[f];
+  if (known) return [...known];
+  const a = ADAPTIVE.exec(f);
+  return a ? Array.from({ length: Number(a[1]) }, (_, i) => `ch${i + 1}`) : null;
+}
+
+/**
+ * The `audio_layout` a timeline renders to: one track per Resolve track, in track
+ * order, named after it, channels by format. EVERY track — mute is not read, and
+ * an empty lane is still a lane of the layout. A format this does not know becomes
+ * ONE placeholder channel "?" and a problem, so a layout compare fails loudly on
+ * the count instead of passing on a guess.
+ *
+ * What it is for: the bridge to everything `audio_layout` already has — the
+ * summary, the editor, `diffLayouts` against a deliverable's spec.
+ */
+export function layoutFromTimeline(ta: TimelineAudio): { layout: AudioLayout; problems: string[] } {
+  const problems: string[] = [];
+  const tracks = [...ta.tracks].sort((a, b) => a.index - b.index).map((t) => {
+    const channels = resolveTrackChannels(t.format);
+    if (!channels) problems.push(`${t.name || `A${t.index}`}: Resolve's track format "${t.format}" is not one the tool knows — one "?" channel stands in for it`);
+    return { name: t.name, channels: channels ?? ['?'] };
+  });
+  return { layout: { tracks }, problems };
+}
+
 /* ── the registry ─────────────────────────────────────────────────────────── */
 
-export const SHAPES = ['manifest', 'audio_layout', 'video_layout', 'json', 'report', 'calendar'] as const;
+export const SHAPES = ['manifest', 'audio_layout', 'video_layout', 'timeline_audio', 'json', 'report', 'calendar'] as const;
 export type Shape = (typeof SHAPES)[number];
 export const SHAPE_LABELS: Record<Shape, string> = {
-  manifest: 'File manifest', audio_layout: 'Audio layout', video_layout: 'Video layout', json: 'Generic JSON', report: 'Report definition', calendar: 'Calendar definition',
+  manifest: 'File manifest', audio_layout: 'Audio layout', video_layout: 'Video layout', timeline_audio: 'Timeline audio', json: 'Generic JSON', report: 'Report definition', calendar: 'Calendar definition',
 };
 /**
  * 'report' is a shape only a table of REPORTS makes (sql/013), and 'calendar' one
@@ -115,7 +204,7 @@ export const SHAPE_LABELS: Record<Shape, string> = {
  * never here: a cycle through zod schemas evaluated at module load would be a TDZ
  * error the moment views.ts is imported first.
  */
-export const FIELD_FORM_SHAPES: readonly Shape[] = ['manifest', 'audio_layout', 'video_layout', 'json'];
+export const FIELD_FORM_SHAPES: readonly Shape[] = ['manifest', 'audio_layout', 'video_layout', 'timeline_audio', 'json'];
 
 export const shapeOf = (f: { options?: Record<string, unknown> | null }): Shape | null =>
   (SHAPES as readonly string[]).includes(String(f.options?.shape)) ? (f.options!.shape as Shape) : null;
@@ -136,6 +225,7 @@ export function structuredError(key: string, shape: Shape | null, value: unknown
   if (shape === 'manifest') { const r = Manifest.safeParse(value); return r.success ? null : `'${key}' (manifest) — ${first(r.error)}`; }
   if (shape === 'audio_layout') { const r = AudioLayout.safeParse(value); return r.success ? null : `'${key}' (audio layout) — ${first(r.error)}`; }
   if (shape === 'video_layout') { const r = VideoLayout.safeParse(value); return r.success ? null : `'${key}' (video layout) — ${first(r.error)}`; }
+  if (shape === 'timeline_audio') { const r = TimelineAudio.safeParse(value); return r.success ? null : `'${key}' (timeline audio) — ${first(r.error)}`; }
   return null;                                                  // 'json' (an object is enough), or 'report' / 'calendar' (values.ts parses those)
 }
 
@@ -206,6 +296,20 @@ export function summarise(shape: Shape | null, value: unknown, detail = false): 
   if (shape === 'video_layout') {
     const r = VideoLayout.safeParse(value);
     return r.success ? summariseVideoLayout(r.data) : 'invalid layout';
+  }
+  if (shape === 'timeline_audio') {
+    // "A1 stereo · A2 5.1 · A3 stereo (3)" — the clip count only when it is not
+    // the usual one mix per track. `detail` (search, filter, sort) names every
+    // clip, so "which edit has EP101_Mix_v3 on it" finds the record.
+    const r = TimelineAudio.safeParse(value);
+    if (!r.success) return 'invalid timeline audio';
+    const t = [...r.data.tracks].sort((a, b) => a.index - b.index);
+    if (!t.length) return 'no audio tracks';
+    return t.map((x) => {
+      const head = `${x.name || `A${x.index}`} ${x.format}`;
+      if (detail) return `${head} (${x.clips.map((c) => c.name).join(', ')})`;
+      return x.clips.length === 1 ? head : `${head} (${x.clips.length})`;
+    }).join(' · ');
   }
   if (shape === 'report') {
     // Structural, deliberately without the schema: "3 levels, 2 rollups". The

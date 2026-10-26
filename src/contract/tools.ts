@@ -24,6 +24,14 @@
  *             (`ffprobe.version`), so a table CAN keep "ffprobe 7.1" per record. A
  *             hash value carries its algorithm inside the value (shapes.ts).
  *
+ *  TWO TOOLS share this (`TOOL_IDS`): File drop, which derives a record from the
+ *  files dropped on it, and the Resolve timeline tool (RESOLVE-BRIEF.md), which
+ *  writes what a running DaVinci Resolve says about one timeline onto the record
+ *  it was asked from. Same recipe, same mapping, same rules for values; each
+ *  analyzer belongs to ONE tool (`Analyzer.tool`), and the shape a recipe may take
+ *  is per tool (`toolsProblem`): File drop's is an ordered list of steps, the
+ *  Resolve tool's is its single step — nothing to filter, order or defer.
+ *
  *  Shared three ways:
  *    server    validates a recipe on `table.update { tools }` (`toolsProblem`)
  *    web app   edits it — as steps, as JSON — and shows it as sentences (`describe`)
@@ -46,6 +54,12 @@ import { MANIFEST_KINDS } from './shapes.js';
 import { VOCABULARIES } from './vocab.js';
 import { FINGERPRINT } from './fingerprint.js';
 
+/* ── the tools ───────────────────────────────────────────────────────────── */
+
+export const TOOL_IDS = ['file_drop', 'resolve'] as const;
+export type ToolId = (typeof TOOL_IDS)[number];
+export const TOOL_NAMES: Record<string, string> = { file_drop: 'File drop', resolve: 'Resolve timeline' };
+
 /* ── what a dropped thing is ─────────────────────────────────────────────── */
 
 /**
@@ -64,7 +78,8 @@ export type Kind = (typeof KINDS)[number];
 
 export const OUTPUT_TYPES = [
   'text', 'number', 'date', 'checkbox', 'select', 'file_path', 'dimensions',
-  'structured:manifest', 'structured:audio_layout',
+  'structured:manifest', 'structured:audio_layout', 'structured:timeline_audio',
+  'link',
 ] as const;
 export type OutputType = (typeof OUTPUT_TYPES)[number];
 
@@ -79,6 +94,12 @@ const ACCEPTS: Record<OutputType, ReadonlyArray<{ type: string; shape?: string }
   dimensions: [{ type: 'dimensions' }],
   'structured:manifest':     [{ type: 'structured', shape: 'manifest' }],
   'structured:audio_layout': [{ type: 'structured', shape: 'audio_layout' }],
+  'structured:timeline_audio': [{ type: 'structured', shape: 'timeline_audio' }],
+  // A LINK output carries what identifies the rows to link — for the Resolve tool,
+  // the clips' absolute paths, matched EXACTLY against the target table's path
+  // column. The tool links rows that exist; it never creates one (as a vocabulary
+  // link never does).
+  link:       [{ type: 'link' }],
 };
 
 export interface Output {
@@ -114,6 +135,8 @@ export function fieldAccepts(out: Output, field: ToolFieldLike): boolean {
 
 export interface Analyzer {
   id: string;
+  /** The one tool whose recipes may name it. */
+  tool: ToolId;
   name: string;
   /** The program it runs on the host, or `null` for built-in code. Shown with the version the handshake reports. */
   program: string | null;
@@ -125,7 +148,7 @@ export interface Analyzer {
 }
 
 const FILESYSTEM: Analyzer = {
-  id: 'filesystem', name: 'Filesystem', program: null,
+  id: 'filesystem', tool: 'file_drop', name: 'Filesystem', program: null,
   how: 'stat and directory listing — the dropped path, its size, dates and shape; nothing is read',
   defaultRunsOn: {},
   outputs: [
@@ -142,7 +165,7 @@ const FILESYSTEM: Analyzer = {
 };
 
 const SEQUENCE: Analyzer = {
-  id: 'sequence', name: 'Image sequence', program: null,
+  id: 'sequence', tool: 'file_drop', name: 'Image sequence', program: null,
   how: 'the frame range from the file names in the folder (pattern, first, last, gaps)',
   defaultRunsOn: { kind: ['sequence'] },
   outputs: [
@@ -154,7 +177,7 @@ const SEQUENCE: Analyzer = {
 };
 
 const IMF: Analyzer = {
-  id: 'imf', name: 'IMF / DCP package', program: null,
+  id: 'imf', tool: 'file_drop', name: 'IMF / DCP package', program: null,
   how: 'reads the ASSETMAP and the first CPL of a package folder',
   defaultRunsOn: { kind: ['bundle'] },
   outputs: [
@@ -164,7 +187,7 @@ const IMF: Analyzer = {
 };
 
 const FFPROBE: Analyzer = {
-  id: 'ffprobe', name: 'ffprobe', program: 'ffprobe',
+  id: 'ffprobe', tool: 'file_drop', name: 'ffprobe', program: 'ffprobe',
   how: 'ffprobe -show_format -show_streams on the file (a sequence: its first frame; a channel set: each member)',
   defaultRunsOn: { media: ['video', 'audio'] },
   outputs: [
@@ -221,20 +244,58 @@ const FFPROBE: Analyzer = {
  * `when: "manual"`, run from the record once, never read by the app.
  */
 const hashAnalyzer = (algo: string, note: string): Analyzer => ({
-  id: `hash-${algo}`, name: `Hash (${algo})`, program: null,
+  id: `hash-${algo}`, tool: 'file_drop', name: `Hash (${algo})`, program: null,
   how: `${note}; one hash per file — a bundle or channel set gets one per member, into the manifest; a sequence is not hashed`,
   defaultRunsOn: { kind: ['file', 'bundle', 'channel_set'] },
   outputs: [{ key: 'hash', name: 'Hash', type: 'text', note: `"${algo}:<hex>" — the algorithm travels with the value; a single file's only (a set's members are hashed into the manifest)` }],
 });
 export const HASH_ALGORITHMS = ['xxh3', 'sha256', 'md5'] as const;
 
+/**
+ * The Resolve tool's one analyzer (RESOLVE-BRIEF.md R1.2): the desktop runs the
+ * host's `python3` on a script compiled into the app, which asks the RUNNING
+ * Resolve — its scripting API — about one timeline of the open project. Nothing
+ * of it comes from the server; the page names only the timeline, picked from the
+ * list the desktop itself read.
+ *
+ * Timecode labels are as Resolve's timeline counts them (";" before the frames at
+ * a drop base); `end_timecode` is EXCLUSIVE, the label of the frame after the
+ * last, as `video_layout` has it. `audio_layout` is DERIVED from `audio_tracks` by
+ * `layoutFromTimeline` (contract/shapes.ts), in the page, so the mapping of
+ * Resolve's track formats to channels is one tested table in one place.
+ */
+const RESOLVE: Analyzer = {
+  id: 'resolve', tool: 'resolve', name: 'Resolve timeline', program: 'python3',
+  how: 'asks the running DaVinci Resolve, through its scripting API, about one timeline of the open project; reads only',
+  defaultRunsOn: {},
+  outputs: [
+    { key: 'resolve.version', name: 'Resolve version',   type: 'text',   note: 'provenance: GetVersionString() of the Resolve that answered, "20.1.0"' },
+    { key: 'project',         name: 'Project',           type: 'text',   note: 'the open project\'s name' },
+    { key: 'timeline_name',   name: 'Timeline name',     type: 'text' },
+    { key: 'dimensions',      name: 'Dimensions',        type: 'dimensions', note: 'the timeline resolution as ONE value, "1920×1080"' },
+    { key: 'width',           name: 'Width',             type: 'number' },
+    { key: 'height',          name: 'Height',            type: 'number' },
+    { key: 'frame_rate',      name: 'Frame rate',        type: 'number', note: 'the timeline frame rate, 3 decimals: 23.976, 25, 29.97 — as ffprobe\'s Frame rate stores it' },
+    { key: 'drop_frame',      name: 'Drop frame',        type: 'checkbox', note: 'whether the timeline counts drop-frame timecode' },
+    { key: 'start_timecode',  name: 'Start timecode',    type: 'text',   note: '"00:59:30:00"; ";" before the frames at a drop base' },
+    { key: 'end_timecode',    name: 'End timecode',      type: 'text',   note: 'EXCLUSIVE: the label of the frame after the last' },
+    { key: 'duration',        name: 'Duration',          type: 'text',   note: 'HH:MM:SS:FF at the timeline\'s rate, non-drop (as ffprobe\'s Duration)' },
+    { key: 'duration_frames', name: 'Duration (frames)', type: 'number' },
+    { key: 'audio_tracks',    name: 'Audio tracks',      type: 'structured:timeline_audio', note: 'every audio track — its name, Resolve\'s format, and the clips on it (start, end, file path); mute is not read' },
+    { key: 'audio_layout',    name: 'Audio layout',      type: 'structured:audio_layout', note: 'DERIVED from the tracks: one track per Resolve track, channels by format (stereo → L R, 5.1 → L R C LFE Ls Rs…), so a layout compare can read it' },
+    { key: 'audio_files',     name: 'Audio files',       type: 'link',   note: 'the clips\' files as records of the LINKED table, found by exact absolute path against its path column; a clip with no record is reported, never created; replaces what the field held' },
+  ],
+};
+
 export const ANALYZERS: readonly Analyzer[] = [
-  FILESYSTEM, SEQUENCE, IMF, FFPROBE,
+  FILESYSTEM, SEQUENCE, IMF, FFPROBE, RESOLVE,
   hashAnalyzer('xxh3', 'xxh3-64, fast, NOT cryptographic — a fingerprint for "is this the same file"'),
   hashAnalyzer('sha256', 'SHA-256 — slow on large files; for a checksum a client will verify'),
   hashAnalyzer('md5', 'MD5 — what a delivery\'s checksum request almost always means; slow on large files'),
 ];
 export const analyzerOf = (id: string) => ANALYZERS.find((a) => a.id === id);
+/** The analyzers one tool's recipe may name — what its editor offers. */
+export const analyzersOf = (tool: ToolId): Analyzer[] => ANALYZERS.filter((a) => a.tool === tool);
 
 /* ── the recipe a table stores ───────────────────────────────────────────── */
 
@@ -268,13 +329,21 @@ export type RunsOn = z.infer<typeof RunsOnSchema>;
  * precedent): `field.delete` does not rewrite this; an id that no longer resolves
  * is skipped when the recipe runs.
  */
-export const TOOL_IDS = ['file_drop'] as const;
 export const TablesTools = z.partialRecord(z.enum(TOOL_IDS), Recipe);   // partial: `{}` = nothing enabled
 export type TablesTools = z.infer<typeof TablesTools>;
-export const TOOL_NAMES: Record<string, string> = { file_drop: 'File drop' };
 
-/** The output the whole tool cannot work without: matching a dropped file to its record. */
-export const REQUIRED: Array<{ analyzer: string; key: string }> = [{ analyzer: 'filesystem', key: 'path' }];
+/**
+ * The outputs a tool cannot work without, per tool. File drop: the path, by which
+ * a dropped file is matched to its record. The Resolve tool: nothing — it writes
+ * onto the record it was asked from, so an empty map is merely a tool that writes
+ * nothing yet (how every recipe starts out).
+ */
+export const REQUIRED_BY_TOOL: Record<ToolId, Array<{ analyzer: string; key: string }>> = {
+  file_drop: [{ analyzer: 'filesystem', key: 'path' }],
+  resolve: [],
+};
+/** File drop's — the name the editor and `enableFileDrop` have always used. */
+export const REQUIRED = REQUIRED_BY_TOOL.file_drop;
 
 /** Validation, on write (server) and in the editor (client). The first problem, or null. */
 export function toolsProblem(tools: unknown, fields: Iterable<ToolFieldLike>): string | null {
@@ -284,10 +353,22 @@ export function toolsProblem(tools: unknown, fields: Iterable<ToolFieldLike>): s
   for (const f of fields) byId.set(f.id, f);
 
   for (const [toolId, recipe] of Object.entries(parsed.data)) {
+    const tool = toolId as ToolId, toolName = TOOL_NAMES[tool] ?? tool;
+    // The Resolve tool's recipe is its one step: there is one thing it reads, and
+    // nothing to filter (no "runs on": no dropped things), defer (no "when": it is
+    // always asked for by hand) or put in a manifest.
+    if (tool === 'resolve') {
+      if (recipe.steps.length !== 1) return `${toolName} has exactly one step (the timeline it reads), not ${recipe.steps.length}`;
+      const st = recipe.steps[0];
+      for (const k of ['runs_on', 'when', 'into_manifest'] as const) {
+        if (st[k] !== undefined) return `${toolName}: "${k}" means nothing for this tool — it is run by hand, on the one record it was asked from`;
+      }
+    }
     const used = new Map<string, string>();   // field id → "analyzer.output" that writes it
     for (const [i, step] of recipe.steps.entries()) {
       const a = analyzerOf(step.analyzer);
       if (!a) return `${toolId} step ${i + 1}: unknown analyzer "${step.analyzer}"`;
+      if (a.tool !== tool) return `${toolName} step ${i + 1}: "${a.name}" belongs to ${TOOL_NAMES[a.tool] ?? a.tool}, not to ${toolName}`;
       for (const [key, fieldId] of Object.entries(step.map)) {
         const out = a.outputs.find((o) => o.key === key);
         if (!out) return `${a.name}: no output called "${key}"`;
@@ -306,7 +387,7 @@ export function toolsProblem(tools: unknown, fields: Iterable<ToolFieldLike>): s
     for (const step of recipe.steps) {
       if (step.into_manifest !== undefined && !isHashStep(step)) return `${analyzerOf(step.analyzer)?.name ?? step.analyzer}: only a hash step can write into the manifest`;
     }
-    for (const r of REQUIRED) {
+    for (const r of REQUIRED_BY_TOOL[tool]) {
       if (!recipe.steps.some((s) => s.analyzer === r.analyzer && r.key in s.map)) {
         const a = analyzerOf(r.analyzer)!;
         return `${TOOL_NAMES[toolId] ?? toolId} needs "${a.outputs.find((o) => o.key === r.key)?.name}" (${a.name}) mapped`;
@@ -398,7 +479,8 @@ export function describe(recipe: Recipe, fields: Iterable<{ id: string; name: st
     if (!a) return `${i + 1}. Unknown analyzer "${step.analyzer}".`;
     const r = runsOnOf(step);
     const cond = [r.media?.length ? r.media.join(' or ') : '', r.kind?.length ? r.kind.map((k) => k.replace('_', ' ')).join(' or ') : ''].filter(Boolean);
-    const when = (cond.length ? `If ${cond.join(', and ')}` : 'For everything') + (isManual(step) ? ', when asked from the record' : '');
+    const when = a.tool === 'resolve' ? 'For the timeline picked, when asked from the record'
+      : (cond.length ? `If ${cond.join(', and ')}` : 'For everything') + (isManual(step) ? ', when asked from the record' : '');
     const v = a.id in versions ? (versions[a.id] === null ? ' (not on this machine)' : ` ${versions[a.id]}`) : '';
     const via = a.program ? `${a.program}${v}` : a.name;
     // In the analyzer's own output order — jsonb does not keep a map's key order.
@@ -408,8 +490,9 @@ export function describe(recipe: Recipe, fields: Iterable<{ id: string; name: st
   });
 }
 
-/** The default recipe when File drop is switched on: the filesystem, then ffprobe. */
-export function defaultRecipe(): Recipe {
+/** The recipe a tool starts with when switched on. File drop: the filesystem, then ffprobe. Resolve: its one step. */
+export function defaultRecipe(tool: ToolId = 'file_drop'): Recipe {
+  if (tool === 'resolve') return { steps: [{ analyzer: 'resolve', map: {} }] };
   return { steps: [{ analyzer: 'filesystem', map: {} }, { analyzer: 'ffprobe', map: {} }] };
 }
 
