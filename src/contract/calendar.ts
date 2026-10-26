@@ -273,10 +273,13 @@ export function weekLabel(from: string, to: string): string {
   return `${MONTH_SHORT[m1 - 1]} ${d1} – ${d2}, ${y1}`;
 }
 
+/** How many weeks the agenda lists at once: "what is coming up", a month-ish at a glance. */
+export const AGENDA_WEEKS = 4;
+
 /**
  * What a layout shows around `anchor` (any day in it). Month: the month grid of the
- * anchor's month. Week (and, until they get their own, the other layouts): the week
- * holding the anchor.
+ * anchor's month. Agenda: four weeks from the Monday of the anchor's week. Week (and,
+ * until it gets its own, resource): the week holding the anchor.
  */
 export function periodOf(layout: Layout, anchor: string): Period {
   if (layout === 'month') {
@@ -284,6 +287,11 @@ export function periodOf(layout: Layout, anchor: string): Period {
     const g = monthGrid(ym);
     const [y, m] = ymd(`${ym}-01`);
     return { weeks: g.weeks, from: g.weeks[0][0], to: g.weeks[g.weeks.length - 1][6], label: `${MONTH_NAMES[m - 1]} ${y}`, inPeriod: g.inMonth };
+  }
+  if (layout === 'agenda') {
+    const weeks = Array.from({ length: AGENDA_WEEKS }, (_, i) => weekDays(addDays(startOfWeek(anchor), 7 * i)));
+    const from = weeks[0][0], to = weeks[AGENDA_WEEKS - 1][6];
+    return { weeks, from, to, label: weekLabel(from, to), inPeriod: () => true };
   }
   const w = weekDays(anchor);
   return { weeks: [w], from: w[0], to: w[6], label: weekLabel(w[0], w[6]), inPeriod: () => true };
@@ -299,13 +307,19 @@ export function shiftAnchor(layout: Layout, anchor: string, n: number): string {
     const t = y * 12 + (m - 1) + n;
     return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}-01`;
   }
-  return addDays(anchor, 7 * n);
+  return addDays(anchor, 7 * n * (layout === 'agenda' ? AGENDA_WEEKS : 1));
 }
 
 /** The day number and short month, for a day cell: "1 Nov" on the 1st, else "14". */
 export function dayCellLabel(iso: string): string {
   const [, m, d] = ymd(iso);
   return d === 1 ? `${d} ${MONTH_SHORT[m - 1]}` : String(d);
+}
+
+/** An agenda day's heading: "Mon 26 Oct". */
+export function agendaDayLabel(iso: string): string {
+  const [, m, d] = ymd(iso);
+  return `${WEEKDAY_SHORT[weekdayIndex(iso)]} ${d} ${MONTH_SHORT[m - 1]}`;
 }
 
 /** "Oct 5" or "Oct 5 – 9" or "Sep 28 – Oct 4" — for a chip's tooltip and the agenda. */

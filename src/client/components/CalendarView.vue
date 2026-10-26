@@ -14,18 +14,18 @@
 
   Month and week are drawn by CalendarGrid (round 4); the PERIOD on screen (‹ today ›)
   is per browser, per calendar — client/calendarPrefs.ts — so two people can look at
-  different months of one calendar. Agenda (round 5) and resource (round 7) still
-  show the interim count per source.
+  different months of one calendar. Agenda (round 5) is AgendaList, over four weeks.
+  Resource (round 7) still shows the interim count per source.
 -->
 <template>
   <div class="calendarview">
     <div class="cv-bar context-bar">
       <span class="cv-kind">▥ calendar</span>
       <span class="cv-title">{{ title }}</span>
-      <span v-if="layout === 'month' || layout === 'week'" class="cv-nav">
-        <button class="cv-prev" :title="`Previous ${layout}`" @click="go(-1)">‹</button>
+      <span v-if="dated" class="cv-nav">
+        <button class="cv-prev" :title="`Previous ${stepName}`" @click="go(-1)">‹</button>
         <button class="cv-today" title="Back to today" :disabled="period.from <= today && today <= period.to && (layout !== 'month' || period.inPeriod(today))" @click="goToday">today</button>
-        <button class="cv-next" :title="`Next ${layout}`" @click="go(1)">›</button>
+        <button class="cv-next" :title="`Next ${stepName}`" @click="go(1)">›</button>
         <span class="cv-period">{{ period.label }}</span>
       </span>
       <span class="cv-layouts" role="group" aria-label="Layout">
@@ -47,7 +47,7 @@
     </div>
 
     <p v-if="problem" class="hint stage-body">{{ problem }}</p>
-    <div v-else class="cv-body stage-body" :class="{ gridded: layout === 'month' || layout === 'week' }" @click="selectedId = ''">
+    <div v-else class="cv-body stage-body" :class="{ gridded: dated }" @click="selectedId = ''">
       <p v-if="localOnly" class="cv-warning cv-local">The layout is not saved while the definition has a problem — this switch is for this screen only. Fix it in settings: {{ invalid }}</p>
       <p v-else-if="invalid" class="cv-warning">⚠ {{ invalid }}</p>
       <ul v-if="result?.problems.length" class="cv-problems">
@@ -57,7 +57,10 @@
                     :today="today" :tall="layout === 'week'" :selected-id="selectedId" :open-record-id="openRecordId" :table-names="tableNames"
                     @select="selectedId = $event" @open="$emit('open-record', $event)" />
       <!-- Interim: what each source contributes, until agenda (round 5) and resource (round 7) draw. -->
-      <table v-if="result && def?.sources.length && !(layout === 'month' || layout === 'week')" class="cv-sources">
+      <AgendaList v-if="result && layout === 'agenda'" :events="result.events" :from="period.from" :to="period.to" :today="today"
+                  :selected-id="selectedId" :open-record-id="openRecordId" :table-names="tableNames"
+                  @select="selectedId = $event" @open="$emit('open-record', $event)" />
+      <table v-if="result && def?.sources.length && !dated" class="cv-sources">
         <tr v-for="s in perSource" :key="s.sourceId" :data-source="s.sourceId">
           <td><span class="tint-legend"><span :class="`tint-${s.tint}`"><i />{{ s.tableName }}</span></span></td>
           <td class="n">{{ s.hidden ? 'hidden here' : `${s.n} event${s.n === 1 ? '' : 's'}` }}</td>
@@ -65,7 +68,7 @@
         </tr>
         <tr v-if="result.lanes"><td>rows</td><td class="n">{{ result.lanes.length - 1 }} lane{{ result.lanes.length === 2 ? '' : 's' }} + Unassigned</td><td /></tr>
       </table>
-      <p v-if="!(layout === 'month' || layout === 'week')" class="cv-soon">The {{ LAYOUT_LABELS[layout].toLowerCase() }} layout is drawn in a later round.</p>
+      <p v-if="!dated" class="cv-soon">The {{ LAYOUT_LABELS[layout].toLowerCase() }} layout is drawn in a later round.</p>
     </div>
   </div>
 </template>
@@ -82,6 +85,7 @@ import {
   type CalendarContext, type CalendarField, type Layout,
 } from '../../contract/calendar';
 import CalendarGrid from './CalendarGrid.vue';
+import AgendaList from './AgendaList.vue';
 
 const props = defineProps<{
   store: Store; calendarId: string;
@@ -166,8 +170,12 @@ const go = (n: number) => setAnchor(props.calendarId, shiftAnchor(layout.value, 
 const goToday = () => setAnchor(props.calendarId, today);
 const selectedId = ref('');
 const tableNames = computed(() => new Map([...store.state.tables.values()].map((t) => [t.id, t.name])));
-/** Month and week ask only for what they draw; agenda and resource (for now) for everything. */
-const range = computed(() => (layout.value === 'month' || layout.value === 'week' ? { from: period.value.from, to: period.value.to } : undefined));
+/** What ‹ › move by, for their tooltips. */
+const stepName = computed(() => (layout.value === 'agenda' ? 'four weeks' : layout.value));
+/** The layouts drawn over a period of days (‹ today ›, a range); resource is not one of them yet. */
+const dated = computed(() => layout.value === 'month' || layout.value === 'week' || layout.value === 'agenda');
+/** Dated layouts ask only for what they draw; resource (for now) for everything. */
+const range = computed(() => (dated.value ? { from: period.value.from, to: period.value.to } : undefined));
 
 const ctx = computed<CalendarContext>(() => {
   const byTable = new Map<string, RecordRow[]>();

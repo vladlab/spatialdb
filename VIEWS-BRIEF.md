@@ -438,6 +438,15 @@ table every source can lane to (Bookings → Computers), never a source's own ta
 The UI suite uses a plain Bookings table (two bouts of one pair, one with no
 computer, one crossing the month).
 
+**Status (Oct 26 2026): round 5 built** (build-order step 4). `AgendaList.vue`: the
+days of the period that have something on them, each event once — under its first
+day with its span and length, or under the period's first day marked "continues" if
+it began earlier (listed ahead of that day's own). Today keeps a heading even with
+nothing on it. The agenda's period is FOUR WEEKS from the Monday of the anchor's week
+(`AGENDA_WEEKS`), and ‹ › move four weeks; the anchor is shared with month and week,
+so switching layouts keeps your place. Contract: `periodOf('agenda')`,
+`agendaDayLabel`, tested in `test/calendar.ts` C2b; UI in `test/calendarview.ts` C5b.
+
 1. `contract/calendar.ts` + `test/calendar.ts`: def, validation, `runCalendar`,
    `placeEvents`, `agendaGroups`. **Stop for the owner's review of the shape.**
 2. `sql/020_calendars.sql` (the kind; same two lines as 013), the `calendar` shape

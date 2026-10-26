@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import {
   calendarDefError, runCalendar, laneCandidates, laneEvents, placeEvents, agendaGroups, moveEvent, monthGrid, weekDays,
   dayNumber, daysBetween, weekdayIndex, isWeekend, addDays, EMPTY_CALENDAR, UNASSIGNED,
-  periodOf, shiftAnchor, weekLabel, dayCellLabel, spanLabel,
+  periodOf, shiftAnchor, weekLabel, dayCellLabel, spanLabel, agendaDayLabel, AGENDA_WEEKS,
   type CalendarDef, type CalendarField, type CalendarTable, type CalendarContext, type CalendarEvent,
 } from '../src/contract/calendar.js';
 import type { ViewRecord } from '../src/contract/views.js';
@@ -185,6 +185,10 @@ console.log('\nC2b. The period on screen');
   check('next month from Jan 31 is February (lands on the 1st), and back across a year', shiftAnchor('month', '2026-01-31', 1) === '2026-02-01' && shiftAnchor('month', '2026-01-15', -1) === '2025-12-01' && shiftAnchor('month', '2026-11-03', 14) === '2028-01-01');
   check('weeks move by seven days', shiftAnchor('week', '2026-10-25', 1) === '2026-11-01' && shiftAnchor('week', '2026-10-25', -2) === '2026-10-11');
   check('a day cell says the month on the 1st only', dayCellLabel('2026-11-01') === '1 Nov' && dayCellLabel('2026-10-14') === '14');
+  const a = periodOf('agenda', '2026-10-28');
+  check('agenda: four weeks from the Monday of the anchor\'s week', AGENDA_WEEKS === 4 && a.weeks.length === 4 && a.from === '2026-10-26' && a.to === '2026-11-22' && a.label === 'Oct 26 – Nov 22, 2026', `${a.from} ${a.to} ${a.label}`);
+  check('…and moves four weeks at a time', shiftAnchor('agenda', '2026-10-28', 1) === '2026-11-25' && periodOf('agenda', shiftAnchor('agenda', '2026-10-28', 1)).from === '2026-11-23');
+  check('an agenda day is headed "Mon 26 Oct"', agendaDayLabel('2026-10-26') === 'Mon 26 Oct' && agendaDayLabel('2026-11-01') === 'Sun 1 Nov');
   check('span labels', spanLabel('2026-10-05', '2026-10-05') === 'Oct 5' && spanLabel('2026-10-05', '2026-10-09') === 'Oct 5 – 9' && spanLabel('2026-09-28', '2026-10-04') === 'Sep 28 – Oct 4');
 }
 

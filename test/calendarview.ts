@@ -152,6 +152,29 @@ async function main() {
     check('› moves a week', await until(() => /Oct 19 – 25, 2026/.test(bar().find('.cv-period').text())));
     await bar().find('.cv-prev').trigger('click');
 
+    console.log('\nC5b. Agenda: the days that have something, four weeks at a time');
+    await bar().find('.cv-next').trigger('click');                          // week of Oct 19
+    await until(() => /Oct 19 – 25, 2026/.test(bar().find('.cv-period').text()));
+    await bar().find('[data-layout="agenda"]').trigger('click');
+    check('switching to Agenda writes it into the definition', (await untilDb(`select data->'calendar'->>'layout' l from records where id = '${cal}'`, (r) => r[0].l === 'agenda'))[0].l === 'agenda');
+    check('four weeks from the Monday of the week you were in', await until(() => /Oct 19 – Nov 15, 2026/.test(bar().find('.cv-period').text())), bar().find('.cv-period').text());
+    const agDays = () => w.findAll('.calendarview .ag-day').filter((d: any) => d.findAll('.ag-item').length).map((d: any) => d.attributes('data-day'));
+    const agItem = (rec: string) => w.find(`.calendarview .ag-item[data-record="${rec}"]`);
+    check('only days with something on them, in order (today keeps a heading too, wherever it falls)', await until(() => agDays().join() === '2026-10-19,2026-10-30'), agDays().join());
+    check('…headed the way people write them', w.find('.calendarview .ag-day[data-day="2026-10-19"] .ag-date').text().startsWith('Mon 19 Oct'));
+    check('the count is what the four weeks hold: three bookings', count() === '3 events', count());
+    check('a booking that began before the period is listed once, on its first day, marked "continues", ahead of the day\'s own',
+      w.findAll('.calendarview .ag-item').filter((i: any) => i.attributes('data-record') === b4).length === 1
+      && w.findAll('.calendarview .ag-day[data-day="2026-10-19"] .ag-item')[0].attributes('data-record') === b4 && agItem(b4).classes('continued') && /continues/.test(agItem(b4).text()));
+    check('a multi-day booking carries its span and length', /Oct 30 – Nov 3 · 5 days/.test(agItem(b5).text()), agItem(b5).text());
+    check('each line says which table it came from, in the source\'s tint', /Bookings/.test(agItem(b5).text()) && agItem(b5).classes().includes('tint-green'));
+    await bar().find('.cv-prev').trigger('click');
+    check('‹ goes back four weeks', await until(() => /Sep 21 – Oct 18, 2026/.test(bar().find('.cv-period').text()) && agDays().join() === '2026-10-05,2026-10-12,2026-10-14'), `${bar().find('.cv-period').text()} ${agDays().join()}`);
+    await agItem(b1).trigger('dblclick');
+    check('a double-click opens the booking, and its line wears the ring', await until(() => w.find('.record-panel .rp-table').text() === 'Bookings' && agItem(b1).classes('opened')));
+    for (let i = 0; i < 3; i++) await bar().find('.cv-next').trigger('click');
+    check('an empty stretch says so', await until(() => /Nothing between Dec 14 – Jan 10/.test(view().find('.ag').text())), view().find('.ag').text());
+
     console.log('\nC6. Rows: the resource axis');
     await bar().find('.cv-def').trigger('click');     // the tray holds a booking since C3's double-click
     check('"settings…" brings the calendar\'s own record back into the tray', await until(() => editor().exists() && src().exists()));
@@ -162,7 +185,7 @@ async function main() {
     check('…and the source\'s lane is guessed: its Computer link (a plain link — no "through")', (src().find('.ce-lane').element as HTMLSelectElement).value === jComp && !/through/.test(src().find('.ce-lane').text()));
     await editor().find('.save-calendar').trigger('click');
     const d2 = await untilDb(`select data->'calendar' d from records where id = '${cal}'`, (r) => !!r[0]?.d?.rows);
-    check('save keeps the layout the top bar chose (week) and adds the rows and lane', d2[0].d.layout === 'week' && d2[0].d.rows.tableId === tComp && d2[0].d.sources[0].lane === jComp, JSON.stringify(d2[0].d));
+    check('save keeps the layout the top bar chose (agenda) and adds the rows and lane', d2[0].d.layout === 'agenda' && d2[0].d.rows.tableId === tComp && d2[0].d.sources[0].lane === jComp, JSON.stringify(d2[0].d));
     check('Resource is enabled now', await until(() => bar().find('[data-layout="resource"]').attributes('disabled') === undefined));
     await bar().find('[data-layout="resource"]').trigger('click');
     await untilDb(`select data->'calendar'->>'layout' l from records where id = '${cal}'`, (r) => r[0].l === 'resource');
@@ -183,6 +206,8 @@ async function main() {
     check('switching layout then works on this screen…', await until(() => bar().find('[data-layout="month"]').classes('on')));
     check('…says it is not saved, and why', /not saved/.test(view().find('.cv-local').text()) && /end field no longer exists/.test(view().find('.cv-local').text()), view().find('.cv-local').exists() ? view().find('.cv-local').text() : 'no note');
     check('…and the stored layout is still Resource — nothing was refused, nothing was sent', (await defOf(cal)).layout === 'resource' && !w.find('.errors').exists());
+    // The period on screen is shared by the layouts: the agenda left it in December.
+    for (let i = 0; i < 6 && !/October 2026/.test(bar().find('.cv-period').text()); i++) await bar().find('.cv-prev').trigger('click');
     check('…while the month draws every booking as one day, on its start', await until(() => chips(b1).length === 1 && /grid-column: 1 \/ 2/.test(styleOf(chipIn('2026-10-05', b1)))), styleOf(chipIn('2026-10-05', b1)));
 
     console.log('\nC7. Addresses and the other ways in');
