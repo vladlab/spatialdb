@@ -297,6 +297,7 @@
         <!-- The easy way to set a canvas default: drop the Ep 101 card here, and point at it. -->
         <button v-if="isDefault(menu.recordId!)" class="unset-default" @click="menuDo((m) => removeDefault(m.recordId!))">Stop linking new records here to this</button>
         <button v-else-if="canBeDefault(menu.recordId!)" class="set-default" @click="menuDo((m) => addDefault(store.state.records.get(m.recordId!)!.table_id, m.recordId!))">Link new records here to this</button>
+        <button v-if="resolveOffered(store, menu.recordId!)" class="resolve-ingest" @click="menuDo((m) => ingestFromResolve(store, m.recordId!, derived.labelOfId(m.recordId!)))">Ingest info from Resolve…</button>
         <hr />
         <button v-if="!isJunctionRecord(menu.recordId!)" class="duplicate-record" @click="menuDo((m) => duplicateHere(m.recordId!))">Duplicate record</button>
         <!-- IN A STACK: it can leave the stack and stay on the canvas, where it is, as a card placed by hand. -->
@@ -368,6 +369,7 @@ import type { MutateOptions, Store } from '../store';
 import { fieldsOf, tablesSorted, type FieldRow, type RecordRow } from '../state';
 import { labelFrom } from '../../contract/labels';
 import { useDerived } from '../derived';
+import { ingestFromResolve, resolveOffered } from '../tools/resolveIngest';
 import { defaultLinkField } from '../../contract/canvasConfig';
 import LinkPicker from './LinkPicker.vue';
 import JunctionEditor from './JunctionEditor.vue';

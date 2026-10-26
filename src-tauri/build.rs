@@ -4,7 +4,7 @@ fn main() {
     // ./permissions, gitignored). A command missing from this list is unreachable
     // from any page — which is the failure we want if one is ever added by accident.
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
-        tauri_build::AppManifest::new().commands(&["tools_available", "server_url", "set_server", "classify", "analyze", "analyze_path", "hash_cancel", "allow_paths", "reveal"]),
+        tauri_build::AppManifest::new().commands(&["tools_available", "server_url", "set_server", "classify", "analyze", "analyze_path", "hash_cancel", "allow_paths", "reveal", "resolve_timelines", "resolve_read"]),
     ))
     .expect("tauri-build failed");
 }

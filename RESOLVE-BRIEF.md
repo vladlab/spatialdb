@@ -1,5 +1,15 @@
 # Brief: the Resolve timeline tool
 
+> **Status (Oct 26):** R1 (contract) on main as `36f4dd5`. R2 (shell) + R3
+> (settings) + R5 (the menu item) delivered together as `resolve-shell-settings.patch`,
+> with R4's run cut short on purpose: the picker reads the timeline and a dialog
+> shows what was read and where each output is mapped — NOTHING is written yet, so
+> the reading can be checked against a real Resolve first (DESKTOP.md "Needs eyes"
+> 8). Next: R4 — write it (overwrite check, one batch, path links), then the tray
+> block (R1.3). Decided on the way: the script names each API call it makes so a
+> wrong name fails readably; clip ends are start + duration (GetEnd only checked);
+> the readout lists the raw frame numbers while the reader is new.
+
 A design agreed with the owner on Oct 26 2026, for the session that builds it.
 Nothing here is built. Read `TAURI-HANDOFF.md` (§3 the tools principles), `DESKTOP.md`,
 `API.md` "Tools" and `src/contract/tools.ts` first: the idioms this leans on (the

@@ -31,7 +31,7 @@
       <p v-else-if="current.opts.body" class="dlg-body">{{ current.opts.body }}</p>
 
       <footer>
-        <button ref="cancelBtn" class="dlg-cancel" @click="cancel">{{ current.kind === 'confirm' && current.opts.cancelText ? current.opts.cancelText : 'Cancel' }}</button>
+        <button v-if="!(current.kind === 'confirm' && current.opts.noCancel)" ref="cancelBtn" class="dlg-cancel" @click="cancel">{{ current.kind === 'confirm' && current.opts.cancelText ? current.opts.cancelText : 'Cancel' }}</button>
         <button ref="okBtn" class="dlg-ok" :class="{ danger: current.opts.danger }" :disabled="blocked" @click="ok">
           {{ current.opts.okText ?? (current.kind === 'confirm' ? 'OK' : 'Create') }}
         </button>
@@ -95,7 +95,7 @@ h2 { margin: 0 0 12px; font-size: 15px; }
 .dlg-input:focus, .dlg-select:focus { outline: none; border-color: var(--accent); }
 .dlg-check { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; cursor: pointer; }
 .dlg-hint { flex-basis: 100%; color: var(--text-muted); font-size: 11px; padding-left: 22px; }
-.dlg-body { margin: 0 0 14px; color: var(--text-secondary); white-space: pre-line; line-height: 1.45; }
+.dlg-body { margin: 0 0 14px; color: var(--text-secondary); white-space: pre-line; line-height: 1.45; max-height: 60vh; overflow-y: auto; }
 footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 button { background: none; border: 1px solid var(--border-main); color: var(--text-secondary); border-radius: 4px; padding: 5px 14px; cursor: pointer; font: inherit; }
 button:focus { outline: none; border-color: var(--accent); }

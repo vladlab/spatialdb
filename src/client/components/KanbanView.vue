@@ -27,7 +27,7 @@
       </header>
       <div class="kcol-body">
         <article v-for="r in c.records" :key="r.id" class="kcard" :class="{ lifted: dragIds.has(r.id) && dragFrom !== null, opened: r.id === openId }"
-                 @pointerdown="startDrag(r, c.key, $event)" @dblclick="$emit('open-record', r.id)">
+                 @pointerdown="startDrag(r, c.key, $event)" @dblclick="$emit('open-record', r.id)" @contextmenu="onCardMenu(r.id, $event)">
           <div class="kcard-title">{{ labelOf(r) }}<button class="kcard-open" title="Open record" @pointerdown.stop @click.stop="$emit('open-record', r.id)">⤢</button></div>
           <div v-for="f in cardFields" :key="f.id" class="kcard-row">
             <span class="kcard-name">{{ f.name }}</span>
@@ -51,11 +51,23 @@
         <p v-if="!c.records.length" class="kcol-empty">drop here</p>
       </div>
     </div>
+    <!-- A card's menu: only where it has something to offer (the Resolve tool, in the
+         desktop app); elsewhere a right-click is left to the browser. The look is the
+         shared `.ctx` (App.vue), fixed in the page's pixels like the grid's row menu. -->
+    <div v-if="cardMenu" ref="cardMenuEl" class="ctx kcard-menu" :style="{ left: cardMenu.x + 'px', top: cardMenu.y + 'px' }"
+         @contextmenu.prevent.stop @mousedown.stop @pointerdown.stop>
+      <div class="ctx-head">{{ derived.labelOfId(cardMenu.id) || 'untitled' }}</div>
+      <hr />
+      <button class="open-record" @click="cardMenuDo((id) => $emit('open-record', id))">Open record</button>
+      <button class="resolve-ingest" @click="cardMenuDo((id) => ingestFromResolve(props.store, id, derived.labelOfId(id)))">Ingest info from Resolve…</button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { vp } from '../uiScale';
+import { ingestFromResolve, resolveOffered } from '../tools/resolveIngest';
 import type { Store } from '../store';
 import type { FieldRow, RecordRow } from '../state';
 import { useDerived } from '../derived';
@@ -146,6 +158,30 @@ function colRef(key: string, el: HTMLElement | null) {
 }
 onUnmounted(() => { for (const u of unregister.values()) u(); });
 
+/* ── the card menu ── */
+const cardMenu = ref<{ id: string; x: number; y: number } | null>(null);
+const cardMenuEl = ref<HTMLElement>();
+function onCardMenu(id: string, e: MouseEvent) {
+  if (!resolveOffered(props.store, id)) return;           // nothing to offer: the browser's own menu
+  e.preventDefault();
+  cardMenu.value = { id, x: vp(e.clientX), y: vp(e.clientY) };
+}
+/** Close the menu, THEN act (as the grid's `rowMenuDo` and the canvas's `menuDo` do). */
+function cardMenuDo(fn: (id: string) => void) { const m = cardMenu.value; cardMenu.value = null; if (m) fn(m.id); }
+const closeOnOutside = (e: Event) => { if (cardMenu.value && !cardMenuEl.value?.contains(e.target as Node)) cardMenu.value = null; };
+const closeOnEscape = (e: KeyboardEvent) => { if (e.key === 'Escape' && cardMenu.value) { cardMenu.value = null; e.stopPropagation(); } };
+const closeMenu = () => { cardMenu.value = null; };
+onMounted(() => {
+  document.addEventListener('mousedown', closeOnOutside, true);
+  document.addEventListener('keydown', closeOnEscape, true);
+  window.addEventListener('blur', closeMenu); window.addEventListener('resize', closeMenu);
+});
+onUnmounted(() => {
+  document.removeEventListener('mousedown', closeOnOutside, true);
+  document.removeEventListener('keydown', closeOnEscape, true);
+  window.removeEventListener('blur', closeMenu); window.removeEventListener('resize', closeMenu);
+});
+
 const dragFrom = ref<string | null>(null);
 const dragIds = ref(new Set<string>());
 const overKey = ref('');
@@ -186,6 +222,7 @@ function dropInto(toKey: string, records: RecordRow[]) {
 </script>
 
 <style scoped>
+.kcard-menu { position: fixed; z-index: 60; }
 .kanban { display: flex; gap: 10px; padding: 10px 12px; overflow-x: auto; height: 100%; box-sizing: border-box; align-items: flex-start; }
 .kcol { flex: 0 0 240px; display: flex; flex-direction: column; max-height: 100%; background: var(--controls-bg); border: 1px solid var(--border-main); border-radius: 6px; }
 .kcol.over { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }

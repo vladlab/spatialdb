@@ -1,6 +1,9 @@
 <!--
-  A table's RECIPE for File drop (contract/tools.ts) — configured here, in the
-  browser, by an admin; run only by the desktop app.
+  A table's RECIPE for one desktop tool (contract/tools.ts) — configured here, in
+  the browser, by an admin; run only by the desktop app. Mounted once per tool
+  (`tool`): File drop, whose recipe is an ordered list of steps, and the Resolve
+  timeline tool, whose recipe is its ONE step — so for it there is nothing to
+  order, add, remove, filter or defer, and only the mapping is shown.
 
   Three views of ONE piece of JSON, so that whoever reads this in a year can tell
   where every value comes from:
@@ -19,12 +22,12 @@
   undoable step, refused before it is queued if the server would refuse it.
 -->
 <template>
-  <section class="tools">
-    <h4>Desktop tools</h4>
+  <section class="tools" :class="[`tool-${tool}`, { first: tool === 'file_drop' }]">
+    <h4 v-if="tool === 'file_drop'">Desktop tools</h4>
     <label class="on">
       <input type="checkbox" :checked="!!recipe" @change="toggle(($event.target as HTMLInputElement).checked)" />
-      <b>File drop</b>
-      <span class="hint">files dropped onto this table in the desktop app become records, filled in by the steps below</span>
+      <b>{{ TOOL_NAMES[tool] }}</b>
+      <span class="hint">{{ HINTS[tool] }}</span>
     </label>
 
     <template v-if="recipe">
@@ -39,17 +42,19 @@
             <span class="n">{{ i + 1 }}</span>
             <b>{{ analyzerOf(step.analyzer)?.name ?? step.analyzer }}</b>
             <span class="prog" :title="analyzerOf(step.analyzer)?.how ?? ''">
-              <template v-if="analyzerOf(step.analyzer)?.program">runs <code>{{ analyzerOf(step.analyzer)!.program }}</code><span v-if="versionOf(step.analyzer)"> {{ versionOf(step.analyzer) }}</span></template>
+              <template v-if="analyzerOf(step.analyzer)?.program">runs <code>{{ analyzerOf(step.analyzer)!.program }}</code><span v-if="versionOf(step.analyzer)" class="ver">{{ versionOf(step.analyzer) }}</span></template>
               <template v-else>built in</template>
             </span>
             <span class="grow" />
-            <button class="plain mini" :disabled="i === 0" title="Run earlier" @click="move(i, -1)">↑</button>
-            <button class="plain mini" :disabled="i === recipe.steps.length - 1" title="Run later" @click="move(i, 1)">↓</button>
-            <button class="plain mini" title="Remove this step" @click="removeStep(i)">×</button>
+            <template v-if="!single">
+              <button class="plain mini" :disabled="i === 0" title="Run earlier" @click="move(i, -1)">↑</button>
+              <button class="plain mini" :disabled="i === recipe.steps.length - 1" title="Run later" @click="move(i, 1)">↓</button>
+              <button class="plain mini" title="Remove this step" @click="removeStep(i)">×</button>
+            </template>
           </div>
           <div class="how">{{ analyzerOf(step.analyzer)?.how }}</div>
 
-          <div class="runs-on">
+          <div v-if="!single" class="runs-on">
             <span class="ro-label">Runs on</span>
             <span v-for="m in MEDIA" :key="m" class="chip" :class="{ on: mediaOn(step, m) }" @click="toggleMedia(i, m)">{{ m }}</span>
             <span class="ro-sep">·</span>
@@ -75,12 +80,13 @@
                 <option value="">{{ isHashStep(step) ? '(no column)' : '(not written)' }}</option>
                 <option v-for="f in accepting(out)" :key="f.id" :value="f.id">{{ f.name }}{{ f.type === 'link' ? ` (link → ${tableNameOf(f.options?.target_table_id)})` : '' }}</option>
               </select>
-              <button v-if="!step.map[out.key] && !hasKey(out.key)" class="plain mini" title="make a field for this output and map it" @click="addField(i, out)">+ field</button>
+              <button v-if="!step.map[out.key] && !hasKey(out.key) && out.type !== 'link'" class="plain mini" title="make a field for this output and map it" @click="addField(i, out)">+ field</button>
+              <span v-else-if="out.type === 'link' && !accepting(out).length" class="hint" title="Add a link field to the table that holds your file records (it needs a path column), then map this to it">make a link field first</span>
             </div>
           </div>
         </div>
 
-        <div class="add">
+        <div v-if="!single" class="add">
           <select v-model="addId">
             <option value="">Add a step…</option>
             <option v-for="a in analyzersOf('file_drop')" :key="a.id" :value="a.id">{{ a.name }}{{ a.program ? ` (${a.program})` : '' }}</option>
@@ -116,9 +122,15 @@ import type { Store } from '../store';
 import { fieldsOf } from '../state';
 import { useSchemaActions } from '../schemaActions';
 import { available, notice } from '../desktop';
-import { analyzersOf, KINDS, MEDIA, REQUIRED, analyzerOf, describe, fieldAccepts, intoManifest, isHashStep, isManual, pruneTools, runsOnOf, toolsProblem, type Kind, type Media, type Output, type Recipe, type Step, type TablesTools } from '../../contract/tools';
+import { analyzersOf, KINDS, MEDIA, REQUIRED_BY_TOOL, TOOL_NAMES, analyzerOf, describe, fieldAccepts, intoManifest, isHashStep, isManual, pruneTools, runsOnOf, toolsProblem, type Kind, type Media, type Output, type Recipe, type Step, type TablesTools, type ToolId } from '../../contract/tools';
 
-const props = defineProps<{ store: Store; tableId: string }>();
+const props = withDefaults(defineProps<{ store: Store; tableId: string; tool?: ToolId }>(), { tool: 'file_drop' });
+const HINTS: Record<ToolId, string> = {
+  file_drop: 'files dropped onto this table in the desktop app become records, filled in by the steps below',
+  resolve: 'in the desktop app, right-click a record → “Ingest info from Resolve…”: what the running Resolve says about one timeline is written onto it, as mapped below',
+};
+/** The Resolve tool's recipe is its one step: no ordering, adding, "runs on" or "when". */
+const single = computed(() => props.tool === 'resolve');
 const actions = useSchemaActions(props.store);
 
 type ViewId = 'steps' | 'json' | 'summary';
@@ -130,7 +142,7 @@ const addId = ref('');
 const table = computed(() => props.store.state.tables.get(props.tableId));
 const fields = computed(() => fieldsOf(props.store.state, props.tableId));
 const tools = computed(() => (table.value?.tools ?? {}) as Partial<TablesTools>);
-const recipe = computed<Recipe | undefined>(() => tools.value.file_drop);
+const recipe = computed<Recipe | undefined>(() => tools.value[props.tool]);
 const current = computed(() => JSON.stringify(recipe.value ?? null, null, 2));
 const versions = computed(() => available.value?.analyzers ?? {});
 const versionOf = (id: string) => versions.value[id] ?? '';
@@ -140,14 +152,14 @@ const accepting = (out: Output) => fields.value.filter((f) => fieldAccepts(out, 
 /** A vocabulary output may land in a LINK (contract/vocab.ts `resolveRow`): say where it leads. */
 const tableNameOf = (id: unknown) => props.store.state.tables.get(String(id ?? ''))?.name ?? '?';
 const hasKey = (key: string) => fields.value.some((f) => f.key === key);
-const isRequired = (analyzer: string, key: string) => REQUIRED.some((r) => r.analyzer === analyzer && r.key === key);
+const isRequired = (analyzer: string, key: string) => REQUIRED_BY_TOOL[props.tool].some((r) => r.analyzer === analyzer && r.key === key);
 const mediaOn = (step: Step, m: Media) => { const r = runsOnOf(step); return !r.media || r.media.includes(m); };
 const kindOn = (step: Step, k: Kind) => { const r = runsOnOf(step); return !r.kind || r.kind.includes(k); };
 
 function write(next: Recipe) {
   // Stale mappings (a deleted field, an output renamed across versions) are dropped
   // and named, rather than refusing every edit until the tool is re-added.
-  const pruned = pruneTools({ ...tools.value, file_drop: next } as TablesTools, fields.value);
+  const pruned = pruneTools({ ...tools.value, [props.tool]: next } as TablesTools, fields.value);
   for (const d of pruned.dropped) notice(`Recipe: dropped a stale mapping — ${d}`, 'warn');
   problem.value = actions.setTools(props.tableId, pruned.tools) ?? '';
 }
@@ -157,7 +169,7 @@ function edit(fn: (r: Recipe) => void) {
   write(next);
 }
 function toggle(on: boolean) {
-  problem.value = (on ? actions.enableFileDrop(props.tableId) : actions.disableFileDrop(props.tableId)) ?? '';
+  problem.value = (on ? actions.enableTool(props.tableId, props.tool) : actions.disableTool(props.tableId, props.tool)) ?? '';
 }
 function setMap(i: number, key: string, fieldId: string) {
   edit((r) => { if (fieldId) r.steps[i].map[key] = fieldId; else delete r.steps[i].map[key]; });
@@ -205,14 +217,15 @@ watch(current, (c) => { draft.value = c; draftProblem.value = ''; });
 function checkDraft(): string {
   try {
     const parsed = JSON.parse(draft.value);
-    return toolsProblem({ ...tools.value, file_drop: parsed }, fields.value) ?? '';
+    return toolsProblem({ ...tools.value, [props.tool]: parsed }, fields.value) ?? '';
   } catch (e) { return `not JSON: ${(e as Error).message}`; }
 }
 function saveDraft() { if (!checkDraft()) write(JSON.parse(draft.value)); }
 </script>
 
 <style scoped>
-.tools { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-main); }
+.tools { margin-top: 12px; }
+.tools.first { padding-top: 10px; border-top: 1px solid var(--border-main); }
 h4 { margin: 0 0 6px; font-size: 12px; color: var(--text-secondary); }
 .on { display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
 .hint { color: var(--text-faint); font-size: 11px; }
@@ -224,6 +237,7 @@ h4 { margin: 0 0 6px; font-size: 12px; color: var(--text-secondary); }
 .n { display: inline-block; min-width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: 9px; background: var(--border-main); font-size: 11px; color: var(--text-secondary); }
 .prog { color: var(--text-muted); font-size: 11px; }
 .prog code { font-size: 11px; }
+.prog .ver { margin-left: 0.35em; }
 .grow { flex: 1; }
 .how { color: var(--text-faint); font-size: 11px; margin: 2px 0 6px 26px; }
 .runs-on { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0 0 6px 26px; }

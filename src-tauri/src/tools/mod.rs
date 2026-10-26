@@ -4,4 +4,6 @@ pub mod classify;
 pub mod hash;
 pub mod probe;
 pub mod qt;
+pub mod resolve;
 pub mod reveal;
+pub mod timecode;

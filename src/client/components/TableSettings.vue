@@ -115,7 +115,10 @@
         </div>
       </section>
 
-      <ToolSettings v-if="!table.kind || table.kind === 'records'" :store="store" :table-id="tableId" />
+      <template v-if="!table.kind || table.kind === 'records'">
+        <ToolSettings :store="store" :table-id="tableId" tool="file_drop" />
+        <ToolSettings :store="store" :table-id="tableId" tool="resolve" />
+      </template>
 
       <footer><button class="danger" @click="remove">Delete table…</button></footer>
     </div>

@@ -23,7 +23,7 @@ import { shapeOptionError } from '../contract/shapes';
 import { SYSTEM_FIELD_TYPES } from '../contract/systemFields';
 import { choicesOf as contractChoices } from '../contract/values';
 import { ALIASES_KEY, vocabularyOptionError } from '../contract/vocab';
-import { REQUIRED, analyzerOf, defaultRecipe, fieldAccepts, toolsProblem, type Output, type TablesTools } from '../contract/tools';
+import { REQUIRED_BY_TOOL, analyzerOf, defaultRecipe, fieldAccepts, toolsProblem, type Output, type TablesTools, type ToolId } from '../contract/tools';
 import { fieldsOf, recordsOf, tablesSorted, type FieldRow } from './state';
 import { notice } from './desktop';
 import { junctionOf, junctionProblem, type JunctionConfig } from '../contract/junction';
@@ -469,13 +469,14 @@ export function useSchemaActions(store: Store) {
   }
 
   /**
-   * Turn File drop on with the DEFAULT recipe (filesystem, then ffprobe), every
-   * output mapped to a same-KEY field that accepts it, and a field CREATED for the
-   * one output the tool cannot run without (Path). One Ctrl+Z. Nothing else is
-   * created: the admin picks which outputs deserve a column.
+   * Turn a tool on with its DEFAULT recipe (File drop: filesystem, then ffprobe;
+   * Resolve: its one step), every output mapped to a same-KEY field that accepts
+   * it, and a field CREATED for each output the tool cannot run without (File
+   * drop's Path; the Resolve tool has none). One Ctrl+Z. Nothing else is created:
+   * the admin picks which outputs deserve a column.
    */
-  function enableFileDrop(tableId: string): string | null {
-    const recipe = defaultRecipe();
+  function enableTool(tableId: string, tool: ToolId): string | null {
+    const recipe = defaultRecipe(tool);
     for (const step of recipe.steps) {
       const a = analyzerOf(step.analyzer)!;
       for (const out of a.outputs) {
@@ -483,21 +484,22 @@ export function useSchemaActions(store: Store) {
         if (f) step.map[out.key] = f.id;
       }
     }
-    for (const r of REQUIRED) {
+    for (const r of REQUIRED_BY_TOOL[tool]) {
       const step = recipe.steps.find((s) => s.analyzer === r.analyzer);
       if (!step || r.key in step.map) continue;
       const out = analyzerOf(r.analyzer)!.outputs.find((o) => o.key === r.key)!;
       const made = addToolFields(tableId, [out]);
       if (made[r.key]) step.map[r.key] = made[r.key];
     }
-    return setTools(tableId, { ...currentTools(tableId), file_drop: recipe });
+    return setTools(tableId, { ...currentTools(tableId), [tool]: recipe });
   }
-
-  function disableFileDrop(tableId: string) {
+  function disableTool(tableId: string, tool: ToolId) {
     const tools = { ...currentTools(tableId) } as Partial<TablesTools>;
-    delete tools.file_drop;
+    delete tools[tool];
     return setTools(tableId, tools as TablesTools);
   }
+  const enableFileDrop = (tableId: string) => enableTool(tableId, 'file_drop');
+  const disableFileDrop = (tableId: string) => disableTool(tableId, 'file_drop');
 
   function currentTools(tableId: string): TablesTools {
     return (store.state.tables.get(tableId)?.tools ?? {}) as TablesTools;
@@ -515,6 +517,9 @@ export function useSchemaActions(store: Store) {
     const made: Record<string, string> = {};
     for (const out of outputs) {
       if (have.has(out.key)) continue;
+      // A LINK output needs to know which table to link into, which only the owner
+      // can say: he makes the link field himself, then maps the output to it.
+      if (out.type === 'link') continue;
       const id = crypto.randomUUID();
       let [type, shape] = out.type.split(':');
       // A text output meant to be READ at length (ffprobe's raw dump) gets a long-text column.
@@ -798,7 +803,7 @@ export function useSchemaActions(store: Store) {
     draftError, createField, renameField, setChoices, moveField, reorderFields, makePrimary, isPrimary,
     arrangement, setArrangement, addSection, updateSection, removeSection,
     canBePrimary, deleteField,
-    pairLink, facesOf, setArrowStyle, setMembership, setSingle, setCount, setMatch, setVocabulary, setTools, enableFileDrop, disableFileDrop, addToolFields, linkFieldsOf, lookupViasOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
+    pairLink, facesOf, setArrowStyle, setMembership, setSingle, setCount, setMatch, setVocabulary, setTools, enableTool, disableTool, enableFileDrop, disableFileDrop, addToolFields, linkFieldsOf, lookupViasOf, lookupTargetsOf, describeLookup, linkFieldsInto, describeBacklink,
   };
 }
 export type SchemaActions = ReturnType<typeof useSchemaActions>;

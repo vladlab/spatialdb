@@ -34,7 +34,8 @@ API.md "Tools".
   `classify`, `analyze(unit, analyzer, job?)` — the analyzer named by id from the
   closed set — `analyze_path(path, analyzer, job?)` (a recipe's MANUAL step run
   from a record, such as an md5, and the fingerprint run), `hash_cancel(job)`,
-  `allow_paths(paths, why)` and `reveal`. A hash given a `job` id reports
+  `allow_paths(paths, why)` and `reveal` — and, for the Resolve tool,
+  `resolve_timelines` and `resolve_read(timeline?)` (below). A hash given a `job` id reports
   `hash-progress` events (bytes done) under it and can be cancelled between
   chunks; the page's hash line (`client/tools/hashJobs.ts`) runs one at a time
   and the sidebar footer's strip shows it.
@@ -72,6 +73,49 @@ API.md "Tools".
   JSON, for a long-text field — single files only.
 - **Show in folder**: a `⤴ show` button beside every `file_path` value in the record
   panel.
+- **Resolve timeline** (the second tool, Oct 26; RESOLVE-BRIEF.md): switch it on in
+  ⚙ Table settings → Desktop tools and map its outputs to fields; then right-click a
+  record — a grid row, a canvas card, a kanban card — → **Ingest info from
+  Resolve…**, pick the timeline (the current one is preselected) → Read. THIS BUILD
+  ONLY READS: a dialog shows every output, where it is mapped, each audio track's
+  clips, the raw frame numbers, and any warning; nothing is written onto the record
+  yet (that is the next round, R4).
+
+## The Resolve tool: how it talks to Resolve
+
+The shell runs the host's **`python3`** (first on `PATH`; then /usr/bin, /usr/local/bin,
+/opt/homebrew/bin) on a script compiled into the app
+(`src-tauri/src/tools/resolve_read.py`, fed on stdin — nothing written to disk,
+nothing from the server). The script imports Resolve's own `DaVinciResolveScript`
+module and asks the running Resolve; it only reads.
+
+| | scripting folder (holds `Modules/`) | library |
+|---|---|---|
+| Linux (Rocky) | `/opt/resolve/Developer/Scripting` | `/opt/resolve/libs/Fusion/fusionscript.so` |
+| macOS | `/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting` | `/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/fusionscript.so` |
+| override (wins) | `SPATIALDB_RESOLVE_API` | `SPATIALDB_RESOLVE_LIB` |
+
+Resolve must be running with **Preferences → System → General → External scripting
+using: Local** (Studio). A modal dialog open in Resolve blocks its scripting: the
+read gives up after 30 s (the list) / 120 s (a timeline) and says so. The handshake
+reports the `resolve` analyzer as python3's version when python3 and the library are
+both found — Table settings shows it ("runs python3 3.11.5") — without talking to
+Resolve; Resolve's own version is shown in the picker.
+
+To try the script without the app (what the shell runs, exactly):
+
+```bash
+cd src-tauri/src/tools
+PYTHONPATH=/opt/resolve/Developer/Scripting/Modules RESOLVE_SCRIPT_LIB=/opt/resolve/libs/Fusion/fusionscript.so \
+  python3 - list < resolve_read.py
+PYTHONPATH=… RESOLVE_SCRIPT_LIB=… python3 - read "EP101_OEV3" < resolve_read.py
+```
+
+Verified: `cargo test` runs the real script through the real python3 against a FAKE
+`DaVinciResolveScript` module (src-tauri/src/tools/resolve.rs) — the plumbing, the
+timeout, the error texts, the timecode labels; `test/resolveui.ts` drives the app's
+side with the shell faked. NOT verified: any of it against a real Resolve — see
+"Needs eyes" 8.
 
 ## Running it
 
@@ -216,5 +260,18 @@ In the order most likely to be wrong:
 7. **A folder of EXRs, an IMF folder**: one record each, with the right
    kind and manifest. `classify.rs` was written against the file naming I expect;
    your real plates will find the gaps.
-8. Then the things nobody has looked at: the setup page's look, the drop overlay, the
+8. **The Resolve tool against a real Resolve** (Oct 26 — nobody has run it yet).
+   Right-click an edit → Ingest info from Resolve… → Read, and check the readout
+   against the timeline: (a) the API names in `resolve_read.py` exist on your
+   Resolve — a wrong one fails as "Resolve's GetTrackSubType(audio, 1) failed: …";
+   (b) **Start timecode** agrees with Resolve's own (a ⚠ says so if the start
+   FRAME counts to a different label — the frame-number reading would then be off);
+   (c) **End timecode / Duration**: whether `GetEndFrame` is the frame after the
+   last (assumed) or the last; (d) clip ends: a ⚠ counts clips whose `GetEnd` is not
+   start + duration; (e) what `GetTrackSubType` says for your 5.1 / 7.1 / film /
+   adaptive tracks, and the film channel orders in contract/shapes.ts
+   `RESOLVE_TRACK_CHANNELS`; (f) clip paths are the absolute paths your Files
+   records hold; (g) a 29.97 DF timeline. The readout's last lines show the raw
+   numbers as Resolve said them, for exactly this.
+9. Then the things nobody has looked at: the setup page's look, the drop overlay, the
    notices strip, the `probing…` marker in the record panel.

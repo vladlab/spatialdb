@@ -494,6 +494,8 @@
       <button v-if="isReports" class="open-report-item" @click="rowMenuDo((m) => emit('open-report', m.id))">▤ Open this report</button>
       <button v-if="isCalendars" class="open-calendar-item" @click="rowMenuDo((m) => emit('open-calendar', m.id))">▥ Open this calendar</button>
       <button v-if="!isJunction" class="duplicate-record" @click="rowMenuDo((m) => duplicateRows(m.ids))">{{ rowMenu.ids.length > 1 ? `Duplicate ${rowMenu.ids.length} records` : 'Duplicate record' }}</button>
+      <!-- The Resolve tool (client/tools/resolveIngest.ts): one record at a time, desktop only. -->
+      <button v-if="rowMenu.ids.length === 1 && resolveOffered(store, rowMenu.id)" class="resolve-ingest" @click="rowMenuDo((m) => ingestFromResolve(store, m.id, labelFor(m.id)))">Ingest info from Resolve…</button>
       <hr />
       <button class="danger delete-record" @click="rowMenuDo((m) => deleteRows(m.ids))">{{ rowMenu.ids.length > 1 ? `Delete ${rowMenu.ids.length} records…` : 'Delete record…' }}</button>
     </div>
@@ -529,6 +531,7 @@ import ColorRules from './ColorRules.vue';
 import { legendOf, paintsOf, type ColorRule, type Paints } from '../../contract/colorRules';
 import { useSchemaActions } from '../schemaActions';
 import { useDerived } from '../derived';
+import { ingestFromResolve, resolveOffered } from '../tools/resolveIngest';
 import { ancestorsOf, canMakeColumns, defaultColumnField, defaultHideEmpty, groupRows, type GroupHeader, type GroupValue } from '../../contract/views';
 import { ask, confirmDialog } from '../dialogs';
 import { richTextToPlain } from '../../contract/richtext';

@@ -119,6 +119,7 @@ fn grant(app: &AppHandle, server: &url::Url) -> Result<(), String> {
             "core:webview:allow-set-webview-zoom",      // the UI size setting (client/uiScale.ts) is the webview's own zoom here
             "allow-tools-available", "allow-server-url",
             "allow-classify", "allow-analyze", "allow-analyze-path", "allow-hash-cancel", "allow-allow-paths", "allow-reveal",
+            "allow-resolve-timelines", "allow-resolve-read",
         ]
     });
     app.add_capability(cap.to_string()).map_err(|e| e.to_string())
@@ -170,9 +171,11 @@ fn tools_available() -> Available {
     for a in ["filesystem", "sequence", "imf", "hash-xxh3", "hash-sha256", "hash-md5"] { analyzers.insert(a, own.clone()); }
     let ffprobe = tools::probe::ffprobe_path();
     analyzers.insert("ffprobe", ffprobe.as_deref().and_then(tools::probe::version));
+    // python3's version when python3 and Resolve's scripting library are both here; Resolve itself is asked only when the tool runs.
+    analyzers.insert("resolve", tools::resolve::available(&tools::resolve::Paths::from_env()));
     Available {
         version: env!("CARGO_PKG_VERSION").to_string(),
-        tools: vec!["file_drop", "reveal", "hash_progress", "allow_paths"],
+        tools: vec!["file_drop", "reveal", "hash_progress", "allow_paths", "resolve"],
         analyzers,
         ffprobe_path: ffprobe.map(|p| format!("{}{}", p.display(), if tools::probe::ffprobe_is_bundled() { " (bundled)" } else { "" })),
         platform: std::env::consts::OS,
@@ -307,6 +310,22 @@ async fn analyze_path(app: AppHandle, allowed: State<'_, Allowed>, jobs: State<'
     Ok(AnalyzedPath { unit, outputs: probed.outputs })
 }
 
+/// The Resolve tool, step 1: the open project's timelines, for the page's picker
+/// (RESOLVE-BRIEF.md R4). Talks to the running Resolve through the compiled-in
+/// script (tools/resolve.rs); reads nothing from disk, so `Allowed` is not involved.
+#[tauri::command]
+async fn resolve_timelines() -> Result<tools::resolve::Project, String> {
+    tauri::async_runtime::spawn_blocking(|| tools::resolve::list(&tools::resolve::Paths::from_env())).await.map_err(|e| e.to_string())?
+}
+
+/// The Resolve tool, step 2: one timeline, as contract/tools.ts outputs. `timeline`
+/// is a NAME from the list `resolve_timelines` returned (the current timeline when
+/// absent) — passed to the script as one argument, looked up there by exact name.
+#[tauri::command]
+async fn resolve_read(timeline: Option<String>) -> Result<tools::resolve::ReadResult, String> {
+    tauri::async_runtime::spawn_blocking(move || tools::resolve::read(&tools::resolve::Paths::from_env(), timeline.as_deref())).await.map_err(|e| e.to_string())?
+}
+
 /// Select the file in the platform's file manager. Executes nothing. Says what it
 /// found: `"file"` (selected), `"folder"` (the file is gone; its folder was opened).
 #[tauri::command]
@@ -318,7 +337,7 @@ pub fn run() {
         .manage(Allowed::default())
         .manage(Jobs::default())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![tools_available, server_url, set_server, classify, analyze, analyze_path, hash_cancel, allow_paths, reveal])
+        .invoke_handler(tauri::generate_handler![tools_available, server_url, set_server, classify, analyze, analyze_path, hash_cancel, allow_paths, reveal, resolve_timelines, resolve_read])
         .setup(|app| {
             let handle = app.handle().clone();
             match configured_server(&handle) {
