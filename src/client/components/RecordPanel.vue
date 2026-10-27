@@ -667,7 +667,7 @@ watch(() => props.recordId, () => {
 .rp-field.editing .rp-value:not(.rp-under) { background: var(--bg-surface-hover); }
 .rp-field.readonly .rp-name { color: var(--text-muted); }
 /* The well's last row carries no hairline into its bottom padding. */
-.rp-well.rp-fields > .rp-field:last-child > .rp-name, .rp-well.rp-fields > .rp-field:last-child > .rp-value:last-child, .rp-well.rp-fields > .rp-field:last-child > .rp-under:last-child { border-bottom: 0; }
+.rp-well.rp-fields > .rp-field:last-child > .rp-name, .rp-well.rp-fields > .rp-field:last-child > .rp-value:last-child { border-bottom: 0; }
 /* A LINK row: the pills one per line down the left; "add another…" at the right end of
    the last line — on one link, the same line as the pill. Several links: the pills
    stack, the label stays at the top of the cell. */
@@ -681,9 +681,12 @@ watch(() => props.recordId, () => {
 /* ── BLOCKS ──────────────────────────────────────────────────────────────
    A field that needs room: folded, its row is label + one-line SUMMARY, with a
    fold chip at the label's left. OPEN, the label bar runs the full width (the
-   summary cell takes the label shade and its text wipes out to the right), the
-   editor hangs under it, and an accent line runs down the left of the whole block
-   — header and editor — so where it ends and the next row begins is plain. */
+   summary cell takes the label shade and its text wipes out to the right), and the
+   editor hangs under it in a BOX — the rich-text editor's box, for every kind of
+   block: the controls shade, a hairline, rounded corners, a gap from the bar and
+   from the well's edges, the text one step lighter than a row's. Down the open
+   block's left runs a thin accent line with rounded ends, apart from the well's
+   own rule — the tell for where the block ends and the next row begins. */
 .fold-chip {
   flex: none; width: 16px; height: 16px; padding: 1px; box-sizing: border-box; margin-left: -4px;
   background: var(--card-head-bg); border: 0; border-radius: 3px; cursor: pointer; color: var(--text-secondary);
@@ -694,19 +697,34 @@ watch(() => props.recordId, () => {
 .rp-value.summary { cursor: pointer; flex-wrap: nowrap; overflow: hidden; transition: background-color 0.18s ease; }
 .rp-value.summary .text, .rp-value.summary .placeholder { color: var(--text-primary); min-width: 0; transition: opacity 0.18s ease, transform 0.18s ease; }
 .rp-value.summary .placeholder { color: var(--text-faint); }
-.rp-field.block.open { box-shadow: inset 2px 0 0 var(--accent); }
+.rp-field.block.open { position: relative; border-bottom: 1px solid var(--border-main); }
+.rp-field.block.open::before {
+  content: ''; position: absolute; left: 2px; top: 3px; bottom: 3px; width: 2px;
+  border-radius: 1px; background: var(--accent); pointer-events: none;
+}
+.rp-well.rp-fields > .rp-field.block.open:last-child { border-bottom: 0; }
 .rp-field.block.open > .rp-name { border-bottom-color: transparent; }
 .rp-field.block.open > .rp-value.summary { background: var(--bg-head); border-bottom-color: transparent; cursor: default; }
 .rp-field.block.open > .rp-value.summary .text, .rp-field.block.open > .rp-value.summary .placeholder { opacity: 0; transform: translateX(10px); }
 @media (prefers-reduced-motion: reduce) { .rp-value.summary, .rp-value.summary .text, .rp-value.summary .placeholder { transition: none; } }
-.rp-under {
-  grid-column: 1 / -1; margin: 0; padding: 6px 10px 10px 10px;
-  border-bottom: 1px solid var(--border-main);
-  min-height: 0; cursor: text;
+/* The box. It is the value cell itself, so what hangs under a row keeps its class
+   (.rp-under) for the tests and the keyboard; the gap is its margin, and the rule
+   under the block is the field's (above), not the cell's. */
+.rp-value.rp-under {
+  grid-column: 1 / -1; display: block; min-height: 0; cursor: text;
+  margin: 6px 10px 10px; padding: 0; overflow: hidden;
+  border: 1px solid var(--border-main); border-radius: 6px; background: var(--controls-bg);
+  color: var(--text-secondary);
 }
+.rp-value.rp-under:focus { background: var(--controls-bg); }
 .rp-under.readonly, .rp-under.nested { cursor: default; }
-.rp-under.nested { padding: 0 0 8px 0; }
-.rp-rich.rp-under { display: flex; }
+/* What is drawn straight into the box carries its own padding; a structured value
+   (StructuredField) and a junction's table (JunctionTable) fill it edge to edge. */
+.rp-under > .attach, .rp-under > .editor, .rp-under > .text.pre, .rp-under > .placeholder, .rp-under > .looked-up { display: block; padding: 8px 12px; box-sizing: border-box; }
+.rp-under > .text.pre:empty { display: none; }
+.rp-under > .jt-wrap { padding-bottom: 8px; }
+/* Rich text IS its own box (RichTextEditor .rte): the cell around it stays plain. */
+.rp-rich.rp-under { grid-column: 1 / -1; display: flex; margin: 0; padding: 6px 10px 10px; border: 0; border-radius: 0; background: none; overflow: visible; }
 .rp-rich :deep(.rte) { flex: 1; border-radius: 6px; }
 .text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .text.pre { white-space: pre-wrap; overflow: visible; }

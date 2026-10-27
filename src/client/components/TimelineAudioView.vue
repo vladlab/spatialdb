@@ -14,8 +14,10 @@
   when the record has none, in frames. A clip with a file shows its path, with
   ⤴ show in the desktop app; one without ("tone") says so.
 
-  Long lists scroll inside a fixed-height box, like a manifest's members, so a
-  timeline with forty stems does not push the rest of the record off the tray.
+  Long lists scroll inside a fixed height, like a manifest's members, so a timeline
+  with forty stems does not push the rest of the record off the tray. The block's box
+  and its bar — the summary, the rate the lengths are at, where the value comes from
+  — are StructuredField's; this draws only the table, edge to edge inside it.
 -->
 <template>
   <div v-if="ta" class="ta">
@@ -43,7 +45,6 @@
         </tbody>
       </table>
     </div>
-    <p v-if="base" class="ta-line muted ta-foot">lengths at {{ baseLabel(base) }} — the record's frame rate</p>
   </div>
   <p v-else class="ta-line ta-bad">This value is not a valid list of timeline audio tracks.</p>
 </template>
@@ -51,28 +52,18 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { Store } from '../store';
-import { fieldsOf } from '../state';
 import { invoke, isDesktop, notice } from '../desktop';
+import { recordTcBase } from '../tcBase';
 import { TimelineAudio } from '../../contract/shapes';
-import { baseLabel, canDrop, formatLength, TC_RATES, type TcBase } from '../../contract/timecode';
-import { resolveMap, type TablesTools } from '../../contract/tools';
+import { formatLength } from '../../contract/timecode';
 
 const props = defineProps<{ store: Store; recordId: string; value: unknown }>();
 
 const ta = computed(() => { const r = TimelineAudio.safeParse(props.value); return r.success ? r.data : null; });
 const tracks = computed(() => [...(ta.value?.tracks ?? [])].sort((a, b) => a.index - b.index));
 
-/** The record's own timecode base: where its table's Resolve recipe writes Frame rate and Drop frame. */
-const base = computed<TcBase | null>(() => {
-  const r = props.store.state.records.get(props.recordId);
-  const step = r ? (props.store.state.tables.get(r.table_id)?.tools as Partial<TablesTools> | undefined)?.resolve?.steps[0] : undefined;
-  if (!r || !step) return null;
-  const map = resolveMap(step, fieldsOf(props.store.state, r.table_id));
-  const rk = map.get('frame_rate'), dk = map.get('drop_frame');
-  const rate = rk ? r.data[rk] : undefined;
-  if (typeof rate !== 'number' || !(TC_RATES as readonly number[]).includes(rate)) return null;
-  return { rate, drop: canDrop(rate) && dk !== undefined && r.data[dk] === true };
-});
+/** The record's own timecode base (client/tcBase.ts): the rate a length is said at. */
+const base = computed(() => recordTcBase(props.store.state, props.recordId));
 const lengthOf = (frames: number) => (base.value ? formatLength(frames, base.value) : `${frames.toLocaleString()} fr`);
 
 const desktop = isDesktop();
@@ -83,21 +74,22 @@ const reveal = (path: string) => invoke<string>('reveal', { path })
 
 <style scoped>
 .ta { font-size: 12px; min-width: 0; }
-.ta-line { margin: 0 0 2px; }
+.ta-line { margin: 0; padding: 8px 12px; }
 .muted { color: var(--text-muted); }
 .ta-bad { color: var(--warning); }
-.ta-foot { margin-top: 4px; font-size: 11px; }
-.ta-scroll { max-height: 260px; overflow-y: auto; border: 1px solid var(--border-main); border-radius: 4px; }
+/* No border of its own: the block's box (RecordPanel .rp-under) is the frame. */
+.ta-scroll { max-height: 260px; overflow-y: auto; }
 .ta-table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
 .ta-table td, .ta-table th { padding: 2px 8px; }
 /* A track's header: the grid's group-header language — a tinted band. */
 .ta-head th { text-align: left; font-weight: 600; background: color-mix(in srgb, var(--accent) 12%, transparent); border-top: 1px solid var(--border-main); }
 .ta-track:first-child .ta-head th { border-top: none; }
+.ta-track:last-child tr:last-child td { border-bottom: none; }
 .ta-name { color: var(--text-primary); }
 .ta-format { margin-left: 8px; color: var(--accent); font-weight: 600; }
 .ta-count { text-align: right; color: var(--text-muted); font-weight: 400; width: 64px; }
 .ta-clip td { padding-top: 4px; }
-.ta-clip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 40%; }
+.ta-clip-name { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 40%; }
 .ta-tc { font-family: ui-monospace, monospace; white-space: nowrap; color: var(--text-secondary); width: 22%; }
 .ta-len { font-family: ui-monospace, monospace; white-space: nowrap; text-align: right; color: var(--text-muted); width: 64px; }
 .ta-path-row td { padding-top: 0; padding-bottom: 4px; border-bottom: 1px solid var(--border-main); }

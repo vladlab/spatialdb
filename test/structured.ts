@@ -307,7 +307,7 @@ async function main() {
     await openRecord('EP101_OEV3');
     const tlf = () => pField('Timeline audio');
     check('in the tray: the read-only track table, and no "edit as JSON"', await until(() => !!tlf()?.find('.ta-table').exists()) && tlf().findAll('.ta-head').length === 2 && !tlf().find('.edit-json').exists() && /set by the Resolve tool/.test(tlf().text()));
-    check('on a table WITHOUT the Resolve tool there is no rate to say a length at: it is in frames, and no rate line', tlf().findAll('.ta-len').map((x: any) => x.text()).join() === '75,968 fr,1,440 fr,75,968 fr' && !tlf().find('.ta-foot').exists(), tlf().findAll('.ta-len').map((x: any) => x.text()).join());
+    check('on a table WITHOUT the Resolve tool there is no rate to say a length at: it is in frames, and the bar says so', tlf().findAll('.ta-len').map((x: any) => x.text()).join() === '75,968 fr,1,440 fr,75,968 fr' && /lengths in frames/.test(tlf().find('.sf-note').text()), tlf().findAll('.ta-len').map((x: any) => x.text()).join());
     check('a clip with no file says so', tlf().find('.ta-nofile').text() === 'no file');
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);

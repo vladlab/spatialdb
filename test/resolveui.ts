@@ -206,12 +206,12 @@ async function main() {
     const clipRows = () => ta().findAll('.ta-clip').map((r: any) => r.findAll('td').map((td: any) => td.text().trim()));
     check('a header per track, in Resolve\'s order: name, Resolve\'s format, the clip count', await until(() => heads().length === 2) && heads().join(' / ') === 'A1|stereo|1 clip / A2|5.1|2 clips', heads().join(' / '));
     check('a row per clip: name, in, → out, and the length at the RECORD\'s rate (23.976 → "00:52:45:16"; the tone "1m")', JSON.stringify(clipRows()) === JSON.stringify([['EP101_Mix_ST.wav', '00:59:30:00', '→ 01:52:15:16', '00:52:45:16'], ['tone', '00:58:30:00', '→ 00:59:30:00', '1m'], ['EP101_Mix_51.wav', '00:59:30:00', '→ 01:52:15:16', '00:52:45:16']]), JSON.stringify(clipRows()));
-    check('…and it says which rate the lengths are at', /lengths at 23\.976 — the record's frame rate/.test(ta().find('.ta-foot').text()));
+    check('…and the block\'s bar says which rate the lengths are at', /lengths at 23\.976 · set by the Resolve tool/.test(ta().find('.sf-bar .sf-note').text()), ta().find('.sf-bar').text());
     check('a clip with a file shows its path with ⤴ show; one without says "no file"', ta().findAll('.ta-path-text').map((x: any) => x.text()).join() === '/mnt/post/EP101_Mix_ST.wav,/mnt/post/EP101_Mix_51.wav' && ta().findAll('.ta-path .reveal').length === 2 && ta().find('.ta-nofile').text() === 'no file');
     calls.length = 0;
     await ta().find('.ta-path .reveal').trigger('click');
     check('⤴ show asks the shell to reveal that file', await until(() => calls.some((c) => c.cmd === 'reveal')) && calls.find((c) => c.cmd === 'reveal')!.args.path === '/mnt/post/EP101_Mix_ST.wav', JSON.stringify(calls));
-    check('no editor and no "edit as JSON" — Resolve is the source of truth; a note says where the value comes from', !ta().find('.edit-json').exists() && !ta().find('textarea').exists() && /set by the Resolve tool/.test(ta().find('.sf-note').text()));
+    check('no editor and no "edit as JSON" — Resolve is the source of truth; a note says where the value comes from', !ta().find('.edit-json').exists() && !ta().find('textarea').exists() && /set by the Resolve tool/.test(ta().find('.sf-bar .sf-note').text()));
 
     console.log('\nRU3c. A second ingest onto a filled record asks before overwriting');
     calls.length = 0; dialogs.seen.length = 0; dialogs.bodies.length = 0;

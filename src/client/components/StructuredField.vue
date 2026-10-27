@@ -18,35 +18,49 @@
   one wrong number in a manifest, or for a shape this build has no editor for. It
   saves only what contract/shapes.ts accepts — the same check the server makes —
   and says why when it will not.
+
+  It is drawn inside a block's box in the tray (RecordPanel.vue .rp-under) in the
+  rich-text editor's shape: a BAR on top — the summary at the left, the shape's own
+  note or toggle at the right — and the editor or view under it.
 -->
 <template>
   <div class="sf" @click.stop @keydown.stop>
-    <p class="sf-summary" :class="{ empty: value === undefined }">{{ summary || 'empty' }}</p>
+    <!-- The BAR, as the rich-text editor has its toolbar: the value's one-line summary
+         (the same line the card and the folded row print), and at the right end what
+         the shape has to say about itself — "edit as JSON…", or, for timeline audio,
+         where the value comes from and the rate its lengths count at. -->
+    <div class="sf-bar">
+      <span class="sf-summary" :class="{ empty: value === undefined }">{{ summary || 'empty' }}</span>
+      <span class="sf-spacer" />
+      <span v-if="shape === 'timeline_audio'" class="sf-note" :title="taTitle">{{ taNote }}</span>
+      <button v-else-if="!raw" class="sf-toggle edit-json" @click="openRaw">{{ shape === 'json' ? (value === undefined ? 'add…' : 'edit…') : 'edit as JSON…' }}</button>
+    </div>
 
-    <template v-if="!raw">
-      <ManifestView v-if="shape === 'manifest' && value !== undefined" :value="value" />
-      <AudioLayoutEditor v-else-if="shape === 'audio_layout'" :store="store" :record-id="recordId" :field="field" :value="value"
-                         @set="(v) => $emit('set', field.key, v)" @unset="$emit('unset', field.key)" />
-      <VideoLayoutEditor v-else-if="shape === 'video_layout'" :store="store" :record-id="recordId" :field="field" :value="value"
-                         @set="(v) => $emit('set', field.key, v)" @unset="$emit('unset', field.key)" />
-      <ReportEditor v-else-if="shape === 'report'" :store="store" :record-id="recordId" :field="field" :value="value"
-                    @set="(v) => $emit('set', field.key, v)" />
-      <CalendarEditor v-else-if="shape === 'calendar'" :store="store" :record-id="recordId" :field="field" :value="value"
+    <div class="sf-body" :class="{ flush: shape === 'timeline_audio' && !raw }">
+      <template v-if="!raw">
+        <ManifestView v-if="shape === 'manifest' && value !== undefined" :value="value" />
+        <AudioLayoutEditor v-else-if="shape === 'audio_layout'" :store="store" :record-id="recordId" :field="field" :value="value"
+                           @set="(v) => $emit('set', field.key, v)" @unset="$emit('unset', field.key)" />
+        <VideoLayoutEditor v-else-if="shape === 'video_layout'" :store="store" :record-id="recordId" :field="field" :value="value"
+                           @set="(v) => $emit('set', field.key, v)" @unset="$emit('unset', field.key)" />
+        <ReportEditor v-else-if="shape === 'report'" :store="store" :record-id="recordId" :field="field" :value="value"
                       @set="(v) => $emit('set', field.key, v)" />
-      <TimelineAudioView v-else-if="shape === 'timeline_audio' && value !== undefined" :store="store" :record-id="recordId" :value="value" />
-    </template>
+        <CalendarEditor v-else-if="shape === 'calendar'" :store="store" :record-id="recordId" :field="field" :value="value"
+                        @set="(v) => $emit('set', field.key, v)" />
+        <TimelineAudioView v-else-if="shape === 'timeline_audio' && value !== undefined" :store="store" :record-id="recordId" :value="value" />
+        <p v-else-if="shape === 'timeline_audio'" class="sf-empty">Nothing read yet — right-click the record → Ingest info from Resolve…</p>
+      </template>
 
-    <div v-if="raw" class="sf-raw">
-      <textarea v-model="draft" class="sf-json" spellcheck="false" rows="10" />
-      <p v-if="error" class="sf-error">{{ error }}</p>
-      <div class="sf-line">
-        <button class="sf-btn primary save-json" @click="saveRaw">save</button>
-        <button class="sf-btn" @click="raw = false">cancel</button>
-        <button v-if="value !== undefined" class="sf-btn danger" @click="$emit('unset', field.key); raw = false">clear</button>
+      <div v-if="raw" class="sf-raw">
+        <textarea v-model="draft" class="sf-json" spellcheck="false" rows="10" />
+        <p v-if="error" class="sf-error">{{ error }}</p>
+        <div class="sf-line">
+          <button class="sf-btn primary save-json" @click="saveRaw">save</button>
+          <button class="sf-btn" @click="raw = false">cancel</button>
+          <button v-if="value !== undefined" class="sf-btn danger" @click="$emit('unset', field.key); raw = false">clear</button>
+        </div>
       </div>
     </div>
-    <p v-else-if="shape === 'timeline_audio'" class="sf-note">set by the Resolve tool — right-click the record → Ingest info from Resolve…</p>
-    <button v-else class="sf-toggle edit-json" @click="openRaw">{{ shape === 'json' ? (value === undefined ? 'add…' : 'edit…') : 'edit as JSON…' }}</button>
   </div>
 </template>
 
@@ -64,12 +78,20 @@ import VideoLayoutEditor from './VideoLayoutEditor.vue';
 import ReportEditor from './ReportEditor.vue';
 import CalendarEditor from './CalendarEditor.vue';
 import TimelineAudioView from './TimelineAudioView.vue';
+import { recordTcBase } from '../tcBase';
+import { baseLabel } from '../../contract/timecode';
 
 const props = defineProps<{ store: Store; recordId: string; field: FieldRow; value: unknown }>();
 const emit = defineEmits<{ set: [key: string, value: unknown]; unset: [key: string] }>();
 
 const shape = computed(() => shapeOf(props.field));
 const summary = computed(() => summarise(shape.value, props.value));
+
+/** Timeline audio's bar: the rate its clip lengths are said at (client/tcBase.ts), and
+    that the value is the Resolve tool's — there is no editor (RESOLVE-BRIEF.md R1.3). */
+const taBase = computed(() => recordTcBase(props.store.state, props.recordId));
+const taNote = computed(() => `${taBase.value ? `lengths at ${baseLabel(taBase.value)}` : 'lengths in frames'} · set by the Resolve tool`);
+const taTitle = computed(() => `${taBase.value ? `Lengths count at ${baseLabel(taBase.value)}, the record's own frame rate.` : 'Lengths are in frames: the record has no frame rate for them to count at.'} Resolve is the source of truth — right-click the record → Ingest info from Resolve… to read the timeline again.`);
 
 const raw = ref(false);
 const draft = ref('');
@@ -93,15 +115,24 @@ function saveRaw() {
 </script>
 
 <style scoped>
-.sf { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.sf-summary { margin: 0; font-weight: 600; font-size: 12px; }
+/* The block's box is RecordPanel's (.rp-under); this fills it: a bar, then the body. */
+.sf { width: 100%; min-width: 0; display: flex; flex-direction: column; }
+.sf-bar {
+  display: flex; align-items: center; gap: 8px; padding: 4px 10px; min-height: 30px; box-sizing: border-box;
+  border-bottom: 1px solid var(--border-main); font-size: 12px; color: var(--text-secondary);
+}
+.sf-summary { margin: 0; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sf-summary.empty { color: var(--text-faint); font-weight: 400; font-style: italic; }
-.sf-note { margin: 0; color: var(--text-faint); font-size: 11px; font-style: italic; }
-.sf-toggle { align-self: flex-start; background: none; border: none; color: var(--text-muted); cursor: pointer; font: inherit; font-size: 11px; padding: 0; }
+.sf-spacer { flex: 1; }
+.sf-note { flex: none; color: var(--text-faint); font-size: 11px; white-space: nowrap; cursor: help; }
+.sf-toggle { flex: none; background: none; border: none; color: var(--text-muted); cursor: pointer; font: inherit; font-size: 11px; padding: 0; }
 .sf-toggle:hover { color: var(--accent); }
-.sf-json { width: 100%; box-sizing: border-box; background: var(--controls-bg); border: 1px solid var(--border-main); border-radius: 4px; color: var(--text-primary); font: 12px/1.45 ui-monospace, monospace; padding: 8px; resize: vertical; }
-.sf-error { margin: 0; color: var(--danger); font-size: 11px; }
-.sf-line { display: flex; gap: 6px; }
+.sf-body { padding: 8px 12px; min-width: 0; }
+.sf-body.flush { padding: 0; }
+.sf-empty { margin: 0; color: var(--text-faint); font-size: 11px; font-style: italic; }
+.sf-json { width: 100%; box-sizing: border-box; background: var(--bg-app); border: 1px solid var(--border-main); border-radius: 4px; color: var(--text-primary); font: 12px/1.45 ui-monospace, monospace; padding: 8px; resize: vertical; }
+.sf-error { margin: 6px 0 0; color: var(--danger); font-size: 11px; }
+.sf-line { display: flex; gap: 6px; margin-top: 6px; }
 .sf-btn { background: none; border: 1px solid var(--border-main); color: var(--text-secondary); border-radius: 4px; padding: 2px 10px; cursor: pointer; font: inherit; font-size: 12px; }
 .sf-btn.primary { color: var(--accent); border-color: var(--accent); }
 .sf-btn.danger:hover { color: var(--danger); border-color: var(--danger); }
