@@ -1004,6 +1004,10 @@ p.hint { padding: 24px; }
 /* A count ("3 Edits"): the number carries it, the noun is quieter. */
 .pill.count .pill-text { color: var(--text-secondary); }
 .pill-n { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+/* A warned pill (the Resolve tool's "not on the timeline"): the mark sits inside, before the text, and the border says so too. */
+.pill.warned { border-color: var(--warning); }
+.pill-warn { display: inline-flex; align-items: center; margin-left: 5px; flex: none; }
+.pill.warned > .pill-text { padding-left: 4px; }
 .pill:hover, .pill.on { box-shadow: inset 0 0 0 1px var(--accent); }
 .pill.junction:hover, .pill.junction.on { box-shadow: none; }
 .pill.junction:hover .pill-main, .pill.junction.on .pill-main { box-shadow: inset 0 0 0 1px var(--accent); }

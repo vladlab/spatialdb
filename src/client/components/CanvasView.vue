@@ -469,8 +469,9 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
     // that much wider when any pair has one (every status still starts at the same x).
     const here = ids?.map((id) => placedHere.value.has(id));
     const anyHere = !!here?.some(Boolean);
+    const warns = f.type === 'link' && ids ? ids.map((id) => derived.pillWarning(rec.id, f.id, id)) : undefined;
     return { id: f.id, name: f.name, derived: true, text: texts.join(', '), lines: texts.length > 1 ? texts : undefined,
-      ids, here: anyHere ? here : undefined, color, link: f.type === 'link' || !!j, junction: !!j, rows,
+      ids, here: anyHere ? here : undefined, warns: warns?.some(Boolean) ? warns : undefined, color, link: f.type === 'link' || !!j, junction: !!j, rows,
       statuses: j ? rows!.map((row) => derived.junctionRow(row)?.status ?? '') : undefined,
       statusW: j ? capsuleWidth(rows!.map((row) => derived.junctionRow(row)?.status ?? ''), 11) : undefined,
       slot: j && ids!.length ? pairSlot(ids!.map((id) => derived.plainLabelOfId(id)), 11) + (anyHere ? JUMP_PAD : 0) : undefined };

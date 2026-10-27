@@ -499,8 +499,15 @@ analyzer is a 400. Outputs: `resolve.version`, `project`, `timeline_name`,
 `audio_tracks` (→ a `timeline_audio` field), `audio_layout` (derived, → an
 `audio_layout` field), and `audio_files` — the first output of type **`link`**: the
 clips' paths, linked to records of the field's target table whose path matches
-EXACTLY; never creates a row. A `link` output may go into any link field and
-nothing else. Two tools may map the same field (each runs by a separate act).
+EXACTLY; never creates a row, and never REMOVES a link (the field is the owner's
+general Inputs; a link made by hand survives an ingest). A `link` output may go
+into any link field and nothing else. Two tools may map the same field (each runs
+by a separate act). **`contract/resolveLinks.ts`** holds the two rules around it:
+`inputWarnings` — which linked files to mark ⚠ (audio by the target's Media column
+else the extension, and not among the record's `timeline_audio` clip paths; no
+tracks value → no marks), surfaced through `derived.fieldVerdicts` / `pillWarning`
+as the compare engine's mark — and `conflicts`, the overwrite dialog's list (a
+field that is empty or already equal is not a conflict).
 
 **`raw_dump`** (Oct 17): an ffprobe output carrying the whole of
 `-show_format -show_streams` as pretty-printed JSON, for a `long_text` field

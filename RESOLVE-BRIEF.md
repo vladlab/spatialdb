@@ -5,8 +5,9 @@
 > with R4's run cut short on purpose: the picker reads the timeline and a dialog
 > shows what was read and where each output is mapped — NOTHING is written yet, so
 > the reading can be checked against a real Resolve first (DESKTOP.md "Needs eyes"
-> 8). Next: R4 — write it (overwrite check, one batch, path links), then the tray
-> block (R1.3). Decided on the way: the script names each API call it makes so a
+> 8); the owner ran it against his Resolve: "all works so far". R4 (the write,
+> Inputs add-only with the derived warning — R1.5 as amended) delivered as
+> `resolve-write.patch`. Next: the tray block (R1.3), then polish (R7 step 6). Decided on the way: the script names each API call it makes so a
 > wrong name fails readably; clip ends are start + duration (GetEnd only checked);
 > the readout lists the raw frame numbers while the reader is new.
 
@@ -180,20 +181,44 @@ bridge to what exists (`diffLayouts`, the audio-layout summary and editor): the
 owner does not need a compare today, but mapping this output costs one row in the
 recipe and makes one possible later.
 
-### R1.5 Link resolution by path
+### R1.5 Link resolution by path — ADDS, never removes; mismatches are MARKED
+
+(Amended Oct 26, evening, with the owner: the field this lands in is his general
+**Inputs** link on Edits — every file an online edit was made from, picture
+included — not a dedicated audio-files field. So the tool may not own the field,
+and the warning must know which inputs are audio.)
 
 `audio_files` is a `link` output whose VALUE is the list of distinct clip paths.
-Routing (`routeLinks` in `client/tools/fileDrop.ts`, generalised): for a link
-field, the target table's `file_path` field is the one its own File drop recipe
-maps `filesystem.path` to (`pathKeyOf`); if the target table has no such field,
-the output is skipped with a notice ("*Files* has no path column for the tool to
-match on"). A clip path that matches a record's path EXACTLY links it; one that
-matches nothing is reported ("not linked — no record of *Files* at /mnt/…") and
-NEVER creates a row. The link field's existing links are REPLACED by the matches
-(as a vocabulary link replaces what the field held), so re-ingesting after a
-re-conform is right; which is why the conflict check in R4 also lists this field
-when the set would change. A `single_target` link field takes the first match and
-reports the rest.
+Routing: for a link field, the target table's path column is the one its own File
+drop recipe maps `filesystem.path` to (`pathKeyOf`); if the target table has no
+such column, the output is skipped with a notice ("*Files* has no path column for
+the tool to match on"). A clip path that matches a record's path EXACTLY links it
+(`link.add`); a path already linked is left alone; one that matches nothing is
+reported ("not linked — no record of *Files* at /mnt/…") and NEVER creates a row.
+**Nothing is ever unlinked by the tool**, so a link made by hand survives every
+ingest and this field never appears in the overwrite dialog. A `single_target`
+link field takes the first match and reports the rest.
+
+**The warning** (`contract/resolveLinks.ts`, pure; shown through
+`derived.fieldVerdicts` as the compare engine's `VerdictMark`, kind `warn`): for a
+record of a table with the Resolve tool on, whose recipe maps BOTH `audio_files`
+(→ the link field) and `audio_tracks` (→ the Audio tracks field), every linked
+File that IS AUDIO and whose path is NOT among the clip paths of the record's
+Audio tracks value is marked — on the pill, with the reason as its tooltip
+("EP101_Mix_v2.wav is an audio input but is not on the timeline as last read from
+Resolve"), and on the field as a whole (the grid cell, the tray row, the card row)
+so a column of edits can be scanned. Derived live, never stored: re-ingest or
+relink and it updates itself.
+
+Which linked Files are audio, in order: (1) the Files table's Media column, when
+its File drop recipe maps `filesystem.media` — the owner's is mapped; (2) else the
+path's extension: wav, aif, aiff, bwf, flac, mp3, aac, ac3, ec3, m4a (NOT mxf: a
+picture MXF cannot be told apart without the Media column); (3) neither → not
+checked, no mark. A picture input is never flagged. A linked audio File whose path
+column is empty is marked with its own reason ("has no path, so it cannot be
+checked against the timeline"). No Audio tracks value on the record yet (never
+ingested) → no marks at all, never a false warning. The reverse direction — a
+clip on the timeline with no File record — stays an ingest-time notice.
 
 ### R1.6 Tests (`test/tools.ts`, `test/structured.ts`)
 
@@ -293,34 +318,36 @@ slot reads the handshake like File drop's does.
 
 ## R4. The run (`client/tools/resolveIngest.ts`)
 
-Entry: `ingestFromResolve(store, recordId)`.
+Entry: `ingestFromResolve(store, recordId)`. Steps 1–3 are BUILT (the picker, the
+read); this round replaces the readout dialog with the write.
 
 1. `invoke('resolve_timelines')`. Any error → one notice, done.
-2. An in-app dialog (`dialogs.ts`, a new `pick` with a select, or the kanban's
-   chooser if it fits): **Read timeline** [select, the current timeline preselected]
-   *from project "Duke" · Resolve 20.1* — Read / Cancel. Always shown: the owner
-   wants the confirmation; "we can remove it if it's annoying and unneeded".
-3. `jobs.set(recordId, { label: 'Resolve', manual: true })` (the tray's `probing…`
-   marker), `invoke('resolve_read', { timeline })`.
-4. Map: `resolveMap(step, fields)`, `mappedData(outputs, map, fields)`; the link
-   output through the path resolver of R1.5 (the target table is loaded like
-   `loadVocabularyTables` does for vocabulary links).
-5. **Conflict check**, pure and tested (`conflicts(record, data, links, fields)`):
-   for every mapped field, compare what the record holds with what would be written —
-   deep-equal for structured values, set-equal for the link field. Fields that are
-   empty or equal are not conflicts. If there are any, ONE confirm dialog:
-   *Overwrite 3 fields on "EP101_OEV3"?* with a list `Field · old → new` (structured
-   values shown by their summary, the link by its pill labels), **Overwrite /
-   Cancel** — all or nothing, like the drop's Replace / Cancel. Cancel writes
-   nothing at all, not even the non-conflicting fields.
+2. The picker: **Read timeline** [select, the current timeline preselected] *from
+   project "Duke" · Resolve 20.1* — Read / Cancel. Always shown.
+3. `jobs.set(recordId, { label: 'Resolve', manual: true })`, `invoke('resolve_read',
+   { timeline })`.
+4. Map: `resolveMap(step, fields)`, `mappedData(outputs, map, fields)`; `audio_layout`
+   derived in the page from `audio_tracks` (`layoutFromTimeline`; its problems are
+   notices); the link output through the path resolver of R1.5 (the target table
+   loaded like `loadVocabularyTables` does for vocabulary links).
+5. **Conflict check**, pure and tested (`conflicts(record, data, fields)`): for
+   every mapped NON-link field, compare what the record holds with what would be
+   written — deep-equal for structured values. Fields that are empty or equal are
+   not conflicts. If there are any, ONE confirm dialog: *Overwrite 3 fields on
+   "EP101_OEV3"?* with a list `Field · old → new` (structured values by their
+   summary), **Overwrite / Cancel** — all or nothing, like the drop's Replace /
+   Cancel. Cancel writes nothing at all, not even the non-conflicting fields or
+   the links.
 6. One `store.mutate({ type: 'record.update', id, set: data, unset: [] }, { via:
-   'resolve' })` plus the link writes in the same batch (`writeLinks`), undoable:
-   one Ctrl+Z. Then notices: "EP101_OEV3: Resolve done"; "not written — …" per
-   skipped output; "not linked — …" per unmatched path. An empty row just imports.
+   'resolve' })` plus the `link.add`s in the same batch, undoable: one Ctrl+Z.
+   Then notices: "EP101_OEV3: Resolve done — 6 fields, 2 files linked"; "not
+   written — …" per skipped output; "not linked — …" per unmatched path. An empty
+   row just imports.
 7. `jobs.delete(recordId)`.
 
-History shows "via Resolve" (`VIA_LABELS` or wherever `file_drop` → "File drop" is
-spelled today).
+History shows "via Resolve timeline" (`TOOL_NAMES`). The readout dialog of the
+R2/R3 build goes away; the raw frame numbers it showed are no longer needed once
+the reading has been seen to be right (the owner, Oct 26: "all works so far").
 
 ---
 

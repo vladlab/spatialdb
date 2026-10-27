@@ -125,7 +125,7 @@
                  (client/canvasJump.ts). A double-click opens it. client/recordDrag.ts tells a
                  press from a drag by movement. -->
             <span class="pills column">
-              <RecordPill v-for="to in linksFrom(f.id)" :key="to" :text="labelOfId(to)" :title="pillTitle(to)" :jump="onCanvas(to)"
+              <RecordPill v-for="to in linksFrom(f.id)" :key="to" :text="labelOfId(to)" :title="pillTitle(to)" :jump="onCanvas(to)" :warn="derived.pillWarning(recordId, f.id, to)"
                           :color="derived.pillColorOf(f)" removable drag @down="dragPill(to, $event)" @open="$emit('open', to)" @jump="canvasJump?.jump(to)" @remove="removeLink(f.id, to)" />
             </span>
             <!-- The way IN, always there — as a junction's field has it: "add another

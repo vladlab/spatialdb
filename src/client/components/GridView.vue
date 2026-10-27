@@ -346,8 +346,10 @@
                          one line, and a run of eight deliverables must not pass for three. -->
                     <CellPills v-else :total="linksFrom(r.id, f.id).length" @open="$emit('open-record', r.id)">
                       <RecordPill v-for="to in linksFrom(r.id, f.id)" :key="to" :text="labelFor(to)" :title="`Double-click opens ${labelFor(to)}`" removable :color="derived.pillColorOf(f)"
-                                  @open="$emit('open-record', to)" @remove="removeLink(f.id, r.id, to)" />
+                                  :warn="derived.pillWarning(r.id, f.id, to)" @open="$emit('open-record', to)" @remove="removeLink(f.id, r.id, to)" />
                     </CellPills>
+                    <!-- The Resolve tool's verdict on the LINK as a whole (an audio input not on the timeline) — the same icon the value cells wear. -->
+                    <VerdictMark v-if="verdictOf(r.id, f.id)" class="cell-verdict" :kind="verdictOf(r.id, f.id)!.ok ? 'ok' : 'warn'" :title="verdictOf(r.id, f.id)!.title" />
                   </template>
                   <!-- Mounted for the ONE cell being edited; see LinkPicker.vue. -->
                   <LinkPicker v-if="isSel(r.id, f.id) && editing && targetOf(f)"

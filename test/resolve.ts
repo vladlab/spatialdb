@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { ANALYZERS, REQUIRED, REQUIRED_BY_TOOL, TOOL_IDS, TOOL_NAMES, TablesTools, Via, analyzerOf, analyzersOf, defaultRecipe, describe, fieldAccepts, pruneTools, toolsProblem } from '../src/contract/tools.js';
 import { FIELD_FORM_SHAPES, SHAPES, SHAPE_LABELS, TimelineAudio, diffLayouts, layoutFromTimeline, resolveTrackChannels, structuredError, summarise } from '../src/contract/shapes.js';
 import { validateValue } from '../src/contract/values.js';
+import { AUDIO_EXTENSIONS, conflicts, inputWarnings, isAudioFile, timelinePaths } from '../src/contract/resolveLinks.js';
 
 let pass = 0, fail = 0;
 function check(label: string, ok: boolean, detail = '') {
@@ -135,6 +136,44 @@ check('an unknown format → ONE "?" channel and a problem naming the track and 
 check('…so a compare against a spec fails on the count, never passes on a guess', !diffLayouts({ tracks: [{ name: 'Dial', channels: ['L', 'C', 'R'] }] }, odd.layout).same);
 check('a derived layout compares clean against the matching deliverable spec (2.0 + 5.1 + 2.0)', diffLayouts({ tracks: [{ name: 'Mix', channels: ['L', 'R'] }, { name: '5.1', channels: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'] }, { name: 'M&E', channels: ['L', 'R'] }] }, d.layout).same);
 check('…and catches a 5.1film track against a 5.1 spec as ORDER (same channels, Resolve\'s film order)', diffLayouts({ tracks: [{ name: '', channels: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'] }] }, layoutFromTimeline({ tracks: [{ index: 1, name: 'A1', format: '5.1film', clips: [] }] }).layout).issues[0]?.kind === 'order');
+
+/* ── R1.5 (amended): the Inputs warning and the overwrite check ───────────── */
+
+console.log('\nR6. isAudioFile — the Media column first, then the extension, else unknown');
+check('Media says audio → audio; Media says video → not, whatever the extension', isAudioFile({ media: 'audio', path: '/x/mix.mov' }) === true && isAudioFile({ media: 'video', path: '/x/mix.wav' }) === false);
+check('no Media: the extension decides — wav, aif, flac, ec3 yes; mov, exr no; case does not matter', isAudioFile({ path: '/x/EP101_Mix.WAV' }) === true && isAudioFile({ path: '/x/a.flac' }) === true && isAudioFile({ path: '/x/a.ec3' }) === true && isAudioFile({ path: '/x/a.mov' }) === false && isAudioFile({ path: '/x/a.exr' }) === false);
+check('mxf is NOT an audio extension (a picture MXF cannot be told apart by name)', !(AUDIO_EXTENSIONS as readonly string[]).includes('mxf') && isAudioFile({ path: '/x/a.mxf' }) === false);
+check('no Media and no usable extension → unknown (null), never flagged', isAudioFile({}) === null && isAudioFile({ path: '/x/noext' }) === null && isAudioFile({ media: '' , path: '' }) === null);
+check('a Media value is trimmed and case-folded ("Audio ")', isAudioFile({ media: 'Audio ' }) === true);
+
+console.log('\nR7. timelinePaths and inputWarnings');
+check('timelinePaths: the distinct clip paths, in track order; clips with no file left out', timelinePaths(deliverable).join('|') === '/mnt/post/EP101/mix/EP101_Mix_ST.wav|/mnt/post/EP101/mix/EP101_Mix_51.wav|/mnt/post/EP101/mix/EP101_ME_ST.wav|/mnt/post/EP101/mix/EP101_ME_tail.wav');
+check('…and nothing for an invalid or absent value', timelinePaths(undefined).length === 0 && timelinePaths({ tracks: 1 }).length === 0);
+const files = [
+  { id: 'st', label: 'EP101_Mix_ST.wav', path: '/mnt/post/EP101/mix/EP101_Mix_ST.wav', media: 'audio' },
+  { id: 'v2', label: 'EP101_Mix_v2.wav', path: '/mnt/post/EP101/mix/EP101_Mix_v2.wav', media: 'audio' },
+  { id: 'pic', label: 'EP101_Texted.mov', path: '/mnt/post/EP101/EP101_Texted.mov', media: 'video' },
+  { id: 'nopath', label: 'EP101_ME.wav', media: 'audio' },
+  { id: 'unknown', label: 'notes.pdf', path: '/mnt/post/notes.pdf' },
+];
+const w = inputWarnings(files, deliverable);
+check('an audio input on the timeline: no mark; one NOT on it: marked, with the reason', !w.some((x) => x.id === 'st') && w.find((x) => x.id === 'v2')?.reason === 'EP101_Mix_v2.wav is an audio input but is not on the timeline as last read from Resolve', JSON.stringify(w));
+check('a PICTURE input is never marked (Inputs holds everything the edit was made from)', !w.some((x) => x.id === 'pic'));
+check('an audio input with no path: marked with its own reason', /no path, so it cannot be checked/.test(w.find((x) => x.id === 'nopath')?.reason ?? ''));
+check('a file of unknown kind is not marked', !w.some((x) => x.id === 'unknown'));
+check('marks come in the links\' own order', w.map((x) => x.id).join() === 'v2,nopath');
+check('no Audio tracks value (never ingested) → no marks at all, never a false warning', inputWarnings(files, undefined).length === 0 && inputWarnings(files, { tracks: 'x' }).length === 0);
+check('a timeline with no audio tracks → every audio input is off it', inputWarnings(files, { tracks: [] }).map((x) => x.id).join() === 'v2,st,nopath'.split(',').sort().join() ? true : inputWarnings(files, { tracks: [] }).length === 3);
+check('the match is EXACT: a trailing slash, another case, another mount do not match', inputWarnings([{ id: 'a', label: 'a', media: 'audio', path: '/MNT/post/EP101/mix/EP101_Mix_ST.wav' }, { id: 'b', label: 'b', media: 'audio', path: '/Volumes/post/EP101/mix/EP101_Mix_ST.wav' }], deliverable).length === 2);
+
+console.log('\nR8. conflicts — what an ingest would overwrite');
+const cf = [{ id: '1', key: 'name', name: 'Name' }, { id: '2', key: 'fps', name: 'FPS' }, { id: '3', key: 'tracks', name: 'Audio tracks' }, { id: '4', key: 'df', name: 'Drop frame' }, { id: '5', key: 'other', name: 'Other' }];
+check('an empty record: no conflicts (an empty row just imports)', conflicts({}, { name: 'EP101_OEV3', fps: 23.976, tracks: deliverable }, cf).length === 0);
+check('equal values are not conflicts — a number within float noise, a structured value with keys in another order, a boolean', conflicts({ name: 'EP101_OEV3', fps: 23.976000001, tracks: JSON.parse(JSON.stringify({ tracks: deliverable.tracks.map((t) => ({ clips: t.clips, format: t.format, name: t.name, index: t.index })) })), df: false }, { name: 'EP101_OEV3', fps: 23.976, tracks: deliverable, df: false }, cf).length === 0);
+const c2 = conflicts({ name: 'EP101_OEV2', fps: 25, tracks: { tracks: [] }, other: 'kept' }, { name: 'EP101_OEV3', fps: 25, tracks: deliverable }, cf);
+check('a changed text and a changed structured value are listed, by field, with old and new; an unchanged number is not; an unmapped field is not', c2.map((c) => c.name).join() === 'Name,Audio tracks' && c2[0].old === 'EP101_OEV2' && c2[0].next === 'EP101_OEV3', JSON.stringify(c2));
+check('a value of "" or null on the record counts as empty', conflicts({ name: '', fps: null }, { name: 'x', fps: 1 }, cf).length === 0);
+check('a changed boolean IS a conflict', conflicts({ df: true }, { df: false }, cf).length === 1);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

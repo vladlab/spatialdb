@@ -62,7 +62,7 @@
         <span v-if="r.ids && r.ids.length" class="card-val card-list pills column" :class="{ derived: r.derived, pairs: r.junction }"
               :style="r.slot ? { '--pair-slot': r.slot + 'px', '--pair-status': (r.statusW ?? 0) + 'px' } : undefined">
           <RecordPill v-for="(id, i) in r.ids.slice(0, CARD_MAX_LINES)" :key="id + i" class="card-line" :text="(r.lines ?? [r.text])[i] ?? ''" :back="!r.link" :junction="r.junction"
-                      :status="r.statuses?.[i]" :color="r.color" :jump="r.here?.[i]"
+                      :status="r.statuses?.[i]" :color="r.color" :jump="r.here?.[i]" :warn="r.warns?.[i]"
                       :title="r.here?.[i] ? 'Double-click opens it · → goes to its card on this canvas' : 'Double-click opens it · drag it off this card to place it on the canvas'" drag
                       @down="$emit('drag-linked', { recordId: id, from: recordId, e: $event })" @open="$emit('open-linked', id)" @jump="$emit('jump-linked', id)"
                       @edit="r.junction && r.rows && $emit('edit-pair', { recordId, fieldId: r.id, row: r.rows[i] })" />
@@ -169,6 +169,8 @@ export interface CardRow {
   ids?: string[];
   /** Per id, in the same order: that record already has a card on THIS canvas — its pill wears the jump arrow. */
   here?: boolean[];
+  /** Per id, in the same order: a warning on that one link (the Resolve tool's), or undefined. */
+  warns?: (string | undefined)[];
   /** A video layout's value: the row draws its mini strip before the summary text. */
   strip?: unknown;
   /** A comparing link's verdict on this value: ✓ or ⚠, with the why. */

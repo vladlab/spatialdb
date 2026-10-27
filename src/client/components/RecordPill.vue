@@ -50,9 +50,9 @@
   apart again.
 -->
 <template>
-  <span ref="el" class="pill" :class="{ back, junction, on, flip, jumps: jump, paired: !!split, count: n !== undefined }" :style="tint" :title="title ?? openTitle"
+  <span ref="el" class="pill" :class="{ back, junction, on, flip, jumps: jump, paired: !!split, count: n !== undefined, warned: !!warn }" :style="tint" :title="warn ? `⚠ ${warn}${title ?? openTitle ? `\n${title ?? openTitle}` : ''}` : (title ?? openTitle)"
         @pointerenter="onEnter" @pointerleave="onLeave" @pointerdown.stop="onDown" @mousedown.stop.prevent @click.stop @dblclick.stop="$emit('open')">
-    <span class="pill-text"><template v-if="n !== undefined"><b class="pill-n">{{ n }}</b>{{ ' ' }}</template><template v-if="junction"><span class="pill-slot"><span class="pill-main"><span class="pill-label">{{ split || text }}</span><button v-if="jump" class="pill-jump" tabindex="-1" :title="jumpTitle"
+    <VerdictMark v-if="warn" class="pill-warn" kind="warn" :size="12" /><span class="pill-text"><template v-if="n !== undefined"><b class="pill-n">{{ n }}</b>{{ ' ' }}</template><template v-if="junction"><span class="pill-slot"><span class="pill-main"><span class="pill-label">{{ split || text }}</span><button v-if="jump" class="pill-jump" tabindex="-1" :title="jumpTitle"
       @pointerdown.stop @mousedown.stop.prevent @dblclick.stop @click.stop="$emit('jump')"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5h7.2M5.4 1.9 8.5 5 5.4 8.1" /></svg></button></span></span><template v-if="split"><span class="pill-sep">{{ ' › ' }}</span><span class="pill-status">{{ status }}</span></template></template><template v-else>{{ text }}</template></span>
     <!-- JUMP: the record has a card on the open canvas — go to it. Always drawn; its own
          press, so it neither starts the pill's drag nor counts toward a double-click. -->
@@ -69,6 +69,7 @@
 </template>
 
 <script setup lang="ts">
+import VerdictMark from './VerdictMark.vue';
 /*
   A DOUBLE-CLICK opens the record (`open`); a single click on the pill does nothing.
   A junction pair's pill also has a ✎ (change its status here) — and, where the link
@@ -99,6 +100,8 @@ const props = defineProps<{
   n?: number;
   /** The record has a card on the canvas that is open: draw the → that goes to it (`jump`). */
   jump?: boolean;
+  /** A WARNING on this one link (the Resolve tool's: an audio input not on the timeline): the mark inside the pill, the reason first in its tooltip. */
+  warn?: string;
 }>();
 const emit = defineEmits<{ open: []; edit: []; remove: []; jump: []; down: [e: PointerEvent] }>();
 const jumpTitle = computed(() => `On this canvas — go to ${split.value || props.text}`);

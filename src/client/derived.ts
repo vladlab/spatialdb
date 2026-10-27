@@ -16,7 +16,9 @@
 import { computed } from 'vue';
 import type { Store } from './store';
 import { compareOf, compareRecords, type ComparePair, type CompareResult, type PairResult } from '../contract/compare';
-import { primaryKeys, type FieldRow } from './state';
+import { fieldsOf, primaryKeys, type FieldRow } from './state';
+import { resolveMap, type Recipe, type TablesTools } from '../contract/tools';
+import { inputWarnings, type InputWarning } from '../contract/resolveLinks';
 import { labelFrom } from '../contract/labels';
 import { lookupOptionsOf, lookupText, lookupValues } from '../contract/lookups';
 import { backlinkRecords, backlinkSourceOf, leadsTo } from '../contract/backlinks';
@@ -340,6 +342,10 @@ export function useDerived(store: Store) {
    */
   function fieldVerdicts(recordId: string): Map<string, { ok: boolean; title: string }> {
     const out = new Map<string, { ok: boolean; title: string }>();
+    // The Resolve tool's check on the Inputs link (contract/resolveLinks.ts): the
+    // field as a whole is marked when any linked audio file is off the timeline.
+    const rw = resolveWarnings(recordId);
+    if (rw) for (const [fieldId, warns] of rw) if (warns.length) out.set(fieldId, { ok: false, title: warns.map((w) => w.reason).join('\n') });
     for (const c of comparisonsOf(recordId)) {
       for (const t of c.targets) {
         const r = compare(c.link.id, recordId, t);
@@ -357,6 +363,51 @@ export function useDerived(store: Store) {
     return out;
   }
 
-  return { labelKeys, linksFrom, linkedTo, idsOf, labelOfId, plainLabelOfId, lookupOf, backlinkOf, textOf, tablesNeededBy, referencedBy, comparisonsOf, compare, differencesOf, fieldVerdicts, compareTargetTable, compareTargets,
+  /* ── the Resolve tool's warning on linked audio files (contract/resolveLinks.ts) ── */
+
+  /** The field KEY a table's File drop recipe writes a filesystem output to ("path", "media"), if any. */
+  function filesystemKeyOf(tableId: string, output: string): string | undefined {
+    const recipe = (store.state.tables.get(tableId)?.tools as Partial<TablesTools> | undefined)?.file_drop;
+    const fs = recipe?.steps.find((s) => s.analyzer === 'filesystem');
+    return fs ? resolveMap(fs, fieldsOf(store.state, tableId)).get(output) : undefined;
+  }
+  /** Where a table's Resolve recipe sends `audio_files` and `audio_tracks`: the link field and the tracks field, both needed for the check. */
+  const resolveFieldsOf = computed(() => {
+    const out = new Map<string, { linkField: FieldRow; tracksKey: string }>();
+    for (const t of store.state.tables.values()) {
+      const recipe = (t.tools as Partial<TablesTools> | undefined)?.resolve as Recipe | undefined;
+      const step = recipe?.steps[0];
+      if (!step) continue;
+      const fields = fieldsOf(store.state, t.id);
+      const map = resolveMap(step, fields);
+      const linkKey = map.get('audio_files'), tracksKey = map.get('audio_tracks');
+      const linkField = linkKey ? fields.find((f) => f.key === linkKey && f.type === 'link') : undefined;
+      if (linkField && tracksKey) out.set(t.id, { linkField, tracksKey });
+    }
+    return out;
+  });
+  /**
+   * For a record of a table with the Resolve tool mapping both outputs: the link
+   * field → the warnings on its linked files (empty when none is off the timeline).
+   * Null when the table has no such mapping, or the record was never ingested.
+   */
+  function resolveWarnings(recordId: string): Map<string, InputWarning[]> | null {
+    const r = store.state.records.get(recordId);
+    const cfg = r ? resolveFieldsOf.value.get(r.table_id) : undefined;
+    if (!r || !cfg || r.data[cfg.tracksKey] === undefined) return null;
+    const target = String(cfg.linkField.options?.target_table_id ?? '');
+    const pathKey = filesystemKeyOf(target, 'path'), mediaKey = filesystemKeyOf(target, 'media');
+    const linked = linksFrom(recordId, cfg.linkField.id).flatMap((id) => {
+      const f = store.state.records.get(id);
+      return f ? [{ id, label: labelOfId(id), path: pathKey ? f.data[pathKey] : undefined, media: mediaKey ? f.data[mediaKey] : undefined }] : [];
+    });
+    return new Map([[cfg.linkField.id, inputWarnings(linked, r.data[cfg.tracksKey])]]);
+  }
+  /** The reason one linked file's PILL is marked, or undefined. */
+  function pillWarning(recordId: string, fieldId: string, toRecord: string): string | undefined {
+    return resolveWarnings(recordId)?.get(fieldId)?.find((w) => w.id === toRecord)?.reason;
+  }
+
+  return { labelKeys, linksFrom, linkedTo, idsOf, labelOfId, plainLabelOfId, lookupOf, backlinkOf, textOf, tablesNeededBy, referencedBy, comparisonsOf, compare, differencesOf, fieldVerdicts, resolveWarnings, pillWarning, compareTargetTable, compareTargets,
     junctionCfg, junctionRow, junctionOfBacklink, junctionChip, junctionRowFor, pillColorOf, pillTableOf, countOf, held, linkMatchRule };
 }

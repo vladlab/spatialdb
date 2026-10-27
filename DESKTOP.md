@@ -76,10 +76,21 @@ API.md "Tools".
 - **Resolve timeline** (the second tool, Oct 26; RESOLVE-BRIEF.md): switch it on in
   ⚙ Table settings → Desktop tools and map its outputs to fields; then right-click a
   record — a grid row, a canvas card, a kanban card — → **Ingest info from
-  Resolve…**, pick the timeline (the current one is preselected) → Read. THIS BUILD
-  ONLY READS: a dialog shows every output, where it is mapped, each audio track's
-  clips, the raw frame numbers, and any warning; nothing is written onto the record
-  yet (that is the next round, R4).
+  Resolve…**, pick the timeline (the current one is preselected) → Read. What was
+  read is written onto that record as mapped — one batch, one Ctrl+Z, "via Resolve
+  timeline" in History. A record that already holds different values gets ONE
+  dialog first, listing each field old → new: Overwrite / Cancel, all or nothing.
+  The Audio layout is derived from the tracks (contract/shapes.ts
+  `layoutFromTimeline`). **Audio files** links the clips' files — matched by EXACT
+  absolute path against the target table's Path column (the one its own File drop
+  maps) — into the link field you map it to; the owner maps it to his general
+  **Inputs**. It only ever ADDS links: a link you made by hand is never removed.
+  Instead, any linked file that is AUDIO (the target table's Media column, else the
+  extension) and is NOT on the timeline as last read is MARKED with a ⚠ — on its
+  pill, and on the field as a whole in the grid cell, the tray row and the card —
+  with the reason as the tooltip (contract/resolveLinks.ts). Derived live, never
+  stored: relink or re-ingest and it updates itself. A clip path with no File
+  record is a notice ("not linked — no record of Files at /mnt/…"); none is created.
 
 ## The Resolve tool: how it talks to Resolve
 
@@ -272,6 +283,11 @@ In the order most likely to be wrong:
    adaptive tracks, and the film channel orders in contract/shapes.ts
    `RESOLVE_TRACK_CHANNELS`; (f) clip paths are the absolute paths your Files
    records hold; (g) a 29.97 DF timeline. The readout's last lines show the raw
-   numbers as Resolve said them, for exactly this.
+   numbers as Resolve said them, for exactly this. (Done Oct 26: the owner ran it,
+   "all works so far". The readout dialog went with R4; the reader's warnings now
+   arrive as notices.) Still to see with real data: the Inputs ⚠ on a mix that was
+   swapped for a newer one in Resolve; a timeline whose clips live under a
+   different mount than the Files records' paths (exact match: no link, a notice
+   per path).
 9. Then the things nobody has looked at: the setup page's look, the drop overlay, the
    notices strip, the `probing…` marker in the record panel.
