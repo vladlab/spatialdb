@@ -304,6 +304,11 @@ async function main() {
     check('the refused writes changed nothing', (await pool.query(`select data->'timeline_audio' v from records where id = $1`, [tl])).rows[0].v.tracks.length === 2);
     await go(tFiles);
     check('the grid cell is the one-line summary: "A1 stereo · A2 5.1 (2)"', await until(() => cellOf('EP101_OEV3', 'Timeline audio')?.text() === 'A1 stereo · A2 5.1 (2)'), cellOf('EP101_OEV3', 'Timeline audio')?.text());
+    await openRecord('EP101_OEV3');
+    const tlf = () => pField('Timeline audio');
+    check('in the tray: the read-only track table, and no "edit as JSON"', await until(() => !!tlf()?.find('.ta-table').exists()) && tlf().findAll('.ta-head').length === 2 && !tlf().find('.edit-json').exists() && /set by the Resolve tool/.test(tlf().text()));
+    check('on a table WITHOUT the Resolve tool there is no rate to say a length at: it is in frames, and no rate line', tlf().findAll('.ta-len').map((x: any) => x.text()).join() === '75,968 fr,1,440 fr,75,968 fr' && !tlf().find('.ta-foot').exists(), tlf().findAll('.ta-len').map((x: any) => x.text()).join());
+    check('a clip with no file says so', tlf().find('.ta-nofile').text() === 'no file');
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);
     await ui.close();

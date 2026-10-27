@@ -91,6 +91,9 @@ API.md "Tools".
   with the reason as the tooltip (contract/resolveLinks.ts). Derived live, never
   stored: relink or re-ingest and it updates itself. A clip path with no File
   record is a notice ("not linked — no record of Files at /mnt/…"); none is created.
+  The Audio tracks field shows in the tray as a read-only table — a header per
+  track, a row per clip with its in, out and length (at the record's frame rate),
+  its path and ⤴ show.
 
 ## The Resolve tool: how it talks to Resolve
 

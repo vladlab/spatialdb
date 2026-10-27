@@ -9,9 +9,12 @@
     video_layout   VideoLayoutEditor — a strip of blocks over the list they are typed in.
     report         ReportEditor — the walk's levels.
     calendar       CalendarEditor — sources and rows (VIEWS-BRIEF.md B8).
+    timeline_audio TimelineAudioView — READ-ONLY, and the one shape with no "edit
+                   as JSON" either: Resolve is the source of truth (RESOLVE-BRIEF.md
+                   R1.3). Change the timeline, then ingest it again.
     json           the raw editor below.
 
-  EVERY shape also has "edit as JSON", behind a toggle: the escape hatch for fixing
+  Every OTHER shape also has "edit as JSON", behind a toggle: the escape hatch for fixing
   one wrong number in a manifest, or for a shape this build has no editor for. It
   saves only what contract/shapes.ts accepts — the same check the server makes —
   and says why when it will not.
@@ -30,6 +33,7 @@
                     @set="(v) => $emit('set', field.key, v)" />
       <CalendarEditor v-else-if="shape === 'calendar'" :store="store" :record-id="recordId" :field="field" :value="value"
                       @set="(v) => $emit('set', field.key, v)" />
+      <TimelineAudioView v-else-if="shape === 'timeline_audio' && value !== undefined" :store="store" :record-id="recordId" :value="value" />
     </template>
 
     <div v-if="raw" class="sf-raw">
@@ -41,6 +45,7 @@
         <button v-if="value !== undefined" class="sf-btn danger" @click="$emit('unset', field.key); raw = false">clear</button>
       </div>
     </div>
+    <p v-else-if="shape === 'timeline_audio'" class="sf-note">set by the Resolve tool — right-click the record → Ingest info from Resolve…</p>
     <button v-else class="sf-toggle edit-json" @click="openRaw">{{ shape === 'json' ? (value === undefined ? 'add…' : 'edit…') : 'edit as JSON…' }}</button>
   </div>
 </template>
@@ -58,6 +63,7 @@ import AudioLayoutEditor from './AudioLayoutEditor.vue';
 import VideoLayoutEditor from './VideoLayoutEditor.vue';
 import ReportEditor from './ReportEditor.vue';
 import CalendarEditor from './CalendarEditor.vue';
+import TimelineAudioView from './TimelineAudioView.vue';
 
 const props = defineProps<{ store: Store; recordId: string; field: FieldRow; value: unknown }>();
 const emit = defineEmits<{ set: [key: string, value: unknown]; unset: [key: string] }>();
@@ -90,6 +96,7 @@ function saveRaw() {
 .sf { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .sf-summary { margin: 0; font-weight: 600; font-size: 12px; }
 .sf-summary.empty { color: var(--text-faint); font-weight: 400; font-style: italic; }
+.sf-note { margin: 0; color: var(--text-faint); font-size: 11px; font-style: italic; }
 .sf-toggle { align-self: flex-start; background: none; border: none; color: var(--text-muted); cursor: pointer; font: inherit; font-size: 11px; padding: 0; }
 .sf-toggle:hover { color: var(--accent); }
 .sf-json { width: 100%; box-sizing: border-box; background: var(--controls-bg); border: 1px solid var(--border-main); border-radius: 4px; color: var(--text-primary); font: 12px/1.45 ui-monospace, monospace; padding: 8px; resize: vertical; }

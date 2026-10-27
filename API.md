@@ -377,6 +377,8 @@ type TimelineAudio = {                    // a Resolve timeline's audio tracks, 
   Resolve track, channels by format — `RESOLVE_TRACK_CHANNELS`; an unknown format
   is one `?` channel and a problem), so `diffLayouts` can compare it. Summary:
   `A1 stereo · A2 5.1 · A3 stereo (3)` — the clip count only when it is not 1.
+  The tray shows it READ-ONLY (TimelineAudioView.vue) — the one shape with no
+  "edit as JSON": Resolve is the source of truth.
 
 - **Member paths are relative to the record's own path** (a `file_path` field): no
   leading `/`, no `..`, no drive letter. Absolute paths are refused.

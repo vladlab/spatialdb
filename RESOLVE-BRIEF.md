@@ -7,7 +7,10 @@
 > the reading can be checked against a real Resolve first (DESKTOP.md "Needs eyes"
 > 8); the owner ran it against his Resolve: "all works so far". R4 (the write,
 > Inputs add-only with the derived warning — R1.5 as amended) delivered as
-> `resolve-write.patch`. Next: the tray block (R1.3), then polish (R7 step 6). Decided on the way: the script names each API call it makes so a
+>  `resolve-write.patch`, on main as `ffb0676`. The tray block (R1.3) delivered as
+> `resolve-tray.patch`: lengths at the record's own rate (its mapped Frame rate /
+> Drop frame), in frames where there is none; ⤴ show on clips with a file. Left of
+> R7 step 6: `describe` wording (fine as it reads), nothing else outstanding. Decided on the way: the script names each API call it makes so a
 > wrong name fails readably; clip ends are start + duration (GetEnd only checked);
 > the readout lists the raw frame numbers while the reader is new.
 
