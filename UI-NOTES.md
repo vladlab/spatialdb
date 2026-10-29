@@ -372,8 +372,10 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
   kanban, a calendar's chips and weekend shade, the login page, the desktop
   notices and the video layout strip's kinds. Each is one token in the light block.
   Every `<select>` is drawn by the app: check its chevron reads on the light
-  controls surface. The text ladder was checked on the paper (#bab5a1): primary
-  11:1, muted 5.7:1, faint 4.6:1.
+  controls surface. Revised the same day to the owner's automata ladder: stage on
+  the paper (#bab5a1), chrome a step down (`--bg-chrome` #a8a593: tree, view bars,
+  tray head/foot), wells below that, cards/grid header/tray labels raised (#c4bfab).
+  Text on the paper: primary 10.5:1, muted 6.3:1, faint 4.6:1.
 
 - DENSE TRAY (Oct 17–18, `RecordPanel.vue`, `client/fieldFolds.ts`; `test/fieldsections.ts` F5)
   — the mockups were agreed (one row per field, a label cell at a uniform best-fit

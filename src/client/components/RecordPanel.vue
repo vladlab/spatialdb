@@ -588,7 +588,7 @@ watch(() => props.recordId, () => {
 }
 .rp-head {
   flex: none; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center;
-  padding: 10px 12px; border-top: 3px solid; border-bottom: 1px solid var(--border-main);
+  padding: 10px 12px; border-top: 3px solid; border-bottom: 1px solid var(--border-main); background: var(--bg-chrome);
 }
 .rp-table { grid-column: 1; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
 .rp-title { grid-column: 1; margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -738,7 +738,7 @@ watch(() => props.recordId, () => {
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .rp-value :deep(textarea.multi) { height: 160px; }
 
-.rp-foot { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border-main); }
+.rp-foot { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border-main); background: var(--bg-chrome); }
 .rp-note { color: var(--text-muted); font-size: 11px; margin: 0; }
 .mono { font-family: ui-monospace, monospace; }
 .spacer { flex: 1; }

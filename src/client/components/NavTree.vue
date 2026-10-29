@@ -108,7 +108,7 @@ const setScope = (v: string) => { props.scope.scope.value = parseScope(v); };
 </script>
 
 <style scoped>
-.tree { width: 240px; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--border-main); font-size: 13px; user-select: none; }
+.tree { width: 240px; flex: none; display: flex; flex-direction: column; background: var(--bg-chrome); border-right: 1px solid var(--border-main); font-size: 13px; user-select: none; }
 .tree-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 0; }
 .tree-foot { flex: none; border-top: 1px solid var(--border-main); padding: 4px 0; }
 .settings-btn .tw { font-size: 12px; }

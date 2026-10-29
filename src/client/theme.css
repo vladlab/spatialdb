@@ -23,6 +23,10 @@
 
   --bg-app: #1a1a1a;
   --bg-canvas: #161616;
+  /* The CHROME — the top bar's neighbours: the tree, a view's bars, the tray's head and
+     foot. In dark it is the app surface itself; the light theme steps it DOWN from the
+     stage, so the work sits on the lightest surface and the frame around it recedes. */
+  --bg-chrome: #1a1a1a;
   --bg-surface-hover: rgba(255, 255, 255, 0.06);
   --border-main: #3a3a3a;
   --text-primary: #e0e0e0;
@@ -122,76 +126,80 @@
   --tint-a-wash: 0.13; --tint-a-cap: 0.3; --tint-a-ring: 0.75; --tint-a-halo: 0.36;
 }
 
-/* ── LIGHT — viznotes' "paper", on spatialdb's surfaces ──
-   The shell is a warm khaki, not white: paper, not a screen. The app background is
-   the paper (viznotes' canvas); bars, cards and the grid's header are DARKER than
-   it, where in the dark theme they are lighter — every surface keeps its distance
-   from the one it sits on, only the direction flips. The text ladder is checked on
-   the paper (#bab5a1, L ≈ 0.46): primary 11:1, secondary 9:1, muted 5.7:1, faint 4.6:1.
-   The tints are viznotes' paper note colours (darker, more saturated) at a slightly
-   stronger wash, because a pale wash of a dark colour on mid khaki is lost. */
+/* ── LIGHT — the owner's "automata" paper (his Emacs theme), on spatialdb's surfaces ──
+   A LADDER, not a flat page (Oct 29, his call after seeing the first cut): the WORK
+   sits on the paper (#bab5a1 — the main stage: canvas, grid body, tray body, home);
+   the CHROME around it — top bar, tree, a view's bars, the tray's head and foot —
+   steps down to #a8a593; a WELL steps down again (~#949180); and what is RAISED on
+   the stage — a card, the grid's header, the tray's label column — steps UP to
+   #c4bfab. Every surface keeps its distance from the one it sits on, so a row's edge
+   and a card's edge read without a line. Text is his dark brown (#3a372f, his editor's
+   foreground) as `muted`, with a warmer near-black above it: on the paper, primary
+   10.5:1, secondary 8.5:1, muted 6.3:1, faint 4.6:1. Accent, warning (#af5f00, his
+   gold) and danger are his too. The tints are viznotes' paper note colours. */
 :root[data-theme="light"] {
   color-scheme: light;
 
   --bg-app: #bab5a1;
-  --bg-canvas: #c2bda9;
+  --bg-canvas: #bab5a1;
+  --bg-chrome: #a8a593;
   --bg-surface-hover: rgba(0, 0, 0, 0.07);
-  --border-main: #8f8c7b;
-  --text-primary: #1a1a1a;
-  --text-secondary: #2a2822;
+  --border-main: #8a8776;
+  --text-primary: #1f1d18;
+  --text-secondary: #2e2b24;
   --text-muted: #3a372f;
-  --text-faint: #46443e;
-  --accent: #2f6ba8;
-  --accent-ring: rgba(47, 107, 168, 0.28);
-  --accent-fresh: rgba(47, 107, 168, 0.07);
-  --accent-open: rgba(47, 107, 168, 0.11);
-  --accent-sel: rgba(47, 107, 168, 0.18);
-  --accent-drop: rgba(47, 107, 168, 0.22);
+  --text-faint: #4a4740;
+  --accent: #2b5a99;
+  --accent-ring: rgba(43, 90, 153, 0.28);
+  --accent-fresh: rgba(43, 90, 153, 0.07);
+  --accent-open: rgba(43, 90, 153, 0.11);
+  --accent-sel: rgba(43, 90, 153, 0.18);
+  --accent-drop: rgba(43, 90, 153, 0.22);
   --on-accent: #f6f4ec;
-  --success: #2e7d36;
-  --warning: #a85d12;
-  --danger: #b0302a;
-  --warning-rgb: 168, 93, 18;
-  --danger-rgb: 176, 48, 42;
-  --canvas-dot: rgba(0, 0, 0, 0.12);
+  --success: #3a7a3a;
+  --warning: #af5f00;
+  --danger: #a8201a;
+  --warning-rgb: 175, 95, 0;
+  --danger-rgb: 168, 32, 26;
+  --canvas-dot: rgba(0, 0, 0, 0.13);
   --controls-bg: #a8a593;
-  --card-bg: #afab98;
-  --card-border: #8a8778;
-  --card-head-bg: #8a8778;
-  --card-head-text: rgba(0, 0, 0, 0.78);
-  --card-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
-  --card-shadow-drag: 0 8px 24px rgba(0, 0, 0, 0.25);
-  --arrow: #4f5e6a;
-  --bg-head: #a19d8a;
+  --card-bg: #c4bfab;
+  --card-border: #878473;
+  --card-head-bg: #878473;
+  --card-head-text: rgba(0, 0, 0, 0.8);
+  --card-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  --card-shadow-drag: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --arrow: #4a5966;
+  --bg-head: #c6c1ad;
   --head-text: #2a2822;
-  --head-line: #85816f;
+  --head-line: #8f8c7b;
   --bg-band: #b1ac98;
-  --bg-group-0: #8d9fb0; --group-rule-0: #2f5f8f; --group-edge-0: #7a8e9f; --group-text-0: #17334c;
-  --bg-group-1: #a1aeba; --group-rule-1: #4f7ea6; --group-edge-1: #8c9aa7; --group-text-1: #1e3b56;
+  --bg-group-0: #8d9fb0; --group-rule-0: #2b5a99; --group-edge-0: #7a8e9f; --group-text-0: #17334c;
+  --bg-group-1: #a3b0bc; --group-rule-1: #4f7ea6; --group-edge-1: #8c9aa7; --group-text-1: #1e3b56;
   --bg-group-2: #a9a694; --group-rule-2: #6a6759; --group-edge-2: #8f8c7b; --group-text-2: #2f2d26;
   --group-label: #10161c;
-  --chip-bg: rgba(47, 107, 168, 0.16); --chip-line: rgba(47, 107, 168, 0.55); --chip-text: #14304a;
-  --chip-bg-2: rgba(47, 107, 168, 0.2); --chip-line-2: rgba(47, 107, 168, 0.6);
-  --choice-bg: rgba(0, 0, 0, 0.11);
-  --bg-well: rgba(0, 0, 0, 0.09);
-  --well-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.14), inset 0 0 0 1px rgba(0, 0, 0, 0.04);
-  --well-shadow-only: inset 0 2px 5px rgba(0, 0, 0, 0.14);
-  --line-faint: rgba(0, 0, 0, 0.09);
-  --line-soft: rgba(0, 0, 0, 0.16);
-  --bg-weekend: rgba(0, 0, 0, 0.035);
-  --bg-overlay: rgba(40, 37, 26, 0.35);
-  --bg-overlay-thin: rgba(40, 37, 26, 0.25);
+  --chip-bg: rgba(43, 90, 153, 0.16); --chip-line: rgba(43, 90, 153, 0.55); --chip-text: #14304a;
+  --chip-bg-2: rgba(43, 90, 153, 0.2); --chip-line-2: rgba(43, 90, 153, 0.6);
+  --choice-bg: rgba(0, 0, 0, 0.12);
+  --bg-well: rgba(0, 0, 0, 0.12);
+  --well-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.16), inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+  --well-shadow-only: inset 0 2px 5px rgba(0, 0, 0, 0.16);
+  --line-faint: rgba(0, 0, 0, 0.1);
+  --line-soft: rgba(0, 0, 0, 0.18);
+  --bg-weekend: rgba(0, 0, 0, 0.04);
+  --bg-overlay: rgba(40, 37, 26, 0.38);
+  --bg-overlay-thin: rgba(40, 37, 26, 0.26);
   --scrim: rgba(0, 0, 0, 0.6);
   --on-scrim: #fff;
-  --swatch-ring: #1a1a1a;
+  --swatch-ring: #1f1d18;
   --pill-bg: rgba(31, 85, 140, 0.18); --pill-line: rgba(31, 85, 140, 0.5);
-  --notice-warn: #a35f10;
+  --notice-warn: #af5f00;
   --bg-error: #c9a09a; --text-error: #4a1410;
   --vl-black-bg: #2a2a26; --vl-black-text: #c9c6b8; --vl-black-edge: #5a5a52;
-  --vl-bars-rgb: 190, 130, 0;     --vl-bars-text: #5a3c00;
+  --vl-bars-rgb: 175, 95, 0;      --vl-bars-text: #4d2a00;
   --vl-slate-rgb: 95, 61, 196;    --vl-slate-text: #34206e;
   --vl-picture-rgb: 24, 100, 171; --vl-picture-text: #113f6b;
-  --vl-textless-rgb: 11, 114, 101; --vl-textless-text: #0a4a42;
+  --vl-textless-rgb: 0, 145, 120; --vl-textless-text: #004a3e;
   --vl-other-rgb: 0, 0, 0;
   --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23333' stroke-width='1.5'/></svg>");
   --tint-green: #2b8a3e; --tint-amber: #c46f00; --tint-red: #c92a2a;

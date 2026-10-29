@@ -765,6 +765,9 @@ body {
   display: flex; align-items: center; gap: 8px; flex: none; height: 38px; box-sizing: border-box;
   padding: 0 12px; border-bottom: 1px solid var(--border-main); background: var(--controls-bg);
 }
+/* The CHROME around the stage (theme.css --bg-chrome): a view's bars wear it here, the
+   tree and the tray's head and foot in their own files. */
+.context-bar, .context-bar-2 { background: var(--bg-chrome); }
 .ghost {
   background: none; border: 1px solid var(--border-main); color: var(--text-secondary);
   border-radius: 4px; padding: 2px 8px; cursor: pointer; font: inherit;
