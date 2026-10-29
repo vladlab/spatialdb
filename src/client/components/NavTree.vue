@@ -130,9 +130,9 @@ const setScope = (v: string) => { props.scope.scope.value = parseScope(v); };
    an inset shadow, a rule in the accent colour down the left. */
 .well {
   margin: 2px 8px 8px 22px; padding: 2px 0 6px;
-  background: rgba(0, 0, 0, 0.28); border-radius: 6px;
+  background: var(--bg-well); border-radius: 6px;
   border-left: 2px solid var(--accent);
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  box-shadow: var(--well-shadow);
 }
 .act { visibility: hidden; background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0 2px; font: inherit; font-size: 12px; }
 .row:hover .act { visibility: visible; }

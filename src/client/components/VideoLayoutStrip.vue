@@ -94,11 +94,11 @@ const tip = (b: StripBlock) => (b.kind === 'gap' ? `${b.sub} not accounted for` 
 <style>
 /* A tint at --vl-a: quiet behind words in the full strip, stronger (set by the mini
    strip and the editor's swatches) where the colour is all there is. */
-.vl-k-black { background: #0b0b0b; color: #9a9a9a; box-shadow: inset 0 0 0 1px #4a4a4a; }
-.vl-k-bars { background: rgba(255, 193, 7, var(--vl-a, 0.2)); color: #e6bd55; }
-.vl-k-slate { background: rgba(171, 130, 255, var(--vl-a, 0.22)); color: #bfaaf7; }
-.vl-k-picture { background: rgba(66, 165, 245, var(--vl-a, 0.24)); color: #86c5f9; }
-.vl-k-textless { background: rgba(38, 198, 166, var(--vl-a, 0.2)); color: #62d6bf; }
-.vl-k-other { background: rgba(255, 255, 255, calc(var(--vl-a, 0.18) * 0.5)); color: var(--text-secondary); }
-.vl-k-gap { background: repeating-linear-gradient(135deg, transparent 0 4px, rgba(255, 152, 0, 0.22) 4px 8px); color: var(--warning); box-shadow: inset 0 0 0 1px rgba(255, 152, 0, 0.45); }
+.vl-k-black { background: var(--vl-black-bg); color: var(--vl-black-text); box-shadow: inset 0 0 0 1px var(--vl-black-edge); }
+.vl-k-bars { background: rgba(var(--vl-bars-rgb), var(--vl-a, 0.2)); color: var(--vl-bars-text); }
+.vl-k-slate { background: rgba(var(--vl-slate-rgb), var(--vl-a, 0.22)); color: var(--vl-slate-text); }
+.vl-k-picture { background: rgba(var(--vl-picture-rgb), var(--vl-a, 0.24)); color: var(--vl-picture-text); }
+.vl-k-textless { background: rgba(var(--vl-textless-rgb), var(--vl-a, 0.2)); color: var(--vl-textless-text); }
+.vl-k-other { background: rgba(var(--vl-other-rgb), calc(var(--vl-a, 0.18) * 0.5)); color: var(--text-secondary); }
+.vl-k-gap { background: repeating-linear-gradient(135deg, transparent 0 4px, rgba(var(--warning-rgb), 0.22) 4px 8px); color: var(--warning); box-shadow: inset 0 0 0 1px rgba(var(--warning-rgb), 0.45); }
 </style>

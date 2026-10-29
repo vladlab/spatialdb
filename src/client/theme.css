@@ -1,0 +1,226 @@
+/* ============================================================================
+   THEMES — every colour the app wears, in two blocks: DARK and LIGHT.
+
+   The app is themeable the way viznotes is: one `data-theme` attribute on <html>
+   (client/prefs.ts sets it; index.html sets it before the first paint from the
+   same localStorage key, so a light browser never flashes dark), and every colour
+   in every component read from a token here. A component never writes a hex or a
+   black/white rgba() of its own — test/theme.ts refuses one — because a literal
+   is a colour that only one theme can see. The dark block is the palette the app
+   grew up with (App.vue's :root, Oct 2026), unchanged. The light block is
+   viznotes' "paper" (a warm mid-tone khaki, the owner's own light theme), ported
+   token for token and then tuned where spatialdb has surfaces viznotes never had:
+   the grid's four solid shades, the group bands, the pills, the tints.
+
+   ORDER within each block is the order of the dark block, so the two can be read
+   side by side. A token with no light value is a bug, not a fallback.
+   ========================================================================== */
+
+/* ── DARK (the default: `:root` is dark until the attribute says otherwise) ── */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-app: #1a1a1a;
+  --bg-canvas: #161616;
+  --bg-surface-hover: rgba(255, 255, 255, 0.06);
+  --border-main: #3a3a3a;
+  --text-primary: #e0e0e0;
+  --text-secondary: #bbb;
+  /* The ladder of secondary text, each step readable on the app background (Oct 17 —
+     the old faint #555 was 2.1:1 and the # column, group labels and "(empty)" vanished):
+     faint 5.0:1 (4.4:1 on the controls surface), muted 6.3:1, secondary 9:1. Faint is for text that is there to be
+     found, not read first; a line or a dot that is pure decoration uses a border token. */
+  --text-muted: #9e9e9e;
+  --text-faint: #8a8a8a;
+  --accent: #42a5f5;
+  --accent-ring: rgba(66, 165, 245, 0.22);
+  /* The accent as a WASH over a grid row, by state (GridView): new, open in the tray,
+     selected, a file about to drop on it. Translucent — they layer on the row's shade. */
+  --accent-fresh: rgba(66, 165, 245, 0.05);
+  --accent-open: rgba(66, 165, 245, 0.08);
+  --accent-sel: rgba(66, 165, 245, 0.14);
+  --accent-drop: rgba(66, 165, 245, 0.16);
+  /* Text ON the accent (a hovered ⤴, a count badge, a primary button). */
+  --on-accent: #fff;
+  --success: #4caf50;
+  --warning: #ff9800;
+  --danger: #f44336;
+  /* …as triplets, for the few places that wash them at their own alpha. */
+  --warning-rgb: 255, 152, 0;
+  --danger-rgb: 220, 60, 60;
+  --canvas-dot: rgba(255, 255, 255, 0.07);
+  --controls-bg: #252525;
+  --card-bg: #2b2b2b;
+  --card-border: #3f3f3f;
+  --card-head-bg: #3a3a3a;
+  --card-head-text: rgba(255, 255, 255, 0.75);
+  --card-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  --card-shadow-drag: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --arrow: #6b7f8f;
+  /* The grid's own surfaces. A header is not data and must not look like a row: it is
+     the lightest of these. A group header sits between it and the band, so a folded
+     group never passes for a banded row. All SOLID — pinned cells are opaque. */
+  --bg-head: #313131;
+  --head-text: #c4c4c4;
+  --head-line: #4a4a4a;
+  --bg-band: #242424;
+  /* Group headers (GridView): tinted bands, outer deeper and inner lighter, each with a
+     rule in a shade of the accent — the owner's pick from mockups, Oct 17. */
+  --bg-group-0: #1b2a3b; --group-rule-0: #3f74a3; --group-edge-0: #2c4258; --group-text-0: #8ab4d8;
+  --bg-group-1: #2d3f50; --group-rule-1: #5a89b2; --group-edge-1: #3a4f63; --group-text-1: #b5d0ea;
+  --bg-group-2: #2a2f34; --group-rule-2: #56606a; --group-edge-2: #3a4148; --group-text-2: #aab4be;   /* a third depth (reports): neutral */
+  /* The group's NAME on its band, and the count chip beside it (also a report band's). */
+  --group-label: #f4f7fa;
+  --chip-bg: rgba(66, 165, 245, 0.18); --chip-line: rgba(66, 165, 245, 0.5); --chip-text: #dbeafe;
+  --chip-bg-2: rgba(66, 165, 245, 0.22); --chip-line-2: rgba(66, 165, 245, 0.55);
+  --choice-bg: rgba(255, 255, 255, 0.11);
+  /* A WELL (the tree's deepest level, a tray section, a stack on the canvas, a preview):
+     recessed into whatever it sits on — a translucent shade and an inset shadow. */
+  --bg-well: rgba(0, 0, 0, 0.28);
+  --well-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --well-shadow-only: inset 0 2px 5px rgba(0, 0, 0, 0.45);
+  /* Hairlines that are not a border token: between junction rows, before a pill's ⤴. */
+  --line-faint: rgba(255, 255, 255, 0.07);
+  --line-soft: rgba(255, 255, 255, 0.14);
+  --bg-weekend: rgba(255, 255, 255, 0.02);
+  /* Behind a dialog, and (thinner) behind the command palette and the file-drop veil. */
+  --bg-overlay: rgba(0, 0, 0, 0.45);
+  --bg-overlay-thin: rgba(0, 0, 0, 0.35);
+  /* A small dark badge over an image (the attachment's ×): the same in both themes. */
+  --scrim: rgba(0, 0, 0, 0.6);
+  --on-scrim: #fff;
+  /* The ring round the chosen swatch in a tint picker. */
+  --swatch-ring: #fff;
+  /* Pills (App.vue .pill): neutral until the relationship has a colour. */
+  --pill-bg: rgba(96, 150, 204, 0.2); --pill-line: rgba(120, 160, 200, 0.45);
+  /* The desktop notices (App.vue): a softer amber than --warning for the border, and
+     the server-error strip. */
+  --notice-warn: #d9a441;
+  --bg-error: #3a1f1f; --text-error: #f3b8b8;
+  /* The video layout strip's KINDS (VideoLayoutStrip.vue): the fill is an rgb triplet
+     because the strip sets the alpha itself (`--vl-a`). */
+  --vl-black-bg: #0b0b0b; --vl-black-text: #9a9a9a; --vl-black-edge: #4a4a4a;
+  --vl-bars-rgb: 255, 193, 7;     --vl-bars-text: #e6bd55;
+  --vl-slate-rgb: 171, 130, 255;  --vl-slate-text: #bfaaf7;
+  --vl-picture-rgb: 66, 165, 245; --vl-picture-text: #86c5f9;
+  --vl-textless-rgb: 38, 198, 166; --vl-textless-text: #62d6bf;
+  --vl-other-rgb: 255, 255, 255;
+  /* Every <select> is drawn by the app (App.vue): its chevron, in a shade that reads
+     on --controls-bg. */
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23999' stroke-width='1.5'/></svg>");
+  /* The six TINTS of colour rules (contract/colorRules.ts): STATE colours, named, told
+     apart from each other and from any table's identity hex. One base per tint; the
+     surfaces mix their own strengths (`.tint-*` below). Oct 17. */
+  --tint-green: #3fb950; --tint-amber: #d29922; --tint-red: #f85149;
+  --tint-blue: #42a5f5; --tint-violet: #a371f7; --tint-grey: #8b949e;
+  /* …and the strengths: the WASH behind a row or band, the CAPSULE a painted cell sits
+     in, the RING and HALO round a card — as rgb triplet + alpha, so each theme can set
+     the base darker or lighter AND the alpha the surface needs. */
+  --tint-green-rgb: 63, 185, 80;    --tint-amber-rgb: 210, 153, 34;  --tint-red-rgb: 248, 81, 73;
+  --tint-blue-rgb: 66, 165, 245;    --tint-violet-rgb: 163, 113, 247; --tint-grey-rgb: 139, 148, 158;
+  --tint-a-wash: 0.13; --tint-a-cap: 0.3; --tint-a-ring: 0.75; --tint-a-halo: 0.36;
+}
+
+/* ── LIGHT — viznotes' "paper", on spatialdb's surfaces ──
+   The shell is a warm khaki, not white: paper, not a screen. The app background is
+   the paper (viznotes' canvas); bars, cards and the grid's header are DARKER than
+   it, where in the dark theme they are lighter — every surface keeps its distance
+   from the one it sits on, only the direction flips. The text ladder is checked on
+   the paper (#bab5a1, L ≈ 0.46): primary 11:1, secondary 9:1, muted 5.7:1, faint 4.6:1.
+   The tints are viznotes' paper note colours (darker, more saturated) at a slightly
+   stronger wash, because a pale wash of a dark colour on mid khaki is lost. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-app: #bab5a1;
+  --bg-canvas: #c2bda9;
+  --bg-surface-hover: rgba(0, 0, 0, 0.07);
+  --border-main: #8f8c7b;
+  --text-primary: #1a1a1a;
+  --text-secondary: #2a2822;
+  --text-muted: #3a372f;
+  --text-faint: #46443e;
+  --accent: #2f6ba8;
+  --accent-ring: rgba(47, 107, 168, 0.28);
+  --accent-fresh: rgba(47, 107, 168, 0.07);
+  --accent-open: rgba(47, 107, 168, 0.11);
+  --accent-sel: rgba(47, 107, 168, 0.18);
+  --accent-drop: rgba(47, 107, 168, 0.22);
+  --on-accent: #f6f4ec;
+  --success: #2e7d36;
+  --warning: #a85d12;
+  --danger: #b0302a;
+  --warning-rgb: 168, 93, 18;
+  --danger-rgb: 176, 48, 42;
+  --canvas-dot: rgba(0, 0, 0, 0.12);
+  --controls-bg: #a8a593;
+  --card-bg: #afab98;
+  --card-border: #8a8778;
+  --card-head-bg: #8a8778;
+  --card-head-text: rgba(0, 0, 0, 0.78);
+  --card-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  --card-shadow-drag: 0 8px 24px rgba(0, 0, 0, 0.25);
+  --arrow: #4f5e6a;
+  --bg-head: #a19d8a;
+  --head-text: #2a2822;
+  --head-line: #85816f;
+  --bg-band: #b1ac98;
+  --bg-group-0: #8d9fb0; --group-rule-0: #2f5f8f; --group-edge-0: #7a8e9f; --group-text-0: #17334c;
+  --bg-group-1: #a1aeba; --group-rule-1: #4f7ea6; --group-edge-1: #8c9aa7; --group-text-1: #1e3b56;
+  --bg-group-2: #a9a694; --group-rule-2: #6a6759; --group-edge-2: #8f8c7b; --group-text-2: #2f2d26;
+  --group-label: #10161c;
+  --chip-bg: rgba(47, 107, 168, 0.16); --chip-line: rgba(47, 107, 168, 0.55); --chip-text: #14304a;
+  --chip-bg-2: rgba(47, 107, 168, 0.2); --chip-line-2: rgba(47, 107, 168, 0.6);
+  --choice-bg: rgba(0, 0, 0, 0.11);
+  --bg-well: rgba(0, 0, 0, 0.09);
+  --well-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.14), inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --well-shadow-only: inset 0 2px 5px rgba(0, 0, 0, 0.14);
+  --line-faint: rgba(0, 0, 0, 0.09);
+  --line-soft: rgba(0, 0, 0, 0.16);
+  --bg-weekend: rgba(0, 0, 0, 0.035);
+  --bg-overlay: rgba(40, 37, 26, 0.35);
+  --bg-overlay-thin: rgba(40, 37, 26, 0.25);
+  --scrim: rgba(0, 0, 0, 0.6);
+  --on-scrim: #fff;
+  --swatch-ring: #1a1a1a;
+  --pill-bg: rgba(31, 85, 140, 0.18); --pill-line: rgba(31, 85, 140, 0.5);
+  --notice-warn: #a35f10;
+  --bg-error: #c9a09a; --text-error: #4a1410;
+  --vl-black-bg: #2a2a26; --vl-black-text: #c9c6b8; --vl-black-edge: #5a5a52;
+  --vl-bars-rgb: 190, 130, 0;     --vl-bars-text: #5a3c00;
+  --vl-slate-rgb: 95, 61, 196;    --vl-slate-text: #34206e;
+  --vl-picture-rgb: 24, 100, 171; --vl-picture-text: #113f6b;
+  --vl-textless-rgb: 11, 114, 101; --vl-textless-text: #0a4a42;
+  --vl-other-rgb: 0, 0, 0;
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23333' stroke-width='1.5'/></svg>");
+  --tint-green: #2b8a3e; --tint-amber: #c46f00; --tint-red: #c92a2a;
+  --tint-blue: #1864ab; --tint-violet: #5f3dc4; --tint-grey: #5f5c50;
+  --tint-green-rgb: 43, 138, 62;    --tint-amber-rgb: 196, 111, 0;   --tint-red-rgb: 201, 42, 42;
+  --tint-blue-rgb: 24, 100, 171;    --tint-violet-rgb: 95, 61, 196;  --tint-grey-rgb: 95, 92, 80;
+  --tint-a-wash: 0.16; --tint-a-cap: 0.3; --tint-a-ring: 0.75; --tint-a-halo: 0.36;
+}
+
+/* Before the stylesheet's body rule lands, the page is this colour (index.html sets
+   the attribute first), so a reload never flashes the other theme. */
+html { background: var(--bg-app); }
+
+/* A painted thing wears ONE of these: `--tint` is the base, and the strengths every
+   surface reads — the WASH behind a grid row or a report band, the CAPSULE a painted
+   cell or card row sits in, the RING and HALO around a card. */
+.tint-green  { --tint: var(--tint-green);  --tint-rgb: var(--tint-green-rgb); }
+.tint-amber  { --tint: var(--tint-amber);  --tint-rgb: var(--tint-amber-rgb); }
+.tint-red    { --tint: var(--tint-red);    --tint-rgb: var(--tint-red-rgb); }
+.tint-blue   { --tint: var(--tint-blue);   --tint-rgb: var(--tint-blue-rgb); }
+.tint-violet { --tint: var(--tint-violet); --tint-rgb: var(--tint-violet-rgb); }
+.tint-grey   { --tint: var(--tint-grey);   --tint-rgb: var(--tint-grey-rgb); }
+.tint-green, .tint-amber, .tint-red, .tint-blue, .tint-violet, .tint-grey {
+  --tint-wash: rgba(var(--tint-rgb), var(--tint-a-wash));
+  --tint-cap: rgba(var(--tint-rgb), var(--tint-a-cap));
+  --tint-ring: rgba(var(--tint-rgb), var(--tint-a-ring));
+  --tint-halo: rgba(var(--tint-rgb), var(--tint-a-halo));
+}
+/* A LEGEND CHIP ("■ satisfied"), the same in every bar. */
+.tint-legend { display: inline-flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-secondary); }
+.tint-legend span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.tint-legend i { width: 10px; height: 10px; border-radius: 3px; background: var(--tint); }

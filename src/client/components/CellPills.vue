@@ -68,5 +68,5 @@ onBeforeUnmount(() => ro?.disconnect());
   flex: none; background: var(--controls-bg); border: 1px solid var(--accent); color: var(--accent); border-radius: 10px;
   font: inherit; font-size: 10px; font-weight: 600; line-height: 16px; padding: 0 6px; cursor: pointer;
 }
-.more:hover { background: var(--accent); color: #fff; }
+.more:hover { background: var(--accent); color: var(--on-accent); }
 </style>

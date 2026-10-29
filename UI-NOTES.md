@@ -363,6 +363,18 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
 
 ## Needs eyes (built, tested headlessly, never SEEN)
 
+- LIGHT THEME (Oct 29, `src/client/theme.css`, Settings › This browser › Theme;
+  `test/theme.ts`) — viznotes' "paper" on spatialdb's surfaces, looked at in a
+  headless Chromium on the seed data only (home, grid, tray, canvas, Settings).
+  Never seen: a GROUPED grid (the three group bands and their count chips), colour
+  rules (the six tints' washes, capsules and card halos — the light tints are
+  viznotes' paper note colours at a 0.16 wash, chosen blind), a report's bands, a
+  kanban, a calendar's chips and weekend shade, the login page, the desktop
+  notices and the video layout strip's kinds. Each is one token in the light block.
+  Every `<select>` is drawn by the app: check its chevron reads on the light
+  controls surface. The text ladder was checked on the paper (#bab5a1): primary
+  11:1, muted 5.7:1, faint 4.6:1.
+
 - DENSE TRAY (Oct 17–18, `RecordPanel.vue`, `client/fieldFolds.ts`; `test/fieldsections.ts` F5)
   — the mockups were agreed (one row per field, a label cell at a uniform best-fit
   width; block fields fold to their card line):

@@ -164,11 +164,11 @@ function onDone(row: string, f: FieldRow, exit: EditExit) {
 .jt th {
   height: 22px; padding: 0 8px; text-align: left; white-space: nowrap;
   font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--head-text);
-  background: rgba(255, 255, 255, 0.06); border-bottom: 1px solid var(--border-main);
+  background: var(--bg-surface-hover); border-bottom: 1px solid var(--border-main);
 }
 .jt td {
   position: relative; height: 28px; box-sizing: border-box; padding: 0 8px; white-space: nowrap;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid var(--line-faint);
 }
 /* A long value ends in an ellipsis rather than widen the table without limit: the cap is
    on what is INSIDE the cell (a cell's own max-width is not something a table honours). */

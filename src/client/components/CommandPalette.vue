@@ -199,7 +199,7 @@ onUnmounted(() => clearTimeout(timer));
 <style scoped>
 .palette-backdrop {
   position: fixed; inset: 0; z-index: 200; display: flex; justify-content: center;
-  align-items: flex-start; padding-top: 12vh; background: rgba(0, 0, 0, 0.35);
+  align-items: flex-start; padding-top: 12vh; background: var(--bg-overlay-thin);
 }
 .palette {
   width: min(680px, 92vw); background: var(--controls-bg); border: 1px solid var(--border-main);

@@ -413,10 +413,10 @@ function onPointerDown(e: PointerEvent) {
 .path-handle.missing { --handle-color: var(--danger); }
 .path-handle svg { width: 100%; height: 100%; display: block; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; pointer-events: none; }
 .card:hover .path-handle, .card.selected .path-handle { opacity: 1; }
-.path-handle:hover { background: var(--handle-color, var(--success)); color: #fff; }
+.path-handle:hover { background: var(--handle-color, var(--success)); color: var(--on-accent); }
 .card.link-ok .path-handle, .card.link-over .path-handle, .card.link-dim .path-handle, .card.link-no .path-handle, .card.link-linked .path-handle { opacity: 0; pointer-events: none; }
 .card:hover .link-handle, .card.selected .link-handle, .card.link-from .link-handle { opacity: 1; }
-.link-handle:hover, .card.link-from .link-handle { background: var(--accent); color: #fff; }
+.link-handle:hover, .card.link-from .link-handle { background: var(--accent); color: var(--on-accent); }
 /* While a link is being dragged, only the card it started from keeps its handle. */
 .card.link-ok .link-handle, .card.link-over .link-handle, .card.link-dim .link-handle,
 .card.link-no .link-handle, .card.link-linked .link-handle { opacity: 0; pointer-events: none; }
@@ -434,8 +434,8 @@ function onPointerDown(e: PointerEvent) {
 .card.drop-target { outline: 3px dashed var(--accent); outline-offset: 3px; box-shadow: 0 0 0 6px var(--accent-ring); }
 .card.refused { animation: card-refused 0.7s ease-out 1; }
 @keyframes card-refused {
-  0%, 35% { outline: 2px solid var(--danger); outline-offset: 2px; box-shadow: inset 0 0 0 999px rgba(220, 60, 60, 0.38); }
-  100% { outline: 2px solid transparent; outline-offset: 2px; box-shadow: inset 0 0 0 999px rgba(220, 60, 60, 0); }
+  0%, 35% { outline: 2px solid var(--danger); outline-offset: 2px; box-shadow: inset 0 0 0 999px rgba(var(--danger-rgb), 0.38); }
+  100% { outline: 2px solid transparent; outline-offset: 2px; box-shadow: inset 0 0 0 999px rgba(var(--danger-rgb), 0); }
 }
 /* At the card's default height each block is exactly --rich-h (the arithmetic in
    cardLayout.ts). Resize the card and `flex: 1` shares the difference among them. */

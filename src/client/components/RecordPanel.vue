@@ -602,7 +602,7 @@ watch(() => props.recordId, () => {
 
 .rp-body { flex: 1; overflow-y: auto; padding: 8px 10px; }
 /* A WELL, as in the tree (NavTree.vue): recessed, an accent rule down the left. */
-.rp-well { background: rgba(0, 0, 0, 0.28); border-radius: 6px; border-left: 2px solid var(--accent); padding: 6px 10px 8px; }
+.rp-well { background: var(--bg-well); border-radius: 6px; border-left: 2px solid var(--accent); padding: 6px 10px 8px; }
 .rp-compare { margin: 8px 10px 0; }
 .rp-fields { }
 /* A SECTION's fold row — the tree's row (NavTree.vue): a ▾, the name, and the well of

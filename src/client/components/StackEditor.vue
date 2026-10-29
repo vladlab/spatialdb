@@ -139,7 +139,7 @@ function onKey(e: KeyboardEvent) {
 </script>
 
 <style scoped>
-.dlg-backdrop { position: fixed; inset: 0; z-index: 400; background: rgba(0, 0, 0, 0.45); display: flex; justify-content: center; align-items: flex-start; padding-top: 10vh; }
+.dlg-backdrop { position: fixed; inset: 0; z-index: 400; background: var(--bg-overlay); display: flex; justify-content: center; align-items: flex-start; padding-top: 10vh; }
 /* The app's dialog look (DialogHost.vue), which is scoped there — the same numbers. Not
    `.dlg`: the UI suites' autopilot answers any `.dlg` it sees, and this one is driven by hand. */
 .stack-dlg { width: min(560px, 94vw); max-height: 84vh; overflow-y: auto; background: var(--bg-app); border: 1px solid var(--border-main); border-radius: 8px; padding: 16px 18px; box-shadow: var(--card-shadow-drag); font-size: 13px; }
@@ -164,7 +164,7 @@ footer button:focus { outline: none; border-color: var(--accent); }
 .ghost { align-self: flex-start; background: none; border: 1px dashed var(--border-main); color: var(--text-muted); border-radius: 4px; padding: 2px 8px; cursor: pointer; font: inherit; font-size: 11px; }
 .ghost:hover { color: var(--accent); border-color: var(--accent); }
 .hint { color: var(--text-faint); font-size: 11px; }
-.preview { margin-top: 10px; padding: 8px 10px; background: rgba(0, 0, 0, 0.22); border: 1px solid var(--border-main); border-radius: 6px; }
+.preview { margin-top: 10px; padding: 8px 10px; background: var(--bg-well); border: 1px solid var(--border-main); border-radius: 6px; }
 .preview-line { margin: 0; font-size: 12px; color: var(--text-secondary); }
 .preview-line.warn { color: var(--warning); }
 .preview-new { color: var(--accent); }

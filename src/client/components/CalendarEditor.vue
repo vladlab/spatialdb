@@ -296,7 +296,7 @@ label.ce-head { cursor: pointer; }
 .ce-choice { flex: 0 0 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
 .ce-swatch { width: 16px; height: 16px; border-radius: 4px; border: 1px solid transparent; padding: 0; cursor: pointer; background: var(--tint); opacity: 0.45; }
 .ce-swatch:hover { opacity: 0.8; }
-.ce-swatch.on { opacity: 1; border-color: #fff; box-shadow: 0 0 0 1px var(--tint); }
+.ce-swatch.on { opacity: 1; border-color: var(--swatch-ring); box-shadow: 0 0 0 1px var(--tint); }
 .ce-swatch.default { background: none; border: 1px dashed var(--border-main); color: var(--text-muted); font-size: 10px; line-height: 1; }
 .ce-swatch.default.on { border-style: solid; border-color: var(--text-secondary); box-shadow: none; }
 select, input { background: var(--bg-app); color: var(--text-primary); border: 1px solid var(--border-main); border-radius: 3px; font: inherit; font-size: 11px; padding: 1px 4px; min-width: 0; max-width: 100%; }

@@ -108,7 +108,7 @@ function onPaste(e: ClipboardEvent) {
 .att-name { display: block; margin-top: 2px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .att-x {
   position: absolute; top: 2px; right: 2px; width: 16px; height: 16px; line-height: 1; padding: 0;
-  border: none; border-radius: 50%; background: rgba(0, 0, 0, 0.6); color: #fff; cursor: pointer; visibility: hidden;
+  border: none; border-radius: 50%; background: var(--scrim); color: var(--on-scrim); cursor: pointer; visibility: hidden;
 }
 .att:hover .att-x { visibility: visible; }
 .att-add {

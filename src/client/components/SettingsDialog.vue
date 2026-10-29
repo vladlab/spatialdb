@@ -40,6 +40,11 @@
           <button v-if="uiScale !== 1" class="plain mini scale-reset" @click="uiScale = 1">reset</button>
           <span class="hint">text, rows, cards, everything — for the monitor this browser is on</span>
         </div>
+        <!-- THEME (theme.css, prefs.ts): dark, or the light "paper" ported from viznotes. Per browser too. -->
+        <div class="pref theme">
+          <span>Theme</span>
+          <label v-for="t in THEMES" :key="t" class="theme-opt"><input type="radio" name="theme" :value="t" v-model="theme" /> {{ t }}</label>
+        </div>
       </section>
 
       <section v-if="me?.role === 'admin'" class="users">
@@ -110,7 +115,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { askFull } from '../dialogs';
-import { scopedFirst } from '../prefs';
+import { scopedFirst, theme, THEMES } from '../prefs';
 import { UI_SCALE_MAX, UI_SCALE_MIN, UI_SCALE_STEP, uiScale } from '../uiScale';
 import type { Store } from '../store';
 import { TOOL_NAMES } from '../../contract/tools';
@@ -190,7 +195,7 @@ function onKey(e: KeyboardEvent) { if (e.key === 'Escape') emit('close'); }
 </script>
 
 <style scoped>
-.set-backdrop { position: fixed; inset: 0; z-index: 150; background: rgba(0, 0, 0, 0.45); display: flex; justify-content: center; align-items: flex-start; padding-top: 8vh; }
+.set-backdrop { position: fixed; inset: 0; z-index: 150; background: var(--bg-overlay); display: flex; justify-content: center; align-items: flex-start; padding-top: 8vh; }
 .settings { width: min(720px, 94vw); max-height: 84vh; overflow-y: auto; background: var(--bg-app); border: 1px solid var(--border-main); border-radius: 8px; padding: 16px 20px; box-shadow: var(--card-shadow-drag); font-size: 13px; }
 header { display: flex; align-items: center; margin-bottom: 6px; }
 h2 { margin: 0; font-size: 16px; flex: 1; }
@@ -223,5 +228,7 @@ tr.done td { opacity: 0.5; }
 .scale-range { width: 220px; accent-color: var(--accent); }
 .scale-pct { min-width: 40px; font-variant-numeric: tabular-nums; }
 .pref.scale .hint { color: var(--text-muted); font-size: 11px; flex-basis: 100%; }
+.pref.theme { align-items: center; cursor: default; }
+.theme-opt { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; text-transform: capitalize; }
 .pref input { margin: 0; }
 </style>

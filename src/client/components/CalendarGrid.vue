@@ -73,7 +73,7 @@ const rows = computed(() => props.weeks.map((days) => {
 .cg.week .cg-week { min-height: 240px; flex: 1; }
 .cg-day { border-right: 1px solid var(--border-main); padding: 2px 6px; min-width: 0; }
 .cg-day:last-child { border-right: none; }
-.cg-day.weekend { background: rgba(255, 255, 255, 0.02); }
+.cg-day.weekend { background: var(--bg-weekend); }
 .cg-day.out { opacity: 0.45; }
 .cg-day.today { box-shadow: inset 0 2px 0 var(--accent); }
 .cg-num { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }

@@ -135,7 +135,7 @@ function drop(to: number) { if (dragFrom.value !== null && dragFrom.value !== to
 .cr-swatches { display: flex; gap: 3px; }
 .cr-swatch { width: 16px; height: 16px; border-radius: 4px; border: 1px solid transparent; padding: 0; cursor: pointer; background: var(--tint); opacity: 0.45; }
 .cr-swatch:hover { opacity: 0.8; }
-.cr-swatch.cr-on { opacity: 1; border-color: #fff; box-shadow: 0 0 0 1px var(--tint); }
+.cr-swatch.cr-on { opacity: 1; border-color: var(--swatch-ring); box-shadow: 0 0 0 1px var(--tint); }
 .cr-label { flex: 1; min-width: 60px; max-width: 150px; }
 .cr-paint { max-width: 150px; }
 .cr-when { display: flex; gap: 6px; align-items: flex-start; }

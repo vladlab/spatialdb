@@ -160,11 +160,11 @@ function remove() {
 .lbl { color: var(--text-muted); margin-right: 4px; }
 .st { font: inherit; padding: 3px 8px; border-radius: 10px; border: 1px solid var(--border-main); background: none; color: var(--text-secondary); cursor: pointer; }
 .st:hover { color: var(--text-primary); border-color: var(--text-muted); }
-.st.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.st.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .st.clear { padding: 3px 6px; }
 .st[disabled] { cursor: default; }
 .actions { display: flex; gap: 6px; justify-content: flex-end; }
 .act { font: inherit; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border-main); background: none; color: var(--text-primary); cursor: pointer; }
-.act.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.act.danger { color: var(--danger, #c33); }
+.act.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.act.danger { color: var(--danger); }
 </style>

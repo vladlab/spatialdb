@@ -2232,7 +2232,7 @@ onUnmounted(() => {
 .link-pick-head { margin: 0 0 6px; font-size: 12px; color: var(--text-secondary); }
 .junction-anchor { position: fixed; width: 1px; height: 1px; z-index: 70; }
 .ctx .junction-status { display: inline-block; width: auto; margin: 2px 4px; padding: 2px 8px; border: 1px solid var(--border-main); border-radius: 10px; }
-.ctx .junction-status.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ctx .junction-status.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 
 /* The menu's LOOK is global (App.vue, `.ctx`) — the grid's row menu wears it too.
    Here: where the canvas's sits, and the parts only it has. */

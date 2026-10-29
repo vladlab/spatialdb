@@ -169,9 +169,9 @@ tr.ro-row.painted:hover td { background: linear-gradient(var(--bg-surface-hover)
 .ro-band .ro-level { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--group-text-2); }
 .ro.d0 > .ro-band .ro-level { color: var(--group-text-0); }
 .ro.d1 > .ro-band .ro-level { color: var(--group-text-1); }
-.ro-band .ro-label { font-size: 14px; font-weight: 600; color: #f4f7fa; }
+.ro-band .ro-label { font-size: 14px; font-weight: 600; color: var(--group-label); }
 .ro.d0 > .ro-band .ro-label { font-size: 15px; font-weight: 650; }
-.ro-chip { font-size: 11px; border-radius: 9px; padding: 0 8px; line-height: 17px; background: rgba(66, 165, 245, 0.18); border: 1px solid rgba(66, 165, 245, 0.5); color: #dbeafe; white-space: nowrap; }
+.ro-chip { font-size: 11px; border-radius: 9px; padding: 0 8px; line-height: 17px; background: var(--chip-bg); border: 1px solid var(--chip-line); color: var(--chip-text); white-space: nowrap; }
 .ro-chip.none { background: none; border-color: var(--border-main); color: var(--text-muted); }
 .ro-kv { font-size: 12px; color: var(--text-primary); white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
 .ro-kv .k, .ro-roll .k { font-size: 10.5px; color: var(--text-muted); margin-right: 5px; }

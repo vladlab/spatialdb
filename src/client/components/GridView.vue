@@ -1681,22 +1681,22 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
    row stays selected under the pointer. */
 .row { --row-bg: var(--bg-app); --cell-bg: var(--row-bg); }
 .row.alt { --row-bg: var(--bg-band); }
-.row.fresh { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.05), rgba(66, 165, 245, 0.05)), var(--row-bg); }
+.row.fresh { --cell-bg: linear-gradient(var(--accent-fresh), var(--accent-fresh)), var(--row-bg); }
 .row:hover { --cell-bg: linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--row-bg); }
 /* The record OPEN IN THE TRAY: a bar down the row's left edge, its number lit, and a
    faint tint — so the tray beside the grid can be matched to its row at a glance, and
    told from a SELECTED row (a stronger tint, no bar). Paint only: the bar is an inset
    shadow on the `#` cell, which is pinned, so it stays in view however far right the
    grid is scrolled. Under the pointer and when selected the bar stays. */
-.row.opened { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.08), rgba(66, 165, 245, 0.08)), var(--row-bg); }
-.row.opened:hover { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.08), rgba(66, 165, 245, 0.08)), linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--row-bg); }
+.row.opened { --cell-bg: linear-gradient(var(--accent-open), var(--accent-open)), var(--row-bg); }
+.row.opened:hover { --cell-bg: linear-gradient(var(--accent-open), var(--accent-open)), linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--row-bg); }
 /* A file over the row (the desktop app's drag stream): a dashed ring round the whole
    row and the accent wash — letting go updates THIS record, and nothing else. */
-.row.drop-target { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.16), rgba(66, 165, 245, 0.16)), var(--row-bg); outline: 3px dashed var(--accent); outline-offset: -2px; }
+.row.drop-target { --cell-bg: linear-gradient(var(--accent-drop), var(--accent-drop)), var(--row-bg); outline: 3px dashed var(--accent); outline-offset: -2px; }
 /* The rows a right-click menu is about hold the hover shade while it is open. */
 .row.menued { --cell-bg: linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--row-bg); }
-.row.opened.menued { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.08), rgba(66, 165, 245, 0.08)), linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--row-bg); }
-.row.rowsel { --cell-bg: linear-gradient(rgba(66, 165, 245, 0.14), rgba(66, 165, 245, 0.14)), var(--row-bg); }
+.row.opened.menued { --cell-bg: linear-gradient(var(--accent-open), var(--accent-open)), linear-gradient(var(--bg-surface-hover), var(--bg-surface-hover)), var(--row-bg); }
+.row.rowsel { --cell-bg: linear-gradient(var(--accent-sel), var(--accent-sel)), var(--row-bg); }
 .row td { background: var(--cell-bg); }
 /* PAINTED by a colour rule (contract/colorRules.ts): the tint's WASH over the row's
    own background — banding still shows through — and a stripe on the # cell, which is
@@ -1780,11 +1780,11 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .group-fold { background: none; border: none; color: var(--group-text-0); cursor: pointer; width: 16px; padding: 0; font: inherit; font-size: 10px; }
 .group-field { color: var(--group-text-0); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; }
 .group-row.level-1 .group-field, .group-row.level-2 .group-field { color: var(--group-text-1); }
-.group-label { font-weight: 650; font-size: 16px; color: #f4f7fa; letter-spacing: 0.01em; }
+.group-label { font-weight: 650; font-size: 16px; color: var(--group-label); letter-spacing: 0.01em; }
 .group-row.level-1 .group-label, .group-row.level-2 .group-label { font-weight: 600; font-size: 14.5px; }
 .group-label.empty { color: var(--group-text-1); font-weight: 400; font-style: italic; font-size: 14px; }
-.group-count { color: #dbeafe; font-size: 11.5px; background: rgba(66, 165, 245, 0.18); border: 1px solid rgba(66, 165, 245, 0.5); border-radius: 9px; padding: 0 8px; line-height: 17px; }
-.group-row.level-1 .group-count, .group-row.level-2 .group-count { background: rgba(66, 165, 245, 0.22); border-color: rgba(66, 165, 245, 0.55); }
+.group-count { color: var(--chip-text); font-size: 11.5px; background: var(--chip-bg); border: 1px solid var(--chip-line); border-radius: 9px; padding: 0 8px; line-height: 17px; }
+.group-row.level-1 .group-count, .group-row.level-2 .group-count { background: var(--chip-bg-2); border-color: var(--chip-line-2); }
 .group-add { background: none; border: 1px solid transparent; border-radius: 3px; color: var(--text-muted); cursor: pointer; padding: 0 6px; font: inherit; }
 .group-add:hover { color: var(--accent); border-color: var(--accent); }
 .scope-note { font-size: 11px; color: var(--accent); border: 1px solid var(--accent); border-radius: 3px; padding: 0 6px; white-space: nowrap; }
@@ -1839,7 +1839,7 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
   flex: none; margin-left: auto; background: var(--controls-bg); border: 1px solid var(--accent); color: var(--accent); border-radius: 10px;
   font: inherit; font-size: 10px; font-weight: 600; line-height: 16px; padding: 0 6px; cursor: pointer;
 }
-.more-pairs:hover { background: var(--accent); color: #fff; }
+.more-pairs:hover { background: var(--accent); color: var(--on-accent); }
 .junc-add { background: none; border: 1px dashed var(--border-main); border-radius: 10px; color: var(--text-muted); cursor: pointer; font: inherit; line-height: 1; padding: 0 6px; visibility: hidden; }
 td:hover .junc-add, td.sel .junc-add { visibility: visible; }
 .junc-add:hover { color: var(--accent); border-color: var(--accent); }

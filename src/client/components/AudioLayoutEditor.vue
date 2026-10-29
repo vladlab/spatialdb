@@ -110,7 +110,7 @@ function paste() { if (heldClip.value && clipboardLayout.value) pasteCell(props.
 .al-table { width: 100%; border-collapse: collapse; }
 .al-track td { padding: 2px 4px; border-bottom: 1px solid var(--border-main); vertical-align: middle; }
 .al-head th { padding: 0 4px 3px; text-align: left; font-weight: 400; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); border-bottom: 1px solid var(--border-main); }
-.al-track.picked td { background: rgba(66, 165, 245, 0.12); }
+.al-track.picked td { background: var(--accent-sel); }
 .al-pick { width: 1%; } .al-pick input { margin: 0; }
 .al-n { width: 1%; color: var(--text-faint); text-align: right; }
 .al-fmt { width: 1%; white-space: nowrap; color: var(--accent); font-weight: 600; }

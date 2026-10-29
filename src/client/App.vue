@@ -168,6 +168,8 @@
 
 <script setup lang="ts">
 import { applyUiScale } from './uiScale';
+import { applyTheme } from './prefs';
+import './theme.css';
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue';
 import { dismiss, fileDrag, handshake, isDesktop, jobs, listenFileDrops, notice, notices } from './desktop';
 import { runFileDrop } from './tools/fileDrop';
@@ -524,6 +526,7 @@ function onPaletteKey(e: KeyboardEvent) {
 }
 onMounted(() => window.addEventListener('keydown', onPaletteKey));
 applyUiScale();   // the saved UI scale, before anything is measured (uiScale.ts)
+applyTheme();     // the saved theme — data-theme on <html>; index.html set it before the first paint (prefs.ts)
 onUnmounted(() => window.removeEventListener('keydown', onPaletteKey));
 
 /* Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y), app-wide — see client/history.ts.
@@ -736,75 +739,16 @@ onUnmounted(() => store.stop());
 </script>
 
 <style>
-:root {
-  --bg-app: #1a1a1a;
-  --bg-canvas: #161616;
-  --bg-surface-hover: rgba(255, 255, 255, 0.06);
-  --border-main: #3a3a3a;
-  --text-primary: #e0e0e0;
-  --text-secondary: #bbb;
-  /* The ladder of secondary text, each step readable on the app background (Oct 17 —
-     the old faint #555 was 2.1:1 and the # column, group labels and "(empty)" vanished):
-     faint 5.0:1 (4.4:1 on the controls surface), muted 6.3:1, secondary 9:1. Faint is for text that is there to be
-     found, not read first; a line or a dot that is pure decoration uses a border token. */
-  --text-muted: #9e9e9e;
-  --text-faint: #8a8a8a;
-  --accent: #42a5f5;
-  --accent-ring: rgba(66, 165, 245, 0.22);
-  --success: #4caf50;
-  --warning: #ff9800;
-  --danger: #f44336;
-  --canvas-dot: rgba(255, 255, 255, 0.07);
-  --controls-bg: #252525;
-  --card-bg: #2b2b2b;
-  --card-border: #3f3f3f;
-  --card-head-bg: #3a3a3a;
-  --card-head-text: rgba(255, 255, 255, 0.75);
-  --card-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  --card-shadow-drag: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --arrow: #6b7f8f;
-  /* The grid's own surfaces. A header is not data and must not look like a row: it is
-     the lightest of these. A group header sits between it and the band, so a folded
-     group never passes for a banded row. All SOLID — pinned cells are opaque. */
-  --bg-head: #313131;
-  --head-text: #c4c4c4;
-  --head-line: #4a4a4a;
-  --bg-band: #242424;
-  /* Group headers (GridView): tinted bands, outer deeper and inner lighter, each with a
-     rule in a shade of the accent — the owner's pick from mockups, Oct 17. */
-  --bg-group-0: #1b2a3b; --group-rule-0: #3f74a3; --group-edge-0: #2c4258; --group-text-0: #8ab4d8;
-  --bg-group-1: #2d3f50; --group-rule-1: #5a89b2; --group-edge-1: #3a4f63; --group-text-1: #b5d0ea;
-  --bg-group-2: #2a2f34; --group-rule-2: #56606a; --group-edge-2: #3a4148; --group-text-2: #aab4be;   /* a third depth (reports): neutral */
-  --choice-bg: rgba(255, 255, 255, 0.11);
-  /* The six TINTS of colour rules (contract/colorRules.ts): STATE colours, named, told
-     apart from each other and from any table's identity hex. One base per tint; the
-     surfaces mix their own strengths (`.tint-*` below). Oct 17. */
-  --tint-green: #3fb950; --tint-amber: #d29922; --tint-red: #f85149;
-  --tint-blue: #42a5f5; --tint-violet: #a371f7; --tint-grey: #8b949e;
-}
-/* A painted thing wears ONE of these: `--tint` is the base, and the strengths every
-   surface reads — the WASH behind a grid row or a report band, the CAPSULE a painted
-   cell or card row sits in, the RING and HALO around a card. */
-.tint-green { --tint: var(--tint-green); --tint-wash: rgba(63, 185, 80, 0.13); --tint-cap: rgba(63, 185, 80, 0.3); --tint-ring: rgba(63, 185, 80, 0.75); --tint-halo: rgba(63, 185, 80, 0.38); }
-.tint-amber { --tint: var(--tint-amber); --tint-wash: rgba(210, 153, 34, 0.13); --tint-cap: rgba(210, 153, 34, 0.3); --tint-ring: rgba(210, 153, 34, 0.8); --tint-halo: rgba(210, 153, 34, 0.4); }
-.tint-red { --tint: var(--tint-red); --tint-wash: rgba(248, 81, 73, 0.13); --tint-cap: rgba(248, 81, 73, 0.3); --tint-ring: rgba(248, 81, 73, 0.75); --tint-halo: rgba(248, 81, 73, 0.36); }
-.tint-blue { --tint: var(--tint-blue); --tint-wash: rgba(66, 165, 245, 0.13); --tint-cap: rgba(66, 165, 245, 0.3); --tint-ring: rgba(66, 165, 245, 0.75); --tint-halo: rgba(66, 165, 245, 0.36); }
-.tint-violet { --tint: var(--tint-violet); --tint-wash: rgba(163, 113, 247, 0.13); --tint-cap: rgba(163, 113, 247, 0.3); --tint-ring: rgba(163, 113, 247, 0.75); --tint-halo: rgba(163, 113, 247, 0.36); }
-.tint-grey { --tint: var(--tint-grey); --tint-wash: rgba(139, 148, 158, 0.13); --tint-cap: rgba(139, 148, 158, 0.3); --tint-ring: rgba(139, 148, 158, 0.75); --tint-halo: rgba(139, 148, 158, 0.3); }
-/* A LEGEND CHIP ("■ satisfied"), the same in every bar. */
-.tint-legend { display: inline-flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-secondary); }
-.tint-legend span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.tint-legend i { width: 10px; height: 10px; border-radius: 3px; background: var(--tint); }
+/* Colours: every token, both themes, is in theme.css (imported by the script above). */
 * { box-sizing: border-box; }
 /* Every <select> is drawn by the app, not the platform: WebKitGTK (the desktop
    client) renders a native GTK select in the SYSTEM theme and ignores the
    background the component set — light text on a light box. `appearance: none`
    and the app's own chevron make every dropdown identical everywhere. */
-:root { color-scheme: dark; }
 select {
   -webkit-appearance: none; appearance: none;
   background-color: var(--controls-bg); color: var(--text-primary);
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23999' stroke-width='1.5'/></svg>");
+  background-image: var(--select-chevron);
   background-repeat: no-repeat; background-position: right 6px center;
   padding-right: 20px !important;
 }
@@ -858,7 +802,7 @@ body {
 /* Over something that will take the drop: full strength and an accent edge. */
 .drag-ghost.over { opacity: 1; border-color: var(--accent); }
 .drag-count {
-  margin-left: 8px; background: var(--accent); color: #fff; border-radius: 8px;
+  margin-left: 8px; background: var(--accent); color: var(--on-accent); border-radius: 8px;
   padding: 0 6px; font-size: 11px; font-weight: 600;
 }
 /* THE STAGE GRID (see the shell note at the top). Columns: the view's body, the
@@ -963,7 +907,7 @@ p.hint { padding: 24px; }
 .pills { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; min-width: 0; max-width: 100%; }
 .pills.column { flex-direction: column; align-items: flex-start; flex-wrap: nowrap; gap: 2px; }
 .pill {
-  --pill-bg: rgba(96, 150, 204, 0.2); --pill-edge: transparent; --pill-line: rgba(120, 160, 200, 0.45);
+  --pill-edge: transparent;   /* --pill-bg and --pill-line: theme.css */
   position: relative; display: inline-flex; align-items: center; min-width: 0; max-width: 100%; box-sizing: border-box;
   border-radius: 4px; background: var(--pill-bg); box-shadow: inset 0 0 0 1px var(--pill-edge);
   font-size: 12px; font-style: normal; line-height: 20px; white-space: nowrap; color: var(--text-primary); cursor: default;
@@ -991,11 +935,11 @@ p.hint { padding: 24px; }
    pair the box is `.pill-main`, which becomes a row of [name][→] for it. */
 .pill-jump {
   flex: none; align-self: stretch; display: inline-flex; align-items: center; justify-content: center;
-  width: 17px; padding: 0; margin: 0; border: none; border-left: 1px solid rgba(255, 255, 255, 0.14);
+  width: 17px; padding: 0; margin: 0; border: none; border-left: 1px solid var(--line-soft);
   border-radius: 0 4px 4px 0; background: none; color: var(--text-secondary); cursor: pointer; font: inherit;
 }
 .pill-jump svg { width: 9px; height: 9px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.pill-jump:hover { background: var(--accent); color: #fff; }
+.pill-jump:hover { background: var(--accent); color: var(--on-accent); }
 .pill.jumps > .pill-text { padding-right: 5px; }
 .pill.junction.jumps > .pill-text { padding-right: 0; }
 .pill.jumps .pill-main { display: inline-flex; align-items: stretch; padding-right: 0; }
@@ -1062,23 +1006,23 @@ p.hint { padding: 24px; }
 
 /* desktop: files over the window, and the tools' notices (client/desktop.ts) */
 .file-drop { position: fixed; inset: 0; z-index: 400; pointer-events: none; display: flex; align-items: center; justify-content: center;
-             background: rgba(0, 0, 0, 0.35); border: 3px dashed var(--text-muted); }
+             background: var(--bg-overlay-thin); border: 3px dashed var(--text-muted); }
 .file-drop.ok { border-color: var(--accent); }
 /* Over a record the shade lifts, so the ring on the card or row is what you see. */
 .file-drop.onto { background: transparent; }
 .file-drop-msg { background: var(--bg-app); border: 1px solid var(--border-main); border-radius: 8px; padding: 12px 20px; font-size: 14px; box-shadow: var(--card-shadow-drag); }
 .file-drop-msg.follow { position: fixed; padding: 6px 12px; font-size: 13px; border-color: var(--accent); max-width: 420px; }
 .notice-pills { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 6px; vertical-align: middle; }
-.notice-pill { font: inherit; font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent-ring); color: var(--text-main); cursor: pointer; }
-.notice-pill:hover { background: var(--accent); color: #fff; }
+.notice-pill { font: inherit; font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent-ring); color: var(--text-primary); cursor: pointer; }
+.notice-pill:hover { background: var(--accent); color: var(--on-accent); }
 .desk-notices { position: fixed; right: 12px; bottom: 12px; z-index: 300; display: flex; flex-direction: column; gap: 4px; max-width: 420px; }
 .desk-job { font-size: 11px; color: var(--accent); text-align: right; }
 .desk-notice { background: var(--bg-app); border: 1px solid var(--border-main); border-left: 3px solid var(--accent); border-radius: 4px; padding: 6px 10px; font-size: 12px; cursor: pointer; box-shadow: var(--card-shadow-drag); }
-.desk-notice.warn { border-left-color: #d9a441; }
+.desk-notice.warn { border-left-color: var(--notice-warn); }
 .desk-notice.error { border-left-color: var(--danger); }
 
 .errors {
-  margin: 0; padding: 8px 12px; background: #3a1f1f; color: #f3b8b8;
+  margin: 0; padding: 8px 12px; background: var(--bg-error); color: var(--text-error);
   font-size: 11px; max-height: 120px; overflow: auto; flex: none;
 }
 </style>

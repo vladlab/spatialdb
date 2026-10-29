@@ -102,7 +102,7 @@ onMounted(() => void nextTick(() => nameInput.value?.focus()));
 </script>
 
 <style scoped>
-.ss-backdrop { position: fixed; inset: 0; z-index: 150; background: rgba(0, 0, 0, 0.4); display: flex; justify-content: center; align-items: flex-start; padding-top: 8vh; }
+.ss-backdrop { position: fixed; inset: 0; z-index: 150; background: var(--bg-overlay); display: flex; justify-content: center; align-items: flex-start; padding-top: 8vh; }
 .ss { width: min(560px, 92vw); max-height: 82vh; overflow-y: auto; background: var(--bg-app); border: 1px solid var(--border-main); border-radius: 8px; padding: 16px 18px; box-shadow: var(--card-shadow-drag); font-size: 13px; }
 header { display: flex; align-items: center; margin-bottom: 10px; }
 h2 { margin: 0; font-size: 15px; flex: 1; }

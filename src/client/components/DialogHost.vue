@@ -87,7 +87,7 @@ function onKey(e: KeyboardEvent) {
 </script>
 
 <style scoped>
-.dlg-backdrop { position: fixed; inset: 0; z-index: 400; background: rgba(0, 0, 0, 0.45); display: flex; justify-content: center; align-items: flex-start; padding-top: 18vh; }
+.dlg-backdrop { position: fixed; inset: 0; z-index: 400; background: var(--bg-overlay); display: flex; justify-content: center; align-items: flex-start; padding-top: 18vh; }
 .dlg { width: min(420px, 92vw); background: var(--bg-app); border: 1px solid var(--border-main); border-radius: 8px; padding: 16px 18px; box-shadow: var(--card-shadow-drag); font-size: 13px; }
 h2 { margin: 0 0 12px; font-size: 15px; }
 .dlg-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; color: var(--text-muted); font-size: 11px; }

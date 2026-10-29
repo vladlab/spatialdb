@@ -79,15 +79,15 @@ function retry() { failedFingerprints.clear(); }
 <style scoped>
 .fp { border-top: 1px solid var(--border-main); font-size: 11px; }
 .fp-head { display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 10px; background: none; border: none; color: var(--text-muted); font: inherit; text-align: left; cursor: pointer; }
-.fp-head:hover { background: var(--bg-surface-hover); color: var(--text-main); }
+.fp-head:hover { background: var(--bg-surface-hover); color: var(--text-primary); }
 .fp-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fp-bar { flex: none; width: 34px; height: 4px; border-radius: 2px; background: var(--border-main); overflow: hidden; }
 .fp-fill { display: block; height: 100%; background: var(--accent); transition: width 0.25s linear; }
 .fp-run { flex: none; padding: 1px 8px; border-radius: 9px; border: 1px solid var(--accent); color: var(--accent); }
-.fp-run:hover { background: var(--accent); color: #fff; }
+.fp-run:hover { background: var(--accent); color: var(--on-accent); }
 .fp-list { padding: 2px 10px 6px; border-top: 1px dashed var(--border-main); max-height: 160px; overflow-y: auto; }
 .fp-job { display: flex; align-items: center; gap: 6px; padding: 1px 0; color: var(--text-muted); }
-.fp-job.running { color: var(--text-main); }
+.fp-job.running { color: var(--text-primary); }
 .fp-job.failed { color: var(--warning); }
 .fp-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fp-state { flex: none; font-variant-numeric: tabular-nums; }
@@ -95,5 +95,5 @@ function retry() { failedFingerprints.clear(); }
 .fp-x:hover { color: var(--danger); }
 .fp-foot { display: flex; gap: 6px; padding-top: 4px; }
 .fp-small { font: inherit; font-size: 10px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border-main); background: var(--controls-bg); color: var(--text-muted); cursor: pointer; }
-.fp-small:hover { color: var(--text-main); }
+.fp-small:hover { color: var(--text-primary); }
 </style>

@@ -78,12 +78,12 @@ function onHeadDown(e: PointerEvent) { emit('pointerdown', { stackId: props.id, 
 .stack {
   position: absolute; top: 0; left: 0; box-sizing: border-box; will-change: transform;
   pointer-events: none;
-  background: rgba(0, 0, 0, 0.28);
+  background: var(--bg-well);
   border: 1px solid var(--border-main); border-radius: 8px;
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  box-shadow: var(--well-shadow);
   font-size: 12px;
 }
-.stack.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring), inset 0 2px 5px rgba(0, 0, 0, 0.45); }
+.stack.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring), var(--well-shadow-only); }
 .stack.over { border-color: var(--accent); border-style: dashed; }
 .stack.refused { animation: stack-refused 0.7s ease-out 1; }
 @keyframes stack-refused {
@@ -115,7 +115,7 @@ function onHeadDown(e: PointerEvent) { emit('pointerdown', { stackId: props.id, 
 .stack-warn { color: var(--warning); cursor: help; }
 .stack-stale { color: var(--warning); }
 .stack-gather { border: 1px solid var(--accent); background: none; color: var(--accent); border-radius: 8px; padding: 0 6px; line-height: 15px; font: inherit; font-size: 10.5px; cursor: pointer; flex: none; }
-.stack-gather:hover { background: var(--accent); color: #fff; }
+.stack-gather:hover { background: var(--accent); color: var(--on-accent); }
 .stack-edit { border: none; background: none; color: var(--text-muted); cursor: pointer; font: inherit; font-size: 13px; padding: 0 2px; flex: none; opacity: 0; }
 .stack:hover .stack-edit, .stack.selected .stack-edit { opacity: 1; }
 .stack-edit:hover { color: var(--accent); }
