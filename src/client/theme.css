@@ -127,16 +127,15 @@
 }
 
 /* ── LIGHT — the owner's "automata" paper (his Emacs theme), on spatialdb's surfaces ──
-   A LADDER, not a flat page (Oct 29, his call after seeing the first cut): the WORK
-   sits on the paper (#bab5a1 — the main stage: canvas, grid body, tray body, home);
-   the CHROME around it — top bar, tree, a view's bars, the tray's head and foot —
-   steps down to #a8a593; a WELL steps down again (~#949180); and what is RAISED on
-   the stage — a card, the grid's header, the tray's label column — steps UP to
-   #c4bfab. Every surface keeps its distance from the one it sits on, so a row's edge
-   and a card's edge read without a line. Text is his dark brown (#3a372f, his editor's
-   foreground) as `muted`, with a warmer near-black above it: on the paper, primary
-   10.5:1, secondary 8.5:1, muted 6.3:1, faint 4.6:1. Accent, warning (#af5f00, his
-   gold) and danger are his too. The tints are viznotes' paper note colours. */
+   Tuned by the owner in a live mock, Oct 29: the stage is the paper (#bab5a1 — canvas,
+   grid body, tray body, home); the CHROME around it — top bar, tree, a view's bars,
+   the tray's head and foot — steps down to #a8a593; a WELL steps down again (a 12%
+   shade); CARDS sit a step below the paper (#a19f91), and HEADINGS — the grid's header,
+   the tray's label column — are automata's dark grey (#898776), the darkest surface,
+   so a heading reads as a heading at a glance. Text is near-black #111111 (9.2:1 on the
+   paper, 7.1:1 on a card, 5.0:1 on a heading); his editor foreground (#3a372f) is the
+   label/muted step (4.5:1 on a well). Accent, warning (#af5f00, his gold) and danger
+   are his too. The tints are viznotes' paper note colours. */
 :root[data-theme="light"] {
   color-scheme: light;
 
@@ -145,10 +144,10 @@
   --bg-chrome: #a8a593;
   --bg-surface-hover: rgba(0, 0, 0, 0.07);
   --border-main: #8a8776;
-  --text-primary: #1f1d18;
-  --text-secondary: #2e2b24;
+  --text-primary: #111111;
+  --text-secondary: #24221c;
   --text-muted: #3a372f;
-  --text-faint: #4a4740;
+  --text-faint: #403d36;
   --accent: #2b5a99;
   --accent-ring: rgba(43, 90, 153, 0.28);
   --accent-fresh: rgba(43, 90, 153, 0.07);
@@ -163,16 +162,16 @@
   --danger-rgb: 168, 32, 26;
   --canvas-dot: rgba(0, 0, 0, 0.13);
   --controls-bg: #a8a593;
-  --card-bg: #c4bfab;
-  --card-border: #878473;
-  --card-head-bg: #878473;
+  --card-bg: #a19f91;
+  --card-border: #7f7c6c;
+  --card-head-bg: #7f7c6c;
   --card-head-text: rgba(0, 0, 0, 0.8);
   --card-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
   --card-shadow-drag: 0 8px 24px rgba(0, 0, 0, 0.28);
   --arrow: #4a5966;
-  --bg-head: #c6c1ad;
-  --head-text: #2a2822;
-  --head-line: #8f8c7b;
+  --bg-head: #898776;
+  --head-text: #111111;
+  --head-line: #7a7768;
   --bg-band: #b1ac98;
   --bg-group-0: #8d9fb0; --group-rule-0: #2b5a99; --group-edge-0: #7a8e9f; --group-text-0: #17334c;
   --bg-group-1: #a3b0bc; --group-rule-1: #4f7ea6; --group-edge-1: #8c9aa7; --group-text-1: #1e3b56;
@@ -191,7 +190,7 @@
   --bg-overlay-thin: rgba(40, 37, 26, 0.26);
   --scrim: rgba(0, 0, 0, 0.6);
   --on-scrim: #fff;
-  --swatch-ring: #1f1d18;
+  --swatch-ring: #111111;
   --pill-bg: rgba(31, 85, 140, 0.18); --pill-line: rgba(31, 85, 140, 0.5);
   --notice-warn: #af5f00;
   --bg-error: #c9a09a; --text-error: #4a1410;

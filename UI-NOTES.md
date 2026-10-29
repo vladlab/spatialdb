@@ -374,8 +374,8 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
   Every `<select>` is drawn by the app: check its chevron reads on the light
   controls surface. Revised the same day to the owner's automata ladder: stage on
   the paper (#bab5a1), chrome a step down (`--bg-chrome` #a8a593: tree, view bars,
-  tray head/foot), wells below that, cards/grid header/tray labels raised (#c4bfab).
-  Text on the paper: primary 10.5:1, muted 6.3:1, faint 4.6:1.
+  tray head/foot), wells below that; then tuned by the owner in a live mock: cards
+  #a19f91, headings (grid header, tray labels) #898776, text #111111.
 
 - DENSE TRAY (Oct 17–18, `RecordPanel.vue`, `client/fieldFolds.ts`; `test/fieldsections.ts` F5)
   — the mockups were agreed (one row per field, a label cell at a uniform best-fit
