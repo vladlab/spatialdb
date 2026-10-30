@@ -149,9 +149,9 @@ const countNoun = (s: ReportSection) => { const t = props.tables.get(s.tableId);
 .ro-empty { margin: 0; padding: 1px 0; color: var(--text-faint); font-size: 11px; font-style: italic; }
 
 /* ── bands: a BRANCH level's records (tinted by depth, as the grid's group headers) ── */
-.ro-band { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 3px 10px; margin: 6px 0 2px; border-radius: 3px; cursor: pointer; flex-wrap: wrap;
+.ro-band { display: flex; align-items: center; gap: 10px; min-height: 30px; padding: 3px 10px; margin: 6px 0 2px; border-radius: 3px; cursor: pointer; flex-wrap: wrap;
   background: var(--bg-group-2); border-top: 1px solid var(--group-rule-2); }
-.ro.d0 > .ro-band { background: var(--bg-group-0); border-top: 2px solid var(--group-rule-0); min-height: 38px; }
+.ro.d0 > .ro-band { background: var(--bg-group-0); border-top: 2px solid var(--group-rule-0); }
 .ro.d1 > .ro-band { background: var(--bg-group-1); border-top: 1px solid var(--group-rule-1); }
 .ro-band:hover { filter: brightness(1.12); }
 /* PAINTED by a colour rule (contract/colorRules.ts): the tint's WASH over the depth
@@ -171,7 +171,7 @@ tr.ro-row.painted:hover td { background: linear-gradient(var(--bg-surface-hover)
 .ro.d1 > .ro-band .ro-level { color: var(--group-text-1); }
 .ro-band .ro-label { font-size: 14px; font-weight: 600; color: var(--group-label); }
 .ro.d0 > .ro-band .ro-label { font-size: 15px; font-weight: 650; }
-.ro-chip { font-size: 11px; border-radius: 9px; padding: 0 8px; line-height: 17px; background: var(--chip-bg); border: 1px solid var(--chip-line); color: var(--chip-text); white-space: nowrap; }
+.ro-chip { font-size: 11.5px; border-radius: 9px; padding: 0 8px; line-height: 17px; background: var(--chip-bg); border: 1px solid var(--chip-line); color: var(--chip-text); white-space: nowrap; }
 .ro-chip.none { background: none; border-color: var(--border-main); color: var(--text-muted); }
 .ro-kv { font-size: 12px; color: var(--text-primary); white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
 .ro-kv .k, .ro-roll .k { font-size: 10.5px; color: var(--text-muted); margin-right: 5px; }

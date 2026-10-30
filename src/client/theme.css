@@ -173,11 +173,11 @@
   --head-text: #111111;
   --head-line: #7a7768;
   --bg-band: #b1ac98;
-  --bg-group-0: #8d9fb0; --group-rule-0: #2b5a99; --group-edge-0: #7a8e9f; --group-text-0: #17334c;
-  --bg-group-1: #a3b0bc; --group-rule-1: #4f7ea6; --group-edge-1: #8c9aa7; --group-text-1: #1e3b56;
+  --bg-group-0: #557a8a; --group-rule-0: #2b5a99; --group-edge-0: #7a8e9f; --group-text-0: #0a1622;
+  --bg-group-1: #7c96a2; --group-rule-1: #4f7ea6; --group-edge-1: #8c9aa7; --group-text-1: #132a3e;
   --bg-group-2: #a9a694; --group-rule-2: #6a6759; --group-edge-2: #8f8c7b; --group-text-2: #2f2d26;
   --group-label: #10161c;
-  --chip-bg: rgba(43, 90, 153, 0.16); --chip-line: rgba(43, 90, 153, 0.55); --chip-text: #14304a;
+  --chip-bg: rgba(43, 90, 153, 0.16); --chip-line: rgba(43, 90, 153, 0.55); --chip-text: #10161c;
   --chip-bg-2: rgba(43, 90, 153, 0.2); --chip-line-2: rgba(43, 90, 153, 0.6);
   --choice-bg: rgba(0, 0, 0, 0.12);
   --bg-well: rgba(0, 0, 0, 0.12);

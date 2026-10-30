@@ -1420,7 +1420,7 @@ function onScroll() {
 }
 
 /** A group header's height, by level: the outer band is the tallest. Must match the CSS (.group-row). */
-const GROUP_H: readonly number[] = [38, 34];
+const GROUP_H: readonly number[] = [30, 30];   // = ROW_H: every level the height of a row (Oct 30, the owner's call); size and colour tell them apart
 const itemH = (it: { kind: string; level?: number }) => (it.kind === 'group' ? (GROUP_H[it.level ?? 0] ?? GROUP_H[GROUP_H.length - 1]) : ROW_H);
 /** offsets[i] = the top of item i; offsets[n] = the whole height. Rows are ROW_H, headers GROUP_H. */
 const offsets = computed(() => { const o = new Array<number>(items.value.length + 1); o[0] = 0; items.value.forEach((it, i) => { o[i + 1] = o[i] + itemH(it); }); return o; });
@@ -1769,14 +1769,15 @@ th:hover .th-menu, .th-menu:focus { visibility: visible; }
 .cell-verdict { margin-left: 4px; }
 /* GROUP HEADERS (Oct 17, the owner's pick from mockups): every level is a TINTED band
    with its own rule, so a group reads as a section and not as one more row — the outer
-   level the deeper blue and the tallest, the inner a lighter blue a step shorter; the
-   names a size up (16px / 14.5px). Heights are GROUP_H in the script: the window maths
+   level the deeper blue, the inner a lighter blue; every level a row's height (30px —
+   Oct 30: the owner wants one height, told apart by size and colour); the names a
+   size up (16px / 14.5px). Heights are GROUP_H in the script: the window maths
    reads them, so a change here is a change there. The rule above a band is a shade of
    the accent, never the grid-line grey, so it is told from the rows at a glance. */
-.group-row td { padding: 0; background: var(--bg-group-0); border-top: 2px solid var(--group-rule-0); border-bottom: 1px solid var(--group-edge-0); height: 38px; }
-.group-row.level-1 td, .group-row.level-2 td { background: var(--bg-group-1); border-top: 1px solid var(--group-rule-1); border-bottom: 1px solid var(--group-edge-1); height: 34px; }
-.group-head { display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; white-space: nowrap; position: sticky; left: 0; max-width: 100vw; }
-.group-row.level-1 .group-head, .group-row.level-2 .group-head { height: 32px; }
+.group-row td { padding: 0; background: var(--bg-group-0); border-top: 2px solid var(--group-rule-0); border-bottom: 1px solid var(--group-edge-0); height: 30px; }
+.group-row.level-1 td, .group-row.level-2 td { background: var(--bg-group-1); border-top: 1px solid var(--group-rule-1); border-bottom: 1px solid var(--group-edge-1); height: 30px; }
+.group-head { display: flex; align-items: center; gap: 8px; height: 27px; box-sizing: border-box; white-space: nowrap; position: sticky; left: 0; max-width: 100vw; }
+.group-row.level-1 .group-head, .group-row.level-2 .group-head { height: 28px; }
 .group-fold { background: none; border: none; color: var(--group-text-0); cursor: pointer; width: 16px; padding: 0; font: inherit; font-size: 10px; }
 .group-field { color: var(--group-text-0); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; }
 .group-row.level-1 .group-field, .group-row.level-2 .group-field { color: var(--group-text-1); }
