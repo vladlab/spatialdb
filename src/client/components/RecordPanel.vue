@@ -684,9 +684,10 @@ watch(() => props.recordId, () => {
    summary cell takes the label shade and its text wipes out to the right), and the
    editor hangs under it in a BOX — the rich-text editor's box, for every kind of
    block: the controls shade, a hairline, rounded corners, a gap from the bar and
-   from the well's edges, the text one step lighter than a row's. Down the open
-   block's left runs a thin accent line with rounded ends, apart from the well's
-   own rule — the tell for where the block ends and the next row begins. */
+   from the well's edges, the text one step lighter than a row's. The bar casts a
+   soft shadow down onto what hangs under it, so the open block reads as a small
+   well of its own. No second line down its left (Oct 30: two lines side by side
+   read as a double rule): the well's own rule simply runs on past it. */
 .fold-chip {
   flex: none; width: 16px; height: 16px; padding: 1px; box-sizing: border-box; margin-left: -4px;
   background: var(--card-head-bg); border: 0; border-radius: 3px; cursor: pointer; color: var(--text-secondary);
@@ -698,9 +699,11 @@ watch(() => props.recordId, () => {
 .rp-value.summary .text, .rp-value.summary .placeholder { color: var(--text-primary); min-width: 0; transition: opacity 0.18s ease, transform 0.18s ease; }
 .rp-value.summary .placeholder { color: var(--text-faint); }
 .rp-field.block.open { position: relative; border-bottom: 1px solid var(--border-main); }
-.rp-field.block.open::before {
-  content: ''; position: absolute; left: 2px; top: 3px; bottom: 3px; width: 2px;
-  border-radius: 1px; background: var(--accent); pointer-events: none;
+.rp-field.block.open::after {
+  /* An abspos child of a grid may name a grid area for its box without taking part
+     in placement: row 2 is everything under the bar, whatever its height. */
+  content: ''; position: absolute; grid-row: 2; grid-column: 1 / -1; top: 0; left: 0; right: 0; height: 7px;
+  background: linear-gradient(var(--bar-shade), transparent); pointer-events: none; z-index: 1;
 }
 .rp-well.rp-fields > .rp-field.block.open:last-child { border-bottom: 0; }
 .rp-field.block.open > .rp-name { border-bottom-color: transparent; }
