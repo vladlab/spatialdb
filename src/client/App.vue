@@ -996,13 +996,13 @@ p.hint { padding: 24px; }
 .rich ul[data-type='taskList'] li > div, .ProseMirror ul[data-type='taskList'] li > div { flex: 1; }
 .rich blockquote, .ProseMirror blockquote { margin: 0 0 0.6em; padding-left: 10px; border-left: 3px solid var(--border-main); color: var(--text-secondary); }
 .rich code, .ProseMirror code { background: var(--controls-bg); border-radius: 3px; padding: 0 4px; font-size: 12px; }
-.rich pre, .ProseMirror pre { background: var(--controls-bg); border-radius: 4px; padding: 8px 10px; overflow-x: auto; margin: 0 0 0.6em; }
+.rich pre, .ProseMirror pre { background: var(--controls-bg); border-radius: 4px; padding: 8px 10px 14px; overflow-x: auto; margin: 0 0 0.6em; }
 .rich pre code, .ProseMirror pre code { background: none; padding: 0; }
 .rich hr, .ProseMirror hr { border: none; border-top: 1px solid var(--border-main); margin: 0.8em 0; }
 .rich a, .ProseMirror a { color: var(--accent); }
 .rich img, .ProseMirror img { max-width: 100%; height: auto; border-radius: 3px; display: block; margin: 0.4em 0; }
 .ProseMirror img.ProseMirror-selectednode { outline: 2px solid var(--accent); }
-.rich table, .ProseMirror table { border-collapse: collapse; margin: 0 0 0.6em; max-width: 100%; display: block; overflow-x: auto; }
+.rich table, .ProseMirror table { border-collapse: collapse; margin: 0 0 0.6em; max-width: 100%; display: block; overflow-x: auto; padding-bottom: 12px; }   /* bottom: room for an overlay scrollbar */
 .rich td, .rich th, .ProseMirror td, .ProseMirror th { border: 1px solid var(--border-main); padding: 3px 8px; vertical-align: top; min-width: 40px; }
 .rich th, .ProseMirror th { background: var(--controls-bg); font-weight: 600; text-align: left; }
 .ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--text-faint); float: left; height: 0; pointer-events: none; }

@@ -64,7 +64,9 @@ const hashed = computed(() => !!m.value && 'members' in m.value && (m.value.memb
 .mv-member-hash { white-space: nowrap; padding-left: 8px; }
 .mv-ok { color: var(--success); }
 .mv-bad { color: var(--warning); }
-.mv-scroll { max-height: 220px; overflow-y: auto; border: 1px solid var(--border-main); border-radius: 4px; }
+/* Room at the bottom for a HORIZONTAL scrollbar: overlay scrollbars (WebKitGTK, macOS)
+   take no space of their own and sit on the last line — wider still when hovered. */
+.mv-scroll { max-height: 220px; overflow-y: auto; padding-bottom: 12px; border: 1px solid var(--border-main); border-radius: 4px; }
 .mv-table { width: 100%; border-collapse: collapse; font-size: 11px; }
 .mv-table td { padding: 2px 8px; border-bottom: 1px solid var(--border-main); }
 .mv-table tr:last-child td { border-bottom: none; }

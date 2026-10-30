@@ -725,7 +725,8 @@ watch(() => props.recordId, () => {
    (StructuredField) and a junction's table (JunctionTable) fill it edge to edge. */
 .rp-under > .attach, .rp-under > .editor, .rp-under > .text.pre, .rp-under > .placeholder, .rp-under > .looked-up { display: block; padding: 8px 12px; box-sizing: border-box; }
 .rp-under > .text.pre:empty { display: none; }
-.rp-under > .jt-wrap { padding-bottom: 8px; }
+/* 12px: room for a horizontal scrollbar, which overlays the last row (TimelineAudioView). */
+.rp-under > .jt-wrap { padding-bottom: 12px; }
 /* Rich text IS its own box (RichTextEditor .rte): the cell around it stays plain. */
 .rp-rich.rp-under { grid-column: 1 / -1; display: flex; margin: 0; padding: 6px 10px 10px; border: 0; border-radius: 0; background: none; overflow: visible; }
 .rp-rich :deep(.rte) { flex: 1; border-radius: 6px; }

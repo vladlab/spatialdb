@@ -78,7 +78,9 @@ const reveal = (path: string) => invoke<string>('reveal', { path })
 .muted { color: var(--text-muted); }
 .ta-bad { color: var(--warning); }
 /* No border of its own: the block's box (RecordPanel .rp-under) is the frame. */
-.ta-scroll { max-height: 260px; overflow-y: auto; }
+/* Room at the bottom for a HORIZONTAL scrollbar: overlay scrollbars (WebKitGTK, macOS)
+   take no space of their own and sit on the last line — wider still when hovered. */
+.ta-scroll { max-height: 260px; overflow-y: auto; padding-bottom: 12px; }
 .ta-table { width: 100%; border-collapse: collapse; font-size: 11px; table-layout: fixed; }
 .ta-table td, .ta-table th { padding: 2px 8px; }
 /* A track's header: the grid's group-header language — a tinted band. */
