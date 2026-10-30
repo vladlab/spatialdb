@@ -456,7 +456,7 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
   login screen says your change is waiting and that signing in saves it.
 - THE STEADY EDITOR — check nothing moves when you click into it, type, or save;
   that the bottom edge drags to resize (and is remembered); that the status word
-  ("saved" / "editing — saves when you click away") is noticeable but quiet; and
+  ("saved" / "unsaved", with the Save button beside it) is noticeable but quiet; and
   that 340px is a sensible default height in a tray of your usual width.
 - THE NEW SHELL — all of it is layout. The tree (240px), the tab bar, the canvas's
   context bar now at the TOP, the tray with its splitter on the right, the status

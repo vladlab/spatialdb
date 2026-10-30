@@ -10,13 +10,20 @@
     - the toolbar is permanent;
     - the writing area has a FIXED height that only you change (drag its bottom
       edge; remembered in this browser), and scrolls inside itself;
-    - a status word in the toolbar — saved · editing · uploading — says what state
+    - a status word in the toolbar — saved · unsaved · uploading — says what state
       your words are in, since nothing else on screen changes when they are saved.
 
-  SAVING. Still whole-value and still on the way OUT (click or tab away, or
-  Ctrl+Enter): a document is one field value, a save is one logged, broadcast
-  mutation carrying all of it, so per-keystroke saving would be thousands of log
-  rows per note. Escape puts back what was last saved.
+  SAVING is a BUTTON. It used to happen on the way out (click or tab away), and
+  the owner found that always felt wrong: clicking another field is not a decision
+  to save. Now a Save button shows in the toolbar while there are unsaved words
+  (its slot is always reserved, so nothing shifts when it appears), and Ctrl+Enter
+  does the same. Leaving the editor saves nothing; the words stay, marked unsaved.
+  Escape puts back what was last saved. Still whole-value: a document is one field
+  value, a save is one logged, broadcast mutation carrying all of it.
+
+  The one exception is the editor going AWAY (closing the tray, opening another
+  record): it still saves then, because the alternative is losing the words with
+  no way to get them back.
 
   TWO PEOPLE, ONE NOTE. Last write wins, but never silently:
     - not editing (no unsaved words of yours): a colleague's save simply appears;
@@ -34,6 +41,10 @@
       <button v-for="b in BUTTONS" :key="b.id" :class="{ on: b.on?.() }" :title="b.title" tabindex="-1" @click="b.run">{{ b.label }}</button>
       <span class="spacer" />
       <span class="rte-state" :class="state">{{ STATE_TEXT[state] }}</span>
+      <!-- Always in the bar, only VISIBLE with something to save: its space is held,
+           so the bar never reflows when it shows. -->
+      <button class="rte-save" :class="{ shown: dirty && !conflict }" :disabled="!dirty || conflict || !!uploading"
+              tabindex="-1" title="Save (Ctrl+Enter)" @click="commit()">Save</button>
     </div>
 
     <div ref="bodyEl" class="rte-body" :style="{ height: height + 'px' }" @click="editor?.commands.focus()">
@@ -97,7 +108,7 @@ const notice = ref('');
 const conflict = ref(false);
 
 const state = computed(() => (uploading.value ? 'uploading' : conflict.value ? 'conflict' : dirty.value ? 'editing' : 'saved'));
-const STATE_TEXT = { uploading: 'uploading…', conflict: 'needs your decision', editing: 'editing — saves when you click away', saved: 'saved' } as const;
+const STATE_TEXT = { uploading: 'uploading…', conflict: 'needs your decision', editing: 'unsaved', saved: 'saved' } as const;
 
 /* ── height: fixed, yours to change, remembered ── */
 const HEIGHT_KEY = 'spatialdb.rte.height';
@@ -239,8 +250,7 @@ function onKey(e: KeyboardEvent) {
 function onFocusOut(e: FocusEvent) {
   const to = e.relatedTarget as Node | null;
   if (to && (e.currentTarget as HTMLElement).contains(to)) return;
-  focused.value = false;
-  if (!conflict.value) commit();        // the choice is on screen; do not decide for them
+  focused.value = false;                // and nothing else: leaving is not saving (the Save button is)
 }
 
 defineExpose({ commit });
@@ -260,6 +270,13 @@ defineExpose({ commit });
 .rte-bar button:hover { border-color: var(--border-main); color: var(--text-primary); }
 .rte-bar button.on { color: var(--accent); border-color: var(--accent); }
 .spacer { flex: 1; }
+.rte-bar .rte-save {
+  visibility: hidden; color: var(--on-accent); background: var(--accent); border-color: var(--accent);
+  padding: 0 10px; margin-left: 2px; font-weight: 600;
+}
+.rte-bar .rte-save.shown { visibility: visible; }
+.rte-bar .rte-save:hover:not(:disabled) { color: var(--on-accent); filter: brightness(1.1); }
+.rte-bar .rte-save:disabled { cursor: default; opacity: 0.6; }
 /* Fixed slot, so the toolbar does not reflow when the word changes. */
 .rte-state { font-size: 11px; color: var(--text-faint); white-space: nowrap; padding: 0 4px; }
 .rte-state.editing { color: var(--warning); }

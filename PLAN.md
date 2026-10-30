@@ -888,10 +888,12 @@ editor on click, with a toolbar appearing — so it is gone structurally:
   edge (`resize: vertical` + a ResizeObserver; remembered per browser). It scrolls
   inside itself; the fields below never move. The tray reserves that height while
   TipTap loads (it is an on-demand chunk), so its arrival does not jump either.
-- A status word in the toolbar, in a fixed slot: saved · editing — saves when you
-  click away · uploading… · needs your decision.
-- Saves on the way out (focus leaves, Ctrl+Enter) — still one mutation per session
-  of edits, not per keystroke. Escape with unsaved words puts back what was saved
+- A status word in the toolbar, in a fixed slot: saved · unsaved (+ a Save button) · uploading… · needs your decision.
+- Saves with the Save button (shown only while there are unsaved words) or
+  Ctrl+Enter — still one mutation per session of edits, not per keystroke. Leaving
+  the editor saves nothing (Oct 29: "click away to save" always felt wrong to the
+  owner); only the editor going away — tray closed, another record opened — still
+  saves, so words are never lost. Escape with unsaved words puts back what was saved
   and does NOT close the tray; with none, it falls through and the tray closes.
 - Two people: not editing → a colleague's save simply appears; editing → it is not
   pushed in, and saving over it stops to ask (keep mine / take theirs).

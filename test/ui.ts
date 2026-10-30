@@ -1208,14 +1208,20 @@ async function main() {
   pm().commands.setContent({ type: 'doc', content: [
     { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'QC notes' }] },
     { type: 'paragraph', content: [{ type: 'text', text: 'Slate is wrong at 01:00:00:00' }] }] });
-  check('typing turns the word to "editing" and says when it will save', await until(() => /^editing/.test(rteState())), rteState());
+  const saveBtn = () => panel().find('.rte-save');
+  check('before any change the Save button holds its place but is not shown', saveBtn().exists() && !saveBtn().classes().includes('shown'));
+  check('typing turns the word to "unsaved" and SHOWS the Save button', await until(() => rteState() === 'unsaved') && saveBtn().classes().includes('shown'), rteState());
+  const clickAway = await mutationCount();
+  await panel().find('.rte').trigger('focusout');
+  await sleep(300);
+  check('clicking away saves NOTHING — the words stay, still unsaved', await mutationCount() === clickAway && rteState() === 'unsaved' && /QC notes/.test(pm().getText()));
   const logBefore = await mutationCount();
-  await save();
+  await saveBtn().trigger('click');
   const brief = await untilDb(`select data from records where data->>'name' = 'reel_1'`, (r) => r[0].data.brief?.type === 'doc');
-  check('Ctrl+Enter stores a DOCUMENT — once, as one mutation', brief[0].data.brief.content[0].type === 'heading' && await mutationCount() === logBefore + 1,
+  check('the Save button stores a DOCUMENT — once, as one mutation', brief[0].data.brief.content[0].type === 'heading' && await mutationCount() === logBefore + 1,
     `${await mutationCount() - logBefore} mutations`);
   check('and NOTHING moved: same editor, same toolbar, the heading still in it, the word back to "saved"',
-    await until(() => rteState() === 'saved') && panel().find('.rte .ProseMirror h2').text() === 'QC notes' && !panel().find('.rich').exists(), rteState());
+    await until(() => rteState() === 'saved') && panel().find('.rte .ProseMirror h2').text() === 'QC notes' && !panel().find('.rich').exists() && !saveBtn().classes().includes('shown'), rteState());
   check('the grid cell shows the first line', await until(() => column(BRIEF())[rowOf('reel_1')] === 'QC notes'), column(BRIEF())[rowOf('reel_1')]);
 
   const quietLog = await mutationCount();
@@ -1230,7 +1236,7 @@ async function main() {
   check('NOT editing: a colleague\'s save simply appears in your editor', await until(() => /a colleague wrote this/.test(pm().getText()), 6000) && rteState() === 'saved', pm().getText());
 
   pm().commands.setContent(para('my unsaved words'));
-  await until(() => /^editing/.test(rteState()));
+  await until(() => rteState() === 'unsaved');
   await post([{ type: 'record.update', id: r1, set: { brief: para('a colleague got here first') }, unset: [] }]);
   await untilDb(`select data from records where id = '${r1}'`, (r) => /got here first/.test(JSON.stringify(r[0].data.brief)));
   await sleep(300);
@@ -1243,7 +1249,7 @@ async function main() {
   check('"Keep mine" then writes it', /my unsaved words/.test(JSON.stringify(mine[0].data.brief)));
 
   pm().commands.setContent(para('a change of heart'));
-  await until(() => /^editing/.test(rteState()));
+  await until(() => rteState() === 'unsaved');
   await panel().find('.rte').trigger('keydown', { key: 'Escape' });
   check('Escape with unsaved words puts back what was saved — and does NOT close the tray',
     await until(() => /my unsaved words/.test(pm().getText()) && rteState() === 'saved') && panel().exists(), pm().getText());
@@ -1251,7 +1257,7 @@ async function main() {
   // The dangerous one. Unsaved words, then jump straight to ANOTHER record: the
   // editor saves as it unmounts — and by then the panel is showing the next record.
   pm().commands.setContent(para('written on reel_1, saved on the way out'));
-  await until(() => /^editing/.test(rteState()));
+  await until(() => rteState() === 'unsaved');
   // (r10 — reel_10's id — was looked up earlier in this file.)
   await cell(rowOf('reel_10'), 0).trigger('mousedown');
   await key(' ');                                   // Space opens the selected row's record
