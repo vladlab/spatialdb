@@ -383,8 +383,11 @@ type TimelineAudio = {                    // a Resolve timeline's audio tracks, 
 - **Member paths are relative to the record's own path** (a `file_path` field): no
   leading `/`, no `..`, no drive letter. Absolute paths are refused.
 - An audio layout's TRACKS are the containers a vendor sees; 12 mono tracks and
-  "5.1 + 3× stereo" are the same channels and a different layout. Channel labels are
-  free text (vendors vary); `LAYOUT_PRESETS` supplies mono / 2.0 / 5.1 / 7.1. An empty
+  "5.1 + 3× stereo" are the same channels and a different layout. `diffLayouts`'
+  base check is that structure only (channel count, then channels per track in
+  track order); channel labels, track names and languages are compared only when a
+  pair asks for labels, and a placeholder label (`ch1`, `M`, `?`) never differs.
+  Channel labels are free text (vendors vary); `LAYOUT_PRESETS` supplies mono / 2.0 / 5.1 / 7.1. An empty
   layout is stored as NO value, not `{ tracks: [] }`.
 - A **video layout** is a mini EDL of what is on a file — "3s black from 00:59:27:00,
   bars, slate, picture at 01:00:00:00". Three kinds of item, told apart by `duration`

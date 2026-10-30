@@ -414,15 +414,27 @@ function pure() {
   check('12 monos against "5.1 + 3× stereo": same channels, same order — a GROUPING problem, and only that',
     !grouping.same && grouping.issues.length === 1 && grouping.issues[0].kind === 'grouping' && /5\.1, 2\.0, 2\.0, 2\.0/.test(grouping.issues[0].detail), JSON.stringify(grouping.issues));
   const swapped: Layout = { tracks: [{ ...spec.tracks[0], channels: ['L', 'C', 'R', 'LFE', 'Ls', 'Rs'] }, ...spec.tracks.slice(1)] };
-  const orderDiff = diffLayouts(spec, swapped);
-  check('L C R instead of L R C is an ORDER problem (and grouping is not also reported)', orderDiff.issues.length === 1 && orderDiff.issues[0].kind === 'order' && /same channels, different order/.test(orderDiff.issues[0].detail), JSON.stringify(orderDiff.issues));
+  check('L C R instead of L R C is the SAME layout by default — channel labels are the strict category (Oct 30)', diffLayouts(spec, swapped).same);
+  const orderDiff = diffLayouts(spec, swapped, true);
+  check('…asked for (labels = true), it is an ORDER problem (and grouping is not also reported)', orderDiff.issues.length === 1 && orderDiff.issues[0].kind === 'order' && /same channels, different order/.test(orderDiff.issues[0].detail), JSON.stringify(orderDiff.issues));
+  const mono = (c: string, name = '') => ({ name, channels: [c] });
+  const sixLabeled: Layout = { tracks: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'].map((c) => mono(c)) };
+  const sixBare: Layout = { tracks: [1, 2, 3, 4, 5, 6].map((n) => mono(`ch${n}`)) };
+  const sixM: Layout = { tracks: [1, 2, 3, 4, 5, 6].map(() => mono('M')) };
+  const five1: Layout = { tracks: [{ name: '', channels: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'] }] };
+  check('6 unlabeled mono (ch1…ch6) against 6 mono labeled as a 5.1: SAME', diffLayouts(sixLabeled, sixBare).same && diffLayouts(sixBare, sixLabeled).same);
+  check('…and with labels asked for too — a placeholder (chN, M) is not a claim, so it never differs', diffLayouts(sixLabeled, sixBare, true).same && diffLayouts(sixLabeled, sixM, true).same);
+  check('one 5.1 track against 6 mono fails as GROUPING, labelled or not', ['grouping'].join() === diffLayouts(five1, sixLabeled).issues.map((x) => x.kind).join()
+    && diffLayouts(five1, sixBare).issues[0]?.kind === 'grouping');
+  const realSwap: Layout = { tracks: ['L', 'R', 'LFE', 'C', 'Ls', 'Rs'].map((c) => mono(c)) };
+  check('6 mono with REAL labels swapped: same by default, ORDER with labels', diffLayouts(sixLabeled, realSwap).same && diffLayouts(sixLabeled, realSwap, true).issues[0]?.kind === 'order');
   const short = diffLayouts(spec, { tracks: spec.tracks.slice(0, 3) });
   check('a missing stereo pair is a COUNT problem, and nothing else is said', short.issues.length === 1 && short.issues[0].kind === 'count' && short.channelCount.join() === '12,10', JSON.stringify(short));
   const renamed: Layout = { tracks: spec.tracks.map((t, i) => (i === 2 ? { ...t, name: 'Music and effects', language: 'es' } : t)) };
   check('matching structure, different labels: the SAME layout by default — names and languages are rarely enforced (Oct 17)', diffLayouts(spec, renamed).same);
   const nameDiff = diffLayouts(spec, renamed, true);
-  check('…asked for (labels = true), NAME and LANGUAGE are reported per track', nameDiff.issues.map((x) => `${x.kind}:${x.track}`).join() === 'name:2,language:2', JSON.stringify(nameDiff.issues));
-  check('channel labels compare case-insensitively ("lfe" is LFE)', diffLayouts(spec, { tracks: spec.tracks.map((t) => ({ ...t, channels: t.channels.map((c) => c.toLowerCase()) })) }).same);
+  check('…asked for (labels = true), NAME and LANGUAGE are reported per track', nameDiff.issues.map((x) => `${x.kind}:${x.track}`).join() === 'name:3,language:3', JSON.stringify(nameDiff.issues));
+  check('channel labels compare case-insensitively ("lfe" is LFE)', diffLayouts(spec, { tracks: spec.tracks.map((t) => ({ ...t, channels: t.channels.map((c) => c.toLowerCase()) })) }, true).same);
 
   console.log('\nG1m. Kanban columns (contract/views.ts: kanbanColumns)');
   const kSel: ViewField = { id: randomUUID(), key: 'status', type: 'select', options: { choices: ['todo', 'doing', 'done'] } };

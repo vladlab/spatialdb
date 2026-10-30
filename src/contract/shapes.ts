@@ -375,21 +375,40 @@ export interface LayoutDiff {
 }
 
 /**
+ * A channel label that names nothing: Resolve's adaptive "ch1…chN", a mono
+ * preset's "M", the "?" an unknown format stands in with, or a blank. A
+ * placeholder is not a claim, so it never DIFFERS from a real label — six
+ * unlabeled mono tracks are not "wrong" against six mono tracks labeled
+ * L R C LFE Ls Rs; they just do not say.
+ */
+export const isPlaceholderChannel = (c: string): boolean => /^(?:ch\d+|m|\?)?$/i.test(c.trim());
+
+/**
  * Compare `b` (e.g. what a file IS) against `a` (e.g. what the deliverable ASKS
  * FOR). Reported from the most to the least serious, and each kind only when the
- * kinds above it are clean enough for it to mean something:
+ * kinds above it are clean enough for it to mean something.
+ *
+ * The BASE check is structure only — what a vendor's QC rejects without reading
+ * a single label (Oct 30, the owner: "base level just needs to match track order
+ * and type"):
  *
  *   count      a different number of channels — nothing else is worth saying.
- *   order      same channels, different order ("L R C LFE…" vs "L C R LFE…").
- *   grouping   same channels in the same order, contained differently — 12 mono
- *              vs 5.1 + 3× stereo. THE one vendors reject deliveries for.
- *   name,      only when the grouping matches (track i ↔ track i): labels differ.
- *   language   OFF unless `labels` is asked for (Oct 17): track names and languages
- *              are rarely enforced by a spec — the track and channel layout is what
- *              gets a delivery rejected. A compare pair ticks "names too" for the
- *              rare spec that does enforce them (compare.ts `params.labels`).
+ *   grouping   same number of channels, contained differently — 6 mono vs one
+ *              5.1, 12 mono vs 5.1 + 3× stereo. Track i must hold as many
+ *              channels as track i. THE one vendors reject deliveries for.
+ *
+ * LABELS are the strict category, OFF unless asked for (`labels`, a compare
+ * pair's "labels too" — compare.ts `params.labels`). Only then, and only when the
+ * grouping matches (track i ↔ track i):
+ *
+ *   order      channel labels differ position by position ("L R C LFE…" vs
+ *              "L C R LFE…", a 5.1film track against a 5.1 spec). A placeholder
+ *              on either side (`isPlaceholderChannel`) is skipped, not a miss.
+ *   name,      track names and languages differ.
+ *   language
  *
  * Channel labels compare case-insensitively; names ignore case and outer spaces.
+ * `track` on an issue is 1-based, as SideBySide reads it.
  */
 export function diffLayouts(a: AudioLayout, b: AudioLayout, labels = false): LayoutDiff {
   const fa = flattenChannels(a), fb = flattenChannels(b);
@@ -399,23 +418,22 @@ export function diffLayouts(a: AudioLayout, b: AudioLayout, labels = false): Lay
   if (fa.length !== fb.length) {
     out.issues.push({ kind: 'count', detail: `${fa.length} channels expected, ${fb.length} found` });
   } else {
-    const wrong = fa.map((c, i) => (low(c) === low(fb[i]) ? -1 : i)).filter((i) => i >= 0);
-    if (wrong.length) {
-      const sameSet = [...fa].map(low).sort().join('|') === [...fb].map(low).sort().join('|');
-      out.issues.push({ kind: 'order', detail: sameSet
-        ? `same channels, different order — expected ${fa.join(' ')}, found ${fb.join(' ')}`
-        : `channel ${wrong[0] + 1} is ${fb[wrong[0]]}, expected ${fa[wrong[0]]}${wrong.length > 1 ? ` (and ${wrong.length - 1} more)` : ''}` });
-    } else {
-      const ga = a.tracks.map((t) => t.channels.length).join('+'), gb = b.tracks.map((t) => t.channels.length).join('+');
-      if (ga !== gb) {
-        out.issues.push({ kind: 'grouping', detail: `same ${fa.length} channels, grouped differently — expected ${a.tracks.map(trackFormat).join(', ')}; found ${b.tracks.map(trackFormat).join(', ')}` });
-      } else if (labels) {
-        a.tracks.forEach((t, i) => {
-          const u = b.tracks[i];
-          if (low(t.name) !== low(u.name)) out.issues.push({ kind: 'name', track: i, detail: `track ${i + 1} is named “${u.name || '(unnamed)'}”, expected “${t.name || '(unnamed)'}”` });
-          if ((t.language ?? '') !== (u.language ?? '')) out.issues.push({ kind: 'language', track: i, detail: `track ${i + 1} language is ${u.language || '(none)'}, expected ${t.language || '(none)'}` });
-        });
+    const ga = a.tracks.map((t) => t.channels.length).join('+'), gb = b.tracks.map((t) => t.channels.length).join('+');
+    if (ga !== gb) {
+      out.issues.push({ kind: 'grouping', detail: `same ${fa.length} channels, grouped differently — expected ${a.tracks.map(trackFormat).join(', ')}; found ${b.tracks.map(trackFormat).join(', ')}` });
+    } else if (labels) {
+      const wrong = fa.map((c, i) => (isPlaceholderChannel(c) || isPlaceholderChannel(fb[i]) || low(c) === low(fb[i]) ? -1 : i)).filter((i) => i >= 0);
+      if (wrong.length) {
+        const sameSet = [...fa].map(low).sort().join('|') === [...fb].map(low).sort().join('|');
+        out.issues.push({ kind: 'order', detail: sameSet
+          ? `same channels, different order — expected ${fa.join(' ')}, found ${fb.join(' ')}`
+          : `channel ${wrong[0] + 1} is ${fb[wrong[0]]}, expected ${fa[wrong[0]]}${wrong.length > 1 ? ` (and ${wrong.length - 1} more)` : ''}` });
       }
+      a.tracks.forEach((t, i) => {
+        const u = b.tracks[i];
+        if (low(t.name) !== low(u.name)) out.issues.push({ kind: 'name', track: i + 1, detail: `track ${i + 1} is named “${u.name || '(unnamed)'}”, expected “${t.name || '(unnamed)'}”` });
+        if ((t.language ?? '') !== (u.language ?? '')) out.issues.push({ kind: 'language', track: i + 1, detail: `track ${i + 1} language is ${u.language || '(none)'}, expected ${t.language || '(none)'}` });
+      });
     }
   }
   out.same = out.issues.length === 0;

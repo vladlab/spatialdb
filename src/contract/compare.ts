@@ -111,7 +111,7 @@ export const ComparePair = z.strictObject({
   params: z.strictObject({
     caseInsensitive: z.boolean().optional(),
     tolerance: z.number().nonnegative().optional(),
-    /** `layout` only: compare track NAMES and languages as well as the channel layout (off by default — rarely enforced). */
+    /** `layout` only: also compare the LABELS — channel labels, track names, languages (off by default; the base check is track structure). */
     labels: z.boolean().optional(),
   }).optional(),
 });

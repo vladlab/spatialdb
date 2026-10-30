@@ -135,7 +135,12 @@ const odd = layoutFromTimeline({ tracks: [{ index: 1, name: 'Dial', format: 'lcr
 check('an unknown format → ONE "?" channel and a problem naming the track and format', JSON.stringify(odd.layout.tracks[0].channels) === '["?"]' && /Dial: Resolve's track format "lcr" is not one the tool knows/.test(odd.problems[0] ?? ''), JSON.stringify(odd));
 check('…so a compare against a spec fails on the count, never passes on a guess', !diffLayouts({ tracks: [{ name: 'Dial', channels: ['L', 'C', 'R'] }] }, odd.layout).same);
 check('a derived layout compares clean against the matching deliverable spec (2.0 + 5.1 + 2.0)', diffLayouts({ tracks: [{ name: 'Mix', channels: ['L', 'R'] }, { name: '5.1', channels: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'] }, { name: 'M&E', channels: ['L', 'R'] }] }, d.layout).same);
-check('…and catches a 5.1film track against a 5.1 spec as ORDER (same channels, Resolve\'s film order)', diffLayouts({ tracks: [{ name: '', channels: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'] }] }, layoutFromTimeline({ tracks: [{ index: 1, name: 'A1', format: '5.1film', clips: [] }] }).layout).issues[0]?.kind === 'order');
+const film = layoutFromTimeline({ tracks: [{ index: 1, name: '', format: '5.1film', clips: [] }] }).layout;
+check('a 5.1film track against a 5.1 spec: same STRUCTURE, so the base check passes (Oct 30)', diffLayouts({ tracks: [{ name: '', channels: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'] }] }, film).same);
+check('…and with labels asked for it is ORDER (same channels, Resolve\'s film order)', diffLayouts({ tracks: [{ name: '', channels: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'] }] }, film, true).issues[0]?.kind === 'order');
+const eightMono = layoutFromTimeline({ tracks: [1, 2, 3, 4, 5, 6, 7, 8].map((i) => ({ index: i, name: `A${i}`, format: 'mono', clips: [] })) }).layout;
+const eightSpec = { tracks: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs', 'L', 'R'].map((c) => ({ name: c, channels: [c] })) };
+check('8 Resolve mono tracks against an 8-mono spec labeled 5.1 + 2.0: SAME (the Oct 30 false alarm)', diffLayouts(eightSpec, eightMono).same);
 
 /* ── R1.5 (amended): the Inputs warning and the overwrite check ───────────── */
 

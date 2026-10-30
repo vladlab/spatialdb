@@ -111,12 +111,12 @@ async function main() {
       await until(() => rowStatus('Audio layout') === 'differ' && sbs().find('.sbs-layout').exists(), 8000)
         && /2\.0 · Full mix · L R/.test(sbs().findAll('.sbs-layout .tr-cell.found')[0].text()) && /5\.1 ·/.test(sbs().findAll('.sbs-layout .tr-cell.expected')[0].text())
         && sbs().findAll('.sbs-layout .tr-cell.found')[0].classes('off') && /count/.test(sbs().find('.tr-issues').text()), sbs().find('.sbs-layout').exists() ? sbs().find('.sbs-layout').text() : 'no layout block');
-    // Same channel layout, different track name: a MATCH by default (Oct 17); "names too" on the pair makes it count.
+    // Same channel layout, different track name: a MATCH by default (Oct 17); "labels too" on the pair makes it count.
     await post([{ type: 'record.update', id: file, set: { audio_layout: { tracks: [{ name: 'Mix 5.1 (printmaster)', channels: ['L', 'R', 'C', 'LFE', 'Ls', 'Rs'] }] } }, unset: [] }]);
     check('the same channel layout under a different track NAME is a match — names are rarely enforced', await until(() => rowStatus('Audio layout') === 'match', 8000), rowStatus('Audio layout'));
     const cLayout = (await pool.query(`select options from fields where id = '${fSpec}'`)).rows[0].options;
     await post([{ type: 'field.update', id: fSpec, options: { ...cLayout, compare: { pairs: cLayout.compare.pairs.map((p: any) => (p.rule === 'layout' ? { ...p, params: { labels: true } } : p)) } } }]);
-    check('…with "names too" (params.labels) on the pair it differs, naming the track', await until(() => rowStatus('Audio layout') === 'differ', 8000) && /named “Mix 5.1 \(printmaster\)”, expected “Full mix”/.test(sbs().find('.tr-issues').text()), sbs().find('.tr-issues').exists() ? sbs().find('.tr-issues').text() : '(no issues block)');
+    check('…with "labels too" (params.labels) on the pair it differs, naming the track', await until(() => rowStatus('Audio layout') === 'differ', 8000) && /named “Mix 5.1 \(printmaster\)”, expected “Full mix”/.test(sbs().find('.tr-issues').text()), sbs().find('.tr-issues').exists() ? sbs().find('.tr-issues').text() : '(no issues block)');
     await post([{ type: 'field.update', id: fSpec, options: cLayout }, { type: 'record.update', id: file, set: {}, unset: ['audio_layout'] }]);
     await until(() => rowStatus('Audio layout') === 'missing', 8000);
     await sbs().find('.sbs-close').trigger('click');

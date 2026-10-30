@@ -25,8 +25,8 @@
                    @change="setPair(i, { params: { ...p.params, tolerance: Number(($event.target as HTMLInputElement).value) || 0 } })" />
             <label v-else-if="p.rule === 'equals' && isText(p)" class="cp-ci" title="Ignore case and outer spaces"><input type="checkbox" :checked="p.params?.caseInsensitive === true"
                    @change="setPair(i, { params: { ...p.params, caseInsensitive: ($event.target as HTMLInputElement).checked } })" /> Aa</label>
-            <label v-else-if="p.rule === 'layout'" class="cp-labels" title="Also compare each track's NAME and language. Off by default: a spec rarely enforces them — the channel layout (count, order, grouping) is what gets a delivery rejected."><input type="checkbox" :checked="p.params?.labels === true"
-                   @change="setPair(i, { params: { ...p.params, labels: ($event.target as HTMLInputElement).checked } })" /> names too</label>
+            <label v-else-if="p.rule === 'layout'" class="cp-labels" title="Also compare the LABELS: each channel's label (L R C LFE…, unlabeled channels never fail), each track's name and language. Off by default: the base check is the structure — how many tracks, in what order, each holding how many channels — which is what gets a delivery rejected."><input type="checkbox" :checked="p.params?.labels === true"
+                   @change="setPair(i, { params: { ...p.params, labels: ($event.target as HTMLInputElement).checked } })" /> labels too</label>
           </td>
           <td><button class="x" title="Remove this pair" @click="save(cfg.pairs.filter((_, k) => k !== i))">×</button></td>
         </tr>
