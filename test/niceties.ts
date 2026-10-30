@@ -7,6 +7,7 @@
  *       (on a card, and in the tray beside the canvas)
  *   N4  a grid row's right-click menu: open, duplicate, delete — one row, or the selected rows
  *   N5  "reset column order" puts a view back on the table's own field order
+ *   N6  Tab on the canvas folds / unfolds the selected cards, all the same way, one undo
  *
  * happy-dom has no layout: this can say what rendered and what a press did, not where
  * anything is or what it looks like. The canvas's rectangle is faked (800×600 at 0,0),
@@ -171,6 +172,36 @@ async function main() {
     const panned = world();
     await trayPill('a.mov').find('.pill-jump').trigger('click');
     check('…and it goes to the card from there', await until(() => cardOf('a.mov').classes('selected') && world() !== panned) && trayTitle() === 'Ep 101');
+
+    /* ───────────────────────────────────────────────────────────────────── */
+    console.log('\nN6. Tab folds what is selected');
+    // Stored, not just drawn: waits for the write to land (the card folds before the server hears of it).
+    const folded = async (id: string, want = true) =>
+      (await untilDb(`select collapsed from placements where canvas_id = '${board}' and record_id = '${id}'`, (r) => r[0]?.collapsed === want))[0]?.collapsed === want;
+    const tab = (init: Record<string, unknown> = {}) => {
+      const ev = new (win as any).KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true, ...init });
+      w.find('.canvas-container').element.dispatchEvent(ev);
+      return ev.defaultPrevented as boolean;
+    };
+    check('a.mov is the one selected (the jump above)', cardOf('a.mov').classes('selected') && !cardOf('Ep 101').classes('selected'));
+    check('Tab folds the selected card, and Tab is spent on it', tab() && await until(() => cardOf('a.mov').classes('collapsed')) && await folded(a) && await folded(ep101, false));
+    await w.find('.canvas-container').trigger('keydown', { key: 'a', ctrlKey: true });
+    check('two selected, one folded: Tab folds BOTH (a mixed selection does not stay mixed)',
+      tab() && await until(() => cardOf('Ep 101').classes('collapsed')) && cardOf('a.mov').classes('collapsed') && await folded(ep101) && await folded(a));
+    check('both folded: Tab opens both', tab() && await until(() => !cardOf('Ep 101').classes('collapsed') && !cardOf('a.mov').classes('collapsed')) && await folded(ep101, false) && await folded(a, false));
+    win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
+    check('ONE Ctrl+Z puts both back folded', await until(() => cardOf('Ep 101').classes('collapsed') && cardOf('a.mov').classes('collapsed')));
+    tab();
+    await until(() => !cardOf('Ep 101').classes('collapsed') && !cardOf('a.mov').classes('collapsed'));
+    await w.find('.canvas-container').trigger('keydown', { key: 'Escape' });
+    check('nothing selected: Tab is left alone (focus moves on as usual), nothing folds', !tab() && await sleep(150).then(() => true)
+      && !cardOf('Ep 101').classes('collapsed') && !cardOf('a.mov').classes('collapsed'));
+    const onA = () => toClient(900 + 40, 700 + 30);
+    await cardOf('a.mov').trigger('pointerdown', { button: 0, ...onA() });
+    winEv('pointerup', onA());
+    check('Shift+Tab is not a fold either', cardOf('a.mov').classes('selected') && !tab({ shiftKey: true }) && await sleep(150).then(() => !cardOf('a.mov').classes('collapsed')));
+    await w.find('.canvas-container').trigger('keydown', { key: 'Escape' });
+
     await nav.openTable(tFiles);            // through the tree: the open record stays open
     await until(() => w.find('.gridview').exists() && trayTitle() === 'Ep 101' && !!pField('Files') && pField('Files').findAll('.pill').length === 2, 8000);
     check('over a TABLE there is no canvas to jump on: no arrows in the tray', pField('Files').findAll('.pill').length === 2 && !tray().find('.pill-jump').exists());

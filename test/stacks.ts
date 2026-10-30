@@ -311,6 +311,13 @@ async function main() {
     const all = tf();
     check('Shift+Z: everything — further out', all.s < sel.s, JSON.stringify(all));
     check('…saved to the canvas, for everyone', (await untilDb(`select jsonb_array_length(config->'stacks') as n from canvases where id = '${board}'`, (r) => r[0]?.n === 2)).length === 1);
+    // Tab folds the selected stack, like a card; Tab again opens it.
+    await w.find('.canvas-container').trigger('keydown', { key: 'Tab' });
+    check('Tab with a stack selected folds it — saved to the canvas', await until(() => frames()[1].classes('collapsed'))
+      && (await untilDb(`select config->'stacks'->1->>'collapsed' as c from canvases where id = '${board}'`, (r) => r[0]?.c === 'true')).length === 1);
+    await w.find('.canvas-container').trigger('keydown', { key: 'Tab' });
+    check('…Tab again opens it', await until(() => !frames()[1].classes('collapsed'))
+      && (await untilDb(`select config->'stacks'->1->>'collapsed' as c from canvases where id = '${board}'`, (r) => r[0]?.c === 'false')).length === 1);
   } finally {
     await ui.close();
   }

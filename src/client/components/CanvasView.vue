@@ -292,7 +292,7 @@
         <!-- A board placed on a board: this is how you walk from one canvas to another. -->
         <button v-if="isBoardRecord(menu.recordId!)" class="open-board" @click="menuDo((m) => $emit('open-board', m.recordId!))">▦ Open this board</button>
         <button @click="menuDo((m) => $emit('open-record', m.recordId!))">Open record</button>
-        <button @click="menuDo((m) => toggleFold(m.recordId!))">{{ isCollapsed(menu.recordId!) ? 'Unfold' : 'Fold' }}</button>
+        <button @click="menuDo((m) => toggleFold(m.recordId!))">{{ isCollapsed(menu.recordId!) ? 'Unfold' : 'Fold' }} (Tab)</button>
         <button @click="menu = { ...menu, kind: 'fields' }">Fields on {{ tableNameOf(menu.recordId!) }} cards…</button>
         <!-- The easy way to set a canvas default: drop the Ep 101 card here, and point at it. -->
         <button v-if="isDefault(menu.recordId!)" class="unset-default" @click="menuDo((m) => removeDefault(m.recordId!))">Stop linking new records here to this</button>
@@ -328,7 +328,7 @@
         <div v-if="stackFrameOf(menu.stackId)?.name" class="ctx-sub stack-ctx-filter" :title="stackFrameOf(menu.stackId)?.description">{{ stackFrameOf(menu.stackId)?.description }}</div>
         <hr />
         <button class="stack-edit-item" @click="menuDo((m) => editStack(m.stackId!))">Edit filter, order, name…</button>
-        <button @click="menuDo((m) => toggleStackFold(m.stackId!))">{{ stackFrameOf(menu.stackId)?.collapsed ? 'Unfold' : 'Fold' }}</button>
+        <button @click="menuDo((m) => toggleStackFold(m.stackId!))">{{ stackFrameOf(menu.stackId)?.collapsed ? 'Unfold' : 'Fold' }} (Tab)</button>
         <button v-if="stackFrameOf(menu.stackId)?.elsewhere" class="stack-gather-item" @click="menuDo((m) => gatherStack(m.stackId!))">Gather the {{ stackFrameOf(menu.stackId)?.elsewhere }} placed elsewhere</button>
         <button v-if="stackFrameOf(menu.stackId)?.stale" class="stack-clear-stale" @click="menuDo((m) => clearStale(m.stackId!))">Remove the {{ stackFrameOf(menu.stackId)?.stale }} that no longer match</button>
         <button @click="menuDo((m) => fitStack(m.stackId!))">Fit width to the cards</button>
@@ -1743,6 +1743,14 @@ function onKeyDown(e: KeyboardEvent) {
   }
   if (e.key === 'Escape') { if (menu.value) { menu.value = null; return; } selected.clear(); selectedLink.value = null; selectedStack.value = null; drag.cancel(); }
   if (e.key === 'Enter' && selected.size === 1) { emit('open-record', [...selected][0]); e.preventDefault(); }
+  // Tab folds or unfolds what is selected. Several cards go the SAME way, as one undo
+  // step: if any of them is open they all fold, if all are folded they all open (a
+  // per-card flip would leave a mixed selection mixed). A selected stack folds like a
+  // card. With nothing selected — or from inside a text box — Tab keeps its own meaning.
+  if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !typingIn(e.target)) {
+    if (selected.size) { e.preventDefault(); foldSelected(); }
+    else if (selectedStack.value) { e.preventDefault(); toggleStackFold(selectedStack.value); }
+  }
   if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
     for (const id of cardRects.value.keys()) selected.add(id);
@@ -1786,6 +1794,16 @@ const isCollapsed = (recordId: string) => placementOf(recordId)?.collapsed === t
 function toggleFold(recordId: string) {
   store.mutate({ type: 'placement.update', canvasId: props.canvasId, recordId, collapsed: !isCollapsed(recordId) });
 }
+/** Tab: fold every selected card, or — when all of them are folded already — open them. */
+function foldSelected() {
+  const ids = [...selected].filter((id) => placementOf(id));
+  if (!ids.length) return;
+  const collapsed = ids.some((id) => !isCollapsed(id));
+  // Same microtask, so the store files them as ONE undo step.
+  for (const recordId of ids) if (isCollapsed(recordId) !== collapsed) store.mutate({ type: 'placement.update', canvasId: props.canvasId, recordId, collapsed });
+}
+const typingIn = (t: EventTarget | null) =>
+  t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
 
 /* ── menus, and making records on the canvas ──────────────────────────────
 
