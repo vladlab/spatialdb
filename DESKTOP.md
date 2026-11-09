@@ -5,6 +5,167 @@ in `src-tauri/` (Tauri 2, Rust) and `src/client/desktop.ts` + `src/client/tools/
 (the web app's side). Design and reasons: `TAURI-HANDOFF.md`; the wire contract:
 API.md "Tools".
 
+## The CEF branch (`cef`, Nov 2026)
+
+**This section describes the `cef` branch only.** `main` is unchanged: Tauri 2,
+WebKitGTK. Plan and reasons: `CEF-BRIEF.md` (in the Project; add it to the repo root).
+
+### What changed (patch 1, `cef-1-runtime.patch`)
+
+- **Tauri 2 → Tauri 3 alpha**, every `tauri*` crate pinned exactly
+  (`tauri =3.0.0-alpha.6`, `tauri-runtime-cef =3.0.0-alpha.7`, `tauri-runtime-wry
+  =3.0.0-alpha.6`, `tauri-build =3.0.0-alpha.4`, `tauri-plugin-dialog
+  =3.0.0-alpha.4`). Rust ≥ 1.95.
+- **Linux draws with Chromium** (CEF 154, Chromium 154) through `tauri-runtime-cef`.
+  macOS keeps the system webview (wry). The choice and every Chromium setting are in
+  `src-tauri/src/engine.rs`, one commented line each: profile under
+  `~/.cache/org.spatialdb.desktop/cef` (`cef-dev` for a debug build), session cookies
+  kept, sandbox on where it can be, **certificate errors refused** (no "proceed
+  anyway"), no remote-debugging port, no component updater / Safe Browsing /
+  spelling downloads.
+- `main.rs`: Chromium relaunches the binary for its GPU / renderer processes; the
+  `cef_entry_point` attribute sends those to CEF. The `WEBKIT_DISABLE_DMABUF_RENDERER`
+  default is gone on this branch. Its history: WebKitGTK's DMA-BUF renderer gave a
+  blank window ("Failed to create GBM buffer") on Fedora with the RTX Pro 6000
+  (Sept 29); turning it off fixed that and is what made the window slow — frames
+  copied through shared memory instead of staying on the GPU.
+- The window is Chromium's **Alloy** style (no Chrome UI, no Chrome shortcut table),
+  so the app's own keys reach the page.
+- **The "read this file?" dialog is `zenity` on Linux.** tauri-plugin-dialog's GTK 3
+  backend cannot share a process with the CEF runtime's GTK 4, so the plugin is built
+  with its portal backend, which shows message dialogs by running `zenity`. Still a
+  window the page can neither draw nor answer (rule 3). **Without zenity installed
+  the dialog cannot open and the answer is "Cancel"** — the md5 / fingerprint run
+  then says it was not allowed.
+- **Drops**: CEF reports the dropped paths from Chromium's own drag data, never from
+  the page, as the same window event wry used — the allowlist is fed the same way.
+  Positions arrive in device pixels, as wry's did, so `desktop.ts` is unchanged.
+- Runtime and plugin warnings (sandbox fallback, a refused certificate, a dialog
+  that could not open) are printed to the terminal; `SPATIALDB_LOG=info` shows more.
+- The handshake (`tools_available`) gains `engine`: `"chromium (cef)"`.
+- The web app is not touched: the browser build is byte-identical.
+
+**Compiled / not compiled.** In the build sandbox: `cargo check --tests` and
+`cargo test --lib` pass on Linux (33 tests; two new: switch parsing, zenity
+escaping), with CEF's build script stubbed out — the
+CEF download host was unreachable there, so **the binary has never been linked
+against libcef and no window has been opened by anyone**. The macOS (wry) side has
+not been compiled at all (no macOS toolchain there). `nix develop .#desktop`
+EVALUATES against nixos-24.11 + nixos-unstable (Nov 7); nothing in it was built. The
+first `nix develop` adds the new `nixpkgs-cef` input to `flake.lock` — commit that
+change.
+
+### Environment variables (all optional)
+
+| variable | what it does |
+|---|---|
+| `SPATIALDB_CEF_ARGS` | Chromium switches for this run, space-separated: `"--ignore-gpu-blocklist --use-angle=vulkan"`. Printed at startup. |
+| `SPATIALDB_CEF_STYLE=chrome` | Chrome style instead of Alloy, to compare. |
+| `SPATIALDB_LOG` | `info` / `debug` for more in the terminal (default: warnings). |
+| `CEF_PATH` | where the CEF distribution lives (default `~/.cache/tauri-cef`, one copy per CEF version). |
+| `NIX_CEF_BINARY` | set by the Nix shell: CEF comes from nixpkgs' `cef-binary`, patched for NixOS. `unset` it to fall back to the plain download. |
+
+### Setup, per machine
+
+**First build of any kind** downloads the CEF distribution, about 1 GB, into
+`~/.cache/tauri-cef/154.0.34/` (or builds it from nixpkgs on NixOS). Delete that
+folder to reclaim the space; the next build fetches it again. The build also
+compiles CEF's small C++ wrapper with CMake + Ninja.
+
+**Fedora 42 (Color 02) — start here.** Read the transaction before saying yes:
+
+```bash
+sudo dnf install gtk4-devel cmake ninja-build gcc-c++ zenity nss-tools
+rustup update                        # Rust ≥ 1.95
+git switch cef
+npm run desktop:dev                  # first time: the CEF download, then the window
+```
+
+The `webkit2gtk4.1-devel` that `main` needs is not used by this branch (leave it
+installed; `git switch main` needs it).
+
+**NixOS (home).** `nix develop .#desktop`, then `npm run desktop:dev`. The shell
+sets `NIX_CEF_BINARY=1` and points `<nixpkgs>` at the flake's `nixpkgs-cef` input, so
+the CEF build script `nix-build`s CEF 154 from nixpkgs' `cef-binary` (re-versioned;
+the hash is computed from the download, nothing to paste). If that fails,
+`unset NIX_CEF_BINARY` and run again: the plain download plus the shell's
+`LD_LIBRARY_PATH` is the fallback. **Sway:** the CEF runtime's window is an X11
+client (`linux-x11`), so XWayland must be on — CEF-BRIEF.md Q5.
+
+**Rocky 9 (Color 01) — cannot build this yet.** The CEF runtime's windowing needs
+**GTK ≥ 4.14** (`tauri-winit-gtk4` asks for `v4_14`); EL9's newest is **4.12.3**.
+Options when the gate passes, for C4 (packaging): build inside the Nix shell on
+Rocky (Nix's GTK, plus nixGL-style access to the NVIDIA driver), or an AppImage that
+carries its own GTK 4. Not attempted in patch 1.
+
+### TLS: trusting the Caddy internal CA
+
+Chromium on Linux does not use the system bundle that WebKitGTK read
+(`SSL_CERT_FILE`, `update-ca-trust`). It trusts what is in the user's NSS database,
+`~/.pki/nssdb`. With certificate errors refused (above), an untrusted server shows a
+blank or error page and the terminal says `CertificateErrorPolicy::Cancel`. Once
+per user, per machine, with the same `root.crt` you already gave the system store:
+
+```bash
+mkdir -p ~/.pki/nssdb
+certutil -d sql:$HOME/.pki/nssdb -N --empty-password      # only if the db does not exist yet
+certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n "spatialdb Caddy CA" -i root.crt
+certutil -d sql:$HOME/.pki/nssdb -L                         # lists it
+```
+
+(`certutil` is `nss-tools` on Fedora, `nssTools` in the Nix shell. Chrome/Chromium
+on the same machine use the same database, so this also makes C0's browser test
+clean.)
+
+### The gate: what to check, in order (CEF-BRIEF.md C2)
+
+Stop at the first hard failure and report it.
+
+1. **It builds and a window opens** on Color 02. A certificate error is the TLS step
+   above, not a failure.
+2. **GPU.** F12 opens DevTools. In its Console:
+
+   ```js
+   const gl = document.createElement('canvas').getContext('webgl'); gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL)
+   ```
+
+   Wanted: something naming the NVIDIA card (`ANGLE (NVIDIA …)`). `SwiftShader` or
+   `llvmpipe` means software rendering. Then try, one at a time, with
+   `SPATIALDB_CEF_ARGS="…" npm run desktop:dev`: `--ignore-gpu-blocklist`,
+   `--use-angle=gl`, `--use-angle=vulkan --enable-features=Vulkan`. Report which
+   worked; it becomes the default in the next patch. (CEF's own log is
+   `cef.log` in `~/.cache/org.spatialdb.desktop/cef-dev/` if the GPU process
+   fails to start.)
+3. **Speed, against Firefox on the same machine**, same canvas and table. DevTools →
+   ⋮ → More tools → Rendering → "Frame rendering stats" is a live fps meter. Your eyes
+   decide: canvas pan/zoom with many cards and arrows, grid scroll, tray open/close,
+   typing in a cell.
+4. Then the home NixOS machine, and over Reemo.
+
+**Not clearly better than the WebKit build → stop**: write the numbers here, the
+branch is parked. **Better →** the checklist (letters as in CEF-BRIEF.md):
+
+- a. With no server configured (`mv ~/.config/spatialdb/server{,.bak}`), the setup
+  page appears; Connect goes to the server.
+- b. The desktop handshake works from the served page (Settings / the footer show the
+  desktop version and ffprobe). This is IPC from an `https://` page under Chromium.
+- c. Drop one file on an open table: a record, then probe data.
+- d. Drop a file ONTO a card and onto a grid row: the ring is on the right record.
+- e. Drag over the window: the overlay follows the pointer; leaving clears it.
+- f. md5 from a record whose file was not dropped this session: the zenity dialog
+  asks; progress and Cancel work.
+- g. The launch-time fingerprint offer on several files: one zenity dialog.
+- h. Settings › UI size changes the zoom and survives a restart.
+- i. ⤴ show on a path.
+- j. Ingest info from Resolve… on Color 02.
+- k. Log in, quit, start again: still logged in. **Expect the first run to start
+  EMPTY** — login, theme, UI size and every fold state live in the browser profile,
+  and Chromium's is new. Set them once.
+- l. Shortcuts: Ctrl+Z, Z / Shift+Z, Tab on the canvas, Ctrl+C/V in the grid, Escape.
+- m. Copy a grid range out to another app and paste one back in.
+- n. Paste a screenshot into rich text; open an attachment image.
+- o. Right-click menus are the app's, never Chromium's.
+
 > **Oct 15, 2026 — unverified:** `analyze_path` and its dialog (tauri-plugin-dialog
 > is a new dependency, resolved into Cargo.lock), the per-file `hash.rs` and md5,
 > and probe.rs's renamed raw outputs were written without a Tauri build environment:
@@ -147,7 +308,7 @@ SPATIALDB_URL=https://spatialdb.example.com npm run desktop:dev   # skip the set
 cd src-tauri && cargo run
 ```
 
-The app sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` itself on Linux (a blank window
+(`main` only — the CEF branch has no WebKitGTK on Linux.) The app sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` itself on Linux (a blank window
 with "Failed to create GBM buffer" in the terminal is that renderer failing; seen on
 Fedora); export it as `0` to opt back in on a GPU where it works. If the window is
 still blank, `WEBKIT_DISABLE_COMPOSITING_MODE=1` falls back further.
@@ -165,6 +326,10 @@ session cookie, the same app. Nothing is different until you drag a file in.
 ```bash
 npm run desktop:build       # cargo tauri build → src-tauri/target/release/bundle/
 ```
+
+(CEF branch: `cargo tauri build` needs the Tauri **3 alpha** CLI — the Nix shell's
+`cargo-tauri` is 2.x — and packaging is CEF-BRIEF.md C4, after the gate. Not for
+patch 1.)
 
 - **NixOS**: a flake package is not written yet; the dev shell's `cargo run`, or
   `appimage-run` on the AppImage, works meanwhile.

@@ -1,16 +1,20 @@
 // Prevents an extra console window on Windows in release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+// Linux renders through Chromium (CEF), which relaunches THIS binary for its GPU,
+// renderer and utility processes, each with a `--type=…` switch. The attribute runs
+// `main`'s body in the browser process only and hands every other process to CEF —
+// so nothing goes here before `run()`: it would run in every helper too.
+//
+// (The WebKitGTK-era `WEBKIT_DISABLE_DMABUF_RENDERER=1` default that lived here is
+// gone with WebKitGTK on Linux; DESKTOP.md "The CEF branch" keeps its history.)
+#[cfg(target_os = "linux")]
+#[tauri_runtime_cef::cef_entry_point]
 fn main() {
-    // WebKitGTK's DMA-BUF renderer fails on some GPU/driver combinations ("Failed to
-    // create GBM buffer … Invalid argument", a blank window) — seen on Fedora with
-    // the owner's GPU, Sept 29; the variable fixed it. Defaulting it off costs a
-    // little compositing performance and works everywhere. Set it to 0 in the
-    // environment to opt back in on a machine where DMA-BUF works. Must be set
-    // before the webview is created, hence here and not in setup().
-    #[cfg(target_os = "linux")]
-    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
-        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-    }
+    spatialdb_desktop_lib::run()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn main() {
     spatialdb_desktop_lib::run()
 }

@@ -8,9 +8,13 @@
     # needs Cargo ≥ 1.85 — the exact error of the first `nix develop .#desktop`.
     # Same input viznotes uses; the server shell does not touch it.
     rust-overlay = { url = "github:oxalica/rust-overlay"; inputs.nixpkgs.follows = "nixpkgs"; };
+    # CEF branch, desktop shell only: a nixpkgs recent enough for its `cef-binary` to
+    # be re-versioned the way the `cef-dll-sys` build script asks (NIX_CEF_BINARY=1,
+    # see the shellHook). The server shell never touches it; nixpkgs stays 24.11.
+    nixpkgs-cef.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
-  outputs = { self, nixpkgs, rust-overlay }:
+  outputs = { self, nixpkgs, rust-overlay, nixpkgs-cef }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAllSystems = f:
@@ -22,37 +26,58 @@
     in
     {
       devShells = forAllSystems (pkgs: {
-        # Written from viznotes' flake, which builds a Tauri 2 app on NixOS. The
-        # desktop client: `nix develop .#desktop`, then `npm run desktop:dev`. The
-        # Rust toolchain is rust-overlay's current stable (see inputs), not
-        # nixpkgs'. ffmpeg is a RUNTIME need of the app on every workstation, not a
-        # build input — it is here so `cargo run` finds it.
-        desktop = pkgs.mkShell {
+        # Written from viznotes' flake; on the CEF branch the window is Chromium (CEF)
+        # instead of WebKitGTK — see DESKTOP.md "The CEF branch". The desktop client:
+        # `nix develop .#desktop`, then `npm run desktop:dev`. The Rust toolchain is
+        # rust-overlay's current stable (see inputs), not nixpkgs'. ffmpeg is a RUNTIME
+        # need of the app on every workstation, not a build input — it is here so
+        # `cargo run` finds it.
+        desktop = let
+          # What a prebuilt Chromium dlopens or links at run time. On NixOS nothing is
+          # in /usr/lib, so these go on LD_LIBRARY_PATH for `cargo run`. (With
+          # NIX_CEF_BINARY=1, below, libcef itself comes patched from nixpkgs; this
+          # list still covers winit's dlopen'd X11 libraries and the fallback of a
+          # plain downloaded CEF.) The NVIDIA userspace is /run/opengl-driver/lib.
+          runtimeLibs = with pkgs; [
+            gtk4 glib cairo pango gdk-pixbuf harfbuzz graphene
+            nss nspr alsa-lib cups dbus expat at-spi2-atk at-spi2-core
+            libdrm mesa libGL libxkbcommon udev systemd
+            xorg.libX11 xorg.libXcomposite xorg.libXdamage xorg.libXext xorg.libXfixes
+            xorg.libXrandr xorg.libXcursor xorg.libXi xorg.libxcb xorg.libxshmfence
+            libva pipewire
+          ];
+        in pkgs.mkShell {
           packages = with pkgs; [
             nodejs_22 git (rustFor pkgs.system) cargo-tauri
-            pkg-config gobject-introspection wrapGAppsHook3
-            openssl libsoup_3 webkitgtk_4_1 gtk3 glib cairo pango gdk-pixbuf atk harfbuzz
-            gsettings-desktop-schemas dconf xdg-utils librsvg
-            glib-networking cacert
+            pkg-config gobject-introspection wrapGAppsHook4
+            # cef-dll-sys builds CEF's C++ wrapper library with CMake + Ninja.
+            cmake ninja
+            openssl gsettings-desktop-schemas dconf xdg-utils librsvg
+            # The native "read this file?" dialog on Linux (Cargo.toml, tauri-plugin-dialog).
+            zenity
+            # certutil: trusting the Caddy internal CA in Chromium (DESKTOP.md, TLS).
+            nssTools
             ffmpeg
-          ];
+          ] ++ runtimeLibs;
           shellHook = ''
             export PATH="$PWD/node_modules/.bin:$PATH"
-            export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:$XDG_DATA_DIRS"
-            # HTTPS in the webview: libsoup takes TLS from GIO modules (glib-networking),
-            # which a packaged app gets from wrapGAppsHook and a bare `cargo run` does
-            # not — hence "TLS support not available" on the first try. Unlike viznotes,
-            # this app loads its whole UI over HTTPS, so this is not optional.
-            export GIO_EXTRA_MODULES="${pkgs.glib-networking}/lib/gio/modules''${GIO_EXTRA_MODULES:+:$GIO_EXTRA_MODULES}"
-            # The trust store the webview verifies the server against. On NixOS
-            # /etc/ssl/certs/ca-certificates.crt includes security.pki.certificateFiles,
-            # so a Caddy-internal-CA root added there is trusted here too.
-            export SSL_CERT_FILE="''${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}"
-            # (The app itself defaults WEBKIT_DISABLE_DMABUF_RENDERER=1 on Linux — src-tauri/src/main.rs —
-            #  so nothing is needed here; export it as 0 to opt back in on a GPU where DMA-BUF works.)
+            export XDG_DATA_DIRS="${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk4}/share/gsettings-schemas/${pkgs.gtk4.name}:$XDG_DATA_DIRS"
+            export LD_LIBRARY_PATH="/run/opengl-driver/lib:${pkgs.lib.makeLibraryPath runtimeLibs}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            # The CEF distribution: built from nixpkgs' cef-binary (patched for NixOS)
+            # at the version the cef-dll-sys crate wants, instead of a plain download
+            # whose libcef.so cannot find its libraries here. The build script runs
+            # `nix-build` on its own expression, which imports <nixpkgs> — pinned to
+            # this flake's nixpkgs-cef input. `unset NIX_CEF_BINARY` to fall back to
+            # the plain download (LD_LIBRARY_PATH above is meant to cover it).
+            export NIX_CEF_BINARY=1
+            export NIX_PATH="nixpkgs=${nixpkgs-cef}"
+            # Where the CEF distribution lands, once per CEF version (not per clean build).
+            export CEF_PATH="''${CEF_PATH:-$HOME/.cache/tauri-cef}"
             echo ""
-            echo "  spatialdb DESKTOP shell   (npm run desktop:dev | desktop:build | desktop:check)"
+            echo "  spatialdb DESKTOP shell — CEF branch   (npm run desktop:dev | desktop:build | desktop:check)"
             echo "  SPATIALDB_URL=https://… overrides the configured server for this run."
+            echo "  SPATIALDB_CEF_ARGS=\"--switch …\" passes Chromium switches; SPATIALDB_LOG=info shows more."
+            echo "  First build: CEF (~1 GB) into $CEF_PATH."
             echo ""
           '';
         };

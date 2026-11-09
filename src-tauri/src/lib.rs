@@ -27,11 +27,15 @@
 //!
 //! What the web app sees: `window.__TAURI__` (withGlobalTauri), so the app's bundle
 //! carries no Tauri code and the browser version is byte-identical.
+//!
+//! The ENGINE that draws the window is chosen in `engine.rs`: Chromium (CEF) on Linux,
+//! the system webview elsewhere (CEF-BRIEF.md). Nothing below depends on which.
 
+mod engine;
 mod tools;
 
 use std::{collections::HashMap, fs, path::{Path, PathBuf}, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}};
-use tauri::{AppHandle, DragDropEvent, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, DragDropEvent, Manager, State, WebviewEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 /// Hash jobs in flight, by the id the page gave them: the flag `hash_cancel` raises.
 #[derive(Default)]
@@ -126,26 +130,61 @@ fn grant(app: &AppHandle, server: &url::Url) -> Result<(), String> {
 }
 
 fn open_main(app: &AppHandle, url: WebviewUrl) -> Result<(), String> {
-    let allowed = app.state::<Allowed>();
-    let w = WebviewWindowBuilder::new(app, "main", url)
+    let builder = WebviewWindowBuilder::new(app, "main", url)
         .title("spatialdb")
         .inner_size(1400.0, 900.0)
-        .min_inner_size(700.0, 450.0)
-        .build().map_err(|e| e.to_string())?;
-    let handle = app.clone();
+        .min_inner_size(700.0, 450.0);
+    // Chromium's "Alloy" style: a bare browser with no Chrome UI and, above all, no
+    // Chrome accelerator table — the Chrome style keeps many shortcuts for itself
+    // (find, print, zoom…) before the page sees them. `SPATIALDB_CEF_STYLE=chrome`
+    // tries the other one, for comparison while the branch is new.
+    #[cfg(target_os = "linux")]
+    let builder = {
+        use tauri_runtime_cef::{RuntimeStyle, WebviewWindowBuilderCefExt};
+        let chrome = std::env::var("SPATIALDB_CEF_STYLE").is_ok_and(|v| v.eq_ignore_ascii_case("chrome"));
+        builder.browser_runtime_style(if chrome { RuntimeStyle::Chrome } else { RuntimeStyle::Alloy })
+    };
+    let w = builder.build().map_err(|e| e.to_string())?;
     // The same native event the page receives as `onDragDropEvent`; here it feeds
     // the allowlist, so a path is readable exactly when a person dropped it.
     // A WINDOW event, not a webview event: for a webview that fills its window wry
     // synthesizes `WindowEvent::DragDrop` (tauri-runtime-wry, `WebviewKind::
     // WindowContent`) and `on_webview_event` never fires. The first real drop
     // (Sept 27) found that out: every path was "not dropped onto this window".
+    //
+    // CEF (tauri-runtime-cef 3.0.0-alpha.7, cef_impl/client/drag.rs) reports the same
+    // window event for a window-filling webview. The PATHS come from Chromium's
+    // native drag data (`DragHandler::on_drag_enter`), never from the page; the page's
+    // injected script only reports WHERE the pointer is and WHEN the drop happens. So
+    // rule 3 holds: only paths a person actually dragged onto the window get here.
+    // (A page could, in principle, turn a drag that merely crosses the window into a
+    // drop of those paths — the same files the person was holding, nothing else.)
+    // The webview event is listened to as well, in case a later runtime reports drops
+    // there instead; `Allowed::add` ignores a path it already has.
+    let handle = app.clone();
     w.on_window_event(move |e| {
         if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = e {
             handle.state::<Allowed>().add(paths);
         }
     });
-    drop(allowed);
+    let handle = app.clone();
+    w.on_webview_event(move |e| {
+        if let WebviewEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = e {
+            handle.state::<Allowed>().add(paths);
+        }
+    });
     Ok(())
+}
+
+/// Text for a native message dialog. On Linux the dialog is `zenity` (Cargo.toml,
+/// tauri-plugin-dialog's portal backend), whose `--text` is Pango MARKUP: a path with
+/// `&` or `<` in it would show garbled or not at all. Escaped here; elsewhere as is.
+fn dialog_text(s: String) -> String {
+    if cfg!(target_os = "linux") {
+        s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    } else {
+        s
+    }
 }
 
 /* ── commands ─────────────────────────────────────────────────────────────── */
@@ -161,6 +200,9 @@ pub struct Available {
     /// Where the ffprobe in use lives, "(bundled)" when it came with the app.
     pub ffprobe_path: Option<String>,
     pub platform: &'static str,
+    /// What draws the window: "chromium (cef)" on Linux, "system webview" elsewhere
+    /// (engine.rs). New on the CEF branch; the web app does not read it yet.
+    pub engine: &'static str,
 }
 
 /// The handshake: what this build of the desktop app can do, and what the host has.
@@ -179,6 +221,7 @@ fn tools_available() -> Available {
         analyzers,
         ffprobe_path: ffprobe.map(|p| format!("{}{}", p.display(), if tools::probe::ffprobe_is_bundled() { " (bundled)" } else { "" })),
         platform: std::env::consts::OS,
+        engine: engine::NAME,
     }
 }
 
@@ -270,7 +313,7 @@ async fn allow_paths(app: AppHandle, allowed: State<'_, Allowed>, paths: Vec<Str
     let h = app.clone();
     let yes = tauri::async_runtime::spawn_blocking(move || {
         use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
-        h.dialog().message(format!("spatialdb wants to read {n} file{} to {why}:\n\n{list}\n\nThey were not dropped onto the window this session.", if n == 1 { "" } else { "s" }))
+        h.dialog().message(dialog_text(format!("spatialdb wants to read {n} file{} to {why}:\n\n{list}\n\nThey were not dropped onto the window this session.", if n == 1 { "" } else { "s" })))
             .title("Read files?").kind(MessageDialogKind::Info)
             .buttons(MessageDialogButtons::OkCancelCustom("Read them".into(), "Cancel".into()))
             .blocking_show()
@@ -296,7 +339,7 @@ async fn analyze_path(app: AppHandle, allowed: State<'_, Allowed>, jobs: State<'
         let (a, p, h) = (analyzer.clone(), path.clone(), app.clone());
         let yes = tauri::async_runtime::spawn_blocking(move || {
             use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
-            h.dialog().message(format!("spatialdb wants to read this file to run {a}:\n\n{p}\n\nIt was not dropped onto the window this session."))
+            h.dialog().message(dialog_text(format!("spatialdb wants to read this file to run {a}:\n\n{p}\n\nIt was not dropped onto the window this session.")))
                 .title("Read a file?").kind(MessageDialogKind::Info)
                 .buttons(MessageDialogButtons::OkCancelCustom("Read it".into(), "Cancel".into()))
                 .blocking_show()
@@ -333,7 +376,9 @@ fn reveal(path: String) -> Result<String, String> { tools::reveal::reveal(&path)
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    log_to_stderr();
     tauri::Builder::default()
+        .runtime(engine::runtime())
         .manage(Allowed::default())
         .manage(Jobs::default())
         .plugin(tauri_plugin_dialog::init())
@@ -351,6 +396,39 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running spatialdb desktop");
+}
+
+/// The runtime and plugins report through the `log` crate — CEF's sandbox fallback,
+/// a refused certificate, a dialog that could not open — and nothing printed them.
+/// Warnings and errors go to stderr (the terminal of `npm run desktop:dev`);
+/// `SPATIALDB_LOG=info` or `=debug` shows more.
+fn log_to_stderr() {
+    struct Stderr;
+    impl log::Log for Stderr {
+        fn enabled(&self, m: &log::Metadata) -> bool { m.level() <= log::max_level() }
+        fn log(&self, r: &log::Record) {
+            if self.enabled(r.metadata()) { eprintln!("[{} {}] {}", r.level(), r.target(), r.args()); }
+        }
+        fn flush(&self) {}
+    }
+    static LOGGER: Stderr = Stderr;
+    let level = match std::env::var("SPATIALDB_LOG").unwrap_or_default().to_ascii_lowercase().as_str() {
+        "error" => log::LevelFilter::Error,
+        "info" => log::LevelFilter::Info,
+        "debug" => log::LevelFilter::Debug,
+        "trace" => log::LevelFilter::Trace,
+        "off" => log::LevelFilter::Off,
+        _ => log::LevelFilter::Warn,
+    };
+    if log::set_logger(&LOGGER).is_ok() { log::set_max_level(level); }
+}
+
+#[cfg(test)]
+mod dialog_text_tests {
+    #[test] fn markup_is_escaped_for_zenity() {
+        let t = super::dialog_text("/mnt/a & b/<c>.wav".to_string());
+        if cfg!(target_os = "linux") { assert_eq!(t, "/mnt/a &amp; b/&lt;c&gt;.wav"); } else { assert_eq!(t, "/mnt/a & b/<c>.wav"); }
+    }
 }
 
 #[cfg(test)]
