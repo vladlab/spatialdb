@@ -26,6 +26,7 @@ import { TableKit } from '@tiptap/extension-table';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import Placeholder from '@tiptap/extension-placeholder';
+import { TableScale } from './tableScale';
 
 export function assetImage(assetUrl: (id: string) => string) {
   return Node.create({
@@ -86,6 +87,8 @@ export function richExtensions(assetUrl: (id: string) => string, placeholder = '
     // Tables: pasted emails and spec sheets are made of them. Not resizable —
     // column-drag handles are a lot of machinery for notes.
     TableKit.configure({ table: { resizable: false } }),
+    // …but a pasted one can be made smaller, as a whole (tableScale.ts).
+    TableScale,
     assetImage(assetUrl),
     ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
   ];

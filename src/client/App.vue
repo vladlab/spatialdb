@@ -1028,6 +1028,23 @@ p.hint { padding: 24px; }
 .rich table, .ProseMirror table { border-collapse: collapse; margin: 0 0 0.6em; max-width: 100%; display: block; overflow-x: auto; padding-bottom: 12px; }   /* bottom: room for an overlay scrollbar */
 .rich td, .rich th, .ProseMirror td, .ProseMirror th { border: 1px solid var(--border-main); padding: 3px 8px; vertical-align: top; min-width: 40px; }
 .rich th, .ProseMirror th { background: var(--controls-bg); font-weight: 600; text-align: left; }
+/* A table made SMALLER as a whole (richtext/tableScale.ts): its text and its cells' padding
+   shrink together. `data-scale` and the custom property sit on the <table> when read-only
+   and on the editor's wrapper around it; the cells read the property either way. */
+.rich [data-scale], .ProseMirror [data-scale] { font-size: calc(1em * var(--tbl-scale, 1)); }
+.rich [data-scale] :is(td, th), .ProseMirror [data-scale] :is(td, th) { padding: calc(3px * var(--tbl-scale, 1)) calc(8px * var(--tbl-scale, 1)); min-width: calc(40px * var(--tbl-scale, 1)); }
+/* Heading folds (richtext/folds.ts) — the editor's only. The chevron hangs in the left
+   margin, always there (nothing appears on hover); a folded heading says so with "…". */
+.ProseMirror .fold-head { position: relative; }
+.ProseMirror .fold-chevron {
+  position: absolute; left: -20px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; padding: 0;
+  background: none; border: none; border-radius: 3px; cursor: pointer; color: var(--text-faint); display: flex; align-items: center; justify-content: center;
+}
+.ProseMirror .fold-chevron:hover { color: var(--accent); background: var(--bg-surface-hover); }
+.ProseMirror .fold-chevron svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ProseMirror .fold-head.folded .fold-chevron { color: var(--accent); }
+.ProseMirror .fold-head.folded::after { content: ' …'; color: var(--text-faint); font-weight: 400; }
+.ProseMirror .fold-hidden { display: none; }
 .ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--text-faint); float: left; height: 0; pointer-events: none; }
 
 /* desktop: files over the window, and the tools' notices (client/desktop.ts) */

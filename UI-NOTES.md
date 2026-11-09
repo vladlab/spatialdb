@@ -363,6 +363,18 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
 
 ## Needs eyes (built, tested headlessly, never SEEN)
 
+- HEADING FOLDS and a TABLE'S SCALE in rich text (Nov 9, `client/richtext/folds.ts`,
+  `tableScale.ts`; `test/notefolds.ts`) — a chevron in the margin of every top-level
+  heading with something under it; Tab on a heading folds it, Shift+Tab folds or
+  unfolds all; per browser, never saved into the note. In a table, `− 80% +` at the
+  end of the toolbar makes that table smaller (60–100%), saved with the note and
+  drawn on canvas cards too. Driven with a real mouse and keyboard in a headless
+  Chromium, dark theme. For the owner's eyes: the chevron's place in the TRAY (the
+  editor's left padding went from 12 to 24px to make room for it); both in the
+  light theme and in Firefox; arrow keys walking past a folded section (the caret
+  should skip it; stepping INTO it opens it); a real pasted table at 60–70%; Shift+Tab
+  no longer leaves the editor backwards (it folds) unless the cursor is in a list or
+  a table. Found on the way and fixed: Ctrl+Enter added a line break before saving.
 - A NOTE AS A PAGE (Nov 9, `NotePage.vue`, `#/note/<record>/<field>`;
   `test/notepage.ts`) — one rich text field filling a browser tab: "open ↗" on the
   field in the tray, or "Open “…” in a tab ↗" in a row's or a canvas card's menu

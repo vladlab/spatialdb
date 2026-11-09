@@ -44,7 +44,7 @@
 -->
 <template>
   <!-- @click.stop: this lives inside the panel's field area, which has click handlers of its own. -->
-  <div class="rte" :class="{ focused, dirty, page }" @keydown="onKey" @focusout="onFocusOut" @focusin="focused = true" @click.stop>
+  <div class="rte" :class="{ focused, dirty, page }" @keydown.capture="onSaveKey" @keydown="onKey" @focusout="onFocusOut" @focusin="focused = true" @click.stop>
     <!-- One block, so that on a page the context line and the toolbar stick together. -->
     <div class="rte-top">
       <div v-if="page" class="rte-context">
@@ -56,6 +56,13 @@
       </div>
       <div class="rte-bar" @mousedown.prevent>
         <button v-for="b in BUTTONS" :key="b.id" :class="{ on: b.on?.() }" :title="b.title" tabindex="-1" @click="b.run">{{ b.label }}</button>
+        <!-- A table's SCALE (richtext/tableScale.ts), only while the cursor is in one. Its
+             space is always held, so the bar does not reflow as the cursor moves. -->
+        <span class="rte-table" :class="{ shown: !!inTable }" title="This table's size — pasted tables are often huge">
+          <button class="tbl-smaller" tabindex="-1" :disabled="!inTable || inTable.scale <= TABLE_SCALES[0]" title="Make this table smaller" @click="stepTableScale(editor, -1)">−</button>
+          <span class="tbl-scale">{{ Math.round((inTable?.scale ?? 1) * 100) }}%</span>
+          <button class="tbl-larger" tabindex="-1" :disabled="!inTable || inTable.scale >= 1" title="Make this table larger (up to full size)" @click="stepTableScale(editor, 1)">+</button>
+        </span>
         <template v-if="!page">
           <span class="spacer" />
           <span class="rte-state" :class="state">{{ STATE_TEXT[state] }}</span>
@@ -87,6 +94,8 @@ import type { Store } from '../store';
 import { richExtensions } from '../richtext/extensions';
 import { adoptImagesInHtml, imageFilesOf, imageTag } from '../richtext/paste';
 import { isEmptyRichText, richTextError } from '../../contract/richtext';
+import { HeadingFolds } from '../richtext/folds';
+import { stepTableScale, tableAtCursor, TABLE_SCALES } from '../richtext/tableScale';
 
 const props = defineProps<{
   store: Store;
@@ -116,8 +125,24 @@ const ownRecordId = props.recordId;
  */
 const json = (v: unknown): string => JSON.stringify(v ?? null, (_k, val) =>
   (val && typeof val === 'object' && !Array.isArray(val)
-    ? Object.fromEntries(Object.keys(val as object).sort().map((k) => [k, (val as Record<string, unknown>)[k]]))
+    // …and without keys that hold null: an attribute the schema gained since a note
+    // was saved (a table's `scale`) comes out of the editor as null and is simply
+    // absent in the saved note. Those are the same note.
+    ? Object.fromEntries(Object.keys(val as object).sort().filter((k) => (val as Record<string, unknown>)[k] !== null).map((k) => [k, (val as Record<string, unknown>)[k]]))
     : val));
+/**
+ * A document without the empty paragraph the editor keeps after a last block that is
+ * not text (a table, a heading), so there is somewhere to click below it. The editor
+ * adds it on the first transaction of any kind — a click, a fold — and a note that
+ * merely gained it has not been edited.
+ */
+function tailless(v: unknown): unknown {
+  const d = v as { type?: string; content?: Array<{ type?: string; content?: unknown[] }> } | null;
+  const c = d?.content;
+  if (!d || d.type !== 'doc' || !c || c.length < 2) return v;
+  const last = c[c.length - 1];
+  return last.type === 'paragraph' && !last.content?.length ? { ...d, content: c.slice(0, -1) } : v;
+}
 /** The saved value this editor last agreed with. Compared with props.value to spot a colleague's save. */
 let base = json(props.value);
 /** What WE last sent, so our own save echoing back through props is not mistaken for theirs. */
@@ -165,7 +190,11 @@ async function insertFiles(files: File[]) {
 
 const editor = useEditor({
   content: (props.value as object | undefined) ?? '',
-  extensions: richExtensions(props.store.assetUrl, 'Write, or paste an email — screenshots paste in too…'),
+  extensions: [
+    ...richExtensions(props.store.assetUrl, 'Write, or paste an email — screenshots paste in too…'),
+    // Heading folds are the EDITOR's and this browser's (richtext/folds.ts), remembered per note.
+    HeadingFolds.configure({ noteKey: `${props.recordId}:${props.fieldKey}` }),
+  ],
   onUpdate: ({ editor: ed }) => { dirty.value = differsFromBase(ed.getJSON()); },
   editorProps: {
     handlePaste(_view, event) {
@@ -198,7 +227,7 @@ onBeforeUnmount(() => { ro?.disconnect(); commit(); editor.value?.destroy(); });
 
 /** An untouched editor holds an empty paragraph where the saved value is "nothing"; that is not a difference. */
 function differsFromBase(doc: unknown) {
-  if (json(doc) === base) return false;
+  if (json(doc) === base || json(tailless(doc)) === json(tailless(JSON.parse(base)))) return false;
   return !(isEmptyRichText(doc) && isEmptyRichText(JSON.parse(base)));
 }
 
@@ -212,6 +241,8 @@ watch(() => props.value, (v) => {
   editor.value?.commands.setContent((v as object | undefined) ?? '', { emitUpdate: false });
 });
 
+/** The table the cursor is in, for the scale control. Read in the template, which re-renders on every transaction. */
+const inTable = computed(() => tableAtCursor(editor.value));
 const cmd = () => editor.value!.chain().focus();
 const is = (name: string, attrs?: Record<string, unknown>) => editor.value?.isActive(name, attrs) ?? false;
 const BUTTONS: Array<{ id: string; label: string; title: string; run: () => void; on?: () => boolean }> = [
@@ -256,8 +287,16 @@ function resolve(which: 'mine' | 'theirs') {
   editor.value?.commands.setContent((props.value as object | undefined) ?? '', { emitUpdate: false });
 }
 
+/**
+ * Ctrl+Enter saves — caught on the way DOWN (capture), before the editor sees it.
+ * Caught on the way up, as it was, the editor had already acted on the key: to it
+ * Ctrl+Enter is "line break", so every keyboard save also added an empty line where
+ * the cursor stood, and saved that.
+ */
+function onSaveKey(e: KeyboardEvent) {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); e.stopPropagation(); commit(); }
+}
 function onKey(e: KeyboardEvent) {
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); e.stopPropagation(); commit(); return; }
   if (e.key === 'Escape') {
     // With unsaved words, Escape means "put it back" and must not also close the
     // tray. With none, let it through: the tray's own Escape closes it.
@@ -295,6 +334,11 @@ defineExpose({ commit });
 .rte-bar button:hover { border-color: var(--border-main); color: var(--text-primary); }
 .rte-bar button.on { color: var(--accent); border-color: var(--accent); }
 .spacer { flex: 1; }
+.rte-table { visibility: hidden; display: inline-flex; align-items: center; gap: 1px; margin-left: 6px; padding-left: 6px; border-left: 1px solid var(--border-main); }
+.rte-table.shown { visibility: visible; }
+.rte-table button:disabled { opacity: 0.35; cursor: default; }
+.tbl-scale { font-size: 11px; color: var(--text-secondary); min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
+/* Room in the left margin for a heading's fold chevron (richtext/folds.ts). */
 .rte-bar .rte-save, .rte-context .rte-save {
   visibility: hidden; color: var(--on-accent); background: var(--accent); border-color: var(--accent);
   padding: 0 10px; margin-left: 2px; font-weight: 600;
@@ -309,7 +353,7 @@ defineExpose({ commit });
 .rte-state.conflict { color: var(--danger); }
 /* The height is the user's, never the content's: it scrolls inside, and the fields
    below it never move. `resize: vertical` needs a non-visible overflow to work. */
-.rte-body { min-height: 140px; max-height: 80vh; overflow-y: auto; resize: vertical; padding: 10px 12px; cursor: text; box-sizing: border-box; }
+.rte-body { min-height: 140px; max-height: 80vh; overflow-y: auto; resize: vertical; padding: 10px 12px 10px 24px; cursor: text; box-sizing: border-box; }
 .rte-body :deep(.ProseMirror) { min-height: 100%; }
 .rte-notice { margin: 0; padding: 4px 10px; color: var(--warning); font-size: 11px; border-top: 1px solid var(--border-main); }
 .rte-conflict {
