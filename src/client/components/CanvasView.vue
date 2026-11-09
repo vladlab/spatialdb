@@ -292,6 +292,9 @@
         <!-- A board placed on a board: this is how you walk from one canvas to another. -->
         <button v-if="isBoardRecord(menu.recordId!)" class="open-board" @click="menuDo((m) => $emit('open-board', m.recordId!))">▦ Open this board</button>
         <button @click="menuDo((m) => $emit('open-record', m.recordId!))">Open record</button>
+        <!-- A note as a whole page, in a new browser tab (client/noteLinks.ts). -->
+        <button v-for="nf in noteFields(store, menu.recordId!)" :key="nf.id" class="open-note" :data-field="nf.id"
+                @click="menuDo((m) => openNote(m.recordId!, nf.id))">Open “{{ nf.name }}” in a tab ↗</button>
         <button @click="menuDo((m) => toggleFold(m.recordId!))">{{ isCollapsed(menu.recordId!) ? 'Unfold' : 'Fold' }} (Tab)</button>
         <button @click="menu = { ...menu, kind: 'fields' }">Fields on {{ tableNameOf(menu.recordId!) }} cards…</button>
         <!-- The easy way to set a canvas default: drop the Ep 101 card here, and point at it. -->
@@ -384,6 +387,7 @@ import { formatNumberField, shapeOf, summarise } from '../../contract/shapes';
 import { formatCreated } from '../../contract/systemFields';
 import { beginRecordDrag, registerDropTarget } from '../recordDrag';
 import { invoke, isDesktop, notice } from '../desktop';
+import { noteFields, openNote } from '../noteLinks';
 import { arrowStyleOf, type ArrowStyle } from '../../contract/arrows';
 import { backlinkSourceOf } from '../../contract/backlinks';
 import { junctionOf, otherEnd, type JunctionConfig } from '../../contract/junction';

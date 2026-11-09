@@ -496,6 +496,12 @@
       <button v-if="isReports" class="open-report-item" @click="rowMenuDo((m) => emit('open-report', m.id))">▤ Open this report</button>
       <button v-if="isCalendars" class="open-calendar-item" @click="rowMenuDo((m) => emit('open-calendar', m.id))">▥ Open this calendar</button>
       <button v-if="!isJunction" class="duplicate-record" @click="rowMenuDo((m) => duplicateRows(m.ids))">{{ rowMenu.ids.length > 1 ? `Duplicate ${rowMenu.ids.length} records` : 'Duplicate record' }}</button>
+      <!-- A note as a whole page, in a new browser tab (client/noteLinks.ts): one item per
+           rich text field, one record at a time; absent in the desktop app. -->
+      <template v-if="rowMenu.ids.length === 1">
+        <button v-for="nf in noteFields(store, rowMenu.id)" :key="nf.id" class="open-note" :data-field="nf.id"
+                @click="rowMenuDo((m) => openNote(m.id, nf.id))">Open “{{ nf.name }}” in a tab ↗</button>
+      </template>
       <!-- The Resolve tool (client/tools/resolveIngest.ts): one record at a time, desktop only. -->
       <button v-if="rowMenu.ids.length === 1 && resolveOffered(store, rowMenu.id)" class="resolve-ingest" @click="rowMenuDo((m) => ingestFromResolve(store, m.id, labelFor(m.id)))">Ingest info from Resolve…</button>
       <hr />
@@ -547,6 +553,7 @@ import { beginRecordDrag } from '../recordDrag';
 import { duplicateRecords } from '../duplicate';
 import { clipFromPaste, clipOf, copyCell, describePaste, pasteCell, pasteCells, uncopyable } from '../cellClipboard';
 import { notice } from '../desktop';
+import { noteFields, openNote } from '../noteLinks';
 import { otherEnd } from '../../contract/junction';
 import { pairSlot } from '../textWidth';
 

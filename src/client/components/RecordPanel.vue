@@ -101,6 +101,10 @@
                       @click.stop="runManualStep(store, recordId, m.index)">▶ {{ m.name }}</button>
             </template>
             <span v-if="jobHere(f)" class="job">{{ jobs.get(recordId)!.label }}…</span>
+            <!-- A note as a whole page, in a browser tab of its own (NotePage.vue). A real
+                 link, so a middle-click and "copy link address" work too. -->
+            <a v-if="f.type === 'rich_text' && noteTabs" class="reveal open-note" :href="noteHref(recordId, f.id)" target="_blank" rel="noopener"
+               title="Open this note as a full page, in a new browser tab" @click.stop>open ↗</a>
           </span>
         </div>
 
@@ -247,6 +251,7 @@ import { useDerived } from '../derived';
 import { confirmDialog } from '../dialogs';
 import CellEditor, { type EditExit } from './CellEditor.vue';
 import { invoke, isDesktop, jobs, notice } from '../desktop';
+import { noteHref, notesOffered } from '../noteLinks';
 import { manualHomeField, manualSteps, pathKeyOf, runManualStep } from '../tools/fileDrop';
 import LinkPicker from './LinkPicker.vue';
 import VerdictMark from './VerdictMark.vue';
@@ -275,6 +280,7 @@ import { richTextToPlain } from '../../contract/richtext';
 const RichTextEditor = defineAsyncComponent(() => import('./RichTextEditor.vue'));
 
 const desktop = isDesktop();
+const noteTabs = notesOffered();
 const reveal = (path: string) => invoke<string>('reveal', { path })
   .then((r) => { if (r === 'folder') notice('The file is not there any more — its folder was opened.', 'info'); })
   .catch((e) => notice(String(e), 'error'));
@@ -628,6 +634,7 @@ watch(() => props.recordId, () => {
 .cmp-badge { margin-left: 5px; }
 .reveal { margin-left: 8px; font-size: 10px; background: none; border: 1px solid var(--border-main); color: var(--text-muted); border-radius: 3px; padding: 0 5px; cursor: pointer; }
 .reveal:hover { color: var(--accent); border-color: var(--accent); }
+a.reveal { text-decoration: none; white-space: nowrap; line-height: 1.5; }
 .run-step { margin-left: 4px; }
 .job { margin-left: 8px; font-size: 10px; color: var(--accent); }
 /* min-height is set inline (richReserve): the editor's place, held while it loads. */

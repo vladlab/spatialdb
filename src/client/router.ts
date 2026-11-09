@@ -7,6 +7,8 @@
  *     #/all/report/<recordId>         a report (a record in a table of reports), open
  *     …?r=<recordId>                  with that record's panel open
  *     …?sc=<recordId|none>            scoped to that project (or to Unassigned)
+ *     #/note/<recordId>/<fieldId>     ONE rich text field of one record, as a whole page
+ *                                     (NotePage.vue) — no shell around it; see `NoteRoute`
  *
  * The app had no addresses: which tab, table and canvas you were on lived in
  * component refs, so reload lost your place, the back button left the app, and
@@ -76,6 +78,27 @@ export function parseRoute(hash: string): Route {
 export const sameRoute = (a: Route, b: Route) =>
   a.section === b.section && a.view === b.view && a.target === b.target && a.record === b.record && a.scope === b.scope;
 
+/* ── a note, as a page ──────────────────────────────────────────────────────
+   One rich text field of one record, filling the window: what you open in its own
+   browser tab to write in (NotePage.vue). It is NOT a `Route`: a Route is a place in
+   the shell (section › view › target, a tray, a scope) and this has none of those —
+   the app draws the page INSTEAD of the shell. Two ids say everything: the field
+   names its table, so the address needs no table id and survives the table moving
+   between sections.
+
+   Never remembered as "where you were": the main window must not reopen on a note
+   because a note's tab was the last one touched. */
+
+export interface NoteRoute { record: string; field: string }
+const ID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const NOTE = new RegExp(`^#/note/(${ID})/(${ID})/?$`, 'i');
+
+export const formatNote = (n: NoteRoute): string => `#/note/${n.record}/${n.field}`;
+export function parseNote(hash: string): NoteRoute | null {
+  const m = NOTE.exec(hash);
+  return m ? { record: m[1], field: m[2] } : null;
+}
+
 /* ── where you were ─────────────────────────────────────────────────────────
    The last address, kept in this browser (localStorage — per origin, so the desktop
    client's window remembers per server). Only consulted when the app opens with NO
@@ -84,6 +107,7 @@ export const sameRoute = (a: Route, b: Route) =>
 const LAST_KEY = 'spatialdb.lastRoute';
 
 export function rememberRoute(hash: string): void {
+  if (parseNote(hash)) return;            // a note's page is not a place in the shell
   try { if (hash) localStorage.setItem(LAST_KEY, hash); } catch { /* storage unavailable */ }
 }
 export function lastRoute(): string {

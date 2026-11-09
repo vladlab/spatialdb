@@ -40,6 +40,12 @@
   -->
   <!-- Until the server says who you are, the app IS the login screen. -->
   <LoginPage v-if="store.auth.value === 'out' || store.auth.value === 'setup'" :store="store" />
+  <!-- A NOTE AS A PAGE (NotePage.vue, router.ts `NoteRoute`): one rich text field of one
+       record, in a browser tab of its own. Drawn INSTEAD of the shell, once the schema
+       is in (`ready`) so it can tell a missing field from one not loaded yet. -->
+  <div v-else-if="store.auth.value === 'in' && note" class="note-host">
+    <NotePage v-if="ready" :key="note.record + note.field" :store="store" :record-id="note.record" :field-id="note.field" />
+  </div>
   <div v-else-if="store.auth.value === 'in'" class="app">
     <header class="topbar">
       <button class="ghost tree-toggle" :class="{ on: treeOpen }" title="Show or hide the navigation tree" @click="treeOpen = !treeOpen">☰</button>
@@ -180,7 +186,8 @@ import { dragGhost } from './recordDrag';
 import { createStore } from './store';
 import { boardsOf, calendarsOf, isBoardsTable, isCalendarsTable, isReportsTable, isUtilityTable, reportsOf, tablesOfSection, tablesSorted } from './state';
 import { useDerived } from './derived';
-import { formatRoute, lastRoute, parseRoute, rememberRoute, sameRoute, startHash, type Route, type ViewName } from './router';
+import { formatRoute, lastRoute, parseNote, parseRoute, rememberRoute, sameRoute, startHash, type Route, type ViewName } from './router';
+import NotePage from './components/NotePage.vue';
 import HomePage from './components/HomePage.vue';
 import SectionSettings from './components/SectionSettings.vue';
 import CanvasView from './components/CanvasView.vue';
@@ -518,6 +525,7 @@ function onPaletteChoose(rec: RecordRow, keepOpen: boolean) {
   if (!keepOpen) closePalette();
 }
 function onPaletteKey(e: KeyboardEvent) {
+  if (note.value) return;                  // a note's page has no shell to find in
   if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') {
     e.preventDefault();
     canvasRef.value?.resetCascade();
@@ -537,6 +545,7 @@ function onHistoryKey(e: KeyboardEvent) {
   if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
   const k = e.key.toLowerCase();
   if (k !== 'z' && k !== 'y') return;
+  if (note.value) return;                  // on a note's page there is nothing on screen an app-wide undo would show
   const t = e.target as HTMLElement | null;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
   e.preventDefault();
@@ -646,6 +655,11 @@ watch(canvases, (cs) => {
    `enter()` then reads the address you chose. */
 let applying = false;
 let booted = false;
+/** The note this tab is showing as a page, or null: then the shell is drawn, as ever.
+ *  While it is set the mirror below is still — a note's address is not the shell's to rewrite. */
+const note = ref(parseNote(location.hash));
+/** The schema is loaded (`enter()` got that far). The note page waits for it. */
+const ready = ref(false);
 const currentRoute = (): Route => ({
   section: sectionKey.value,
   view: view.value,
@@ -680,13 +694,17 @@ function goSection(key: string) {
   // The open record stays open across a section change too: it persists ALL navigation.
 }
 watch([sectionKey, view, tableId, canvasId, reportId, calendarId, openRecordId, scopeApi.scope], () => {
-  if (applying) return;
+  if (applying || note.value) return;
   if (!booted && currentRoute().section === null) return;
   const hash = formatRoute(currentRoute(), section.value?.name);
   if (location.hash !== hash && !sameRoute(parseRoute(location.hash), currentRoute())) location.hash = hash;
   rememberRoute(location.hash);
 });
-const onHashChange = () => { rememberRoute(location.hash); const r = parseRoute(location.hash); if (!sameRoute(r, currentRoute())) applyRoute(r); };
+const onHashChange = () => {
+  note.value = parseNote(location.hash);
+  if (note.value) return;                  // the note page has it; the shell's place is left as it was
+  rememberRoute(location.hash); const r = parseRoute(location.hash); if (!sameRoute(r, currentRoute())) applyRoute(r);
+};
 
 /** Signed in (just now, or already): load everything and open the stream. */
 async function enter() {
@@ -698,6 +716,10 @@ async function enter() {
     return;
   }
   store.start();
+  ready.value = true;
+  // Opened ON a note: there is no place in the shell to restore, and the address must
+  // stay the note's. (Leaving the note by one of its links is a hashchange, above.)
+  if (note.value) { booted = true; return; }
   // A bare address — no hash at all: the desktop window, or the URL typed by hand —
   // opens where you last were. A reload keeps its hash and is unaffected.
   const start = startHash(location.hash, lastRoute());
@@ -760,6 +782,7 @@ body {
   font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 .app { display: flex; flex-direction: column; height: 100%; }
+.note-host { height: 100%; }
 
 .topbar {
   display: flex; align-items: center; gap: 8px; flex: none; height: 38px; box-sizing: border-box;

@@ -363,6 +363,18 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
 
 ## Needs eyes (built, tested headlessly, never SEEN)
 
+- A NOTE AS A PAGE (Nov 9, `NotePage.vue`, `#/note/<record>/<field>`;
+  `test/notepage.ts`) — one rich text field filling a browser tab: "open ↗" on the
+  field in the tray, or "Open “…” in a tab ↗" in a row's or a canvas card's menu
+  (not in the desktop app: one window, no tabs). Looked at in a headless Chromium,
+  both themes, on one made-up note. For the owner's eyes: the 750px column and the
+  15px text (`--note-col` and the `.rte.page` block in RichTextEditor.vue are the
+  two numbers); a real pasted email's table running wider than the column; a
+  screenshot wider than the column (it starts on the text's left edge and runs
+  right); the two top lines staying put on a long note in FIREFOX; the browser's
+  "leave this page?" on closing a tab with unsaved words. Seen on the way, not
+  touched: in a tray at its default width the editor's hidden Save button wraps
+  onto a second toolbar line, so the bar is two lines tall.
 - LIGHT THEME (Oct 29, `src/client/theme.css`, Settings › This browser › Theme;
   `test/theme.ts`) — viznotes' "paper" on spatialdb's surfaces, looked at in a
   headless Chromium on the seed data only (home, grid, tray, canvas, Settings).

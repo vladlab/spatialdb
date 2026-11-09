@@ -31,23 +31,43 @@
       you save, the editor sees the value changed underneath it and stops to ask —
       keep yours (overwriting theirs) or take theirs (discarding yours).
 
+  AS A PAGE (`page`, NotePage.vue): the same editor filling a browser tab. What
+  changes is only the box: no border, no fixed height — the PAGE scrolls, and the
+  context line and the toolbar stay at its top — and the text sits in a centred
+  column at a reading size. Saving, conflicts, paste and uploads are this file's,
+  unchanged; that is the reason the page is a mode of this component and not a
+  second editor. The `context` slot is the page's "which note is this" line; the
+  state word and Save move up beside it.
+
   IMAGES go to the asset store on paste or drop and become asset-backed nodes
   (richtext/extensions.ts, richtext/paste.ts). Saving waits for uploads in flight.
 -->
 <template>
   <!-- @click.stop: this lives inside the panel's field area, which has click handlers of its own. -->
-  <div class="rte" :class="{ focused, dirty }" @keydown="onKey" @focusout="onFocusOut" @focusin="focused = true" @click.stop>
-    <div class="rte-bar" @mousedown.prevent>
-      <button v-for="b in BUTTONS" :key="b.id" :class="{ on: b.on?.() }" :title="b.title" tabindex="-1" @click="b.run">{{ b.label }}</button>
-      <span class="spacer" />
-      <span class="rte-state" :class="state">{{ STATE_TEXT[state] }}</span>
-      <!-- Always in the bar, only VISIBLE with something to save: its space is held,
-           so the bar never reflows when it shows. -->
-      <button class="rte-save" :class="{ shown: dirty && !conflict }" :disabled="!dirty || conflict || !!uploading"
-              tabindex="-1" title="Save (Ctrl+Enter)" @click="commit()">Save</button>
+  <div class="rte" :class="{ focused, dirty, page }" @keydown="onKey" @focusout="onFocusOut" @focusin="focused = true" @click.stop>
+    <!-- One block, so that on a page the context line and the toolbar stick together. -->
+    <div class="rte-top">
+      <div v-if="page" class="rte-context">
+        <slot name="context" />
+        <span class="spacer" />
+        <span class="rte-state" :class="state">{{ STATE_TEXT[state] }}</span>
+        <button class="rte-save" :class="{ shown: dirty && !conflict }" :disabled="!dirty || conflict || !!uploading"
+                tabindex="-1" title="Save (Ctrl+Enter)" @mousedown.prevent @click="commit()">Save</button>
+      </div>
+      <div class="rte-bar" @mousedown.prevent>
+        <button v-for="b in BUTTONS" :key="b.id" :class="{ on: b.on?.() }" :title="b.title" tabindex="-1" @click="b.run">{{ b.label }}</button>
+        <template v-if="!page">
+          <span class="spacer" />
+          <span class="rte-state" :class="state">{{ STATE_TEXT[state] }}</span>
+          <!-- Always in the bar, only VISIBLE with something to save: its space is held,
+               so the bar never reflows when it shows. -->
+          <button class="rte-save" :class="{ shown: dirty && !conflict }" :disabled="!dirty || conflict || !!uploading"
+                  tabindex="-1" title="Save (Ctrl+Enter)" @click="commit()">Save</button>
+        </template>
+      </div>
     </div>
 
-    <div ref="bodyEl" class="rte-body" :style="{ height: height + 'px' }" @click="editor?.commands.focus()">
+    <div ref="bodyEl" class="rte-body" :style="page ? undefined : { height: height + 'px' }" @click="editor?.commands.focus()">
       <EditorContent :editor="editor" />
     </div>
 
@@ -80,8 +100,10 @@ const props = defineProps<{
   recordId: string;
   fieldKey: string;
   value: unknown;
+  /** Fill a page instead of sitting in a box (NotePage.vue) — see the note at the top. */
+  page?: boolean;
 }>();
-const emit = defineEmits<{ set: [recordId: string, key: string, value: unknown]; unset: [recordId: string, key: string] }>();
+const emit = defineEmits<{ set: [recordId: string, key: string, value: unknown]; unset: [recordId: string, key: string]; dirty: [dirty: boolean] }>();
 /** Fixed at mount: `props.recordId` is reactive and must not be trusted during unmount. */
 const ownRecordId = props.recordId;
 
@@ -107,6 +129,9 @@ const uploading = ref(0);
 const notice = ref('');
 const conflict = ref(false);
 
+// For whoever hosts the editor: a page warns before its tab is closed on unsaved words.
+watch(dirty, (d) => emit('dirty', d));
+
 const state = computed(() => (uploading.value ? 'uploading' : conflict.value ? 'conflict' : dirty.value ? 'editing' : 'saved'));
 const STATE_TEXT = { uploading: 'uploading…', conflict: 'needs your decision', editing: 'unsaved', saved: 'saved' } as const;
 
@@ -117,7 +142,7 @@ const height = ref(readHeight());
 const bodyEl = ref<HTMLElement>();
 let ro: ResizeObserver | undefined;
 onMounted(() => {
-  if (!bodyEl.value || typeof ResizeObserver === 'undefined') return;
+  if (props.page || !bodyEl.value || typeof ResizeObserver === 'undefined') return;   // a page has no height of its own
   // The body is `resize: vertical`; this is how dragging its edge is noticed.
   ro = new ResizeObserver(() => {
     const h = Math.round(bodyEl.value?.offsetHeight ?? 0);
@@ -270,13 +295,13 @@ defineExpose({ commit });
 .rte-bar button:hover { border-color: var(--border-main); color: var(--text-primary); }
 .rte-bar button.on { color: var(--accent); border-color: var(--accent); }
 .spacer { flex: 1; }
-.rte-bar .rte-save {
+.rte-bar .rte-save, .rte-context .rte-save {
   visibility: hidden; color: var(--on-accent); background: var(--accent); border-color: var(--accent);
   padding: 0 10px; margin-left: 2px; font-weight: 600;
 }
-.rte-bar .rte-save.shown { visibility: visible; }
-.rte-bar .rte-save:hover:not(:disabled) { color: var(--on-accent); filter: brightness(1.1); }
-.rte-bar .rte-save:disabled { cursor: default; opacity: 0.6; }
+.rte .rte-save.shown { visibility: visible; }
+.rte .rte-save:hover:not(:disabled) { color: var(--on-accent); filter: brightness(1.1); }
+.rte .rte-save:disabled { cursor: default; opacity: 0.6; }
 /* Fixed slot, so the toolbar does not reflow when the word changes. */
 .rte-state { font-size: 11px; color: var(--text-faint); white-space: nowrap; padding: 0 4px; }
 .rte-state.editing { color: var(--warning); }
@@ -291,5 +316,46 @@ defineExpose({ commit });
   padding: 8px 10px; border-top: 1px solid var(--warning);
   display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px;
 }
+
+/* ── as a page (NotePage.vue) ──────────────────────────────────────────────
+   The box comes off: the page behind is the paper, the page scrolls, and the two
+   lines at the top stay put. `--note-col` is the reading column; `--note-gap` is
+   what is left of the page on either side of it (never less than the page's own
+   padding), so the toolbar's first button and the text's left edge share a line. */
+.rte.page {
+  --note-col: 750px; --note-pad: 28px;
+  --note-gap: max(var(--note-pad), calc((100% - var(--note-col)) / 2));
+  border: none; border-radius: 0; background: none; min-height: 100%;
+}
+.rte.page .rte-top { position: sticky; top: 0; z-index: 5; background: var(--bg-chrome); border-bottom: 1px solid var(--border-main); }
+.rte-context {
+  display: flex; align-items: center; gap: 6px; height: 38px; box-sizing: border-box; padding: 0 12px;
+  border-bottom: 1px solid var(--line-soft); min-width: 0;
+}
+.rte-context .rte-save {
+  border: 1px solid var(--accent); border-radius: 3px; height: 24px; cursor: pointer; font: inherit; font-size: 12px;
+}
+/* less the 8px a button keeps around its glyph: the B sits over the text's left edge */
+.rte.page .rte-bar { border-bottom: none; padding: 5px calc(var(--note-gap) - 8px); }
+.rte.page .rte-bar button { min-width: 28px; height: 26px; font-size: 13px; }
+.rte.page .rte-body { min-height: 0; max-height: none; overflow: visible; resize: none; flex: 1; padding: 36px 0 45vh; }
+.rte.page .rte-notice, .rte.page .rte-conflict { position: sticky; bottom: 0; background: var(--bg-chrome); padding-left: var(--note-gap); padding-right: var(--note-gap); }
+/* The text: a reading size, in the column. Every top-level block is held to the
+   column and centred in the page… */
+.rte.page .rte-body :deep(.ProseMirror) { font-size: 15px; line-height: 1.65; min-height: 40vh; }
+.rte.page .rte-body :deep(.ProseMirror > *) { max-width: var(--note-col); margin-left: var(--note-gap); margin-right: var(--note-gap); }
+.rte.page .rte-body :deep(.ProseMirror h1) { font-size: 24px; }
+.rte.page .rte-body :deep(.ProseMirror h2) { font-size: 20px; }
+.rte.page .rte-body :deep(.ProseMirror h3) { font-size: 17px; }
+.rte.page .rte-body :deep(.ProseMirror code) { font-size: 13.5px; }
+/* …except what is allowed to be WIDER than the text. A table is as wide as its
+   columns need, up to the page, centred — but never narrower than the column, so a
+   small one still starts on the text's left edge. An image starts on that edge and
+   may run on to the right as far as the page goes. */
+.rte.page .rte-body :deep(.ProseMirror > table), .rte.page .rte-body :deep(.ProseMirror > .tableWrapper) {
+  width: fit-content; min-width: min(var(--note-col), calc(100% - 2 * var(--note-pad))); max-width: calc(100% - 2 * var(--note-pad));
+  margin-left: auto; margin-right: auto;
+}
+.rte.page .rte-body :deep(.ProseMirror > img) { max-width: calc(100% - var(--note-gap) - var(--note-pad)); margin-right: var(--note-pad); }
 .rte-conflict button { background: none; border: 1px solid var(--border-main); color: var(--text-primary); border-radius: 4px; padding: 3px 8px; cursor: pointer; font: inherit; }
 </style>
