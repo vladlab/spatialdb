@@ -76,10 +76,24 @@ compiles CEF's small C++ wrapper with CMake + Ninja.
 
 ```bash
 sudo dnf install gtk4-devel cmake ninja-build gcc-c++ zenity nss-tools
-rustup update                        # Rust ≥ 1.95
+rustc --version                      # Tauri 3 alpha needs ≥ 1.95 — see below if older
 git switch cef
 npm run desktop:dev                  # first time: the CEF download, then the window
 ```
+
+**Rust older than 1.95** (Fedora's own `rust`/`cargo` packages lag; `rustup:
+command not found` means that is what you have): install rustup, which keeps a
+current toolchain in `~/.cargo` and wins over the system one on `PATH`:
+
+```bash
+sudo dnf install rustup
+rustup-init                          # default answers; it edits ~/.bashrc / ~/.profile
+exec $SHELL -l                       # or open a new terminal
+which cargo rustc                    # both ~/.cargo/bin/…
+rustc --version                      # ≥ 1.95
+```
+
+The dnf `rust` and `cargo` packages can stay; `main` builds with either.
 
 The `webkit2gtk4.1-devel` that `main` needs is not used by this branch (leave it
 installed; `git switch main` needs it).
