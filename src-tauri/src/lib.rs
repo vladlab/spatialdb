@@ -145,6 +145,9 @@ fn open_main(app: &AppHandle, url: WebviewUrl) -> Result<(), String> {
         builder.browser_runtime_style(if chrome { RuntimeStyle::Chrome } else { RuntimeStyle::Alloy })
     };
     let w = builder.build().map_err(|e| e.to_string())?;
+    // Under CEF the window came up with no title though the builder had one
+    // (Nov 9, Color 02). Set it again once the window exists.
+    let _ = w.set_title("spatialdb");
     // The same native event the page receives as `onDragDropEvent`; here it feeds
     // the allowlist, so a path is readable exactly when a person dropped it.
     // A WINDOW event, not a webview event: for a webview that fills its window wry
@@ -382,6 +385,10 @@ pub fn run() {
         .manage(Allowed::default())
         .manage(Jobs::default())
         .plugin(tauri_plugin_dialog::init())
+        // Size, position and maximized state come back as they were left. Nothing on
+        // Linux did that before: the window manager picked the spot, and under CEF
+        // (GTK 4, X11) that was always the left monitor. Saved when the window closes.
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .invoke_handler(tauri::generate_handler![tools_available, server_url, set_server, classify, analyze, analyze_path, hash_cancel, allow_paths, reveal, resolve_timelines, resolve_read])
         .setup(|app| {
             let handle = app.handle().clone();

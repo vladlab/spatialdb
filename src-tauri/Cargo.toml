@@ -31,6 +31,10 @@ md-5 = "0.10"
 url = "2"
 # The runtime and plugins report through `log`; lib.rs `log_to_stderr` prints it.
 log = "0.4"
+# Remembers the main window's size, position (which monitor) and maximized state
+# between runs: `.window-state.json` in the app's config dir. Tauri 3 alpha line,
+# pinned like the rest.
+tauri-plugin-window-state = "=3.0.0-alpha.2"
 
 # THE WEBVIEW ENGINE, per platform (CEF-BRIEF.md). Tauri 3 picks the runtime in code
 # (`tauri::Builder::runtime`, lib.rs `engine()`), not by a feature of `tauri`.

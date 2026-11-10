@@ -43,6 +43,11 @@ WebKitGTK. Plan and reasons: `CEF-BRIEF.md` (in the Project; add it to the repo 
 - Runtime and plugin warnings (sandbox fallback, a refused certificate, a dialog
   that could not open) are printed to the terminal; `SPATIALDB_LOG=info` shows more.
 - The handshake (`tools_available`) gains `engine`: `"chromium (cef)"`.
+- **Window size and position are remembered** (Nov 9, after the first run on Color
+  02, which always opened on the left monitor): `tauri-plugin-window-state`, saved
+  to `~/.config/org.spatialdb.desktop/.window-state.json` when the window closes.
+  Delete that file to start from the default again. The title is also set again
+  after the window exists, as the first run showed none.
 - The web app is not touched: the browser build is byte-identical.
 
 **Compiled / not compiled.** In the build sandbox: `cargo check --tests` and
