@@ -176,6 +176,21 @@ npm run desktop:build       # cargo tauri build → src-tauri/target/release/bun
   some-1024px.png` generates the full set (including `.icns`/`.ico` for macOS/Windows,
   which `tauri.conf.json` does not list yet).
 
+## Installing it for yourself on Linux (menu entry and icon)
+
+```bash
+npm run desktop:install                    # release build, then install for this user
+npm run desktop:install -- --desktop-icon  # …and a launcher in ~/Desktop
+npm run desktop:install -- --uninstall
+```
+
+`scripts/desktop-install.sh`: no root, no package. The binary goes to
+`~/.local/opt/spatialdb/`, a menu entry to `~/.local/share/applications/`, the icon
+to `~/.local/share/icons/`. The menu entry starts it with
+`WEBKIT_DISABLE_DMABUF_RENDERER=1` (the binary defaults to that on Linux anyway).
+Run it again after a `git pull` to update. Tested against a fake build folder only;
+if the dock shows a generic icon, send `xprop WM_CLASS` of the window.
+
 ## Building a Mac app (for colleagues)
 
 UNVERIFIED on a real Mac as of Sept 29 — nothing here has run on macOS yet. It must
