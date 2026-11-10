@@ -339,7 +339,8 @@ export function useSchemaActions(store: Store) {
     const boards = t.kind === 'canvas' ? ' Every record in it is a canvas — the boards and everything placed on them go too.'
       : t.kind === 'report' ? ' Every record in it is a report — their definitions and any snapshots attached to them go too.'
       : t.kind === 'calendar' ? ' Every record in it is a calendar — their definitions go too (the records they show do not).'
-      : t.kind === 'junction' ? ' Every record in it is a pair — the columns it put on the two tables it connects go too.' : '';
+      : t.kind === 'junction' ? ' Every record in it is a pair — the columns it put on the two tables it connects go too.'
+      : t.record_canvases ? ' Every record in it has a canvas — those canvases and everything placed on them go too.' : '';
     const p = await previewOf({ type: 'table.delete', id });
     if (p?.truncated) {
       if (!await typeToDelete('table', t.name, p, boards)) return false;

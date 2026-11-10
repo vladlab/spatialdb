@@ -952,6 +952,42 @@ creation and cannot be changed.
   section is table membership; scoping to a project will be an ordinary link on
   the board's record. Neither needs anything canvas-specific.
 
+### Records that have a canvas: `tables.record_canvases` (Nov 10)
+
+`sql/022`. `table.update { recordCanvases: boolean }` — a tick in Table settings,
+"records have a canvas" — on a table of kind `records` only (refused elsewhere:
+`only an ordinary table…`). Read back on every table as `record_canvases`. It is
+for a table where every record gets a canvas anyway — **Works**: a Work IS its
+canvas, instead of a Work plus a board named after it.
+
+Why a flag and not `kind: 'canvas'`: the kind also makes a table a navigation
+utility (folded in the tree, left out of the junction / report / calendar pickers,
+no desktop tools), and Works is data. With the flag the table changes in exactly
+these ways and no others:
+
+- **Server:** `ensureBoardState`, `loadScene` and `GET /api/canvases` accept a
+  record of such a table wherever they accepted a record of a boards table. Storage
+  is unchanged (`canvases.id → records.id`, state row made lazily), and so is the
+  delete cascade and its capture — `grabBoards` keys on the record's id, not on the
+  table's kind (`test/undo.ts` §9).
+- **Client:** `hasCanvases(table)` (state.ts) is "boards table OR ticked";
+  `isBoardsTable` stays the pure kind. The tree's Canvases list is every record of
+  every `hasCanvases` table in the section, after the scope filter — so every Work
+  is listed, placed-on or not. App.vue loads those tables up front, because the
+  scope filter reads their membership links.
+- **Its canvas defaults to itself:** on the canvas of such a record, new records
+  are linked to that record (through `defaultLinkField`, like a saved default). It
+  is derived, never stored in `config.defaults`; the bar shows it as a dashed chip
+  marked "this canvas" and the bar's switch turns it off.
+- **A double-click on its card opens the record tray**, as for any data record (a
+  board's card opens the board). Its canvas is opened from the tree.
+- **"+ canvas"** still makes a record in a BOARDS table: a new Work is made in Works.
+- **Unticking** hides the canvases and refuses to start new ones; state and
+  placements already stored stay, and are back when the box is ticked again.
+
+Not done here: moving an existing board's contents onto a Work (the owner does
+that by hand), and an "open canvas" button on the card, pill or tray.
+
 ### Sections
 
 The app's navigation. `GET /api/sections` →

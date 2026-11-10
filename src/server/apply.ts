@@ -160,19 +160,19 @@ async function assertLookupConfigValid(
  * board's record is created. That is what lets a board be made by an ordinary
  * `record.create`, from anywhere, with no special case (sql/010_boards.sql).
  *
- * It also guards the door: the id must be a record in a table of kind 'canvas'.
- * Without that, anything with a uuid could be turned into a canvas by placing a
- * card "on" it.
+ * It also guards the door: the id must be a record in a table of kind 'canvas',
+ * or in an ordinary table ticked "records have a canvas" (sql/022). Without that,
+ * anything with a uuid could be turned into a canvas by placing a card "on" it.
  */
 async function ensureBoardState(db: PoolClient, id: string) {
   const made = await db.query(
     `insert into canvases (id)
        select r.id from records r join tables t on t.id = r.table_id
-        where r.id = $1 and t.kind = 'canvas'
+        where r.id = $1 and (t.kind = 'canvas' or t.record_canvases)
      on conflict (id) do nothing`, [id]);
   if (made.rowCount) return;
   const exists = await db.query(`select 1 from canvases where id = $1`, [id]);
-  if (!exists.rowCount) throw new MutationError('not a board: that id is not a record in a boards table');
+  if (!exists.rowCount) throw new MutationError('not a board: that id is not a record in a boards table, or in a table whose records have canvases');
 }
 
 /** `options.arrow`, if present, must be a style the canvas can draw — contract/arrows.ts. */
@@ -444,6 +444,12 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
       if (m.tools !== undefined) await assertToolsValid(db, m.id, m.tools);
       if (m.junction !== undefined) await assertJunctionValid(db, m.id, m.junction);
       if (m.fieldSections !== undefined) { const err = fieldSectionsProblem(m.fieldSections); if (err) throw new MutationError(`fieldSections: ${err}`); }
+      if (m.recordCanvases === true) {
+        // sql/022: a tick for ordinary tables. A boards table already is one; a
+        // report, calendar or junction record has a view of its own.
+        const k = await db.query(`select kind from tables where id = $1`, [m.id]);
+        if (k.rowCount && k.rows[0].kind !== 'records') throw new MutationError(`recordCanvases: only an ordinary table can give its records a canvas`);
+      }
       await db.query(
         `update tables set
            name          = coalesce($2, name),
@@ -454,13 +460,14 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
            tools         = coalesce($7::jsonb, tools),
            junction      = coalesce($8::jsonb, junction),
            field_sections = coalesce($9::jsonb, field_sections),
-           utility       = coalesce($10, utility)
+           utility       = coalesce($10, utility),
+           record_canvases = coalesce($11, record_canvases)
          where id = $1`,
         [m.id, m.name ?? null, m.singularName ?? null, m.color ?? null, m.icon ?? null,
          m.position ?? null, m.tools === undefined ? null : JSON.stringify(m.tools),
          m.junction === undefined ? null : JSON.stringify(m.junction),
          m.fieldSections === undefined ? null : JSON.stringify(m.fieldSections),
-         m.utility ?? null],
+         m.utility ?? null, m.recordCanvases ?? null],
       );
       return;
 

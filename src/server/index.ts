@@ -357,7 +357,8 @@ app.post('/api/capture-preview', async (c) => {
 });
 
 app.get('/api/canvases', async (c) => {
-  // Every BOARD: the records of every table of kind 'canvas', each with its state
+  // Every BOARD: the records of every table of kind 'canvas' — and of every ordinary
+  // table ticked "records have a canvas" (sql/022) — each with its state
   // if it has any yet. The client needs them all up front — the canvas picker
   // lists boards by name, and a name is a record's primary field — and there are
   // few of them (boards are made by hand).
@@ -365,7 +366,7 @@ app.get('/api/canvases', async (c) => {
     `select r.id, r.table_id, r.data, r.created_at, u.name as created_by_name,
             coalesce(c.config, '{}'::jsonb) as config, coalesce(c.viewport, '{}'::jsonb) as viewport
        from records r
-       join tables t on t.id = r.table_id and t.kind = 'canvas'
+       join tables t on t.id = r.table_id and (t.kind = 'canvas' or t.record_canvases)
        left join canvases c on c.id = r.id
        left join users u on u.id = r.created_by
       order by r.created_at, r.id`);

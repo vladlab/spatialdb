@@ -19,6 +19,7 @@
       <span class="name">{{ t.icon ? t.icon + ' ' : '' }}{{ t.name }}</span>
       <!-- "scoped" is in the accent colour because it is the one that changes what you SEE. -->
       <span v-if="scopedTableIds?.has(t.id)" class="tag scoped" title="Its rows belong to a project: inside one, this table shows only that project's">scoped</span>
+      <span v-if="t.record_canvases" class="tag" title="Each record of this table has a canvas, listed under Canvases below">canvases</span>
       <button class="act" title="Table settings" @click.stop="$emit('table-settings', t.id)">⚙</button>
     </div>
     <p v-if="!dataTables.length" class="empty">none yet</p>

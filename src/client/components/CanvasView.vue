@@ -84,21 +84,24 @@
 
     <!-- WHAT A NEW RECORD HERE STARTS OUT LINKED TO. Always visible, because the whole
          point is that nobody should have to wonder: the canvas's own DEFAULTS (set here,
-         by pointing), plus the project scope from the breadcrumb, which applies on top.
+         by pointing), plus the project scope from the breadcrumb, which applies on top —
+         and, on the canvas OF a record (sql/022: a Work's canvas), that record itself,
+         which nobody has to set.
          The switch turns the canvas's defaults off for YOU, in this browser — the list
          itself is saved with the canvas, for everyone. -->
     <div class="defaults-bar context-bar-2" :class="{ off: !defaultsOn }" @pointerdown.stop>
       <label class="defaults-switch" :title="defaultsOn ? 'New records on this canvas are linked to these. Click to switch that off (for you, here).' : 'Switched off — new records are not linked to these.'">
-        <input type="checkbox" :checked="defaultsOn" :disabled="!defaults.length" @change="defaultsOn = ($event.target as HTMLInputElement).checked" />
+        <input type="checkbox" :checked="defaultsOn" :disabled="!defaults.length && !selfChip" @change="defaultsOn = ($event.target as HTMLInputElement).checked" />
         <span class="defaults-label">New records here →</span>
       </label>
       <span v-if="scopeChip" class="dchip scope" :title="`From the scope in the breadcrumb — applies to tables that belong to ${scopeChip.table}`">{{ scopeChip.label }} <i>scope</i></span>
+      <span v-if="selfChip" class="dchip self" :title="`This is the canvas of ${selfChip.label}: new records whose table links to ${selfChip.table} get it. Nothing to set — switch it off with the box on the left.`"><span class="dchip-table">{{ selfChip.table }}</span>{{ selfChip.label }} <i>this canvas</i></span>
       <span v-for="d in defaults" :key="d.recordId" class="dchip" :class="{ missing: d.missing }"
             :title="d.missing ? 'This record no longer exists — remove it' : `${d.table}: new records whose table links to ${d.table} get this one`">
         <span class="dchip-table">{{ d.table }}</span>{{ d.label }}
         <button class="dchip-x" title="Stop linking new records to this" @click="removeDefault(d.recordId)">×</button>
       </span>
-      <span v-if="!defaults.length && !scopeChip" class="defaults-none">nothing — new records start unlinked</span>
+      <span v-if="!defaults.length && !scopeChip && !selfChip" class="defaults-none">nothing — new records start unlinked</span>
       <button class="defaults-add" title="Choose a record that everything created on this canvas should be linked to" @click="addingDefault = !addingDefault; addTable = ''">+ add</button>
       <span v-for="a in defaultAmbiguities" :key="a" class="defaults-warn" title="A new record of that table will NOT be linked: it has more than one link to the same table, and none (or several) is ticked “membership”. An admin can tick one, in that link field's ⚙ settings.">⚠ {{ a }}</span>
 
@@ -299,7 +302,7 @@
         <button @click="menu = { ...menu, kind: 'fields' }">Fields on {{ tableNameOf(menu.recordId!) }} cards…</button>
         <!-- The easy way to set a canvas default: drop the Ep 101 card here, and point at it. -->
         <button v-if="isDefault(menu.recordId!)" class="unset-default" @click="menuDo((m) => removeDefault(m.recordId!))">Stop linking new records here to this</button>
-        <button v-else-if="canBeDefault(menu.recordId!)" class="set-default" @click="menuDo((m) => addDefault(store.state.records.get(m.recordId!)!.table_id, m.recordId!))">Link new records here to this</button>
+        <button v-else-if="canBeDefault(menu.recordId!) && menu.recordId !== selfDefault?.recordId" class="set-default" @click="menuDo((m) => addDefault(store.state.records.get(m.recordId!)!.table_id, m.recordId!))">Link new records here to this</button>
         <button v-if="resolveOffered(store, menu.recordId!)" class="resolve-ingest" @click="menuDo((m) => ingestFromResolve(store, m.recordId!, derived.labelOfId(m.recordId!)))">Ingest info from Resolve…</button>
         <hr />
         <button v-if="!isJunctionRecord(menu.recordId!)" class="duplicate-record" @click="menuDo((m) => duplicateHere(m.recordId!))">Duplicate record</button>
@@ -369,7 +372,7 @@
 import { vp } from '../uiScale';
 import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import type { MutateOptions, Store } from '../store';
-import { fieldsOf, tablesSorted, type FieldRow, type RecordRow } from '../state';
+import { fieldsOf, hasCanvases, isBoardsTable, tablesSorted, type FieldRow, type RecordRow } from '../state';
 import { labelFrom } from '../../contract/labels';
 import { useDerived } from '../derived';
 import { ingestFromResolve, resolveOffered } from '../tools/resolveIngest';
@@ -1060,10 +1063,27 @@ function linkPickCreate(name: string) {
    (`createRecord`). This block is the BAR: showing them, adding, removing, the switch. */
 
 const rawDefaults = computed(() => parsedConfig().defaults ?? []);
+/**
+ * The canvas OF a record (sql/022 — an ordinary table ticked "records have a canvas":
+ * a Work's canvas) defaults to that record, without anyone saving anything: it is what
+ * "this board is about Ep 101" was always set to by hand. Derived, never stored — so
+ * it cannot go stale and there is nothing to remove; the bar's switch still turns it
+ * off. A board in a boards table is about nothing in particular and has none.
+ */
+const selfDefault = computed(() => {
+  const r = store.state.records.get(props.canvasId);
+  const t = r ? store.state.tables.get(r.table_id) : undefined;
+  return r && t && !isBoardsTable(t) && hasCanvases(t) ? { tableId: t.id, recordId: r.id } : null;
+});
+const selfChip = computed(() => (selfDefault.value
+  ? { table: store.state.tables.get(selfDefault.value.tableId)?.name ?? '?', label: derived.labelOfId(selfDefault.value.recordId) } : null));
+/** Saved defaults plus the canvas's own record, the latter first and never twice. */
+const allDefaults = computed(() => (selfDefault.value
+  ? [selfDefault.value, ...rawDefaults.value.filter((d) => d.recordId !== selfDefault.value!.recordId)] : rawDefaults.value));
 // A default's record has to be LOADED to have a name here (and to be linked to at all).
 watch(rawDefaults, (list) => { for (const t of new Set(list.map((d) => d.tableId))) void store.loadTable(t); }, { immediate: true });
 
-const defaults = computed(() => rawDefaults.value.map((d) => {
+const defaults = computed(() => rawDefaults.value.filter((d) => d.recordId !== selfDefault.value?.recordId).map((d) => {
   const loaded = store.tableLoads.get(d.tableId)?.state === 'loaded';
   return {
     ...d, table: store.state.tables.get(d.tableId)?.name ?? '?',
@@ -1104,7 +1124,7 @@ const defaultsOn = computed({ get: () => !canvasDefaultsOff.value, set: (on: boo
 watch(() => props.canvasId, () => { addingDefault.value = false; addTable.value = ''; });
 
 /** What createAt hands to createRecord. */
-const activeDefaults = computed(() => (defaultsOn.value ? rawDefaults.value : []));
+const activeDefaults = computed(() => (defaultsOn.value ? allDefaults.value : []));
 
 /** The project scope applies on top; show it, so the bar is the WHOLE answer. */
 const scopeChip = computed(() => {
@@ -1116,7 +1136,7 @@ const scopeChip = computed(() => {
 /** "Files → Works": tables where a default would be SKIPPED because the field is ambiguous. */
 const defaultAmbiguities = computed(() => {
   const out: string[] = [];
-  for (const targetId of new Set(rawDefaults.value.map((d) => d.tableId))) {
+  for (const targetId of new Set(allDefaults.value.map((d) => d.tableId))) {
     for (const t of tablesSorted(store.state)) {
       const via = defaultLinkField(store.state.fields.values(), t.id, targetId);
       if (via && 'ambiguous' in via) out.push(`${t.name} has ${via.ambiguous.length} links to ${store.state.tables.get(targetId)?.name ?? '?'}`);
@@ -2222,8 +2242,9 @@ onUnmounted(() => {
 .defaults-switch input { margin: 0; }
 .defaults-bar.off .dchip:not(.scope) { opacity: 0.4; text-decoration: line-through; }
 .dchip { display: inline-flex; align-items: center; gap: 5px; background: var(--controls-bg); border: 1px solid var(--accent); border-radius: 10px; padding: 0 4px 0 8px; white-space: nowrap; }
-.dchip.scope { border-color: var(--border-main); padding-right: 8px; }
-.dchip.scope i { color: var(--text-faint); font-size: 10px; font-style: normal; text-transform: uppercase; letter-spacing: 0.05em; }
+.dchip.scope, .dchip.self { border-color: var(--border-main); padding-right: 8px; }
+.dchip.self { border-style: dashed; border-color: var(--accent); }
+.dchip.scope i, .dchip.self i { color: var(--text-faint); font-size: 10px; font-style: normal; text-transform: uppercase; letter-spacing: 0.05em; }
 .dchip.missing { border-color: var(--warning); color: var(--warning); }
 .dchip-table { color: var(--text-faint); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
 .dchip-x { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0 2px; font-size: 12px; line-height: 1; }

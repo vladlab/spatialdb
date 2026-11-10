@@ -52,6 +52,14 @@
         <input type="checkbox" :checked="table.utility === true" @change="upd({ utility: ($event.target as HTMLInputElement).checked })" />
         utility table <span class="hint">— folded away in the tree; for a table other tables link to, such as a vocabulary</span>
       </label>
+      <!-- sql/022: a Work IS its canvas, instead of a Work plus a board named after it.
+           The table stays a data table: reports, junctions, calendars and the desktop
+           tools see no difference. -->
+      <label v-if="!table.kind || table.kind === 'records'" class="utility-tick canvases-tick"
+             title="Tick when every record of this table gets a canvas anyway — a Work, an Episode. Each record is then listed with the canvases (after the scope) and opens as one; a record made on that canvas starts out linked to it. Nothing else about the table changes. Untick and the canvases are hidden, not deleted.">
+        <input type="checkbox" :checked="table.record_canvases === true" @change="upd({ recordCanvases: ($event.target as HTMLInputElement).checked })" />
+        records have a canvas <span class="hint">— each record is listed with the canvases and opens as one</span>
+      </label>
       <JunctionSettings v-if="table.kind === 'junction'" :store="store" :table-id="tableId" />
 
       <!-- THE SCHEMA. Its order is not any view's column order — that is arranged in
@@ -149,7 +157,7 @@ const nameInput = ref<HTMLInputElement>();
 const val = (e: Event) => (e.target as HTMLInputElement).value;
 const table = computed(() => props.store.state.tables.get(props.tableId));
 const ownFields = computed(() => fieldsOf(props.store.state, props.tableId).filter((f) => !SYSTEM_FIELD_TYPES.has(f.type)));
-const upd = (patch: { icon?: string; color?: string; singularName?: string; utility?: boolean }) =>
+const upd = (patch: { icon?: string; color?: string; singularName?: string; utility?: boolean; recordCanvases?: boolean }) =>
   props.store.mutate({ type: 'table.update', id: props.tableId, ...patch });
 
 /* ── the list ──────────────────────────────────────────────────────────── */

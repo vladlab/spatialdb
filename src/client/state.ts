@@ -66,6 +66,8 @@ export interface TableRow {
   field_sections?: unknown[];
   /** Folded away in the navigation with the boards, reports and junctions (sql/018) — a vocabulary table, say. */
   utility?: boolean;
+  /** sql/022: every record of this ordinary table also has a canvas. */
+  record_canvases?: boolean;
 }
 export interface FieldRow {
   id: string; table_id: string; name: string; key: string; type: string;
@@ -263,6 +265,7 @@ export function applyMutation(state: State, m: Mutation): void {
       if (m.junction !== undefined) t.junction = m.junction;
       if (m.fieldSections !== undefined) t.field_sections = m.fieldSections;
       if (m.utility !== undefined) t.utility = m.utility;
+      if (m.recordCanvases !== undefined) t.record_canvases = m.recordCanvases;
       return;
     }
     case 'table.delete':
@@ -654,8 +657,16 @@ export function junctionRowsOf(state: State, recordId: string): string[] {
   return out;
 }
 
-/** Tables whose records are boards. */
+/** Tables whose records are boards and NOTHING ELSE: the kind (sql/010). A navigation utility. */
 export const isBoardsTable = (t: TableRow | undefined) => t?.kind === 'canvas';
+/**
+ * Tables whose records HAVE a canvas: a boards table, or an ordinary table ticked
+ * "records have a canvas" (sql/022 — Works). Ask THIS for "can this record be opened
+ * as a canvas / is it listed with the canvases"; ask `isBoardsTable` for "is this
+ * table only boards" (the tree's utility fold, what a double-click on its card does,
+ * where "+ canvas" puts a new one).
+ */
+export const hasCanvases = (t: TableRow | undefined) => t?.kind === 'canvas' || ((!t?.kind || t.kind === 'records') && t?.record_canvases === true);
 /** Tables whose records are reports (REPORTS-BRIEF.md §4). */
 export const isReportsTable = (t: TableRow | undefined) => t?.kind === 'report';
 /** The one field of a reports table that holds the definition: structured, shape 'report'. */
@@ -679,10 +690,10 @@ export function calendarsOf(state: State, tableIds?: ReadonlySet<string>): Recor
     isCalendarsTable(state.tables.get(r.table_id)) && (!tableIds || tableIds.has(r.table_id)));
 }
 
-/** Every board the client knows of, optionally only those in the given tables. */
+/** Every record that has a canvas (`hasCanvases`), optionally only those in the given tables. */
 export function boardsOf(state: State, tableIds?: ReadonlySet<string>): RecordRow[] {
   return [...state.records.values()].filter((r) =>
-    isBoardsTable(state.tables.get(r.table_id)) && (!tableIds || tableIds.has(r.table_id)));
+    hasCanvases(state.tables.get(r.table_id)) && (!tableIds || tableIds.has(r.table_id)));
 }
 
 /** A `/api/canvases/:id/scene` payload. Phase 2 will lean on this. */

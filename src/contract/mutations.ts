@@ -139,6 +139,13 @@ const TableUpdate = z.strictObject({
    * only exist to be linked to. Navigation only — nothing else reads it.
    */
   utility: z.boolean().optional(),
+  /**
+   * RECORD CANVASES (sql/022): every record of this ordinary table also has a
+   * canvas — a Work IS its board, instead of a Work plus a board named after it.
+   * Only on a table of kind 'records' (apply.ts refuses it elsewhere); the table
+   * stays a data table in every other respect.
+   */
+  recordCanvases: z.boolean().optional(),
 });
 
 const TableDelete = z.strictObject({

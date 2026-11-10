@@ -307,6 +307,31 @@ async function main() {
     .then(() => '', (e) => String(e.message ?? e));
   check('canvas.create still PARSES (old log rows must replay) but is refused, with the replacement named', /record\.create/.test(retired), retired || 'accepted');
 
+  // sql/022: an ORDINARY table whose records each have a canvas (Works). Same
+  // storage, same cascade — the capture keys on the record's id, not the table's kind.
+  const notOrdinary = await send([{ id: randomUUID(), mutation: { type: 'table.update', id: bTable, recordCanvases: true } }], admin).then(() => '', (e) => String(e.message ?? e));
+  check('recordCanvases is refused on a table that is not an ordinary one', /only an ordinary table/.test(notOrdinary), notOrdinary || 'accepted');
+  await send([{ id: randomUUID(), mutation: { type: 'table.update', id: tFiles, recordCanvases: true } }], admin);
+  await send([
+    { id: randomUUID(), mutation: { type: 'placement.add', id: randomUUID(), canvasId: rFileA, recordId: onBoard, x: 7, y: 8, w: null, h: null, z: 1 } },
+    { id: randomUUID(), mutation: { type: 'canvas.update', id: rFileA, config: { cardFields: { [tFiles]: [fFileName] } } } },
+  ], editor);
+  check('ticked "records have a canvas": a card can be placed ON an ordinary record, and its state row is made lazily',
+    await count(`select count(*)::int n from canvases where id=$1`, [rFileA]) === 1 && await count(`select count(*)::int n from placements where canvas_id=$1`, [rFileA]) === 1);
+  const delOwner = randomUUID();
+  await send([{ id: delOwner, mutation: { type: 'record.delete', id: rFileA } }], editor);
+  check('deleting that record takes its canvas — and not the record that was placed on it',
+    await count(`select count(*)::int n from canvases where id=$1`, [rFileA]) === 0 && await count(`select count(*)::int n from placements where canvas_id=$1`, [rFileA]) === 0
+    && await count(`select count(*)::int n from records where id=$1`, [onBoard]) === 1);
+  const capOwner = await loadUndo(db, delOwner);
+  await one({ type: 'restore', id: randomUUID(), undoOf: delOwner, rows: capOwner!.rows as any }, editor);
+  check('undo brings the record back WITH its canvas and what was on it',
+    await count(`select count(*)::int n from records where id=$1`, [rFileA]) === 1 && await count(`select count(*)::int n from canvases where id=$1`, [rFileA]) === 1
+    && await count(`select count(*)::int n from placements where canvas_id=$1 and record_id=$2`, [rFileA, onBoard]) === 1);
+  await send([{ id: randomUUID(), mutation: { type: 'table.update', id: tFiles, recordCanvases: false } }], admin);
+  await send([{ id: randomUUID(), mutation: { type: 'placement.remove', canvasId: rFileA, recordId: onBoard } }], editor);
+  await db.query(`delete from canvases where id = $1`, [rFileA]);   // leave the fixture as the sections below expect it
+
   console.log('\n10. link.remove and placement.remove — the everyday undos');
   const delLink = randomUUID();
   await send([{ id: delLink, mutation: { type: 'link.remove', fieldId: fOutputs, fromRecord: rEdit, toRecord: rFileA } }], editor);

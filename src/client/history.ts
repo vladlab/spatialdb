@@ -161,6 +161,7 @@ export function inverseOf(state: State, m: Mutation, queuedId: string): Inverse 
         // field the undo had just deleted.
         ...(m.tools !== undefined ? { tools: (t.tools ?? {}) as never } : {}),
         ...(m.utility !== undefined ? { utility: t.utility === true } : {}),
+        ...(m.recordCanvases !== undefined ? { recordCanvases: t.record_canvases === true } : {}),
       });
     }
 

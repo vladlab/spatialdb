@@ -519,7 +519,7 @@ import { rectVp, toVp, vp } from '../uiScale';
 import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { SCOPE } from '../scope';
 import type { Store } from '../store';
-import { fieldsOf, recordsOf, viewsOf, type FieldRow } from '../state';
+import { fieldsOf, hasCanvases, recordsOf, viewsOf, type FieldRow } from '../state';
 import {
   applyView, quickSearch, ViewConfig, EMPTY_VIEW,
   orderFields, moveColumn, MIN_COL_W, MAX_COL_W,
@@ -587,6 +587,8 @@ const fmtN = (n: number) => n.toLocaleString();
 
 const allFields = computed(() => fieldsOf(store.state, props.tableId));
 const isBoards = computed(() => store.state.tables.get(props.tableId)?.kind === 'canvas');
+/** An ordinary table whose records each have a canvas (sql/022): deleting a row takes its canvas too. */
+const rowsHaveCanvases = computed(() => !isBoards.value && hasCanvases(store.state.tables.get(props.tableId)));
 const isReports = computed(() => store.state.tables.get(props.tableId)?.kind === 'report');
 const isCalendars = computed(() => store.state.tables.get(props.tableId)?.kind === 'calendar');
 const isJunction = computed(() => store.state.tables.get(props.tableId)?.kind === 'junction');
@@ -991,7 +993,7 @@ async function deleteRows(ids: string[]) {
   const what = isBoards.value ? 'board' : 'record';
   if (!await confirmDialog({
     title: one ? `Delete “${labelFor(live[0]!) || 'this record'}” everywhere?` : `Delete ${live.length} ${what}s everywhere?`,
-    body: `${isBoards.value ? `${one ? 'The board goes' : 'The boards go'}, with everything placed on ${one ? 'it' : 'them'} (the records themselves stay). ` : `Not just from this table: ${one ? 'it disappears' : 'they disappear'} from every canvas too. `}It can be undone (Ctrl+Z), and restored from History.`,
+    body: `${isBoards.value ? `${one ? 'The board goes' : 'The boards go'}, with everything placed on ${one ? 'it' : 'them'} (the records themselves stay). ` : `Not just from this table: ${one ? 'it disappears' : 'they disappear'} from every canvas too. ${rowsHaveCanvases.value ? `${one ? 'Its own canvas goes' : 'Their own canvases go'} with ${one ? 'it' : 'them'} (the records placed there stay). ` : ''}`}It can be undone (Ctrl+Z), and restored from History.`,
     danger: true, okText: one ? `Delete ${what}` : `Delete ${live.length} ${what}s`,
   })) return;
   for (const id of live) if (store.state.records.has(id)) store.mutate({ type: 'record.delete', id });

@@ -25,7 +25,7 @@ import { ALL, inScope, type Scope } from '../contract/scope.js';
 export async function loadSchema(db: PoolClient) {
   // Sequential, not Promise.all: a single PoolClient cannot run concurrent
   // queries — pg serialises them and warns, and it errors outright in pg@9.
-  const tables = await db.query(`select id, name, singular_name, color, icon, position, kind, tools, junction, field_sections, utility
+  const tables = await db.query(`select id, name, singular_name, color, icon, position, kind, tools, junction, field_sections, utility, record_canvases
                                    from tables order by position, name`);
   const fields = await db.query(`select id, table_id, name, key, type, options, position, required
                                    from fields order by table_id, position`);
@@ -96,14 +96,15 @@ export interface Scene {
 export async function loadScene(db: PoolClient, canvasId: string): Promise<Scene | null> {
   await db.query('begin isolation level repeatable read');
   try {
-    // A board is a RECORD in a table of kind 'canvas' (sql/010); `canvases` holds
+    // A board is a RECORD in a table of kind 'canvas' (sql/010) — or in an ordinary
+    // table whose records have canvases (sql/022); `canvases` holds
     // only its state, created lazily. So "does this board exist" is asked of
     // records, and a board nobody has placed anything on yet is a perfectly good,
     // empty scene — not a 404. The left join supplies defaults for it.
     const canvas = await db.query(
       `select r.id, coalesce(c.viewport, '{}'::jsonb) as viewport, coalesce(c.config, '{}'::jsonb) as config
          from records r
-         join tables t on t.id = r.table_id and t.kind = 'canvas'
+         join tables t on t.id = r.table_id and (t.kind = 'canvas' or t.record_canvases)
          left join canvases c on c.id = r.id
         where r.id = $1`, [canvasId]);
     if (!canvas.rowCount) {

@@ -184,7 +184,7 @@ import { CANVAS_JUMP } from './canvasJump';
 import { formatScope, parseScope } from '../contract/scope';
 import { dragGhost } from './recordDrag';
 import { createStore } from './store';
-import { boardsOf, calendarsOf, isBoardsTable, isCalendarsTable, isReportsTable, isUtilityTable, reportsOf, tablesOfSection, tablesSorted } from './state';
+import { boardsOf, calendarsOf, hasCanvases, isBoardsTable, isCalendarsTable, isReportsTable, isUtilityTable, reportsOf, tablesOfSection, tablesSorted } from './state';
 import { useDerived } from './derived';
 import { formatRoute, lastRoute, parseNote, parseRoute, rememberRoute, sameRoute, startHash, type Route, type ViewName } from './router';
 import NotePage from './components/NotePage.vue';
@@ -303,8 +303,16 @@ provide(CANVAS_JUMP, {
 });
 const scopeTableName = computed(() => store.state.tables.get(scopeApi.scopeTableId.value)?.name ?? '');
 const boardTables = computed(() => tables.value.filter(isBoardsTable));
+/* Boards tables, plus ordinary tables whose records each HAVE a canvas (sql/022 —
+   Works): every one of their records is listed, after the scope. `boardTables` stays
+   the pure kind: it is where "+ canvas" makes a new one. */
+const canvasTables = computed(() => tables.value.filter(hasCanvases));
+// The list is of RECORDS, scoped by their membership LINKS — so those tables have to
+// be loaded, not just named by /api/canvases (which carries no links). Also what
+// brings a table's records in when someone ticks the box, here or on another machine.
+watch(() => canvasTables.value.map((t) => t.id).join(','), (joined) => { for (const id of joined.split(',').filter(Boolean)) void store.loadTable(id); }, { immediate: true });
 const canvases = computed(() => {
-  const ids = new Set(boardTables.value.map((t) => t.id));
+  const ids = new Set(canvasTables.value.map((t) => t.id));
   return boardsOf(store.state, ids)
     // A board is a record: it is scoped by its own membership link, like any other.
     .filter((r) => scopeApi.filterFor(r.table_id)?.(r) ?? true)
