@@ -117,6 +117,24 @@ Options when the gate passes, for C4 (packaging): build inside the Nix shell on
 Rocky (Nix's GTK, plus nixGL-style access to the NVIDIA driver), or an AppImage that
 carries its own GTK 4. Not attempted in patch 1.
 
+### Installing it for yourself (menu entry and icon)
+
+```bash
+npm run desktop:install                  # release build, then install for this user
+npm run desktop:install -- --desktop-icon  # …and a launcher in ~/Desktop
+npm run desktop:install -- --uninstall
+```
+
+`scripts/desktop-install.sh`: no root, no package. The binary and Chromium's files
+go together into `~/.local/opt/spatialdb/` (the binary finds `libcef.so` beside
+itself), a menu entry into `~/.local/share/applications/`, the icon into
+`~/.local/share/icons/`. Run it again after a `git pull` to update. Two things to
+expect: the first release build compiles everything again (a few minutes), and a
+RELEASE build keeps its own Chromium profile (`~/.cache/org.spatialdb.desktop/cef`,
+not `cef-dev`), so log in and set theme / UI size once more. Not run by anyone
+but against a fake build folder; the dock icon depends on the window's class being
+`spatialdb-desktop` — if the dock shows a generic icon, send `xprop WM_CLASS`.
+
 ### TLS: trusting the Caddy internal CA
 
 Chromium on Linux does not use the system bundle that WebKitGTK read
