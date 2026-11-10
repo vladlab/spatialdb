@@ -159,8 +159,8 @@ These were agreed with the owner. Treat them as constraints, not suggestions.
    path another record holds is refused. `contract/fingerprint.ts`,
    `runFileDrop` in `client/tools/fileDrop.ts`.
 3. ~~Which hash~~ — decided Oct 18: the xxh3 is THE fingerprint, fixed, not a
-   setting — run at every drop into the manifest (`hashes.xxh3`) whether or not
-   the recipe maps a column for it, and offered for every record that still has
+   setting — run at every drop into the manifest (`hashes.xxh3`); since Nov 10 no
+   hash is a recipe step or has a column (API.md "Tools") — and offered for every record that still has
    none (the sidebar footer's strip: "N files have no fingerprint — Run", one
    native dialog allows the batch, one hash at a time with progress, cancellable;
    the list is a QUERY over the records, nothing stored). md5 / sha256 are a

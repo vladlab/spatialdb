@@ -23,10 +23,10 @@ import type { RecordRow } from '../state';
 import { fieldsOf } from '../state';
 import { Manifest } from '../../contract/shapes';
 import { FINGERPRINT, needsFingerprint } from '../../contract/fingerprint';
-import { fingerprintStep, resolveMap, type TablesTools } from '../../contract/tools';
+import { resolveMap, type TablesTools } from '../../contract/tools';
 import { invoke, isDesktop, jobs, notice } from '../desktop';
 import { runHash } from './hashJobs';
-import { mappedData, withHashes, type Unit } from './fileDrop';
+import { hashPlacementProblem, mappedData, withHashes, type Unit } from './fileDrop';
 
 export interface Candidate { record: RecordRow; tableId: string; path: string; name: string; total: number }
 
@@ -81,7 +81,8 @@ export async function runFingerprints(store: Store, candidates: Candidate[]): Pr
     try { allowed = await invoke<boolean>('allow_paths', { paths: candidates.map((c) => c.path), why: 'fingerprint them (xxh3)' }); }
     catch (e) { notice(`fingerprints: ${String(e)}`, 'error'); return; }
     if (!allowed) { notice('Fingerprints: not run — you did not allow the files to be read', 'warn'); return; }
-    for (const c of candidates) {
+    // Smallest first, as a drop's fingerprints go: most records are done early.
+    for (const c of [...candidates].sort((x, y) => x.total - y.total)) {
       if (!store.state.records.has(c.record.id)) { fingerprintRun.done++; continue; }
       const table = store.state.tables.get(c.tableId);
       const recipe = (table?.tools as Partial<TablesTools> | undefined)?.file_drop;
@@ -89,19 +90,19 @@ export async function runFingerprints(store: Store, candidates: Candidate[]): Pr
       const fields = fieldsOf(store.state, c.tableId);
       const fs = recipe.steps.find((s) => s.analyzer === 'filesystem');
       const manifestKey = fs ? resolveMap(fs, fields).get('manifest') : undefined;
-      const step = fingerprintStep(recipe);
-      const map = new Map(resolveMap(step, fields));
-      if (manifestKey) map.set('manifest', manifestKey);
       jobs.set(c.record.id, { label: `Hash (${FINGERPRINT})`, manual: false });
       try {
         const r = await runHash({ kind: 'path', path: c.path, analyzer: `hash-${FINGERPRINT}` }, { recordId: c.record.id, name: c.name, total: c.total }) as { unit: Unit; outputs: Record<string, unknown> };
         const current = store.state.records.get(c.record.id);
         if (!current) continue;
-        const placed = withHashes(r.outputs, r.unit, manifestKey ? current.data[manifestKey] : undefined);
-        const { data, skipped } = mappedData(placed, map, fields);
+        const stored = manifestKey ? current.data[manifestKey] : undefined;
+        const placed = withHashes(r.outputs, r.unit, stored);
+        const problem = hashPlacementProblem(placed, r.unit, stored);
+        const { data, skipped } = problem ? { data: {}, skipped: [] } : mappedData(placed, new Map(manifestKey ? [['manifest', manifestKey]] : []), fields);
         if (Object.keys(data).length) store.mutate({ type: 'record.update', id: c.record.id, set: data, unset: [] }, { via: 'file_drop', undoable: false });
         for (const sk of skipped) notice(`${c.name}: not written — ${sk}`, 'warn');
-        if (!Object.keys(data).length) { failedFingerprints.add(c.record.id); fingerprintRun.failed++; notice(`${c.name}: fingerprinted, but the table has nowhere to keep it`, 'warn'); }
+        // Say WHY, and offer the record: "nowhere to keep it" told the owner nothing (Nov 10).
+        if (!Object.keys(data).length) { failedFingerprints.add(c.record.id); fingerprintRun.failed++; notice(`${c.name}: fingerprint not stored — ${problem ?? 'the Manifest field refused it'}`, 'warn', [{ id: c.record.id, label: c.name }]); }
       } catch (e) {
         const msg = String(e);
         if (/cancelled/.test(msg)) break;   // the person stopped the run: leave the rest for next time

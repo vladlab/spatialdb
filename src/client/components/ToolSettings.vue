@@ -63,27 +63,28 @@
             <span class="ro-sep">·</span>
             <span class="ro-label">when</span>
             <span class="chip when" :class="{ on: !isManual(step) }" title="At the drop, in order" @click="setWhen(i, 'drop')">dropped</span>
-            <span class="chip when" :class="{ on: isManual(step) }" title="Skipped at the drop; run from the record by hand (the ▶ beside its path) — for the slow steps a client asks for once, such as an md5" @click="setWhen(i, 'manual')">asked for</span>
+            <span class="chip when" :class="{ on: isManual(step) }" title="Skipped at the drop; run from the record by hand (the ▶ in the record tray)" @click="setWhen(i, 'manual')">asked for</span>
           </div>
 
           <div class="rows">
-            <!-- A hash step: into the manifest by default (beside the size, or beside each member of a set); a column as well if wanted. -->
-            <label v-if="isHashStep(step)" class="row into-manifest" :title="manifestMapped ? 'Written into the record\'s manifest, through the Manifest field the Filesystem step maps' : 'The Filesystem step maps no Manifest field yet'">
-              <span class="oname"><input type="checkbox" :checked="intoManifest(step)" @change="setIntoManifest(i, ($event.target as HTMLInputElement).checked)" /> into the manifest</span>
-              <span class="otype">manifest</span>
-              <span class="hint-cell">{{ manifestMapped ? 'beside the size, or beside each member of a set' : '⚠ no Manifest field is mapped in the Filesystem step' }}</span>
-            </label>
             <div v-for="out in analyzerOf(step.analyzer)?.outputs ?? []" :key="out.key" class="row" :title="out.note ?? ''">
               <span class="oname">{{ out.name }}<span v-if="isRequired(step.analyzer, out.key)" class="req" title="the tool cannot run without this">*</span></span>
               <span class="otype">{{ out.type.replace('structured:', '') }}</span>
               <select :value="step.map[out.key] ?? ''" @change="setMap(i, out.key, ($event.target as HTMLSelectElement).value)">
-                <option value="">{{ isHashStep(step) ? '(no column)' : '(not written)' }}</option>
+                <option value="">(not written)</option>
                 <option v-for="f in accepting(out)" :key="f.id" :value="f.id">{{ f.name }}{{ f.type === 'link' ? ` (link → ${tableNameOf(f.options?.target_table_id)})` : '' }}</option>
               </select>
               <button v-if="!step.map[out.key] && !hasKey(out.key) && out.type !== 'link'" class="plain mini" title="make a field for this output and map it" @click="addField(i, out)">+ field</button>
               <span v-else-if="out.type === 'link' && !accepting(out).length" class="hint" title="Add a link field to the table that holds your file records (it needs a path column), then map this to it">make a link field first</span>
             </div>
           </div>
+        </div>
+
+        <!-- Hashes are not steps: nothing to add, nothing to map (contract/tools.ts). Said here so nobody looks for them. -->
+        <div v-if="tool === 'file_drop'" class="hashes-note" :class="{ warn: !manifestMapped }">
+          <b>Hashes</b>
+          <span v-if="manifestMapped">Automatic — every dropped file is fingerprinted (xxh3) into its Manifest. md5 and sha256 run from a record (▶ on its Manifest) and are kept there too. Nothing to set up.</span>
+          <span v-else>⚠ Map a <b>Manifest</b> field in the Filesystem step: it is where the fingerprint and checksums are kept.</span>
         </div>
 
         <div v-if="!single" class="add">
@@ -109,6 +110,7 @@
       <!-- ── Summary ── -->
       <div v-else class="summary">
         <p v-for="(line, i) in summary" :key="i">{{ line }}</p>
+        <p v-if="tool === 'file_drop' && summary.length">{{ HASHES_SUMMARY }}</p>
         <p v-if="!summary.length" class="hint">No steps yet.</p>
       </div>
     </template>
@@ -122,7 +124,7 @@ import type { Store } from '../store';
 import { fieldsOf } from '../state';
 import { useSchemaActions } from '../schemaActions';
 import { available, notice } from '../desktop';
-import { analyzersOf, KINDS, MEDIA, REQUIRED_BY_TOOL, TOOL_NAMES, analyzerOf, describe, fieldAccepts, intoManifest, isHashStep, isManual, pruneTools, runsOnOf, toolsProblem, type Kind, type Media, type Output, type Recipe, type Step, type TablesTools, type ToolId } from '../../contract/tools';
+import { analyzersOf, HASHES_SUMMARY, KINDS, MEDIA, REQUIRED_BY_TOOL, TOOL_NAMES, analyzerOf, describe, fieldAccepts, isManual, pruneTools, runsOnOf, toolsProblem, type Kind, type Media, type Output, type Recipe, type Step, type TablesTools, type ToolId } from '../../contract/tools';
 
 const props = withDefaults(defineProps<{ store: Store; tableId: string; tool?: ToolId }>(), { tool: 'file_drop' });
 const HINTS: Record<ToolId, string> = {
@@ -206,7 +208,6 @@ function toggleKind(i: number, k: Kind) {
   });
 }
 function resetRunsOn(i: number) { edit((r) => { delete r.steps[i].runs_on; }); }
-function setIntoManifest(i: number, on: boolean) { edit((r) => { if (on) delete r.steps[i].into_manifest; else r.steps[i].into_manifest = false; }); }
 const manifestMapped = computed(() => !!recipe.value?.steps.some((st) => st.analyzer === 'filesystem' && 'manifest' in st.map && fields.value.some((f) => f.id === st.map.manifest)));
 function setWhen(i: number, when: 'drop' | 'manual') { edit((r) => { if (when === 'manual') r.steps[i].when = 'manual'; else delete r.steps[i].when; }); }
 
@@ -249,8 +250,9 @@ h4 { margin: 0 0 6px; font-size: 12px; color: var(--text-secondary); }
 .row { display: grid; grid-template-columns: 1fr 70px 160px auto; gap: 6px; align-items: center; font-size: 12px; padding: 1px 0; }
 .oname { color: var(--text-primary); }
 .req { color: var(--accent); margin-left: 2px; }
-.into-manifest { cursor: pointer; }
-.into-manifest input { margin: 0 4px 0 0; vertical-align: -1px; }
+.hashes-note { display: flex; gap: 8px; align-items: baseline; margin: 8px 0; padding: 6px 8px; border-radius: 6px; background: var(--bg-well); color: var(--text-muted); font-size: 12px; line-height: 1.4; }
+.hashes-note b { color: var(--text-primary); }
+.hashes-note.warn { color: var(--notice-warn); }
 .hint-cell { color: var(--text-faint); font-size: 11px; grid-column: 3 / 5; }
 .otype { color: var(--text-faint); font-size: 10px; }
 select { border: 1px solid var(--border-main); border-radius: 4px; padding: 2px 4px; font: inherit; font-size: 11px; min-width: 0; }

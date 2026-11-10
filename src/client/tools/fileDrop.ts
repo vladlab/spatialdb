@@ -32,8 +32,8 @@ import type { FieldRow, RecordRow } from '../state';
 export type { Step };
 import { fieldsOf, linkKey, primaryKeys, recordsOf } from '../state';
 import { validateValue } from '../../contract/values';
-import { analyzerOf, fingerprintStep, intoManifest, isHashStep, isManual, resolveMap, stepApplies, type Recipe, type Step, type TablesTools } from '../../contract/tools';
-import { FINGERPRINT, compareAlgorithm, compareManifests } from '../../contract/fingerprint';
+import { CHECKSUMS, analyzerOf, fingerprintStep, hashStep, isHashStep, isManual, resolveMap, stepApplies, stepsOf, type Recipe, type Step, type TablesTools } from '../../contract/tools';
+import { compareAlgorithm, compareManifests } from '../../contract/fingerprint';
 import { Manifest } from '../../contract/shapes';
 import { runHash } from './hashJobs';
 import { ALIASES_KEY, lookup, rawSpelling, resolveRow, type VocabRow } from '../../contract/vocab';
@@ -237,8 +237,23 @@ export function withHashes(outputs: Record<string, unknown>, unit: Unit, current
   }
   return out;
 }
-/** A hash step's map, plus — when the step writes into the manifest — the filesystem step's manifest field. */
-const hashMap = (step: Step, map: Map<string, string>, manifestKey: string | undefined) => (intoManifest(step) && manifestKey ? new Map([...map, ['manifest', manifestKey]]) : map);
+/** Where a hash is written: the Manifest field the filesystem step maps, and nowhere else (contract/tools.ts). */
+const hashMap = (manifestKey: string | undefined) => new Map<string, string>(manifestKey ? [['manifest', manifestKey]] : []);
+
+/**
+ * Why a hash that was computed could not be put into the record's manifest, in
+ * words the person can act on — or null when it could. `current` is the record's
+ * stored manifest; `unit` is what the shell found at the path just now. Pure.
+ */
+export function hashPlacementProblem(placed: Record<string, unknown>, unit: Unit, current: unknown): string | null {
+  if (placed.manifest !== undefined) return null;
+  const kind = (k: unknown) => String(k ?? 'file').replace('_', ' ');
+  const stored = current && typeof current === 'object' ? (current as { kind?: string }).kind : undefined;
+  const found = (unit.manifest as { kind?: string } | undefined)?.kind ?? unit.kind;
+  if (found === 'sequence') return 'an image sequence is not hashed';
+  if (stored && stored !== found) return `the record's manifest describes a ${kind(stored)}, but what is at its path now is a ${kind(found)} — drop the file onto the record to replace its file info`;
+  return 'the hash came back empty (an empty folder?)';
+}
 
 /**
  * Outputs → the `data` a record.create/update takes, through the table's mapping.
@@ -347,15 +362,16 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
   const table = store.state.tables.get(tableId)!;
   const recipe: Recipe = (table.tools as TablesTools).file_drop!;
   const fields = fieldsOf(store.state, tableId);
-  const steps = recipe.steps.map((step) => ({ step, map: resolveMap(step, fields) }));
+  const steps = stepsOf(recipe).map((step) => ({ step, map: resolveMap(step, fields) }));
   const pathKey = steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('path');
   if (!pathKey) { notice(`File drop on ${table.name}: its Path output is mapped to a field that no longer exists`, 'error'); return {}; }
   const manifestKey = steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('manifest');
-  // The fingerprint runs at every drop whether or not the recipe has the step (contract/tools.ts).
-  if (!steps.some((s) => s.step.analyzer === `hash-${FINGERPRINT}` && !isManual(s.step))) { const step = fingerprintStep(recipe); steps.push({ step, map: resolveMap(step, fields) }); }
-  // A MANUAL step (an md5) is the record's to ask for (`runManualStep`), not the drop's.
-  // A step with nothing to write is skipped — a hash step writing into the manifest has something.
-  const writes = (step: Step, map: Map<string, string>) => map.size > 0 || (intoManifest(step) && !!manifestKey);
+  if (!manifestKey) notice(`File drop on ${table.name}: no Manifest field is mapped, so files are not fingerprinted — map one in ⚙ Table settings → Desktop tools`, 'warn');
+  // The fingerprint runs at every drop: it is not a recipe step (contract/tools.ts), it is appended here.
+  steps.push({ step: fingerprintStep(), map: new Map() });
+  // A MANUAL step is the record's to ask for (`runManualStep`), not the drop's.
+  // A step with nothing to write is skipped — a hash has the manifest to write into.
+  const writes = (step: Step, map: Map<string, string>) => (isHashStep(step) ? !!manifestKey : map.size > 0);
   const applying = (u: Unit) => steps.filter(({ step, map }) => writes(step, map) && !isManual(step) && stepApplies(step, u));
   const labelOf = ctx.labelOf ?? ((id: string) => String(store.state.records.get(id)?.data[pathKey] ?? id));
 
@@ -486,42 +502,55 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
 }
 
 /**
- * Stage 3: the analyzers that run a program or read the bytes, in recipe order,
- * each its own small update, not undoable. A hash goes through the hash line
- * (hashJobs.ts): one at a time, with progress, cancellable.
+ * Stage 3: the analyzers that run a program or read the bytes, each its own small
+ * update, not undoable. In TWO passes over the whole drop (the owner, Nov 10):
+ * first the quick steps for EVERY file, in recipe order — so twenty files have
+ * their ffprobe details in seconds — and only then the fingerprints, SMALLEST
+ * FILE FIRST, so most records are complete early and one huge file holds up
+ * nothing but itself. A hash goes through the hash line (hashJobs.ts): one at a
+ * time, with progress, cancellable.
  */
 async function followUp(store: Store, touched: Array<{ id: string; unit: Unit }>, applying: (u: Unit) => Array<{ step: Step; map: Map<string, string> }>,
                         fields: FieldRow[], rowsOf: RowsOf, tableNameOf: (id: string) => string, manifestKey: string | undefined) {
-  for (const { id, unit } of touched) {
-    for (const { step, map } of applying(unit)) {
-      if (IMMEDIATE.has(step.analyzer)) continue;
-      if (!store.state.records.has(id)) break;   // undone meanwhile: stop, write nothing
-      const a = analyzerOf(step.analyzer);
-      const hashing = isHashStep(step);
-      jobs.set(id, { label: a?.program ?? a?.name ?? step.analyzer, manual: false });
-      try {
-        const raw = hashing
-          ? await runHash({ kind: 'unit', unit, analyzer: step.analyzer }, { recordId: id, name: unit.name, total: unit.total_size })
-          : await invoke<{ outputs: Record<string, unknown> }>('analyze', { unit, analyzer: step.analyzer });
-        const { outputs, unknown, raws } = withVocabulary(step.analyzer, raw.outputs as Record<string, unknown>, unit);
-        const routed = routeLinks(outputs, raws, map, fields, rowsOf, tableNameOf);
-        const placed = hashing ? withHashes(routed.outputs, unit, manifestKey ? store.state.records.get(id)?.data[manifestKey] : undefined) : routed.outputs;
-        const { data, skipped } = mappedData(placed, hashing ? hashMap(step, map, manifestKey) : map, fields);
-        if (store.state.records.has(id)) {
-          if (Object.keys(data).length) store.mutate({ type: 'record.update', id, set: data, unset: [] }, FOLLOW_UP);
-          writeLinks(store, id, routed.links, FOLLOW_UP);
-        }
-        for (const sk of skipped) notice(`${unit.name}: not written — ${sk}`, 'warn');
-        for (const u of routed.unresolved) notice(`${unit.name}: not linked — ${u.message}`, 'warn');
-        // Only worth saying when the table wanted the canonical name — and a link
-        // field has already had its say above (an alias may even have resolved it).
-        const linked = new Set(routed.links.map((l) => l.fieldId)), said = new Set(routed.unresolved.map((u) => u.key));
-        for (const u of unknown) if (map.has(u.key) && !said.has(u.key) && !linked.has(fields.find((f) => f.key === map.get(u.key))?.id ?? '')) notice(`${unit.name}: not written — ${u.message}`, 'warn');
-      } catch (e) {
-        if (!/cancelled/.test(String(e))) notice(`${unit.name}: ${a?.name ?? step.analyzer} — ${String(e)}`, 'error');
+  const run = async (id: string, unit: Unit, step: Step, map: Map<string, string>) => {
+    if (!store.state.records.has(id)) return;   // undone meanwhile: write nothing
+    const a = analyzerOf(step.analyzer);
+    const hashing = isHashStep(step);
+    jobs.set(id, { label: a?.program ?? a?.name ?? step.analyzer, manual: false });
+    try {
+      const raw = hashing
+        ? await runHash({ kind: 'unit', unit, analyzer: step.analyzer }, { recordId: id, name: unit.name, total: unit.total_size })
+        : await invoke<{ outputs: Record<string, unknown> }>('analyze', { unit, analyzer: step.analyzer });
+      const { outputs, unknown, raws } = withVocabulary(step.analyzer, raw.outputs as Record<string, unknown>, unit);
+      const routed = routeLinks(outputs, raws, map, fields, rowsOf, tableNameOf);
+      const current = manifestKey ? store.state.records.get(id)?.data[manifestKey] : undefined;
+      const placed = hashing ? withHashes(routed.outputs, unit, current) : routed.outputs;
+      const { data, skipped } = mappedData(placed, hashing ? hashMap(manifestKey) : map, fields);
+      if (store.state.records.has(id)) {
+        if (Object.keys(data).length) store.mutate({ type: 'record.update', id, set: data, unset: [] }, FOLLOW_UP);
+        writeLinks(store, id, routed.links, FOLLOW_UP);
       }
-      jobs.delete(id);
+      const unplaced = hashing ? hashPlacementProblem(placed, unit, current) : null;
+      if (unplaced) notice(`${unit.name}: ${a?.name ?? step.analyzer} not stored — ${unplaced}`, 'warn', [{ id, label: unit.name }]);
+      for (const sk of skipped) notice(`${unit.name}: not written — ${sk}`, 'warn');
+      for (const u of routed.unresolved) notice(`${unit.name}: not linked — ${u.message}`, 'warn');
+      // Only worth saying when the table wanted the canonical name — and a link
+      // field has already had its say above (an alias may even have resolved it).
+      const linked = new Set(routed.links.map((l) => l.fieldId)), said = new Set(routed.unresolved.map((u) => u.key));
+      for (const u of unknown) if (map.has(u.key) && !said.has(u.key) && !linked.has(fields.find((f) => f.key === map.get(u.key))?.id ?? '')) notice(`${unit.name}: not written — ${u.message}`, 'warn');
+    } catch (e) {
+      if (!/cancelled/.test(String(e))) notice(`${unit.name}: ${a?.name ?? step.analyzer} — ${String(e)}`, 'error');
     }
+    jobs.delete(id);
+  };
+  // Pass 1: everything but the hashes, file by file, in recipe order.
+  for (const { id, unit } of touched) {
+    for (const { step, map } of applying(unit)) if (!IMMEDIATE.has(step.analyzer) && !isHashStep(step)) await run(id, unit, step, map);
+  }
+  // Pass 2: the hashes, smallest first (a stable sort: equal sizes keep the drop's order).
+  const bySize = [...touched].sort((a, b) => (a.unit.total_size ?? 0) - (b.unit.total_size ?? 0));
+  for (const { id, unit } of bySize) {
+    for (const { step, map } of applying(unit)) if (isHashStep(step)) await run(id, unit, step, map);
   }
 }
 
@@ -539,20 +568,29 @@ export const pathKeyOf = (store: Store, tableId: string) => filesystemKey(store,
 export function manualSteps(store: Store, tableId: string): Array<{ index: number; step: Step; name: string }> {
   const recipe = recipeOf(store, tableId);
   if (!recipe) return [];
-  const manifestKey = filesystemKey(store, tableId, 'manifest');
-  return recipe.steps.flatMap((step, index) => (isManual(step) && (Object.keys(step.map).length || (intoManifest(step) && manifestKey)) ? [{ index, step, name: analyzerOf(step.analyzer)?.name ?? step.analyzer }] : []));
+  return recipe.steps.flatMap((step, index) => (isManual(step) && !isHashStep(step) && Object.keys(step.map).length ? [{ index, step, name: analyzerOf(step.analyzer)?.name ?? step.analyzer }] : []));
+}
+
+/**
+ * The checksums this table's records offer to run by hand — md5 and sha256, on
+ * EVERY File-drop table with a Manifest field to keep them in. Nothing to enable
+ * (contract/tools.ts).
+ */
+export function checksumsOf(store: Store, tableId: string): Array<{ algo: string; name: string }> {
+  if (!recipeOf(store, tableId) || !filesystemKey(store, tableId, 'manifest')) return [];
+  return CHECKSUMS.map((algo) => ({ algo, name: algo }));
 }
 
 /**
  * Where the ▶ buttons live in the record tray: the Manifest field the recipe maps
- * (a hash lands there), else the field the first manual step's Hash maps to.
+ * (a checksum lands there), else the first field a manual step writes.
  */
 export function manualHomeField(store: Store, tableId: string): string | null {
   const fields = fieldsOf(store.state, tableId);
   const manifestKey = filesystemKey(store, tableId, 'manifest');
   const byKey = fields.find((f) => f.key === manifestKey);
   if (byKey) return byKey.id;
-  for (const m of manualSteps(store, tableId)) { const id = m.step.map.hash; if (id && fields.some((f) => f.id === id)) return id; }
+  for (const m of manualSteps(store, tableId)) { const id = Object.values(m.step.map).find((x) => fields.some((f) => f.id === x)); if (id) return id; }
   return null;
 }
 
@@ -569,11 +607,10 @@ export async function runManualStep(store: Store, recordId: string, stepIndex: n
   const table = store.state.tables.get(record.table_id);
   const recipe = (table?.tools as Partial<TablesTools> | undefined)?.file_drop;
   const step = recipe?.steps[stepIndex];
-  if (!table || !recipe || !step) { notice('That step is no longer in the recipe', 'warn'); return; }
+  if (!table || !recipe || !step || isHashStep(step)) { notice('That step is no longer in the recipe', 'warn'); return; }
   const fields = fieldsOf(store.state, record.table_id);
   const steps = recipe.steps.map((st) => ({ step: st, map: resolveMap(st, fields) }));
   const pathKey = steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('path');
-  const manifestKey = steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('manifest');
   const path = pathKey ? record.data[pathKey] : undefined;
   if (typeof path !== 'string' || !path) { notice('This record has no path to run it on', 'warn'); return; }
   const map = resolveMap(step, fields);
@@ -582,15 +619,11 @@ export async function runManualStep(store: Store, recordId: string, stepIndex: n
   jobs.set(recordId, { label: a?.program ?? label, manual: true });
   try {
     await loadVocabularyTables(store, { steps: [step] }, fields);
-    const r = isHashStep(step)
-      ? await runHash({ kind: 'path', path, analyzer: step.analyzer }, { recordId, name: path.split('/').pop() ?? path, total: Number(record.data[steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('total_size') ?? ''] ?? 0) || 0 }) as { unit: Unit; outputs: Record<string, unknown> }
-      : await invoke<{ unit: Unit; outputs: Record<string, unknown> }>('analyze_path', { path, analyzer: step.analyzer });
+    const r = await invoke<{ unit: Unit; outputs: Record<string, unknown> }>('analyze_path', { path, analyzer: step.analyzer });
     if (!stepApplies(step, r.unit)) { notice(`${r.unit.name}: ${label} does not run on ${r.unit.media} ${r.unit.kind.replace('_', ' ')}s (the step's "runs on")`, 'warn'); return; }
     const { outputs, unknown, raws } = withVocabulary(step.analyzer, r.outputs, r.unit);
     const routed = routeLinks(outputs, raws, map, fields, vocabRowsOf(store), (id) => store.state.tables.get(id)?.name ?? 'the target table');
-    const hashing = isHashStep(step);
-    const placed = hashing ? withHashes(routed.outputs, r.unit, manifestKey ? record.data[manifestKey] : undefined) : routed.outputs;
-    const { data, skipped } = mappedData(placed, hashing ? hashMap(step, map, manifestKey) : map, fields);
+    const { data, skipped } = mappedData(routed.outputs, map, fields);
     if ((Object.keys(data).length || routed.links.length) && store.state.records.has(recordId)) {
       if (Object.keys(data).length) store.mutate({ type: 'record.update', id: recordId, set: data, unset: [] }, VIA);
       writeLinks(store, recordId, routed.links, VIA);
@@ -601,6 +634,43 @@ export async function runManualStep(store: Store, recordId: string, stepIndex: n
     for (const u of routed.unresolved) notice(`${r.unit.name}: not linked — ${u.message}`, 'warn');
     const said = new Set(routed.unresolved.map((u) => u.key)), linked = new Set(routed.links.map((l) => l.fieldId));
     for (const u of unknown) if (map.has(u.key) && !said.has(u.key) && !linked.has(fields.find((f) => f.key === map.get(u.key))?.id ?? '')) notice(`${r.unit.name}: not written — ${u.message}`, 'warn');
+  } catch (e) { if (!/cancelled/.test(String(e))) notice(`${label} — ${String(e)}`, 'error'); }
+  finally { jobs.delete(recordId); }
+}
+
+/**
+ * Run ONE checksum (md5, sha256) on one record, from its path — the ▶ on its
+ * Manifest in the record tray, offered on every File-drop table. Through the hash
+ * line (progress, cancel); for a file not dropped this session the shell asks in
+ * a native dialog first. The result goes into the record's manifest beside the
+ * fingerprint, as one undoable `record.update`: a checksum asked for by hand is a
+ * deliberate change.
+ */
+export async function runChecksum(store: Store, recordId: string, algo: string): Promise<void> {
+  const record = store.state.records.get(recordId);
+  if (!record) return;
+  const pathKey = filesystemKey(store, record.table_id, 'path'), manifestKey = filesystemKey(store, record.table_id, 'manifest');
+  if (!manifestKey) { notice(`${algo}: this table has no Manifest field to keep it in — map one in ⚙ Table settings → Desktop tools`, 'warn'); return; }
+  const path = pathKey ? record.data[pathKey] : undefined;
+  if (typeof path !== 'string' || !path) { notice('This record has no path to run it on', 'warn'); return; }
+  const fields = fieldsOf(store.state, record.table_id);
+  const step = hashStep(algo);
+  const label = analyzerOf(step.analyzer)?.name ?? algo;
+  const name = path.split('/').pop() ?? path;
+  jobs.set(recordId, { label, manual: true });
+  try {
+    const r = await runHash({ kind: 'path', path, analyzer: step.analyzer }, { recordId, name, total: Number(record.data[filesystemKey(store, record.table_id, 'total_size') ?? ''] ?? 0) || 0 }) as { unit: Unit; outputs: Record<string, unknown> };
+    if (!stepApplies(step, r.unit)) { notice(`${r.unit.name}: an image sequence is not hashed`, 'warn'); return; }
+    const current = store.state.records.get(recordId)?.data[manifestKey];
+    const placed = withHashes(r.outputs, r.unit, current);
+    const problem = hashPlacementProblem(placed, r.unit, current);
+    if (problem) { notice(`${r.unit.name}: ${label} not stored — ${problem}`, 'warn', [{ id: recordId, label: r.unit.name }]); return; }
+    const { data, skipped } = mappedData(placed, hashMap(manifestKey), fields);
+    if (Object.keys(data).length && store.state.records.has(recordId)) {
+      store.mutate({ type: 'record.update', id: recordId, set: data, unset: [] }, VIA);
+      notice(`${r.unit.name}: ${label} done`);
+    }
+    for (const sk of skipped) notice(`${r.unit.name}: not written — ${sk}`, 'warn');
   } catch (e) { if (!/cancelled/.test(String(e))) notice(`${label} — ${String(e)}`, 'error'); }
   finally { jobs.delete(recordId); }
 }

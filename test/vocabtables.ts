@@ -57,18 +57,19 @@ async function main() {
 
     console.log('\nV1. Convert a select into a link — the field ⚙\'s "convert to a link…"');
     const tMasters = randomUUID();
-    const m = { name: randomUUID(), container: randomUUID(), width: randomUUID(), codec: randomUUID(), path: randomUUID() };
+    const m = { name: randomUUID(), container: randomUUID(), width: randomUUID(), codec: randomUUID(), path: randomUUID(), manifest: randomUUID() };
     const sec = randomUUID();
     const recs = [randomUUID(), randomUUID(), randomUUID()];
     r = await post([
       { type: 'table.create', id: tMasters, name: 'Masters' },
       { type: 'field.create', id: m.name, tableId: tMasters, name: 'Name', key: 'name', fieldType: 'text' }, pos(m.name, 0),
       { type: 'field.create', id: m.path, tableId: tMasters, name: 'Path', key: 'path', fieldType: 'file_path' }, pos(m.path, 1),
-      { type: 'field.create', id: m.container, tableId: tMasters, name: 'Container', key: 'container', fieldType: 'select', options: { vocabulary: 'container' } }, pos(m.container, 2),
-      { type: 'field.create', id: m.width, tableId: tMasters, name: 'Width', key: 'width', fieldType: 'number' }, pos(m.width, 3),
-      { type: 'field.create', id: m.codec, tableId: tMasters, name: 'Codec', key: 'codec', fieldType: 'select', options: { vocabulary: 'video_codec' } }, pos(m.codec, 4),
+      { type: 'field.create', id: m.container, tableId: tMasters, name: 'Container', key: 'container', fieldType: 'select', options: { vocabulary: 'container' } }, pos(m.container, 3),
+      { type: 'field.create', id: m.width, tableId: tMasters, name: 'Width', key: 'width', fieldType: 'number' }, pos(m.width, 4),
+      { type: 'field.create', id: m.codec, tableId: tMasters, name: 'Codec', key: 'codec', fieldType: 'select', options: { vocabulary: 'video_codec' } }, pos(m.codec, 5),
+      { type: 'field.create', id: m.manifest, tableId: tMasters, name: 'Manifest', key: 'manifest', fieldType: 'structured', options: { shape: 'manifest' } }, pos(m.manifest, 2),
       { type: 'table.update', id: tMasters, fieldSections: [{ id: sec, name: 'Video', fields: [m.container, m.width, m.codec] }] },
-      { type: 'table.update', id: tMasters, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: m.path } }, { analyzer: 'ffprobe', map: { container: m.container, width: m.width } }] } } },
+      { type: 'table.update', id: tMasters, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: m.path, manifest: m.manifest } }, { analyzer: 'ffprobe', map: { container: m.container, width: m.width } }] } } },
       { type: 'record.create', id: recs[0], tableId: tMasters, data: { name: 'a.mov', container: 'QuickTime' } },
       { type: 'record.create', id: recs[1], tableId: tMasters, data: { name: 'b.mxf', container: 'MXF' } },
       { type: 'record.create', id: recs[2], tableId: tMasters, data: { name: 'c.avi', container: 'AVI' } },
@@ -94,7 +95,7 @@ async function main() {
     const mf = await untilDb(`select id, name, key, type, options, position from fields where table_id = '${tMasters}' order by position`, (x) => x.some((f) => f.type === 'link'));
     const link = mf.find((f) => f.type === 'link')!;
     check('on Masters, a SINGLE link "Container" (key container_2) to the new table stands right after the select, which is now "Container (old select)"', link.name === 'Container' && link.key === 'container_2' && link.options.target_table_id === newT[0].id && link.options.single === true
-      && mf.map((f) => f.name).join() === 'Name,Path,Container (old select),Container,Width,Codec', mf.map((f) => f.name).join());
+      && mf.map((f) => f.name).join() === 'Name,Path,Manifest,Container (old select),Container,Width,Codec', mf.map((f) => f.name).join());
     const secs = (await rows(`select field_sections from tables where id = '${tMasters}'`))[0].field_sections;
     check('…and in the same section, the "Video" one, after it', secs[0].fields.join() === [m.container, link.id, m.width, m.codec].join(), JSON.stringify(secs));
     const ml = await rows(`select l.from_record, r.data->>'name' n from links l join records r on r.id = l.to_record where l.field_id = '${link.id}' order by n`);

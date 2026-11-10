@@ -445,26 +445,27 @@ RECIPE:
 // tables.tools — written by table.update { tools }, replaced WHOLE, admin-only
 { "file_drop": { "steps": [
     { "analyzer": "filesystem",                                        "map": { "path": "<fieldId>", "name": "<fieldId>" } },
-    { "analyzer": "ffprobe",   "runs_on": { "media": ["video", "audio"] }, "map": { "width": "<fieldId>" } },
-    { "analyzer": "hash-xxh3",                                         "map": { "hash": "<fieldId>" } },
-    { "analyzer": "hash-md5",  "when": "manual", "into_manifest": true,  "map": {} } ] } }
+    { "analyzer": "filesystem", ...                                    "map": { "manifest": "<fieldId>" } },   // required, with path
+    { "analyzer": "ffprobe",   "runs_on": { "media": ["video", "audio"] }, "map": { "width": "<fieldId>" } } ] } }
 ```
 
 - An **analyzer** is one compiled unit of derivation, declared in `tools.ts` with
   the program it runs (or built in), a one-line `how`, a default `runs_on`, and its
-  outputs: `filesystem`, `sequence`, `imf`, `ffprobe`, `hash-xxh3`, `hash-sha256`,
-  `hash-md5`. Hashes are PER FILE (Oct 15): a single file's hash, or one per member
-  of a bundle or channel set; a sequence is not hashed. Where they go is the hash
-  step's own business: `into_manifest` (absent = true; the "into the manifest" tick
-  in the Steps editor) writes them into the record's manifest — beside the size, or
-  beside each member — through the Manifest field the FILESYSTEM step maps (the
-  hash step has no manifest output, so no two steps own one field); `map.hash`
-  optionally puts a single file's hash in a column as well. A hash step with
-  neither writes nothing (allowed, as any empty step; the editor warns). A step may
-  say `when: "manual"`: it is skipped at the drop and run from the record — ▶ on the
-  MANIFEST field in the tray (else on the step's Hash column); `runManualStep` →
-  `analyze_path` — as one undoable `record.update`: for the md5 a client asks for
-  once rather than on every drop.
+  outputs: `filesystem`, `sequence`, `imf`, `ffprobe`. A step may say
+  `when: "manual"`: it is skipped at the drop and run from the record (▶ in the
+  tray; `runManualStep` → `analyze_path`) as one undoable `record.update`.
+- **Hashes are NOT recipe steps** (Nov 10; sql/021 took them out of stored recipes,
+  `toolsProblem` refuses one). There is nothing to enable or map. Every hash lives
+  in the record's MANIFEST, per file — `hashes.<algo>` on a single file, on each
+  member of a bundle or channel set; a sequence is not hashed — written through
+  the Manifest field the filesystem step maps, which File drop therefore REQUIRES
+  beside Path (`REQUIRED_BY_TOOL`; enabling the tool creates both fields). No hash
+  has a column. The xxh3 FINGERPRINT runs at every drop; md5 and sha256
+  (`CHECKSUMS`) run by hand from any record of a File-drop table — ▶ on its
+  Manifest field, `runChecksum` — as one undoable `record.update`.
+- **Order at a drop** (Nov 10): the quick steps for EVERY file first, in recipe
+  order, then the fingerprints, smallest file first (`followUp`), so a multi-file
+  drop has its details at once and one big file delays only itself.
   Each that runs a program offers its version as an output (`ffprobe.version`) —
   provenance a table may keep per record. The desktop's handshake reports which
   analyzers a build has and their versions.
@@ -496,7 +497,7 @@ RECIPE:
 Run by hand from ONE record ("Ingest info from Resolve…"), it writes what the
 running Resolve says about one timeline onto that record. Its recipe is a single
 step, `{ "resolve": { "steps": [{ "analyzer": "resolve", "map": { … } }] } }`:
-exactly one step, no `runs_on` / `when` / `into_manifest`, nothing required.
+exactly one step, no `runs_on` / `when`, nothing required.
 Every analyzer belongs to one tool (`Analyzer.tool`); naming another tool's
 analyzer is a 400. Outputs: `resolve.version`, `project`, `timeline_name`,
 `dimensions` / `width` / `height`, `frame_rate`, `drop_frame` (→ checkbox),

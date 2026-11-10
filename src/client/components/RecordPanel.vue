@@ -99,6 +99,8 @@
             <template v-if="manualHome === f.id && !jobs.get(recordId)">
               <button v-for="m in manual" :key="m.index" class="reveal run-step" :title="`Run ${m.name} on this record's file now`"
                       @click.stop="runManualStep(store, recordId, m.index)">▶ {{ m.name }}</button>
+              <button v-for="c in checksums" :key="c.algo" class="reveal run-step" :title="`Run an ${c.name} of this record's file now — kept in the manifest`"
+                      @click.stop="runChecksum(store, recordId, c.algo)">▶ {{ c.name }}</button>
             </template>
             <span v-if="jobHere(f)" class="job">{{ jobs.get(recordId)!.label }}…</span>
             <!-- A note as a whole page, in a browser tab of its own (NotePage.vue). A real
@@ -208,6 +210,8 @@
             <template v-if="manualHome === f.id && !jobs.get(recordId)">
               <button v-for="m in manual" :key="m.index" class="reveal run-step" :title="`Run ${m.name} on this record's file now`"
                       @click.stop="runManualStep(store, recordId, m.index)">▶ {{ m.name }}</button>
+              <button v-for="c in checksums" :key="c.algo" class="reveal run-step" :title="`Run an ${c.name} of this record's file now — kept in the manifest`"
+                      @click.stop="runChecksum(store, recordId, c.algo)">▶ {{ c.name }}</button>
             </template>
             <span v-if="jobHere(f)" class="job">{{ jobs.get(recordId)!.label }}…</span>
           </span>
@@ -252,7 +256,7 @@ import { confirmDialog } from '../dialogs';
 import CellEditor, { type EditExit } from './CellEditor.vue';
 import { invoke, isDesktop, jobs, notice } from '../desktop';
 import { noteHref, notesOffered } from '../noteLinks';
-import { manualHomeField, manualSteps, pathKeyOf, runManualStep } from '../tools/fileDrop';
+import { checksumsOf, manualHomeField, manualSteps, pathKeyOf, runChecksum, runManualStep } from '../tools/fileDrop';
 import LinkPicker from './LinkPicker.vue';
 import VerdictMark from './VerdictMark.vue';
 import JunctionEditor from './JunctionEditor.vue';
@@ -296,12 +300,14 @@ const record = computed(() => store.state.records.get(props.recordId));
 const table = computed(() => store.state.tables.get(record.value?.table_id ?? ''));
 /** The recipe's manual steps on this table — offered beside the path, in the desktop app. */
 const manual = computed(() => (desktop && table.value ? manualSteps(store, table.value.id) : []));
+/** md5 / sha256 — on every File-drop table with a Manifest field, nothing to enable (contract/tools.ts). */
+const checksums = computed(() => (desktop && table.value ? checksumsOf(store, table.value.id) : []));
 /** The field the ▶ buttons sit on: the Manifest the recipe maps (where a hash lands), else the first mapped hash field. */
 const jobHere = (f: { id: string; type: string }) => {
   const j = jobs.get(props.recordId);
   return !!j && (j.manual ? manualHome.value === f.id : f.type === 'file_path');
 };
-const manualHome = computed(() => (manual.value.length && table.value && record.value && typeof record.value.data[pathKeyOf(store, table.value.id) ?? ''] === 'string' ? manualHomeField(store, table.value.id) : null));
+const manualHome = computed(() => ((manual.value.length || checksums.value.length) && table.value && record.value && typeof record.value.data[pathKeyOf(store, table.value.id) ?? ''] === 'string' ? manualHomeField(store, table.value.id) : null));
 const tableColor = computed(() => table.value?.color || 'var(--card-head-bg)');
 const fields = computed(() => (record.value ? fieldsOf(store.state, record.value.table_id) : []));
 

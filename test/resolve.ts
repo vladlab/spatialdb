@@ -63,10 +63,10 @@ check('the empty default passes — nothing is REQUIRED of the Resolve tool (it 
 check('…while File drop still requires its Path (REQUIRED is File drop\'s, as before)', /needs "Path"/.test(String(toolsProblem({ file_drop: { steps: [{ analyzer: 'filesystem', map: {} }] } }, fields))) && REQUIRED === REQUIRED_BY_TOOL.file_drop);
 check('a full mapping passes', toolsProblem({ resolve: { steps: [resolveStep(full)] } }, fields) === null, String(toolsProblem({ resolve: { steps: [resolveStep(full)] } }, fields)));
 check('both tools on one table pass, each by its own rules', toolsProblem({ file_drop: { steps: [{ analyzer: 'filesystem', map: { path: fPath, manifest: fManifest } }] }, resolve: { steps: [resolveStep({ timeline_name: fName })] } }, fields) === null);
-check('two tools MAY write one field: each runs by a separate act, so nothing races', toolsProblem({ file_drop: { steps: [{ analyzer: 'filesystem', map: { path: fPath, name: fName } }] }, resolve: { steps: [resolveStep({ timeline_name: fName })] } }, fields) === null);
+check('two tools MAY write one field: each runs by a separate act, so nothing races', toolsProblem({ file_drop: { steps: [{ analyzer: 'filesystem', map: { path: fPath, manifest: fManifest, name: fName } }] }, resolve: { steps: [resolveStep({ timeline_name: fName })] } }, fields) === null);
 check('no step at all is refused, by count', /exactly one step .*not 0/.test(String(toolsProblem({ resolve: { steps: [] } }, fields))));
 check('two steps are refused, by count', /exactly one step .*not 2/.test(String(toolsProblem({ resolve: { steps: [resolveStep({}), resolveStep({})] } }, fields))));
-for (const [k, v] of [['runs_on', { media: ['video'] }], ['when', 'manual'], ['into_manifest', true]] as const) {
+for (const [k, v] of [['runs_on', { media: ['video'] }], ['when', 'manual']] as const) {
   check(`a "${k}" on its step is refused, naming the key`, new RegExp(`"${k}" means nothing for this tool`).test(String(toolsProblem({ resolve: { steps: [resolveStep({}, { [k]: v })] } }, fields))));
 }
 check('a File drop analyzer under the Resolve tool is refused, naming whose it is', /Resolve timeline step 1: "ffprobe" belongs to File drop/.test(String(toolsProblem({ resolve: { steps: [{ analyzer: 'ffprobe', map: {} }] } }, fields))), String(toolsProblem({ resolve: { steps: [{ analyzer: 'ffprobe', map: {} }] } }, fields)));

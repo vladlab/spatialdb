@@ -60,7 +60,7 @@ async function main() {
   const dialogs = nav.dialogs;
   try {
     const tEdits = randomUUID(), tFiles = randomUUID(), tPlain = randomUUID();
-    const fName = randomUUID(), fRate = randomUUID(), fTracks = randomUUID(), fLayout = randomUUID(), fStatus = randomUUID(), fPath = randomUUID(), fFName = randomUUID(), fMedia = randomUUID(), fPlain = randomUUID();
+    const fName = randomUUID(), fRate = randomUUID(), fTracks = randomUUID(), fLayout = randomUUID(), fStatus = randomUUID(), fPath = randomUUID(), fFName = randomUUID(), fMedia = randomUUID(), fPlain = randomUUID(), fFManifest = randomUUID();
     const oev3 = randomUUID(), oev2 = randomUUID(), plainRec = randomUUID();
     const fileST = randomUUID(), fileV2 = randomUUID(), fileTexted = randomUUID(), fileNoPath = randomUUID();
     const pos = (id: string, position: number) => ({ type: 'field.update', id, position });
@@ -75,7 +75,8 @@ async function main() {
       { type: 'field.create', id: fPath, tableId: tFiles, name: 'Path', key: 'path', fieldType: 'file_path' }, pos(fPath, 1),
       { type: 'field.create', id: fMedia, tableId: tFiles, name: 'Media', key: 'media', fieldType: 'select', options: { choices: ['video', 'audio', 'image', 'document', 'other'] } }, pos(fMedia, 2),
       // Files has File drop, mapping Path and Media: the columns the Resolve tool matches and checks by.
-      { type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: fPath, media: fMedia } }] } } },
+      { type: 'field.create', id: fFManifest, tableId: tFiles, name: 'Manifest', key: 'manifest', fieldType: 'structured', options: { shape: 'manifest' } },
+      { type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: fPath, media: fMedia, manifest: fFManifest } }] } } },
       { type: 'record.create', id: fileST, tableId: tFiles, data: { name: 'EP101_Mix_ST.wav', path: '/mnt/post/EP101_Mix_ST.wav', media: 'audio' } },
       { type: 'record.create', id: fileV2, tableId: tFiles, data: { name: 'EP101_Mix_v2.wav', path: '/mnt/post/EP101_Mix_v2.wav', media: 'audio' } },
       { type: 'record.create', id: fileTexted, tableId: tFiles, data: { name: 'EP101_Texted.mov', path: '/mnt/post/EP101_Texted.mov', media: 'video' } },

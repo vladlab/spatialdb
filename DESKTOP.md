@@ -59,7 +59,11 @@ API.md "Tools".
   "Replace file info?" first. (TAURI-HANDOFF.md §5.2–3; `contract/fingerprint.ts`.)
   What it writes is the table's RECIPE — ⚙ Table settings → Desktop tools —
   an ordered list of steps, each an ANALYZER (`filesystem`, `sequence`, `imf`,
-  `ffprobe`, a hash…), what it runs on, and which outputs go to which fields. The
+  `ffprobe`), what it runs on, and which outputs go to which fields. Hashes are
+  NOT steps (Nov 10): the xxh3 fingerprint runs at every drop and md5 / sha256 run
+  from a record (▶ on its Manifest), all kept in the manifest, nothing to set up;
+  a multi-file drop gets every file's details first, then fingerprints, smallest
+  first. The
   editor shows the same recipe three ways: Steps, JSON, and a Summary in sentences
   ("If video or audio: ffprobe 7.1 → Width → Width"), so whoever reads it in a year
   can tell where every value came from. `contract/tools.ts` is the reference;

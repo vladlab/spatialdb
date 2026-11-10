@@ -363,6 +363,12 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
 
 ## Needs eyes (built, tested headlessly, never SEEN)
 
+- **Hashes without steps (Nov 10).** ⚙ Table settings → Desktop tools: the "Hashes"
+  note under the steps (and its ⚠ form on a table with no Manifest mapped); the
+  record tray's ▶ md5 / ▶ sha256 on the Manifest field; a drop of several big
+  files showing ffprobe details on all of them before the first fingerprint
+  finishes; the new "fingerprint not stored — …" notice with its record pill.
+
 - HEADING FOLDS and a TABLE'S SCALE in rich text (Nov 9, `client/richtext/folds.ts`,
   `tableScale.ts`; `test/notefolds.ts`) — a chevron in the margin of every top-level
   heading with something under it; Tab on a heading folds it, Shift+Tab folds or

@@ -10,7 +10,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { mountApp, sleep } from './uiHarness.js';
-import { ANALYZERS, MEDIA, TablesTools, Via, describe, fieldAccepts, resolveMap, stepApplies, toolsProblem } from '../src/contract/tools.js';
+import { ANALYZERS, MEDIA, TablesTools, Via, analyzerOf, analyzersOf, describe, fieldAccepts, resolveMap, stepApplies, stepsOf, toolsProblem } from '../src/contract/tools.js';
 import { MutationRequest } from '../src/contract/mutations.js';
 import { VIDEO_CODECS, VOCABULARIES, VOCABULARY_TABLES, ambiguities, lookup, lookupCodec, rawSpelling, resolveRow, splitAliases, vocabularyOptionError } from '../src/contract/vocab.js';
 import { choicesOf, validateValue } from '../src/contract/values.js';
@@ -40,10 +40,11 @@ async function main() {
       { id: fNotes, key: 'notes', type: 'rich_text', options: {} },
       { id: fHash, key: 'hash', type: 'text', options: {} },
     ];
-    const fs = (map: Record<string, string>) => ({ analyzer: 'filesystem', map });
+    // File drop REQUIRES a Manifest field (where hashes live): the helper maps it unless the test is about its absence.
+    const fs = (map: Record<string, string>, bare = false) => ({ analyzer: 'filesystem', map: bare || 'manifest' in map ? map : { manifest: fManifest, ...map } });
     const ff = (map: Record<string, string>, runs_on?: unknown) => ({ analyzer: 'ffprobe', map, ...(runs_on ? { runs_on } : {}) });
     const rcp = (...steps: unknown[]) => ({ file_drop: { steps } });
-    const ok = rcp(fs({ path: fPath, name: fName, kind: fKind, manifest: fManifest }), ff({ width: fWidth, audio_layout: fLayout }), { analyzer: 'hash-xxh3', map: { hash: fHash } });
+    const ok = rcp(fs({ path: fPath, name: fName, kind: fKind, manifest: fManifest }), ff({ width: fWidth, audio_layout: fLayout }));
     check('a full, correct recipe passes', toolsProblem(ok, fields) === null, String(toolsProblem(ok, fields)));
     check('an empty config (no tools enabled) passes', toolsProblem({}, fields) === null);
     check('not an object is refused', toolsProblem('file_drop', fields) !== null);
@@ -61,7 +62,11 @@ async function main() {
     check('a select output may go into a select OR a text field', toolsProblem(rcp(fs({ path: fPath, kind: fName })), fields) === null);
     check('the required output (Path, from the filesystem) must be mapped', /needs "Path" \(Filesystem\) mapped/.test(String(toolsProblem(rcp(fs({ name: fName })), fields))));
     check('…mapping "path" on some OTHER analyzer would not count (there is none, and the rule names the analyzer)', /needs "Path"/.test(String(toolsProblem(rcp(ff({ width: fWidth })), fields))));
-    check('two steps into ONE field is refused, naming both outputs', /two outputs \(filesystem.name and hash-xxh3.hash\)/.test(String(toolsProblem(rcp(fs({ path: fPath, name: fName }), { analyzer: 'hash-xxh3', map: { hash: fName } }), fields))));
+    check('two steps into ONE field is refused, naming both outputs', /two outputs \(filesystem.name and ffprobe.container_raw\)/.test(String(toolsProblem(rcp(fs({ path: fPath, name: fName }), ff({ container_raw: fName })), fields))), String(toolsProblem(rcp(fs({ path: fPath, name: fName }), ff({ container_raw: fName })), fields)));
+    check('the Manifest is REQUIRED too — it is where the fingerprint and checksums are kept', /needs "Manifest" \(Filesystem\) mapped/.test(String(toolsProblem(rcp(fs({ path: fPath }, true)), fields))));
+    for (const algo of ['xxh3', 'md5', 'sha256']) check(`a hash-${algo} step in a recipe is refused: hashes are not steps`, /a hash is not a recipe step/.test(String(toolsProblem(rcp(fs({ path: fPath }), { analyzer: `hash-${algo}`, map: {} }), fields))));
+    check('…and the editor does not offer one, while the shell\'s analyzers are still known by id', !analyzersOf('file_drop').some((a) => a.id.startsWith('hash-')) && ['xxh3', 'md5', 'sha256'].every((a) => !!analyzerOf(`hash-${a}`)));
+    check('stepsOf ignores a hash step left in a stored recipe (one sql/021 has not reached)', stepsOf({ steps: [fs({ path: fPath }), { analyzer: 'hash-md5', map: {} }, ff({})] } as never).map((x) => x.analyzer).join() === 'filesystem,ffprobe');
     check('the SAME output twice (a repeated step) may write the same field — not a race, an idempotent re-run', toolsProblem(rcp(fs({ path: fPath }), ff({ width: fWidth }), ff({ width: fWidth })), fields) === null);
     check('runs_on is validated: an unknown media class is refused', toolsProblem(rcp(fs({ path: fPath }), ff({ width: fWidth }, { media: ['vidoe'] })), fields) !== null);
     check('runs_on with known classes passes', toolsProblem(rcp(fs({ path: fPath }), ff({ width: fWidth }, { media: ['video', 'other'], kind: ['file'] })), fields) === null);
@@ -75,8 +80,8 @@ async function main() {
     const u = { media: 'audio', kind: 'file' };
     check('stepApplies: ffprobe\'s DEFAULT is video or audio; an explicit runs_on replaces it; both lists must match', stepApplies(ff({}), u) && !stepApplies(ff({}), { media: 'document', kind: 'file' }) && !stepApplies(ff({}, { media: ['video'] }), u) && stepApplies({ analyzer: 'hash-xxh3', map: {} }, { media: 'other', kind: 'bundle' }) && !stepApplies(ff({}, { media: ['audio'], kind: ['sequence'] }), u));
     const lines = describe(ok.file_drop as never, [{ id: fPath, name: 'Path' }, { id: fName, name: 'Name' }, { id: fKind, name: 'Kind' }, { id: fManifest, name: 'Manifest' }, { id: fWidth, name: 'Width' }, { id: fLayout, name: 'Audio' }, { id: fHash, name: 'Hash' }], { ffprobe: '7.1' });
-    check('describe() turns the recipe into checkable sentences, with the program version', lines.length === 3 && /^1\. For everything: Filesystem → Path → Path, File name → Name/.test(lines[0]) && /^2\. If video or audio: ffprobe 7\.1 → Width → Width, Audio layout → Audio\.$/.test(lines[1]) && /^3\. If file or bundle or channel set: Hash \(xxh3\) → into the manifest, Hash → Hash\.$/.test(lines[2]), JSON.stringify(lines));
-    check('…a manual step says so', /when asked from the record: Hash \(md5\)/.test(describe({ steps: [{ analyzer: 'hash-md5', when: 'manual', map: {} }] }, [])[0]));
+    check('describe() turns the recipe into checkable sentences, with the program version', lines.length === 2 && /^1\. For everything: Filesystem → Path → Path, File name → Name/.test(lines[0]) && /^2\. If video or audio: ffprobe 7\.1 → Width → Width, Audio layout → Audio\.$/.test(lines[1]), JSON.stringify(lines));
+    check('…a manual step says so', /when asked from the record: ffprobe/.test(describe({ steps: [{ analyzer: 'ffprobe', when: 'manual', map: {} }] }, [])[0]));
     check('…and says when the program is not on this machine', /ffprobe \(not on this machine\)/.test(describe(ok.file_drop as never, [], { ffprobe: null })[1]));
     check('Via: lowercase snake, 2–40 chars', Via.safeParse('file_drop').success && !Via.safeParse('File Drop').success && !Via.safeParse('x').success && !Via.safeParse('a'.repeat(41)).success);
     check('MutationRequest accepts `via` and refuses a bad one', MutationRequest.safeParse({ clientId: randomUUID(), via: 'file_drop', mutations: [{ id: randomUUID(), mutation: { type: 'record.delete', id: randomUUID() } }] }).success && !MutationRequest.safeParse({ clientId: randomUUID(), via: 'File drop', mutations: [{ id: randomUUID(), mutation: { type: 'record.delete', id: randomUUID() } }] }).success);
@@ -141,7 +146,7 @@ async function main() {
 
     /* ── T2. Storing it ─────────────────────────────────────────────────── */
     console.log('\nT2. tables.tools — written by table.update, validated against the table\'s fields');
-    const tFiles = randomUUID(), tOther = randomUUID();
+    const tFiles = randomUUID(), tOther = randomUUID(), gManifest = randomUUID();
     const gPath = randomUUID(), gName = randomUUID(), gWidth = randomUUID(), gOtherPath = randomUUID();
     const pos = (id: string, position: number) => ({ type: 'field.update', id, position });
     const setup = await post([
@@ -149,19 +154,20 @@ async function main() {
       { type: 'field.create', id: gName, tableId: tFiles, name: 'Name', key: 'name', fieldType: 'text' }, pos(gName, 0),
       { type: 'field.create', id: gPath, tableId: tFiles, name: 'Path', key: 'path', fieldType: 'file_path' }, pos(gPath, 1),
       { type: 'field.create', id: gWidth, tableId: tFiles, name: 'Width', key: 'width', fieldType: 'number' }, pos(gWidth, 2),
+      { type: 'field.create', id: gManifest, tableId: tFiles, name: 'Manifest', key: 'manifest', fieldType: 'structured', options: { shape: 'manifest' } }, pos(gManifest, 3),
       { type: 'field.create', id: gOtherPath, tableId: tOther, name: 'Path', key: 'path', fieldType: 'file_path' }, pos(gOtherPath, 0),
     ]);
     check('fixture accepted', setup.status === 200, (await setup.text()).slice(0, 200));
     const dbTools = async (id: string) => (await pool.query(`select tools from tables where id = $1`, [id])).rows[0]?.tools;
     check('a fresh table has an EMPTY tools config, not null', JSON.stringify(await dbTools(tFiles)) === '{}');
 
-    const good = { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: gPath } }, { analyzer: 'ffprobe', map: { width: gWidth } }] } };
+    const good = { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: gPath, manifest: gManifest } }, { analyzer: 'ffprobe', map: { width: gWidth } }] } };
     const widthOf = async (id: string) => (await dbTools(id))?.file_drop?.steps?.[1]?.map?.width;
     let r = await post([{ type: 'table.update', id: tFiles, tools: good }]);
     check('a valid recipe is accepted and stored', r.status === 200 && await widthOf(tFiles) === gWidth, await r.text());
     r = await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: gOtherPath } }] } } }]);
     check('a field from ANOTHER table is refused (400)', r.status === 400 && /not on this table/.test(await r.clone().text()), await r.text());
-    r = await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: gPath } }, { analyzer: 'ffprobe', map: { width: gName } }] } } }]);
+    r = await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: gPath, manifest: gManifest } }, { analyzer: 'ffprobe', map: { width: gName } }] } } }]);
     check('a type mismatch is refused (400) with the rule\'s message', r.status === 400 && /cannot be written/.test(await r.clone().text()));
     r = await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'ffprobe', map: {} }] } } }]);
     check('a recipe without the required output is refused', r.status === 400 && /needs .*Path.* mapped/.test(await r.clone().text()));
@@ -181,11 +187,11 @@ async function main() {
 
     console.log('\nT1e. pruneTools — stale mappings dropped and named, not refused (Oct 17)');
     const { pruneTools } = await import('../src/contract/tools.js');
-    const [pId, wId, selId, goneId] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
-    const pf = [{ id: pId, type: 'file_path', options: {} }, { id: wId, type: 'number', options: {} }, { id: selId, type: 'select', options: { choices: ['x'] } }];
-    const stale = { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: pId, name: goneId } }, { analyzer: 'ffprobe', map: { width: wId, codec: selId, old_output: wId } }] } };
+    const [pId, wId, selId, goneId, manId] = [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    const pf = [{ id: pId, type: 'file_path', options: {} }, { id: wId, type: 'number', options: {} }, { id: selId, type: 'select', options: { choices: ['x'] } }, { id: manId, type: 'structured', options: { shape: 'manifest' } }];
+    const stale = { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: pId, manifest: manId, name: goneId } }, { analyzer: 'ffprobe', map: { width: wId, codec: selId, old_output: wId } }] } };
     const pr = pruneTools(stale as never, pf);
-    check('a mapping to a deleted field, to an output that no longer exists, and to a field the output may not write are dropped — the rest kept', JSON.stringify(pr.tools) === JSON.stringify({ file_drop: { steps: [{ analyzer: 'filesystem', map: { path: pId } }, { analyzer: 'ffprobe', map: { width: wId } }] } }), JSON.stringify(pr.tools));
+    check('a mapping to a deleted field, to an output that no longer exists, and to a field the output may not write are dropped — the rest kept', JSON.stringify(pr.tools) === JSON.stringify({ file_drop: { steps: [{ analyzer: 'filesystem', map: { path: pId, manifest: manId } }, { analyzer: 'ffprobe', map: { width: wId } }] } }), JSON.stringify(pr.tools));
     check('…each named', pr.dropped.length === 3 && /File name.*no longer exists/.test(pr.dropped[0]) && /no output called "old_output"/.test(pr.dropped.join()) && /Codec.*can no longer be written/.test(pr.dropped.join()), JSON.stringify(pr.dropped));
     check('…and what is left passes the strict check the server runs', toolsProblem(pr.tools, pf) === null);
     check('a clean recipe comes back unchanged with nothing dropped', pruneTools(pr.tools, pf).dropped.length === 0);
@@ -206,7 +212,14 @@ async function main() {
       migrated.file_drop.steps.map((s: { analyzer: string }) => s.analyzer).join() === 'filesystem,sequence,ffprobe,hash-xxh3'
       && migrated.file_drop.steps[0].map.path === oPath && migrated.file_drop.steps[1].map.first_frame === oFirst
       && migrated.file_drop.steps[2].map.width === oWidth && migrated.file_drop.steps[3].map.hash === oHash, JSON.stringify(migrated));
-    check('…and the result passes the current rule', toolsProblem(migrated, (await pool.query(`select id, type, options from fields where table_id = $1`, [tOld])).rows) === null, String(toolsProblem(migrated, (await pool.query(`select id, type, options from fields where table_id = $1`, [tOld])).rows)));
+    // 021: hashes are not recipe steps any more — the stored ones go, nothing else moves.
+    await pool.query((await import('node:fs')).readFileSync(new URL('../sql/021_hashes_not_steps.sql', import.meta.url), 'utf8'));
+    const m21 = await dbTools(tOld);
+    check('sql/021 takes the hash step out of a stored recipe and keeps the others, in order, with their maps',
+      m21.file_drop.steps.map((s: { analyzer: string }) => s.analyzer).join() === 'filesystem,sequence,ffprobe'
+      && m21.file_drop.steps[0].map.path === oPath && m21.file_drop.steps[2].map.width === oWidth, JSON.stringify(m21));
+    const oldFields = (await pool.query(`select id, type, options from fields where table_id = $1`, [tOld])).rows;
+    check('…what is left has ONE thing to fix by the current rule: this old table maps no Manifest field', /needs "Manifest"/.test(String(toolsProblem(m21, oldFields))), String(toolsProblem(m21, oldFields)));
     const after = await dbTools(tFiles);
     check('a table already on the new shape is left alone by a re-run', after.file_drop.steps.length === 2 && after.file_drop.steps[1].map.width === gWidth && !('map' in after.file_drop));
 
@@ -243,13 +256,13 @@ async function main() {
     check('a value outside the vocabulary is refused (400) — the spelling everyone sees is enforced at write', r.status === 400 && /not one of/.test(await r.clone().text()));
     r = await post([{ type: 'record.create', id: recA, tableId: tFiles, data: { name: 'x', codec: 'ProRes 4444 XQ' } }]);
     check('a canonical name is accepted', r.status === 200);
-    r = await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: gPath } }, { analyzer: 'ffprobe', map: { codec: gCodec } }] } } }]);
+    r = await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: gPath, manifest: gManifest } }, { analyzer: 'ffprobe', map: { codec: gCodec } }] } } }]);
     check('the ffprobe Codec output maps into the bound select', r.status === 200, await r.text());
-    r = await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: gPath } }, { analyzer: 'ffprobe', map: { codec: gName } }] } } }]);
+    r = await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: gPath, manifest: gManifest } }, { analyzer: 'ffprobe', map: { codec: gName } }] } } }]);
     check('…and into a text field (the raw-name people), but…', r.status === 200);
     const gTyped = randomUUID();
     await post([{ type: 'field.create', id: gTyped, tableId: tFiles, name: 'Typed', key: 'typed', fieldType: 'select', options: { choices: ['ProRes 4444 XQ'] } }]);
-    r = await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: gPath } }, { analyzer: 'ffprobe', map: { codec: gTyped } }] } } }]);
+    r = await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: gPath, manifest: gManifest } }, { analyzer: 'ffprobe', map: { codec: gTyped } }] } } }]);
     check('…NOT into a select with its own typed choices (400)', r.status === 400 && /cannot be written/.test(await r.clone().text()));
     await post([{ type: 'table.update', id: tFiles, tools: good }, { type: 'record.delete', id: recA }]);
 
@@ -344,7 +357,9 @@ async function main() {
     let cfg = await ui.untilDb(`select tools from tables where id = '${tNew}'`, (x) => !!x[0]?.tools?.file_drop);
     const pathRow = (await pool.query(`select id from fields where table_id = $1 and key = 'path'`, [tNew])).rows[0];
     const st = cfg[0].tools.file_drop.steps;
-    check('…and the stored recipe maps path to that new field, nothing else', st.length === 2 && st[0].analyzer === 'filesystem' && JSON.stringify(st[0].map) === JSON.stringify({ path: pathRow.id }) && st[1].analyzer === 'ffprobe' && JSON.stringify(st[1].map) === '{}' && !st[0].runs_on, JSON.stringify(cfg[0].tools));
+    const manRow = (await pool.query(`select id, type, options from fields where table_id = $1 and key = 'manifest'`, [tNew])).rows[0];
+    check('…and the Manifest field too (a structured field of that shape) — where the fingerprint and checksums are kept', manRow?.type === 'structured' && manRow.options.shape === 'manifest', JSON.stringify(manRow));
+    check('…and the stored recipe maps path and manifest to those new fields, nothing else', st.length === 2 && st[0].analyzer === 'filesystem' && st[0].map.path === pathRow.id && st[0].map.manifest === manRow.id && Object.keys(st[0].map).length === 2 && st[1].analyzer === 'ffprobe' && JSON.stringify(st[1].map) === '{}' && !st[0].runs_on, JSON.stringify(cfg[0].tools));
     const stepCard = (n: number) => w.findAll('.ts .tools .step')[n];
     const rowOf = (n: number, name: string) => stepCard(n).findAll('.row').find((x: any) => x.find('.oname').text().replace('*', '') === name);
     check('each step card says what it runs and how; the ffprobe card names the program', /built in/.test(stepCard(0).text()) && /runs ffprobe/.test(stepCard(1).text()) && /stat and directory listing/.test(stepCard(0).text()));
@@ -364,35 +379,29 @@ async function main() {
     cfg = await ui.untilDb(`select tools from tables where id = '${tNew}'`, (x) => !!x[0]?.tools?.file_drop?.steps?.[1]?.runs_on);
     check('clicking the "audio" chip on ffprobe writes an EXPLICIT runs_on of video only', JSON.stringify(cfg[0].tools.file_drop.steps[1].runs_on) === JSON.stringify({ media: ['video'] }), JSON.stringify(cfg[0].tools.file_drop.steps[1]));
     check('…and a "default" button appears to take it back', stepCard(1).findAll('button.mini').some((b: any) => b.text() === 'default'));
-    await w.find('.ts .tools .add select').setValue('hash-xxh3');
+    check('hashes are NOT offered as steps; a note says they are automatic and need no setup', !w.find('.ts .tools .add select').findAll('option').some((o: any) => /hash/i.test(o.text()))
+      && /Automatic — every dropped file is fingerprinted \(xxh3\) into its Manifest\. md5 and sha256 run from a record/.test(w.find('.ts .tools .hashes-note').text()) && !w.find('.ts .tools .into-manifest').exists(), w.find('.ts .tools .hashes-note').text());
+    await w.find('.ts .tools .add select').setValue('sequence');
     await w.find('.ts .tools .add button').trigger('click');
     cfg = await ui.untilDb(`select tools from tables where id = '${tNew}'`, (x) => x[0]?.tools?.file_drop?.steps?.length === 3);
-    check('"Add a step" appends an analyzer with an empty map', cfg[0].tools.file_drop.steps[2].analyzer === 'hash-xxh3' && Object.keys(cfg[0].tools.file_drop.steps[2].map).length === 0);
+    check('"Add a step" appends an analyzer with an empty map', cfg[0].tools.file_drop.steps[2].analyzer === 'sequence' && Object.keys(cfg[0].tools.file_drop.steps[2].map).length === 0);
     await stepCard(2).find('button[title="Run earlier"]').trigger('click');
-    cfg = await ui.untilDb(`select tools from tables where id = '${tNew}'`, (x) => x[0]?.tools?.file_drop?.steps?.[1]?.analyzer === 'hash-xxh3');
-    check('↑ moves a step earlier; the order IS the recipe', cfg[0].tools.file_drop.steps.map((s: any) => s.analyzer).join() === 'filesystem,hash-xxh3,ffprobe');
-    const tickBox = () => stepCard(1).find('.into-manifest input[type="checkbox"]');
-    check('a HASH step has its own "into the manifest" tick, on by default, warning that this table maps no Manifest yet; its Hash column dropdown reads "(no column)"', tickBox().exists() && (tickBox().element as HTMLInputElement).checked
-      && /no Manifest field is mapped/.test(stepCard(1).find('.into-manifest').text()) && stepCard(1).find('.rows select option').text() === '(no column)' && !stepCard(0).find('.into-manifest').exists());
-    await tickBox().setValue(false);
-    cfg = await ui.untilDb(`select tools from tables where id = '${tNew}'`, (x) => x[0]?.tools?.file_drop?.steps?.[1]?.into_manifest === false);
-    check('…unticking it is saved as an explicit into_manifest: false; ticking it again removes the key (absent = into the manifest)', cfg[0].tools.file_drop.steps[1].into_manifest === false);
-    await tickBox().setValue(true);
-    cfg = await ui.untilDb(`select tools from tables where id = '${tNew}'`, (x) => x[0]?.tools?.file_drop?.steps?.[1] && !('into_manifest' in x[0].tools.file_drop.steps[1]));
+    cfg = await ui.untilDb(`select tools from tables where id = '${tNew}'`, (x) => x[0]?.tools?.file_drop?.steps?.[1]?.analyzer === 'sequence');
+    check('↑ moves a step earlier; the order IS the recipe', cfg[0].tools.file_drop.steps.map((s: any) => s.analyzer).join() === 'filesystem,sequence,ffprobe');
     await stepCard(1).find('button[title="Remove this step"]').trigger('click');
     cfg = await ui.untilDb(`select tools from tables where id = '${tNew}'`, (x) => x[0]?.tools?.file_drop?.steps?.length === 2);
     check('× removes it', cfg[0].tools.file_drop.steps.map((s: any) => s.analyzer).join() === 'filesystem,ffprobe');
 
     console.log('\nT5b. The Summary and JSON views of the same recipe');
     await w.findAll('.ts .tools .view').find((b: any) => b.text() === 'Summary')!.trigger('click');
-    check('Summary is the recipe as sentences a reader can check against the table', await until(() => w.find('.ts .summary').exists()) && /1\. For everything: Filesystem → Path → Path, File name → Title, Kind → Kind\./.test(w.find('.ts .summary').text()) && /2\. If video: ffprobe → nothing mapped\./.test(w.find('.ts .summary').text()), w.find('.ts .summary').text());
+    check('Summary is the recipe as sentences a reader can check against the table', await until(() => w.find('.ts .summary').exists()) && /1\. For everything: Filesystem → Path → Path, File name → Title, Kind → Kind, Manifest → Manifest\./.test(w.find('.ts .summary').text()) && /2\. If video: ffprobe → nothing mapped\./.test(w.find('.ts .summary').text()) && /Always: every dropped file is fingerprinted \(xxh3\) into the manifest/.test(w.find('.ts .summary').text()), w.find('.ts .summary').text());
     await w.findAll('.ts .tools .view').find((b: any) => b.text() === 'JSON')!.trigger('click');
     check('JSON shows the stored recipe verbatim, and says it is valid', await until(() => w.find('.ts .json textarea').exists()) && JSON.parse((w.find('.ts .json textarea').element as HTMLTextAreaElement).value).steps[0].map.name === nName && /valid/.test(w.find('.ts .json-foot').text()));
     const ta = w.find('.ts .json textarea');
-    await ta.setValue(JSON.stringify({ steps: [{ analyzer: 'filesystem', map: { path: pathRow.id } }, { analyzer: 'ffprobe', map: { width: nName } }] }));
+    await ta.setValue(JSON.stringify({ steps: [{ analyzer: 'filesystem', map: { path: pathRow.id, manifest: manRow.id } }, { analyzer: 'ffprobe', map: { width: nName } }] }));
     await ta.trigger('input');
     check('a draft that breaks the rule is refused live, Save disabled', await until(() => /cannot be written/.test(w.find('.ts .json-foot').text())) && (w.find('.ts .json-foot button').element as HTMLButtonElement).disabled);
-    await ta.setValue(JSON.stringify({ steps: [{ analyzer: 'filesystem', map: { path: pathRow.id } }, { analyzer: 'ffprobe', runs_on: { media: ['video', 'audio', 'other'] }, map: {} }] }, null, 2));
+    await ta.setValue(JSON.stringify({ steps: [{ analyzer: 'filesystem', map: { path: pathRow.id, manifest: manRow.id } }, { analyzer: 'ffprobe', runs_on: { media: ['video', 'audio', 'other'] }, map: {} }] }, null, 2));
     await ta.trigger('input');
     check('a valid draft enables Save', await until(() => /valid/.test(w.find('.ts .json-foot').text())) && !(w.find('.ts .json-foot button').element as HTMLButtonElement).disabled);
     await w.find('.ts .json-foot button').trigger('click');

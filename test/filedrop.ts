@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { mountApp, sleep } from './uiHarness.js';
 import { boardsTableMutations } from './harness.js';
 import type { Unit } from '../src/client/tools/fileDrop.js';
-import { describe, resolveMap, stepApplies } from '../src/contract/tools.js';
+import { resolveMap, stepApplies } from '../src/contract/tools.js';
 
 let pass = 0, fail = 0;
 function check(label: string, ok: boolean, detail = '') {
@@ -151,11 +151,10 @@ async function main() {
       { type: 'field.create', id: f.dump, tableId: tFiles, name: 'ffprobe', key: 'raw_dump', fieldType: 'long_text' }, pos(f.dump, 15),
       { type: 'field.create', id: f.plainName, tableId: tPlain, name: 'Name', key: 'name', fieldType: 'text' }, pos(f.plainName, 0),
       // The recipe: filesystem for everything; ffprobe on video and audio (its default);
-      // an xxh3 hash of everything. The order is the order the analyzers run.
+      // the xxh3 fingerprint of everything is NOT a step — it always runs, last, into the manifest.
       { type: 'table.update', id: tFiles, tools: { file_drop: { steps: [
         { analyzer: 'filesystem', map: { path: f.path, name: f.name, kind: f.kind, manifest: f.manifest, total_size: f.size, media: f.media } },
         { analyzer: 'ffprobe', map: { width: f.width, frame_rate: f.rate, audio_layout: f.layout, codec: f.codec, video_codec: f.rawCodec, container: f.container, audio_codec: f.audioCodec, color_primaries: f.primaries, raw_dump: f.dump } },
-        { analyzer: 'hash-xxh3', map: { hash: f.hash } },
       ] } } },
     ]);
     check('fixture accepted', r.status === 200, (await r.text()).slice(0, 300));
@@ -201,11 +200,12 @@ async function main() {
     check('the RAW DUMP — everything ffprobe said, pretty-printed JSON — lands in the long-text field for the single file; the wav\'s fake reports none', fr[0].data.raw_dump?.startsWith('{\n  "streams"') && fr[1].data.raw_dump === undefined, JSON.stringify(fr[0].data.raw_dump));
     check('…and so are the container (the QuickTime family + the "qt  " brand → QuickTime; wav → WAV), the audio codec (pcm_s24le → PCM) and the primaries (bt709 → Rec. 709, into a plain text field)',
       fr[0].data.container === 'QuickTime' && fr[1].data.container === 'WAV' && fr[1].data.audio_codec === 'PCM' && fr[0].data.audio_codec === undefined && fr[0].data.color_primaries === 'Rec. 709' && fr[1].data.color_primaries === undefined, JSON.stringify(fr.map((x) => x.data)));
-    fr = await untilDb(`select id, data from records where table_id = '${tFiles}' order by created_at`, (x) => x.length === 2 && x[0].data.hash && x[1].data.hash);
+    fr = await untilDb(`select id, data from records where table_id = '${tFiles}' order by created_at`, (x) => x.length === 2 && x[0].data.manifest?.hashes?.xxh3 && x[1].data.manifest?.hashes?.xxh3);
     const analyzeCalls = () => calls.filter((c) => c.cmd === 'analyze').map((c) => `${c.args.analyzer}:${c.args.unit.name}`);
-    check('then the hash, last, because it is the last step', fr[0].data.hash === 'xxh3:05ababababababab' && analyzeCalls().filter((x) => x.startsWith('hash')).length === 2);
+    check('then the fingerprint, last — it is not a recipe step, it always runs, into the manifest', fr[0].data.manifest?.hashes?.xxh3 === 'xxh3:05ababababababab' && analyzeCalls().filter((x) => x.startsWith('hash')).length === 2);
     check('a single file\'s hash is ALSO written into its manifest, beside the size — the FINGERPRINT (contract/fingerprint.ts)', fr[0].data.manifest.kind === 'file' && fr[0].data.manifest.hashes.xxh3 === 'xxh3:05ababababababab' && fr[0].data.manifest.size === 1000, JSON.stringify(fr[0].data.manifest));
-    check('the analyzers ran in RECIPE order per file: ffprobe, then hash', analyzeCalls().join() === 'ffprobe:a.mov,hash-xxh3:a.mov,ffprobe:mix.wav,hash-xxh3:mix.wav', analyzeCalls().join());
+    check('QUICK steps for EVERY file first, then the fingerprints (Nov 10): the second file\'s details do not wait for the first file\'s hash', analyzeCalls().join() === 'ffprobe:a.mov,ffprobe:mix.wav,hash-xxh3:a.mov,hash-xxh3:mix.wav', analyzeCalls().join());
+    check('no hash has a column: the Hash text field on this table was never written', fr.every((x) => !('hash' in x.data)), JSON.stringify(fr.map((x) => Object.keys(x.data))));
     check('the wav\'s "media: audio" was NOT written (not a choice on that select) and the notice says which field', fr[1].data.media === undefined && fr[0].data.media === 'video' && /not written — Media/.test(noticesText()), noticesText());
     const tagged = await rows(`select type, via from mutations where seq > ${before} order by seq`);
     check('EVERY write of the drop is tagged via file_drop — creates, follow-ups, all', tagged.length >= 6 && tagged.every((m) => m.via === 'file_drop'), JSON.stringify(tagged));
@@ -218,7 +218,7 @@ async function main() {
     check('Ctrl+Z ONCE removes both records — the probe and hash updates were not steps of their own', fr.length === 0);
     win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'z', ctrlKey: true, shiftKey: true, bubbles: true }));
     fr = await untilDb(`select id, data from records where table_id = '${tFiles}' order by created_at`, (x) => x.length === 2);
-    check('redo brings both back, with everything the probe wrote', fr.length === 2 && fr[0].data.width === 1920 && fr[0].data.hash);
+    check('redo brings both back, with everything the probe wrote', fr.length === 2 && fr[0].data.width === 1920 && fr[0].data.manifest?.hashes?.xxh3);
 
     console.log('\nF5. The same file again, on empty space: NOT touched, OFFERED (Oct 18 — nothing invisible)');
     calls.length = 0;
@@ -244,8 +244,8 @@ async function main() {
     drop(['/mnt/san/broken.mov']);
     fr = await untilDb(`select id, data from records where table_id = '${tFiles}' and data->>'name' = 'broken.mov'`, (x) => x.length === 1);
     check('the record is still created (path, size) and the failure is a notice about THAT file', fr.length === 1 && fr[0].data.total_size === 1000 && await until(() => /broken\.mov: ffprobe/.test(noticesText())), noticesText());
-    fr = await untilDb(`select data from records where table_id = '${tFiles}' and data->>'name' = 'broken.mov'`, (x) => !!x[0]?.data.hash);
-    check('…and the next step (the hash) still ran after the failed one', !!fr[0]?.data.hash);
+    fr = await untilDb(`select data from records where table_id = '${tFiles}' and data->>'name' = 'broken.mov'`, (x) => !!x[0]?.data.manifest?.hashes?.xxh3);
+    check('…and the next step (the hash) still ran after the failed one', !!fr[0]?.data.manifest?.hashes?.xxh3);
 
     console.log('\nF6a. A codec the vocabulary does not know');
     drop(['/mnt/san/weird.mov']);
@@ -255,8 +255,8 @@ async function main() {
     console.log('\nF6b. runs_on is obeyed: a document goes to no ffprobe');
     calls.length = 0;
     drop(['/mnt/san/spec.pdf']);
-    fr = await untilDb(`select id, data from records where table_id = '${tFiles}' and data->>'name' = 'spec.pdf'`, (x) => x.length === 1 && x[0].data.hash);
-    check('a PDF is a record with its filesystem facts and a hash, and ffprobe was NEVER asked (its default is video or audio)', fr[0].data.media === undefined /* not a choice */ && fr[0].data.hash && !analyzeCalls().some((x) => x.startsWith('ffprobe')) && analyzeCalls().includes('hash-xxh3:spec.pdf'), analyzeCalls().join());
+    fr = await untilDb(`select id, data from records where table_id = '${tFiles}' and data->>'name' = 'spec.pdf'`, (x) => x.length === 1 && x[0].data.manifest?.hashes?.xxh3);
+    check('a PDF is a record with its filesystem facts and a hash, and ffprobe was NEVER asked (its default is video or audio)', fr[0].data.media === undefined /* not a choice */ && fr[0].data.manifest?.hashes?.xxh3 && !analyzeCalls().some((x) => x.startsWith('ffprobe')) && analyzeCalls().includes('hash-xxh3:spec.pdf'), analyzeCalls().join());
     check('stepApplies agrees, from the contract alone', !stepApplies({ analyzer: 'ffprobe', map: {} }, { media: 'document', kind: 'file' }));
     check('no connection-error banner: a bad file is not a store error', !w.find('.errors').exists());
 
@@ -265,32 +265,22 @@ async function main() {
     drop(['/mnt/san/mix51']);
     fr = await untilDb(`select data from records where table_id = '${tFiles}' and data->>'name' = 'mix51'`, (x) => x.length === 1 && x[0].data.manifest?.members?.[0]?.hashes?.xxh3);
     check('six mono WAVs → one record whose manifest carries one xxh3 per member; the Hash column stays empty (there is no hash of the whole)',
-      fr[0].data.hash === undefined && fr[0].data.manifest.kind === 'channel_set' && fr[0].data.manifest.members.length === 6 && fr[0].data.manifest.members.every((m: any) => /^xxh3:[0-9a-f]{16}$/.test(m.hashes.xxh3)) && fr[0].data.manifest.members[3].channel === 'LFE', JSON.stringify(fr[0].data.manifest));
+      fr[0].data.manifest?.hashes?.xxh3 === undefined && fr[0].data.manifest.kind === 'channel_set' && fr[0].data.manifest.members.length === 6 && fr[0].data.manifest.members.every((m: any) => /^xxh3:[0-9a-f]{16}$/.test(m.hashes.xxh3)) && fr[0].data.manifest.members[3].channel === 'LFE', JSON.stringify(fr[0].data.manifest));
     check('a sequence is not hashed: the hash step runs on files, bundles and channel sets by default', !stepApplies({ analyzer: 'hash-md5', map: {} }, { media: 'image', kind: 'sequence' }) && stepApplies({ analyzer: 'hash-md5', map: {} }, { media: 'audio', kind: 'channel_set' }));
 
-    console.log('\nF6d. A MANUAL step: md5 when asked for, not at the drop');
-    const md5Field = randomUUID();
-    const r6d = await post([
-      { type: 'field.create', id: md5Field, tableId: tFiles, name: 'MD5', key: 'md5', fieldType: 'text' }, pos(md5Field, 15),
-      { type: 'table.update', id: tFiles, tools: { file_drop: { steps: [
-        { analyzer: 'filesystem', map: { path: f.path, name: f.name, kind: f.kind, manifest: f.manifest, total_size: f.size, media: f.media } },
-        { analyzer: 'ffprobe', map: { width: f.width, frame_rate: f.rate, audio_layout: f.layout, codec: f.codec, video_codec: f.rawCodec, container: f.container, audio_codec: f.audioCodec, color_primaries: f.primaries, raw_dump: f.dump } },
-        { analyzer: 'hash-xxh3', map: { hash: f.hash } },
-        { analyzer: 'hash-md5', when: 'manual', map: { hash: md5Field } },
-      ] } } },
-    ]);
-    check('a recipe step may say when: "manual"', r6d.status === 200, (await r6d.text()).slice(0, 200));
-    check('…and when: "sometimes" is refused', (await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'hash-md5', when: 'sometimes', map: {} }] } } }])).status === 400);
+    console.log('\nF6d. A CHECKSUM: md5 when asked for, not at the drop — on every File-drop table, nothing to enable (Nov 10)');
+    check('a hash step in a recipe is refused by the server: hashes are not steps', (await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: f.path, manifest: f.manifest } }, { analyzer: 'hash-md5', when: 'manual', map: {} }] } } }])).status === 400);
+    check('…and when: "sometimes" is refused on any step', (await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', map: { path: f.path, manifest: f.manifest } }, { analyzer: 'ffprobe', when: 'sometimes', map: {} }] } } }])).status === 400);
     calls.length = 0;
     drop(['/mnt/san/final.mov']);
-    fr = await untilDb(`select id, data from records where table_id = '${tFiles}' and data->>'name' = 'final.mov'`, (x) => x.length === 1 && x[0].data.hash);
+    fr = await untilDb(`select id, data from records where table_id = '${tFiles}' and data->>'name' = 'final.mov'`, (x) => x.length === 1 && x[0].data.manifest?.hashes?.xxh3);
     await sleep(150);
-    check('at the drop the xxh3 runs and the md5 does NOT', fr[0].data.hash?.startsWith('xxh3:') && fr[0].data.md5 === undefined && !analyzeCalls().some((x) => x.startsWith('hash-md5')), analyzeCalls().join());
+    check('at the drop the xxh3 runs and the md5 does NOT', fr[0].data.manifest?.hashes?.xxh3?.startsWith('xxh3:') && fr[0].data.manifest.hashes.md5 === undefined && !analyzeCalls().some((x) => x.startsWith('hash-md5')), analyzeCalls().join());
     await go(tFiles);
     await until(() => w.findAll('.gridview tr.row').some((row: any) => /final\.mov/.test(row.text())));
     await w.findAll('.gridview tr.row').find((row: any) => /final\.mov/.test(row.text()))!.find('.expand').trigger('click');
     const fieldNamed = (label: string) => w.findAll('.record-panel .rp-field').find((x: any) => { const t = x.find('.rp-name').text().replace(/^★/, '').trim(); return t === label || t.startsWith(label + ' ') || /^[⚠✓▶⤴]/.test(t.slice(label.length).trim()) && t.startsWith(label); })!;
-    check('the record tray offers ▶ Hash (md5) on the MANIFEST field (where a hash lands), not on the path; "show" stays on the path', await until(() => w.find('.record-panel .run-step').exists()) && w.find('.record-panel .run-step').text() === '▶ Hash (md5)'
+    check('the record tray offers ▶ md5 and ▶ sha256 on the MANIFEST field (where a hash lands), not on the path; "show" stays on the path', await until(() => w.find('.record-panel .run-step').exists()) && w.findAll('.record-panel .run-step').map((b: any) => b.text()).join() === '▶ md5,▶ sha256'
       && fieldNamed('Manifest').find('.run-step').exists() && !fieldNamed('Path').find('.run-step').exists() && fieldNamed('Path').find('.reveal').exists() && !fieldNamed('Manifest').find('.reveal:not(.run-step)').exists());
     const seqBefore = Number((await rows(`select coalesce(max(seq), 0) n from mutations`))[0].n);
     calls.length = 0;
@@ -301,9 +291,9 @@ async function main() {
       && /Hash \(md5\)…/.test(fieldNamed('Manifest').find('.job').text()) && !fieldNamed('Path').find('.job').exists() && !w.find('.record-panel .run-step').exists(),
       w.findAll('.record-panel .rp-name').map((x: any) => x.text()).join(' | '));
     manualDelay = 0;
-    fr = await untilDb(`select id, data from records where id = '${fr[0].id}'`, (x) => !!x[0].data.md5);
-    check('clicking it asks the shell to run that analyzer on THE RECORD\'S PATH (analyze_path — the native "read this file?" dialog is the shell\'s), and the md5 is written, into the manifest too',
-      calls.some((c) => c.cmd === 'analyze_path' && c.args.path === '/mnt/san/final.mov' && c.args.analyzer === 'hash-md5') && /^md5:[0-9a-f]{32}$/.test(fr[0].data.md5) && fr[0].data.manifest.hashes.md5 === fr[0].data.md5 && fr[0].data.manifest.hashes.xxh3 === fr[0].data.hash && fr[0].data.hash?.startsWith('xxh3:'), JSON.stringify(fr[0].data));
+    fr = await untilDb(`select id, data from records where id = '${fr[0].id}'`, (x) => !!x[0].data.manifest?.hashes?.md5);
+    check('clicking it asks the shell to run that analyzer on THE RECORD\'S PATH (analyze_path — the native "read this file?" dialog is the shell\'s), and the md5 is written into the manifest, beside the fingerprint — and into no column',
+      calls.some((c) => c.cmd === 'analyze_path' && c.args.path === '/mnt/san/final.mov' && c.args.analyzer === 'hash-md5') && /^md5:[0-9a-f]{32}$/.test(fr[0].data.manifest.hashes.md5) && fr[0].data.manifest.hashes.xxh3?.startsWith('xxh3:') && !('md5' in fr[0].data) && !('hash' in fr[0].data), JSON.stringify(fr[0].data));
     check('…the md5 went through the hash line (hashJobs.ts) with a job id, so the shell could report progress', calls.some((c) => c.cmd === 'analyze_path' && c.args.analyzer === 'hash-md5' && typeof c.args.job === 'number'));
     check('…and the click did NOT also "show in folder" (the tab is no longer a <label>, which activated its first button on any click inside)', !calls.some((c) => c.cmd === 'reveal'));
     const seqAfter = Number((await rows(`select coalesce(max(seq), 0) n from mutations`))[0].n);
@@ -321,30 +311,23 @@ async function main() {
     probeDelay = 0;
     await until(() => !w.find('.record-panel .job').exists());
 
-    console.log('\nF6e. "into the manifest" is the hash step\'s own setting');
-    const r6e = await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [
-        { analyzer: 'filesystem', map: { path: f.path, name: f.name, kind: f.kind, manifest: f.manifest, total_size: f.size, media: f.media } },
-        { analyzer: 'hash-xxh3', into_manifest: false, map: { hash: f.hash } },
-        { analyzer: 'hash-md5', map: {} },
-      ] } } }]);
-    check('a hash step may opt OUT of the manifest (a column only), and one with no column at all still writes into the manifest', r6e.status === 200, (await r6e.text()).slice(0, 200));
-    check('…but into_manifest is refused on a non-hash step', (await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [{ analyzer: 'filesystem', into_manifest: true, map: { path: f.path } }] } } }])).status === 400);
-    drop(['/mnt/san/opt.mov']);
-    fr = await untilDb(`select data from records where table_id = '${tFiles}' and data->>'name' = 'opt.mov'`, (x) => x.length === 1 && x[0].data.hash && x[0].data.manifest?.hashes?.md5);
-    check('at the drop: the md5, with no column, went into the manifest; the xxh3 to its column AND the manifest — the fingerprint always lands there, into_manifest or not', fr[0].data.hash.startsWith('xxh3:') && fr[0].data.manifest.hashes.md5.startsWith('md5:') && fr[0].data.manifest.hashes.xxh3 === fr[0].data.hash, JSON.stringify(fr[0].data));
+    console.log('\nF6e. Hashes in the tray: sha256 too, and a set shows each member\'s');
+    await w.findAll('.record-panel .run-step').find((b: any) => b.text() === '▶ sha256')!.trigger('click');
+    // The tray is on final2.mov (opened just above).
+    const sha = await untilDb(`select data from records where table_id = '${tFiles}' and data->>'name' = 'final2.mov'`, (x) => !!x[0]?.data.manifest?.hashes?.sha256);
+    check('▶ sha256 runs the same way, and sits beside the fingerprint in the manifest', sha[0]?.data.manifest.hashes.sha256?.startsWith('sha256:') && sha[0].data.manifest.hashes.xxh3?.startsWith('xxh3:'), JSON.stringify(sha[0]?.data.manifest));
     await go(tFiles);
     await until(() => w.findAll('.gridview tr.row').some((row: any) => row.findAll('td')[1]?.text().startsWith('mix51')));
     await w.findAll('.gridview tr.row').find((row: any) => row.findAll('td')[1]?.text().startsWith('mix51'))!.find('.expand').trigger('click');
     check('the tray\'s manifest of a channel set SHOWS each member\'s hash beside its channel (short, the full value on hover)', await until(() => w.findAll('.record-panel .mv-member-hash').length === 6)
       && w.findAll('.record-panel .mv-member-hash').every((c: any) => /^xxh3:/.test(c.text()) && /^xxh3:[0-9a-f]{16}$/.test(c.attributes('title') ?? '')), w.findAll('.record-panel .mv-member-hash').map((c: any) => c.text()).join('|'));
-    check('the Summary says so', describe({ steps: [{ analyzer: 'hash-md5', when: 'manual', map: {} }] }, [])[0].endsWith('Hash (md5) → into the manifest.') && /Hash \(xxh3\) → into the manifest, Hash → Hash\.$/.test(describe({ steps: [{ analyzer: 'hash-xxh3', into_manifest: false, map: { hash: 'x' } }] }, [{ id: 'x', name: 'Hash' }])[0]) && /Hash \(md5\) → Hash → MD5\.$/.test(describe({ steps: [{ analyzer: 'hash-md5', into_manifest: false, map: { hash: 'x' } }] }, [{ id: 'x', name: 'MD5' }])[0]));
 
     console.log('\nF6f. Vocabulary outputs into LINK fields — a table of the owner\'s rows (Oct 17)');
     // Containers (Name, Aliases) and Codecs (Name, Aliases) are the owner's vocabulary
     // tables; Masters links into both. The code still normalises raw → canonical; the
     // rows are found by that name, else by an alias on a row.
     const tCont = randomUUID(), tCodecs = randomUUID(), tMasters = randomUUID();
-    const g = { cName: randomUUID(), cAliases: randomUUID(), kName: randomUUID(), kAliases: randomUUID(), path: randomUUID(), name: randomUUID(), container: randomUUID(), codec: randomUUID(), rawCodec: randomUUID() };
+    const g = { cName: randomUUID(), cAliases: randomUUID(), kName: randomUUID(), kAliases: randomUUID(), path: randomUUID(), name: randomUUID(), container: randomUUID(), codec: randomUUID(), rawCodec: randomUUID(), manifest: randomUUID() };
     const rowQt = randomUUID(), rowOp1a = randomUUID(), rowXq = randomUUID(), rowMystery = randomUUID();
     const r6f = await post([
       { type: 'table.create', id: tCont, name: 'Containers' }, { type: 'table.create', id: tCodecs, name: 'Codecs' }, { type: 'table.create', id: tMasters, name: 'Masters' },
@@ -361,8 +344,9 @@ async function main() {
       { type: 'field.create', id: g.container, tableId: tMasters, name: 'Container', key: 'container', fieldType: 'link', options: { target_table_id: tCont, single: true } }, pos(g.container, 2),
       { type: 'field.create', id: g.codec, tableId: tMasters, name: 'Codec', key: 'codec', fieldType: 'link', options: { target_table_id: tCodecs } }, pos(g.codec, 3),
       { type: 'field.create', id: g.rawCodec, tableId: tMasters, name: 'Raw codec', key: 'video_codec', fieldType: 'text' }, pos(g.rawCodec, 4),
+      { type: 'field.create', id: g.manifest, tableId: tMasters, name: 'Manifest', key: 'manifest', fieldType: 'structured', options: { shape: 'manifest' } },
       { type: 'table.update', id: tMasters, tools: { file_drop: { steps: [
-        { analyzer: 'filesystem', map: { path: g.path, name: g.name } },
+        { analyzer: 'filesystem', map: { path: g.path, name: g.name, manifest: g.manifest } },
         { analyzer: 'ffprobe', map: { container: g.container, codec: g.codec, video_codec: g.rawCodec } },
       ] } } },
     ]);
@@ -377,6 +361,7 @@ async function main() {
     const rt3 = route({ container: 'MP4' }, { container: ['mov,mp4,m4a,3gp,3g2,mj2', 'isom', 'mp4'] }, new Map([['container', 'container']]), mfields, rowsOf, () => 'Containers');
     check('…a canonical name with no row: the message says which row to add', /Containers has no row named “MP4” — add one, or give a row the alias “MP4”/.test(rt3.unresolved[0]?.message ?? ''), JSON.stringify(rt3.unresolved));
 
+    await sleep(500);   // the recipe just posted reaches the page over the stream; a drop before it lands says "File drop is not enabled"
     await go(tMasters);
     const mlinks = (name: string) => rows(`select l.field_id, l.to_record from links l join records r on r.id = l.from_record where r.table_id = '${tMasters}' and r.data->>'name' = '${name}'`);
     drop(['/mnt/san/b.mov', '/mnt/san/mix2.wav']);
@@ -397,9 +382,12 @@ async function main() {
     // Re-running the recipe on a record is a drop ONTO it (Oct 18): the file again, on its row.
     const weirdId = (await rows(`select id from records where table_id = '${tMasters}' and data->>'name' = 'weird.mov'`))[0].id;
     await until(() => w.find(`.gridview tr.row[data-record-id="${weirdId}"]`).exists());
+    // A record with no manifest (made by hand, or before the table kept one) has nothing to compare a drop against.
+    await post([{ type: 'record.update', id: weirdId, set: {}, unset: ['manifest'] }]);
+    await sleep(300);
     const seen6f = nav.dialogs.seen.length;
     await dropOntoRow(weirdId, ['/mnt/san/weird.mov']);   // the autopilot answers Replace
-    check('a file dropped ONTO a record with nothing to compare against (Masters keeps no manifest) ASKS: "Replace file info?", naming both files and saying why',
+    check('a file dropped ONTO a record with nothing to compare against (it has no manifest) ASKS: "Replace file info?", naming both files and saying why',
       await until(() => nav.dialogs.seen.length > seen6f) && /Replace file info\?/.test(nav.dialogs.seen.at(-1)!) && /This record describes:/.test(nav.dialogs.bodies.at(-1)!) && /You dropped:/.test(nav.dialogs.bodies.at(-1)!)
       && (nav.dialogs.bodies.at(-1)!.match(/\/mnt\/san\/weird\.mov/g) ?? []).length === 2 && /no manifest to compare with/.test(nav.dialogs.bodies.at(-1)!) && /keeps everything else/.test(nav.dialogs.bodies.at(-1)!), nav.dialogs.bodies.at(-1));
     ml = await untilDb(`select l.field_id, l.to_record from links l join records r on r.id = l.from_record where r.table_id = '${tMasters}' and r.data->>'name' = 'weird.mov'`, (x) => x.some((l) => l.field_id === g.codec));
@@ -407,7 +395,7 @@ async function main() {
 
     // Replace REPLACES a link the way it overwrites a select: set Container to OP1a by hand, drop b.mov onto its row, Replace.
     const bId = (await rows(`select id from records where table_id = '${tMasters}' and data->>'name' = 'b.mov'`))[0].id;
-    await post([{ type: 'link.remove', fieldId: g.container, fromRecord: bId, toRecord: rowQt }, { type: 'link.add', id: randomUUID(), fieldId: g.container, fromRecord: bId, toRecord: rowOp1a }]);
+    await post([{ type: 'link.remove', fieldId: g.container, fromRecord: bId, toRecord: rowQt }, { type: 'link.add', id: randomUUID(), fieldId: g.container, fromRecord: bId, toRecord: rowOp1a }, { type: 'record.update', id: bId, set: {}, unset: ['manifest'] }]);
     await untilDb(`select to_record from links where field_id = '${g.container}' and from_record = '${bId}'`, (x) => x.length === 1 && x[0].to_record === rowOp1a);
     nav.dialogs.cancelNext = true;
     const seenB = nav.dialogs.seen.length;
@@ -441,17 +429,15 @@ async function main() {
     check('…which asks the shell to reveal exactly that path', await until(() => calls.some((c) => c.cmd === 'reveal')) && calls.find((c) => c.cmd === 'reveal')?.args.path === '/mnt/san/plates');
 
     console.log('\nF9. Dropping ONTO a record: the fingerprint decides (Oct 18)');
-    // final.mov (from F6d: an xxh3 in its manifest, an md5 column) gets a card at (100, 100).
+    // final.mov (from F6d: an xxh3, an md5 and a sha256 in its manifest) gets a card at (100, 100).
     const finalId = (await rows(`select id from records where table_id = '${tFiles}' and data->>'name' = 'final.mov'`))[0].id;
     await post([{ type: 'placement.add', id: randomUUID(), canvasId: boardId, recordId: finalId, x: 100, y: 100, w: null, h: null, z: 5 }]);
     await until(() => w.findAll('.canvas-world .card').some((c: any) => /final\.mov/.test(c.text())));
     const finalCard = () => w.findAll('.canvas-world .card').find((c: any) => /final\.mov|another\.mov/.test(c.text()))!;
-    // The recipe for this section: ffprobe, the fingerprint into its column, and a MANUAL md5 into its own column.
+    // The recipe for this section: the filesystem and ffprobe. (The fingerprint and the md5 are not steps.)
     await post([{ type: 'table.update', id: tFiles, tools: { file_drop: { steps: [
       { analyzer: 'filesystem', map: { path: f.path, name: f.name, kind: f.kind, manifest: f.manifest, total_size: f.size, media: f.media } },
       { analyzer: 'ffprobe', map: { width: f.width, frame_rate: f.rate, audio_layout: f.layout, codec: f.codec, video_codec: f.rawCodec, container: f.container, audio_codec: f.audioCodec, color_primaries: f.primaries, raw_dump: f.dump } },
-      { analyzer: 'hash-xxh3', map: { hash: f.hash } },
-      { analyzer: 'hash-md5', when: 'manual', map: { hash: md5Field } },
     ] } } }]);
     await sleep(300);
     const finalData = async () => (await rows(`select data from records where id = '${finalId}'`))[0].data;
@@ -510,7 +496,7 @@ async function main() {
     check('same size, OTHER bytes: hashed, compared, and the dialog says the fingerprints differ', await until(() => nav.dialogs.seen.length > seenOther) && /Their xxh3 fingerprints differ/.test(nav.dialogs.bodies.at(-1)!) && hashCalls()[0] === 'hash-xxh3:another.mov#job', `${nav.dialogs.bodies.at(-1)} | ${hashCalls().join()}`);
     const replaced = await untilDb(`select data from records where id = '${finalId}'`, (x) => x[0].data.path === '/mnt/san/another.mov' && x[0].data.width === 1920 && x[0].data.manifest?.hashes?.xxh3);
     check('Replace: path and name are the new file\'s, the recipe ran again (ffprobe, then the fingerprint), the stale md5 column is CLEARED (the recipe owns it), the manifest is the new file\'s with only its fresh fingerprint',
-      replaced[0].data.name === 'another.mov' && replaced[0].data.md5 === undefined && replaced[0].data.manifest.hashes.md5 === undefined && replaced[0].data.manifest.hashes.xxh3 !== was.manifest.hashes.xxh3 && replaced[0].data.hash === replaced[0].data.manifest.hashes.xxh3
+      replaced[0].data.name === 'another.mov' && replaced[0].data.md5 === undefined && replaced[0].data.manifest.hashes.md5 === undefined && replaced[0].data.manifest.hashes.xxh3 !== was.manifest.hashes.xxh3 && replaced[0].data.manifest?.hashes?.xxh3 === replaced[0].data.manifest.hashes.xxh3
       && calls.some((c) => c.cmd === 'analyze' && c.args.analyzer === 'ffprobe' && c.args.unit.name === 'another.mov'), JSON.stringify(replaced[0].data));
     win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
     const undone = await untilDb(`select data from records where id = '${finalId}'`, (x) => x[0].data.path === '/mnt/san/final.mov');
@@ -556,10 +542,33 @@ async function main() {
     manualDelay = 0;
     const fp = await untilDb(`select id, data from records where id in ('${handA}', '${handB}') order by data->>'name'`, (x) => x.length === 2 && x.every((r) => r.data.manifest?.hashes?.xxh3), 8000);
     check('both records get their fingerprint, into the manifest — the hand-made one gets a manifest from the path (classified afresh); each ran through analyze_path with a job id', fp.every((r) => /^xxh3:/.test(r.data.manifest.hashes.xxh3)) && fp[0].data.manifest.kind === 'file' && fp[0].data.manifest.size === 1000 && calls.filter((c) => c.cmd === 'analyze_path' && c.args.analyzer === 'hash-xxh3' && typeof c.args.job === 'number').length === 2, JSON.stringify(fp.map((r) => r.data.manifest)));
-    check('…and the fingerprint column too, the recipe\'s hash step being mapped', fp.every((r) => r.data.hash === r.data.manifest.hashes.xxh3), JSON.stringify(fp.map((r) => r.data.hash)));
+    check('…and into no column: the Hash text field stays untouched', fp.every((r) => !('hash' in r.data)), JSON.stringify(fp.map((r) => Object.keys(r.data))));
     check('…not as undo steps: Ctrl+Z after the run does not peel a fingerprint off', (() => { win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true })); return true; })());
     await sleep(300);
     check('the strip is gone — the query finds nothing left', await until(() => !strip().exists(), 4000) && (await rows(`select data from records where id = '${handA}'`))[0].data.manifest?.hashes?.xxh3 !== undefined, strip().exists() ? strip().text() : 'gone');
+
+    console.log('\nF12. A multi-file drop: details for every file first, then fingerprints smallest first (Nov 10)');
+    await go(tFiles);
+    for (const n of w.findAll('.desk-notice')) await n.trigger('click');
+    calls.length = 0;
+    drop(['/mnt/san/bigA.mov', '/mnt/san/smallB.mov', '/mnt/san/smallC.mov']);   // "big" is 2000 bytes in the fake, the others 1000
+    const multi = await untilDb(`select data from records where table_id = '${tFiles}' and data->>'name' in ('bigA.mov', 'smallB.mov', 'smallC.mov')`, (x) => x.length === 3 && x.every((r) => r.data.manifest?.hashes?.xxh3), 8000);
+    check('all three are records with their details and a fingerprint', multi.length === 3 && multi.every((r) => r.data.width === 1920 && /^xxh3:/.test(r.data.manifest.hashes.xxh3)), JSON.stringify(multi.map((r) => r.data.name)));
+    check('ffprobe ran on ALL of them before any hash; then the hashes smallest first, equal sizes in the order dropped — the big file last',
+      analyzeCalls().join() === 'ffprobe:bigA.mov,ffprobe:smallB.mov,ffprobe:smallC.mov,hash-xxh3:smallB.mov,hash-xxh3:smallC.mov,hash-xxh3:bigA.mov', analyzeCalls().join());
+
+    console.log('\nF13. A hash that cannot be put into the manifest says WHY (it used to say "nowhere to keep it")');
+    const { hashPlacementProblem: hpp, withHashes: wh } = await import('../src/client/tools/fileDrop.js');
+    const fileUnit = { path: '/mnt/san/x.mov', name: 'x.mov', kind: 'file', manifest: { kind: 'file', size: 10 } } as any;
+    const placedOk = wh({ hash: 'xxh3:00' }, fileUnit, { kind: 'file', size: 10 });
+    check('a file\'s hash into a file manifest: placed, no problem', hpp(placedOk, fileUnit, { kind: 'file', size: 10 }) === null && (placedOk.manifest as any).hashes.xxh3 === 'xxh3:00');
+    const stale = { kind: 'bundle', members: [{ path: 'a.mxf', size: 1 }] };
+    const placedBad = wh({ hash: 'xxh3:00' }, fileUnit, stale);
+    check('the record\'s manifest says BUNDLE but the path is now a single FILE: not placed, and the reason names both and what to do',
+      placedBad.manifest === undefined && /the record's manifest describes a bundle, but what is at its path now is a file — drop the file onto the record to replace its file info/.test(String(hpp(placedBad, fileUnit, stale))), String(hpp(placedBad, fileUnit, stale)));
+    const setUnit = { path: '/mnt/san/mix', name: 'mix', kind: 'channel_set', manifest: { kind: 'channel_set', members: [] } } as any;
+    check('…and the other way round (a file manifest, a channel set on disk) reads the same way', /describes a file, but what is at its path now is a channel set/.test(String(hpp(wh({ member_hashes: [{ path: 'L.wav', hash: 'xxh3:01' }] }, setUnit, { kind: 'file', size: 10 }), setUnit, { kind: 'file', size: 10 }))));
+    check('a set whose hash came back with no members says so', /came back empty/.test(String(hpp(wh({ member_hashes: [] }, setUnit, setUnit.manifest), setUnit, setUnit.manifest))));
   } finally {
     await ui.close();
   }

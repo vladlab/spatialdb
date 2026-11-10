@@ -231,17 +231,23 @@ const FFPROBE: Analyzer = {
 };
 
 /**
- * Hashes are PER FILE, always: a single file's hash goes to the `hash` output AND
- * into its manifest (`hashes.<algo>`); a bundle's or channel set's members each get
- * their own, written into the manifest beside the member (the Manifest field the
- * filesystem step maps — the hash step has no manifest output of its own, so two
- * steps never own one field). A sequence is not hashed.
+ * HASHES ARE NOT RECIPE STEPS (the owner, Nov 10: the step, its "into the manifest"
+ * tick and its optional column were three ways to be confused about one thing).
+ * There is nothing to enable and nothing to map:
  *
- * The xxh3 is the FINGERPRINT (contract/fingerprint.ts) and is not a recipe
- * decision: every table with File drop fingerprints what is dropped, into the
- * manifest, whether or not a `hash-xxh3` step is in the recipe — a step only adds
- * a column for it (`fingerprintStep`). md5 and sha256 are a client's checksums:
- * `when: "manual"`, run from the record once, never read by the app.
+ *  - Every hash lives in the record's MANIFEST, per file: `hashes.<algo>` on a single
+ *    file, on each member of a bundle or channel set. Written through the Manifest
+ *    field the filesystem step maps — which File drop therefore REQUIRES. A sequence
+ *    is not hashed. No hash has a column of its own; copy one out of the manifest
+ *    when a column is wanted.
+ *  - The xxh3 is the FINGERPRINT (contract/fingerprint.ts): run at every drop, and
+ *    later for any record with a path and none.
+ *  - md5 and sha256 are a client's CHECKSUMS (`CHECKSUMS`): run by hand from any
+ *    record of a File-drop table (▶ on its Manifest), never read by the app.
+ *
+ * The analyzers stay in ANALYZERS — the shell runs them by these ids and the
+ * handshake reports them — but `analyzersOf` does not offer them to a recipe and
+ * `toolsProblem` refuses one in a recipe (sql/021 took them out of stored ones).
  */
 const hashAnalyzer = (algo: string, note: string): Analyzer => ({
   id: `hash-${algo}`, tool: 'file_drop', name: `Hash (${algo})`, program: null,
@@ -250,6 +256,8 @@ const hashAnalyzer = (algo: string, note: string): Analyzer => ({
   outputs: [{ key: 'hash', name: 'Hash', type: 'text', note: `"${algo}:<hex>" — the algorithm travels with the value; a single file's only (a set's members are hashed into the manifest)` }],
 });
 export const HASH_ALGORITHMS = ['xxh3', 'sha256', 'md5'] as const;
+/** The checksums a record offers to run by hand, in the order the tray shows them. */
+export const CHECKSUMS = ['md5', 'sha256'] as const;
 
 /**
  * The Resolve tool's one analyzer (RESOLVE-BRIEF.md R1.2): the desktop runs the
@@ -295,7 +303,7 @@ export const ANALYZERS: readonly Analyzer[] = [
 ];
 export const analyzerOf = (id: string) => ANALYZERS.find((a) => a.id === id);
 /** The analyzers one tool's recipe may name — what its editor offers. */
-export const analyzersOf = (tool: ToolId): Analyzer[] => ANALYZERS.filter((a) => a.tool === tool);
+export const analyzersOf = (tool: ToolId): Analyzer[] => ANALYZERS.filter((a) => a.tool === tool && !a.id.startsWith('hash-'));
 
 /* ── the recipe a table stores ───────────────────────────────────────────── */
 
@@ -309,13 +317,8 @@ export const Step = z.strictObject({
   /** Absent = the analyzer's default. `{}` = everything. Both lists given = both must match. */
   runs_on: RunsOnSchema.optional(),
   /** Absent = `drop`: runs when a file is dropped. `manual`: skipped at the drop, run
-   *  from the record by hand (the ▶ beside its path) — for the slow steps a client
-   *  asks for once, such as an md5. */
+   *  from the record by hand (the ▶ in the record tray). */
   when: z.enum(WHEN).optional(),
-  /** Hash steps only. Absent = true: the hash is written into the record's manifest
-   *  (beside the size, or beside each member) through the Manifest field the
-   *  filesystem step maps. `false`: only where `map.hash` points. */
-  into_manifest: z.boolean().optional(),
   map: z.record(z.string(), z.guid()),
 });
 export const Recipe = z.strictObject({ steps: z.array(Step) });
@@ -334,12 +337,13 @@ export type TablesTools = z.infer<typeof TablesTools>;
 
 /**
  * The outputs a tool cannot work without, per tool. File drop: the path, by which
- * a dropped file is matched to its record. The Resolve tool: nothing — it writes
+ * a dropped file is matched to its record, and the manifest, where its fingerprint
+ * and checksums are kept. The Resolve tool: nothing — it writes
  * onto the record it was asked from, so an empty map is merely a tool that writes
  * nothing yet (how every recipe starts out).
  */
 export const REQUIRED_BY_TOOL: Record<ToolId, Array<{ analyzer: string; key: string }>> = {
-  file_drop: [{ analyzer: 'filesystem', key: 'path' }],
+  file_drop: [{ analyzer: 'filesystem', key: 'path' }, { analyzer: 'filesystem', key: 'manifest' }],
   resolve: [],
 };
 /** File drop's — the name the editor and `enableFileDrop` have always used. */
@@ -355,12 +359,12 @@ export function toolsProblem(tools: unknown, fields: Iterable<ToolFieldLike>): s
   for (const [toolId, recipe] of Object.entries(parsed.data)) {
     const tool = toolId as ToolId, toolName = TOOL_NAMES[tool] ?? tool;
     // The Resolve tool's recipe is its one step: there is one thing it reads, and
-    // nothing to filter (no "runs on": no dropped things), defer (no "when": it is
-    // always asked for by hand) or put in a manifest.
+    // nothing to filter (no "runs on": no dropped things) or defer (no "when": it is
+    // always asked for by hand).
     if (tool === 'resolve') {
       if (recipe.steps.length !== 1) return `${toolName} has exactly one step (the timeline it reads), not ${recipe.steps.length}`;
       const st = recipe.steps[0];
-      for (const k of ['runs_on', 'when', 'into_manifest'] as const) {
+      for (const k of ['runs_on', 'when'] as const) {
         if (st[k] !== undefined) return `${toolName}: "${k}" means nothing for this tool — it is run by hand, on the one record it was asked from`;
       }
     }
@@ -368,6 +372,7 @@ export function toolsProblem(tools: unknown, fields: Iterable<ToolFieldLike>): s
     for (const [i, step] of recipe.steps.entries()) {
       const a = analyzerOf(step.analyzer);
       if (!a) return `${toolId} step ${i + 1}: unknown analyzer "${step.analyzer}"`;
+      if (isHashStep(step)) return `${toolName} step ${i + 1}: a hash is not a recipe step — the fingerprint (xxh3) runs at every drop and md5 / sha256 run from the record, all into the manifest`;
       if (a.tool !== tool) return `${toolName} step ${i + 1}: "${a.name}" belongs to ${TOOL_NAMES[a.tool] ?? a.tool}, not to ${toolName}`;
       for (const [key, fieldId] of Object.entries(step.map)) {
         const out = a.outputs.find((o) => o.key === key);
@@ -380,12 +385,6 @@ export function toolsProblem(tools: unknown, fields: Iterable<ToolFieldLike>): s
         if (prev && prev !== `${a.id}.${key}`) return `two outputs (${prev} and ${a.id}.${key}) are mapped to the same field`;
         used.set(fieldId, `${a.id}.${key}`);
       }
-    }
-    // A hash step writing into the manifest with no Manifest field mapped writes
-    // nothing — like any step with an empty map, allowed (it is how a step starts
-    // out); the editor says so beside the tick instead of refusing the save.
-    for (const step of recipe.steps) {
-      if (step.into_manifest !== undefined && !isHashStep(step)) return `${analyzerOf(step.analyzer)?.name ?? step.analyzer}: only a hash step can write into the manifest`;
     }
     for (const r of REQUIRED_BY_TOOL[tool]) {
       if (!recipe.steps.some((s) => s.analyzer === r.analyzer && r.key in s.map)) {
@@ -430,24 +429,17 @@ export function pruneTools(tools: TablesTools, fields: Iterable<ToolFieldLike>):
   return { tools: out, dropped };
 }
 
-/**
- * The step that writes the fingerprint (contract/fingerprint.ts): the recipe's own
- * `hash-xxh3` step when it has one that runs at the drop (it may add a column),
- * else an implicit one into the manifest only. A recipe cannot opt out — a
- * manual xxh3 step still leaves the implicit one running at the drop.
- */
-export function fingerprintStep(recipe: Recipe): Step {
-  const own = recipe.steps.find((s) => s.analyzer === 'hash-xxh3' && !isManual(s));
-  return own ?? { analyzer: 'hash-xxh3', map: {} };
-}
+/** A hash as the step it runs as: the fingerprint at every drop, a checksum by hand. Never stored in a recipe. */
+export const hashStep = (algo: string): Step => ({ analyzer: `hash-${algo}`, map: {} });
+export const fingerprintStep = (): Step => hashStep(FINGERPRINT);
+/** A recipe's own steps. A hash step in a stored recipe (one sql/021 has not reached) is ignored, not run twice. */
+export const stepsOf = (recipe: Recipe): Step[] => recipe.steps.filter((s) => !isHashStep(s));
 
 /** The effective filter of a step. */
 export const runsOnOf = (step: Step): RunsOn => step.runs_on ?? analyzerOf(step.analyzer)?.defaultRunsOn ?? {};
 /** A step run by hand from the record, not at the drop. */
 export const isManual = (step: Step): boolean => step.when === 'manual';
 export const isHashStep = (step: Step): boolean => step.analyzer.startsWith('hash-');
-/** Does this hash step write into the manifest? (Absent = yes. The fingerprint always does: the manifest is where it is read.) */
-export const intoManifest = (step: Step): boolean => isHashStep(step) && (step.analyzer === `hash-${FINGERPRINT}` || step.into_manifest !== false);
 
 /** Does a step apply to a dropped thing? An absent list is no constraint. */
 export function stepApplies(step: Step, unit: { media: string; kind: string }): boolean {
@@ -485,7 +477,6 @@ export function describe(recipe: Recipe, fields: Iterable<{ id: string; name: st
     const via = a.program ? `${a.program}${v}` : a.name;
     // In the analyzer's own output order — jsonb does not keep a map's key order.
     const cols = a.outputs.filter((o) => o.key in step.map).map((o) => `${o.name} → ${nameOf.get(step.map[o.key]) ?? 'a missing field'}`);
-    if (intoManifest(step)) cols.unshift('into the manifest');
     return `${i + 1}. ${when}: ${via} → ${cols.length ? cols.join(', ') : 'nothing mapped'}.`;
   });
 }
@@ -495,6 +486,9 @@ export function defaultRecipe(tool: ToolId = 'file_drop'): Recipe {
   if (tool === 'resolve') return { steps: [{ analyzer: 'resolve', map: {} }] };
   return { steps: [{ analyzer: 'filesystem', map: {} }, { analyzer: 'ffprobe', map: {} }] };
 }
+
+/** What File drop does with hashes, as the Summary's closing line — there is no step to read it from. */
+export const HASHES_SUMMARY = 'Always: every dropped file is fingerprinted (xxh3) into the manifest. md5 and sha256 run from the record when asked, into the manifest too.';
 
 /* ── provenance ──────────────────────────────────────────────────────────── */
 
