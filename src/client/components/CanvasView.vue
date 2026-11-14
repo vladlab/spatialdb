@@ -422,9 +422,11 @@ import { bezierPath, rectsIntersect, type AnchorSide, type Point } from '../canv
 import { CanvasConfig, attachLook, cardFieldsFor, detachLook, glowOf, hidesEmpty, lookEdit, lookOf, ownsLook, pinnedFieldsFor, promoteLook, rulesFor, type CanvasLook } from '../../contract/canvasConfig';
 import { legendOf, paintsOf, type ColorRule, type Paints } from '../../contract/colorRules';
 import ColorRules from './ColorRules.vue';
-import { CARD_COMPARE_SLOT, CARD_W, defaultCardWidth, effectiveHeight, fitCardWidth, lineCount, linkHandleAt, visibleRows, wrapTitle } from '../canvas/cardLayout';
+import { timelineStrip } from '../../contract/timelineStrip';
+import { CARD_COMPARE_SLOT, CARD_STRIP_LANES, CARD_W, defaultCardWidth, effectiveHeight, fitCardWidth, lineCount, linkHandleAt, visibleRows, wrapTitle } from '../canvas/cardLayout';
 import { compareRequest } from '../compareOpen';
 import { compareOf } from '../../contract/compare';
+import { CardIcon, iconFor } from '../../contract/cardIcon';
 import { capsuleWidth, JUMP_PAD, pairSlot, textWidth } from '../textWidth';
 import type { CardRow } from './RecordCard.vue';
 import type { Rect } from '../canvas/geometry';
@@ -545,7 +547,15 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
   // A structured value is a one-line SUMMARY on a card ("4 tracks / 12 ch (5.1, 2.0…)"):
   // a card's rows are fixed-height, and the full thing lives in the tray.
   // A video layout also hands the card its VALUE: the row draws the mini strip beside the summary.
-  if (f.type === 'structured') return { id: f.id, name: f.name, text: summarise(shapeOf(f), rec.data[f.key]), strip: shapeOf(f) === 'video_layout' ? rec.data[f.key] : undefined };
+  if (f.type === 'structured') {
+    const shape = shapeOf(f), v = rec.data[f.key];
+    // A TIMELINE'S AUDIO (CANVAS-BRIEF.md B3) is drawn as a mini timeline: one card row for
+    // its name and summary, one per lane (at most CARD_STRIP_LANES), one for the timecodes,
+    // one for "+N more" — the rows the card's height arithmetic counts (cardLayout `rowLines`).
+    const ts = shape === 'timeline_audio' ? timelineStrip(v, CARD_STRIP_LANES) : null;
+    if (ts) return { id: f.id, name: f.name, text: summarise(shape, v), timeline: v, stripLines: 2 + ts.lanes.length + (ts.hidden ? 1 : 0) };
+    return { id: f.id, name: f.name, text: summarise(shape, v), strip: shape === 'video_layout' ? v : undefined };
+  }
   if (f.type === 'attachment') {
     const n = Array.isArray(rec.data[f.key]) ? (rec.data[f.key] as unknown[]).length : 0;
     return { id: f.id, name: f.name, text: n ? `${n} file${n === 1 ? '' : 's'}` : '' };
@@ -713,6 +723,7 @@ const baseCards = computed(() =>
       tint: paints.value.get(rec.id)?.row?.tint,
       // The compare button (CANVAS-BRIEF.md B4): null when this table compares nothing.
       verdict: derived.cardVerdict(rec.id),
+      watermark: watermarkOf(rec, table?.card_icon),
       collapsed: p.collapsed,
       // No width of its own: as wide as its name (cardLayout.ts) — resolved HERE, once, so the
       // card, the arrows and the box selection all use the same number.
@@ -783,6 +794,23 @@ const stackLayouts = computed(() => {
 
 /** Until a stack's table is wholly loaded, nothing in it is called stale: the links its filter reads arrive with the table. */
 const stackLoaded = (stackId: string) => store.tableLoads.get(stackById.value.get(stackId)?.tableId ?? '')?.state === 'loaded';
+/**
+ * THE WATERMARK one card wears (contract/cardIcon.ts) — its table's setting, read
+ * against this record: a select's choice or a text as it is, a single link's record
+ * by its label. Identity, like the table's colour: the same on every canvas.
+ */
+function watermarkOf(rec: RecordRow, config: unknown): ReturnType<typeof iconFor> {
+  if (!config) return null;
+  const parsed = CardIcon.safeParse(config);
+  if (!parsed.success) return null;
+  const f = parsed.data.byField ? store.state.fields.get(parsed.data.byField) : undefined;
+  let value: string | undefined;
+  if (f && f.table_id === rec.table_id) {
+    if (f.type === 'link') { const to = derived.linksFrom(rec.id, f.id)[0]; value = to ? derived.plainLabelOfId(to) : undefined; }
+    else { const v = rec.data[f.key]; value = v === undefined || v === null ? undefined : String(v); }
+  }
+  return iconFor(parsed.data, value);
+}
 /**
  * A title as the lines a card of width `w` draws (cardLayout.ts `wrapTitle`). Every
  * height on the canvas — the card's own, arrows, selection, stacks — is computed from

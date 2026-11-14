@@ -146,8 +146,13 @@ export function fitCardWidth(title: string, rows: RowWidth[], measure: (text: st
  * so `cardHeight` counts LINES, not rows. `rowLines` is the one place that rule lives.
  */
 export const CARD_MAX_LINES = 6;
-export interface RowShape { lines?: string[] }
+/** The most audio lanes a card's timeline strip draws; the rest are "+N more lanes". */
+export const CARD_STRIP_LANES = 8;
+export interface RowShape { lines?: string[]; stripLines?: number }
 export function rowLines(row: RowShape): number {
+  // A TIMELINE row (B3) says how tall its strip is, in rows: its name line, a line per
+  // lane, the timecodes, and "+N more" when lanes were left out (TimelineStrip.vue).
+  if (row.stripLines) return row.stripLines;
   const n = row.lines?.length ?? 1;
   return n <= 1 ? 1 : Math.min(n, CARD_MAX_LINES) + (n > CARD_MAX_LINES ? 1 : 0);
 }

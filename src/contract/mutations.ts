@@ -30,6 +30,7 @@ import { z } from 'zod';
 import { Via } from './tools.js';
 import { ViewConfig } from './views.js';
 import { CanvasConfig, CanvasLook } from './canvasConfig.js';
+import { CardIcon } from './cardIcon.js';
 
 /**
  * `z.guid()`, not `z.uuid()`. Zod's strict uuid() enforces RFC 4122 version and
@@ -153,6 +154,11 @@ const TableUpdate = z.strictObject({
    * defaults). Rules in contract/canvasConfig.ts, `lookOf`.
    */
   canvasLook: CanvasLook.nullable().optional(),
+  /**
+   * The WATERMARK of this table's canvas cards (sql/024, contract/cardIcon.ts): one
+   * icon, or one per record from a field's value. Replaced whole; null clears it.
+   */
+  cardIcon: CardIcon.nullable().optional(),
 });
 
 const TableDelete = z.strictObject({

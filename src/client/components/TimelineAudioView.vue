@@ -21,6 +21,9 @@
 -->
 <template>
   <div v-if="ta" class="ta">
+    <!-- The lanes DRAWN first (CANVAS-BRIEF.md B3) — what is where at a glance; the table
+         under it has every clip's exact in, out and file. -->
+    <TimelineStrip class="ta-strip" :value="value" />
     <p v-if="!tracks.length" class="ta-line muted">No audio tracks on this timeline.</p>
     <div v-else class="ta-scroll">
       <table class="ta-table">
@@ -56,6 +59,7 @@ import { invoke, isDesktop, notice } from '../desktop';
 import { recordTcBase } from '../tcBase';
 import { TimelineAudio } from '../../contract/shapes';
 import { formatLength } from '../../contract/timecode';
+import TimelineStrip from './TimelineStrip.vue';
 
 const props = defineProps<{ store: Store; recordId: string; value: unknown }>();
 
@@ -74,6 +78,7 @@ const reveal = (path: string) => invoke<string>('reveal', { path })
 
 <style scoped>
 .ta { font-size: 12px; min-width: 0; }
+.ta-strip { padding: 8px 12px 4px; border-bottom: 1px solid var(--border-main); }
 .ta-line { margin: 0; padding: 8px 12px; }
 .muted { color: var(--text-muted); }
 .ta-bad { color: var(--warning); }

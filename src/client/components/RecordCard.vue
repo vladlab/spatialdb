@@ -27,6 +27,14 @@
     @dblclick.stop="$emit('open', recordId)"
     @contextmenu.prevent.stop="$emit('menu', { recordId, x: $event.clientX, y: $event.clientY })"
   >
+    <!-- THE WATERMARK (CANVAS-BRIEF.md B2): what this card IS, large and faint behind
+         its rows — set on the table (contract/cardIcon.ts). In a clipped layer of its
+         own, so it never spills past the card and never takes a click. -->
+    <div v-if="watermark" class="card-watermark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">
+        <path v-for="(d, i) in CARD_ICON_PATHS[watermark]" :key="i" :d="d" />
+      </svg>
+    </div>
     <header class="card-head" :style="{ background: tableColor, color: textOn(tableColor) }">
       <span class="card-table">{{ tableName }}</span>
       <!-- Up here, not in the title row: the title WRAPS (cardLayout.ts), and a badge that
@@ -63,7 +71,7 @@
     </div>
 
     <div v-if="!collapsed && (rows.length || rich?.length)" class="card-body">
-      <div v-for="r in rows" :key="r.id" class="card-field" :class="[{ 'is-link': r.link, tall: (r.ids?.length ?? 0) > 1 || (r.lines?.length ?? 0) > 1, tinted: !!r.tint }, r.tint ? `tint-${r.tint}` : '']">
+      <div v-for="r in rows" :key="r.id" class="card-field" :class="[{ 'is-link': r.link, tall: (r.ids?.length ?? 0) > 1 || (r.lines?.length ?? 0) > 1 || !!r.stripLines, 'has-strip': !!r.stripLines, tinted: !!r.tint }, r.tint ? `tint-${r.tint}` : '']">
         <span class="card-key"><span v-if="r.color" class="port-dot" :style="{ background: r.color }" />{{ r.name }}</span>
         <!-- Linked records (a link, a backlink, a junction column) are PILLS — the same
              pill as the grid and the tray, in the row's colour: drag one OFF this card
@@ -94,6 +102,8 @@
         </span>
         <span v-else class="card-val" :class="{ empty: !r.text, derived: r.derived, broken: r.broken }"><VideoLayoutStrip v-if="r.strip !== undefined" mini :value="r.strip" />{{ r.text || '—' }}</span>
         <VerdictMark v-if="r.verdict" class="card-warn" :kind="r.verdict.ok ? 'ok' : 'warn'" :title="r.verdict.title" />
+        <!-- A timeline's audio lanes, full card width under the row's name and summary. -->
+        <TimelineStrip v-if="r.stripLines" class="card-strip" mini :value="r.timeline" :max-lanes="CARD_STRIP_LANES" :width-px="(w ?? CARD_W) - 16" />
       </div>
       <!-- NOTES: formatted, with their images, in a window of FIXED height that scrolls
            inside itself (cardLayout.ts says why it cannot be as tall as its content).
@@ -144,13 +154,16 @@
 </template>
 
 <script setup lang="ts">
-import { CARD_MAX_LINES } from '../canvas/cardLayout';
+import { CARD_MAX_LINES, CARD_STRIP_LANES } from '../canvas/cardLayout';
 import { textOn } from '../colorText';
 import { computed, defineAsyncComponent } from 'vue';
 import RecordPill from './RecordPill.vue';
 import VideoLayoutStrip from './VideoLayoutStrip.vue';
+import TimelineStrip from './TimelineStrip.vue';
 import VerdictMark from './VerdictMark.vue';
 import type { CardVerdict } from '../../contract/compare';
+import type { CardIconId } from '../../contract/cardIcon';
+import { CARD_ICON_PATHS } from '../canvas/cardIcons';
 import type { Store } from '../store';
 import {
   CARD_BODY_PAD, CARD_COMPARE_SLOT, CARD_HEAD_H, CARD_RICH_H, CARD_RICH_LABEL_H, CARD_ROW_H, CARD_TITLE_LINE_H, CARD_TITLE_PX, titleHeight, CARD_W, LINK_HANDLE_OUT, LINK_HANDLE_SIZE, effectiveHeight, lineCount,
@@ -181,6 +194,10 @@ export interface CardRow {
   countTitle?: string;
   /** Several values (a link to three works): shown as a vertical list, one per line. */
   lines?: string[];
+  /** A TIMELINE'S AUDIO (B3): the value, drawn as a mini timeline under the row's name… */
+  timeline?: unknown;
+  /** …and how many card rows that takes (cardLayout.ts `rowLines`). */
+  stripLines?: number;
   /** The linked records behind a link/backlink row, in `lines` (or `text`) order — draggable onto this canvas. */
   ids?: string[];
   /** Per id, in the same order: that record already has a card on THIS canvas — its pill wears the jump arrow. */
@@ -250,6 +267,8 @@ const props = defineProps<{
   titleLines?: string[];
   /** The compare button's verdict (contract/compare.ts `cardVerdict`); null/absent → no button. */
   verdict?: CardVerdict | null;
+  /** The watermark icon (contract/cardIcon.ts `iconFor`); null/absent → none. */
+  watermark?: CardIconId | null;
 }>();
 
 const emit = defineEmits<{
@@ -383,6 +402,10 @@ function onPointerDown(e: PointerEvent) {
 .card-unplace { font-size: 14px; }
 .card-unplace:hover, .card-fold:hover { opacity: 1; }
 
+/* Bottom-right, a little off the corner, under everything the card draws. */
+.card-watermark { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; border-radius: inherit; color: var(--card-watermark); }
+.card-watermark svg { position: absolute; right: -12px; bottom: -14px; width: 104px; height: 104px; }
+.card-head, .card-title, .card-body { position: relative; z-index: 1; }
 .card-title {
   /* Lines start (CARD_TITLE_H − line)/2 from the top, so ONE line sits exactly where the
      single-line title always did; each more line adds CARD_TITLE_LINE_H below. */
@@ -500,6 +523,9 @@ function onPointerDown(e: PointerEvent) {
 /* A row with SEVERAL values is as tall as its lines — the height the layout arithmetic
    (cardLayout.rowLines) already counts; a fixed one-row height drew them over the rows below. */
 .card-field.tall { height: auto; }
+/* A timeline row: its name and summary on the first line, the strip under it, full width. */
+.card-field.has-strip { flex-wrap: wrap; row-gap: 0; }
+.card-field.has-strip .card-strip { flex: 0 0 100%; }
 .card-key {
   color: var(--text-muted); flex: none; width: 76px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

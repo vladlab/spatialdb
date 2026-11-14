@@ -363,6 +363,18 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
 
 ## Needs eyes (built, tested headlessly, never SEEN)
 
+- **Card watermarks and the mini timeline (Nov 14, CANVAS-BRIEF.md B2 + B3, sql/024).**
+  ⚙ Table settings → "Card watermark": none / one icon / by a field. "By a field" picks
+  the first select (Files → Media) and guesses video, audio, image (→ image sequence)
+  and document; "other" and anything unrecognised are one click each. Cards then wear a
+  large faint icon bottom-right behind their rows. Never seen: whether 7% (dark) / 11%
+  (light) is too faint or too loud, and the icon shapes at that size.
+  An Edit's Audio tracks (timeline_audio) now draws on its card as lanes — "A1 5.1"
+  with Tone then Mix, every lane on shared columns, the start timecodes under it, at
+  most 8 lanes then "+N more" — and the same, bigger, at the top of the tray's Audio
+  tracks block. Clip colours are per clip NAME (the same stem is the same colour on
+  every lane), grey for a clip with no file (tone); never red.
+
 - **Wrapping titles and the compare button (Nov 14, CANVAS-BRIEF.md B1 + B4).** A card's
   default width now stops at 320px (was 720) and a longer name WRAPS — at spaces, then
   after _ - . /, by character only when there is no break; folded cards wrap too; 8

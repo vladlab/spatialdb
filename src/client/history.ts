@@ -164,6 +164,7 @@ export function inverseOf(state: State, m: Mutation, queuedId: string): Inverse 
         ...(m.recordCanvases !== undefined ? { recordCanvases: t.record_canvases === true } : {}),
         // The shared card look (sql/023): replaced whole, so the inverse is the whole old one.
         ...(m.canvasLook !== undefined ? { canvasLook: (t.canvas_look ?? null) as never } : {}),
+        ...(m.cardIcon !== undefined ? { cardIcon: (t.card_icon ?? null) as never } : {}),
       });
     }
 
