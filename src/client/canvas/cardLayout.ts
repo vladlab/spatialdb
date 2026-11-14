@@ -17,9 +17,21 @@
  */
 
 export const CARD_W = 240;         // the NARROWEST a card is by default — see `defaultCardWidth`
-export const CARD_W_MAX = 720;     // …and the widest a title can make it; wider is a hand resize
+export const CARD_W_DEFAULT_MAX = 320;   // the widest a TITLE makes a card; past it the title wraps (owner, Nov 14 2026)
+export const CARD_W_MAX = 720;     // the widest "fit to content" (double-click an edge) makes it; wider is a hand resize
 export const CARD_HEAD_H = 22;     // the coloured table-name strip
-export const CARD_TITLE_H = 26;    // the record's label (primary field)
+export const CARD_TITLE_H = 26;    // the record's label (primary field), ONE line of it — see `titleHeight`
+/**
+ * THE TITLE WRAPS (CANVAS-BRIEF.md B1). It is broken into lines HERE, in arithmetic
+ * (`wrapTitle`), and RecordCard draws exactly those lines, each one no-wrap: the
+ * browser never chooses a break, so the height below is the height drawn and arrows
+ * still meet the real edge. One line is CARD_TITLE_H, as before; each more adds a line.
+ */
+export const CARD_TITLE_LINE_H = 17;
+export const CARD_TITLE_MAX_LINES = 8;   // a safety cap; the last line ends in "…"
+/** Room kept at the end of a title's FIRST line for the compare button (B4) — the same on every card of a comparing table, so a verdict changing never re-wraps a title. */
+export const CARD_COMPARE_SLOT = 78;
+export const titleHeight = (lines: number) => CARD_TITLE_H + (Math.max(1, lines) - 1) * CARD_TITLE_LINE_H;
 export const CARD_TITLE_PX = 13;   // its font size — a notch above the rows' 12px, so the name reads first
 export const CARD_TEXT_PX = 12;    // the rows
 export const CARD_ROW_H = 18;      // one "key  value" line
@@ -61,14 +73,49 @@ export const linkHandleAt = (r: { x: number; y: number; w: number; h: number }) 
    so arrows and the box selection work from the same numbers the card draws with. */
 
 /** What the title line adds around its text: the fold button, its gap, the padding, the border. */
-const TITLE_CHROME = 14 + 4 + 4 + 8 + 2 + 8;
+export const TITLE_CHROME = 14 + 4 + 4 + 8 + 2 + 8;
 /** A row's chrome around its value: the key column, the gap, the padding, the border. */
 const ROW_CHROME = 76 + 8 + 16 + 2;
-const clampW = (w: number) => Math.max(CARD_W, Math.min(CARD_W_MAX, Math.ceil(w)));
+const clampW = (w: number, max = CARD_W_MAX) => Math.max(CARD_W, Math.min(max, Math.ceil(w)));
+type Measure = (text: string, px: number, weight?: '' | 'bold') => number;
 
-/** The width a card with no `w` of its own gets: its name, whole. */
-export function defaultCardWidth(title: string, measure: (text: string, px: number, weight?: '' | 'bold') => number): number {
-  return clampW(measure(title, CARD_TITLE_PX, 'bold') + TITLE_CHROME);
+/** The width a card with no `w` of its own gets: its name, whole — up to 320px; a longer name wraps. */
+export function defaultCardWidth(title: string, measure: Measure): number {
+  return clampW(measure(title, CARD_TITLE_PX, 'bold') + TITLE_CHROME, CARD_W_DEFAULT_MAX);
+}
+
+/**
+ * A title, broken into the lines a card of width `cardW` draws. Greedy: a line takes
+ * words while they fit, breaking at a space, or just AFTER _ - . / (filenames have
+ * no spaces: "SHOW_EP101_" stays together, the next part moves down). A run wider
+ * than a whole line — a filename with no separators at all — is cut by character.
+ * `reserve` is room kept free at the end of the FIRST line (the compare button).
+ * Past CARD_TITLE_MAX_LINES the last line ends in "…". Never returns [] (an empty
+ * title is one empty line).
+ */
+export function wrapTitle(title: string, cardW: number, measure: Measure, reserve = 0): string[] {
+  const rest = Math.max(20, cardW - TITLE_CHROME);
+  const first = Math.max(20, rest - reserve);
+  const fits = (t: string, i: number) => measure(t.trimEnd(), CARD_TITLE_PX, 'bold') <= (i === 0 ? first : rest);
+  const tokens = title.match(/[^ _\-./]*(?:[ _\-./]+|$)/g)?.filter(Boolean) ?? [];
+  const lines: string[] = [];
+  let cur = '';
+  for (const tok of tokens) {
+    if (fits(cur + tok, lines.length)) { cur += tok; continue; }
+    if (cur) { lines.push(cur.trimEnd()); cur = ''; }
+    if (fits(tok, lines.length)) { cur = tok; continue; }
+    for (const ch of tok) {                                   // no break in it at all: by character
+      if (fits(cur + ch, lines.length) || !cur) { cur += ch; continue; }
+      lines.push(cur); cur = ch;
+    }
+  }
+  lines.push(cur.trimEnd());
+  if (lines.length <= CARD_TITLE_MAX_LINES) return lines;
+  const kept = lines.slice(0, CARD_TITLE_MAX_LINES);
+  let last = kept[kept.length - 1];
+  while (last && !fits(last + '…', kept.length - 1)) last = last.slice(0, -1);
+  kept[kept.length - 1] = last + '…';
+  return kept;
 }
 /** A row's own idea of its width: for `fitCardWidth`, the widest line it would draw. */
 export interface RowWidth { text: string; lines?: string[]; count?: number; slot?: number; statusW?: number; ids?: string[] }
@@ -132,8 +179,8 @@ export function visibleRows<R extends RowFill & { id: string }>(rows: R[], hideE
 }
 
 /** Height for `rows` LINES (see `rowLines`) — the name is historical. */
-export function cardHeight(rows: number, collapsed: boolean, rich = 0): number {
-  const chrome = CARD_BORDER + CARD_HEAD_H + CARD_TITLE_H;
+export function cardHeight(rows: number, collapsed: boolean, rich = 0, titleLines = 1): number {
+  const chrome = CARD_BORDER + CARD_HEAD_H + titleHeight(titleLines);
   return collapsed || (rows === 0 && rich === 0) ? chrome : chrome + CARD_BODY_PAD + rows * CARD_ROW_H + rich * CARD_RICH_H;
 }
 
@@ -145,10 +192,10 @@ export function cardHeight(rows: number, collapsed: boolean, rich = 0): number {
  * A FOLDED card ignores the height: folding exists to get a card out of the
  * way, and a folded card that kept its 400px height would defeat that.
  */
-export function effectiveHeight(h: number | null, rows: number, collapsed: boolean, rich = 0): number {
-  if (collapsed) return cardHeight(rows, true);
-  if (h === null) return cardHeight(rows, false, rich);
-  return Math.max(h, cardHeight(rows, false, 0));
+export function effectiveHeight(h: number | null, rows: number, collapsed: boolean, rich = 0, titleLines = 1): number {
+  if (collapsed) return cardHeight(rows, true, 0, titleLines);
+  if (h === null) return cardHeight(rows, false, rich, titleLines);
+  return Math.max(h, cardHeight(rows, false, 0, titleLines));
 }
 
 /**
@@ -162,10 +209,10 @@ export function effectiveHeight(h: number | null, rows: number, collapsed: boole
  * handle (`linkHandleAt`) — so nothing in the app calls it today. Kept, with its
  * tests, as the row arithmetic anything row-anchored will need again.
  */
-export function rowPortY(index: number, cardH: number, collapsed: boolean, rows?: RowShape[]): number | null {
+export function rowPortY(index: number, cardH: number, collapsed: boolean, rows?: RowShape[], titleLines = 1): number | null {
   if (collapsed || index < 0) return null;
   // Lines above this row (rows may be several lines tall); the port sits on its FIRST line.
   const above = rows ? lineCount(rows.slice(0, index)) : index;
-  const y = CARD_BORDER / 2 + CARD_HEAD_H + CARD_TITLE_H + CARD_BODY_PAD / 2 + above * CARD_ROW_H + CARD_ROW_H / 2;
+  const y = CARD_BORDER / 2 + CARD_HEAD_H + titleHeight(titleLines) + CARD_BODY_PAD / 2 + above * CARD_ROW_H + CARD_ROW_H / 2;
   return y + CARD_ROW_H / 2 <= cardH ? y : null;
 }

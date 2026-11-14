@@ -225,6 +225,7 @@
         @unplace="unplace"
         @fold="toggleFold"
         @open="(id) => (isBoardRecord(id) ? $emit('open-board', id) : $emit('open-record', id))"
+        @compare="openCompare"
         @menu="onCardMenu"
       />
     </div>
@@ -314,6 +315,7 @@
         <!-- A board placed on a board: this is how you walk from one canvas to another. -->
         <button v-if="isBoardRecord(menu.recordId!)" class="open-board" @click="menuDo((m) => $emit('open-board', m.recordId!))">▦ Open this board</button>
         <button @click="menuDo((m) => $emit('open-record', m.recordId!))">Open record</button>
+        <button v-if="derived.cardVerdict(menu.recordId!)?.linkId" @click="menuDo((m) => openCompare(m.recordId!))">Compare with target</button>
         <!-- A note as a whole page, in a new browser tab (client/noteLinks.ts). -->
         <button v-for="nf in noteFields(store, menu.recordId!)" :key="nf.id" class="open-note" :data-field="nf.id"
                 @click="menuDo((m) => openNote(m.recordId!, nf.id))">Open “{{ nf.name }}” in a tab ↗</button>
@@ -420,7 +422,9 @@ import { bezierPath, rectsIntersect, type AnchorSide, type Point } from '../canv
 import { CanvasConfig, attachLook, cardFieldsFor, detachLook, glowOf, hidesEmpty, lookEdit, lookOf, ownsLook, pinnedFieldsFor, promoteLook, rulesFor, type CanvasLook } from '../../contract/canvasConfig';
 import { legendOf, paintsOf, type ColorRule, type Paints } from '../../contract/colorRules';
 import ColorRules from './ColorRules.vue';
-import { CARD_W, defaultCardWidth, effectiveHeight, fitCardWidth, lineCount, linkHandleAt, visibleRows } from '../canvas/cardLayout';
+import { CARD_COMPARE_SLOT, CARD_W, defaultCardWidth, effectiveHeight, fitCardWidth, lineCount, linkHandleAt, visibleRows, wrapTitle } from '../canvas/cardLayout';
+import { compareRequest } from '../compareOpen';
+import { compareOf } from '../../contract/compare';
 import { capsuleWidth, JUMP_PAD, pairSlot, textWidth } from '../textWidth';
 import type { CardRow } from './RecordCard.vue';
 import type { Rect } from '../canvas/geometry';
@@ -431,7 +435,7 @@ import ArrowLayer from './ArrowLayer.vue';
 import RecordCard from './RecordCard.vue';
 import StackFrame from './StackFrame.vue';
 import StackEditor from './StackEditor.vue';
-import { STACK_MAX, STACK_MIN_W, STACK_PAD, describeFilters, stackCensus, stackDropLinks, stackLayout, type StackCensus, type StackDef, type StackLayout } from '../../contract/canvasStack';
+import { STACK_MAX, STACK_MIN_W, STACK_PAD, describeFilters, stackCardWidth, stackCensus, stackDropLinks, stackLayout, type StackCensus, type StackDef, type StackLayout } from '../../contract/canvasStack';
 import { placementKey, recordsOf } from '../state';
 
 const props = defineProps<{ store: Store; canvasId: string; /** The record open in the tray, or '' — its card is marked. */ openRecordId?: string;
@@ -676,6 +680,13 @@ const tablesRead = computed(() => {
     const cfg = junctionOf(t);
     if (cfg && placed.has(String(targetOf(cfg.a))) && placed.has(String(targetOf(cfg.b)))) out.add(t.id);
   }
+  // The compare button (B4) needs each comparing link's TARGET records loaded, and the
+  // owner's own table (its links): otherwise every verdict reads "not loaded".
+  for (const f of store.state.fields.values()) {
+    if (!placed.has(f.table_id) || !compareOf(f)?.pairs.length) continue;
+    out.add(f.table_id);
+    const t = derived.compareTargetTable(f); if (t) out.add(t);
+  }
   for (const tableId of placed) {
     for (const way of linkWays(store.state.fields.values(), store.state.tables.values(), tableId)) out.add(way.kind === 'link' ? tableId : way.table);
   }
@@ -700,6 +711,8 @@ const baseCards = computed(() =>
       rows: cardRows(rec, paints.value.get(rec.id)),
       rich: richBlocks(rec),
       tint: paints.value.get(rec.id)?.row?.tint,
+      // The compare button (CANVAS-BRIEF.md B4): null when this table compares nothing.
+      verdict: derived.cardVerdict(rec.id),
       collapsed: p.collapsed,
       // No width of its own: as wide as its name (cardLayout.ts) — resolved HERE, once, so the
       // card, the arrows and the box selection all use the same number.
@@ -757,11 +770,12 @@ const stackLayouts = computed(() => {
   const byId = new Map(baseCards.value.map((c) => [c.recordId, c]));
   for (const st of rawStacks.value) {
     const census = censuses.value.get(st.id);
-    const members = (census?.order ?? []).flatMap((id) => {
-      const c = byId.get(id);
-      return c ? [{ recordId: id, h: effectiveHeight(c.h, lineCount(c.rows), c.collapsed, c.rich.length), w: c.w }] : [];
-    });
+    const inStack = (census?.order ?? []).flatMap((id) => { const c = byId.get(id); return c ? [c] : []; });
     const live = stackLive.get(st.id);
+    // Heights at the STACK's card width: a title wraps to the width it is drawn at.
+    const cardW = stackCardWidth({ w: live?.w !== undefined ? live.w : st.w }, inStack.map((c) => c.w));
+    const members = inStack.map((c) => ({ recordId: c.recordId, w: c.w,
+      h: effectiveHeight(c.h, lineCount(c.rows), c.collapsed, c.rich.length, titleLinesOf(c.title, cardW, c.verdict).length) }));
     m.set(st.id, stackLayout({ x: live?.x ?? st.x, y: live?.y ?? st.y, w: live?.w !== undefined ? live.w : st.w, collapsed: st.collapsed, name: st.name }, members));
   }
   return m;
@@ -769,7 +783,28 @@ const stackLayouts = computed(() => {
 
 /** Until a stack's table is wholly loaded, nothing in it is called stale: the links its filter reads arrive with the table. */
 const stackLoaded = (stackId: string) => store.tableLoads.get(stackById.value.get(stackId)?.tableId ?? '')?.state === 'loaded';
+/**
+ * A title as the lines a card of width `w` draws (cardLayout.ts `wrapTitle`). Every
+ * height on the canvas — the card's own, arrows, selection, stacks — is computed from
+ * these same lines, so nothing measures the DOM. Remembered: a canvas re-renders on
+ * every pointer move, and the answer only changes with the title or the width.
+ */
+const titleMemo = new Map<string, string[]>();
+function titleLinesOf(title: string, w: number, verdict: unknown): string[] {
+  const reserve = verdict ? CARD_COMPARE_SLOT : 0;
+  const key = `${w}|${reserve}|${title}`;
+  let lines = titleMemo.get(key);
+  if (!lines) {
+    if (titleMemo.size > 5000) titleMemo.clear();
+    lines = wrapTitle(title, w, textWidth, reserve);
+    titleMemo.set(key, lines);
+  }
+  return lines;
+}
 const cards = computed(() => {
+  return placedCards.value.map((c) => ({ ...c, titleLines: titleLinesOf(c.title, c.w, c.verdict) }));
+});
+const placedCards = computed(() => {
   const dragging = drag.draggingIds.value;
   return baseCards.value.map((c) => {
     const stackId = placedIn(c.recordId);
@@ -1021,7 +1056,7 @@ function dropCards(moves: Array<{ recordId: string; x: number; y: number; z: num
 const cardRects = computed(() => {
   const m = new Map<string, Rect>();
   for (const c of cards.value) {
-    m.set(c.recordId, { x: c.x, y: c.y, w: c.w, h: effectiveHeight(c.h, lineCount(c.rows), c.collapsed, c.rich.length) });
+    m.set(c.recordId, { x: c.x, y: c.y, w: c.w, h: effectiveHeight(c.h, lineCount(c.rows), c.collapsed, c.rich.length, c.titleLines.length) });
   }
   return m;
 });
@@ -2081,7 +2116,9 @@ function placeMany(records: RecordRow[], clientX: number, clientY: number, optio
   let z = placements.value.reduce((n, p) => Math.max(n, p.z), 0);
   let col = 0, row = 0, y = at.y;
   for (const rec of fresh) {
-    const h = effectiveHeight(null, lineCount(cardRows(rec)), false, richBlocks(rec).length);
+    const title = labelFrom(rec.data, labelKeys.value.get(rec.table_id), '');
+    const h = effectiveHeight(null, lineCount(cardRows(rec)), false, richBlocks(rec).length,
+      titleLinesOf(title, defaultCardWidth(title, textWidth), derived.cardVerdict(rec.id)).length);
     store.mutate({
       type: 'placement.add', id: crypto.randomUUID(), canvasId: props.canvasId, recordId: rec.id,
       x: Math.round(at.x + col * (CARD_W + DROP_GAP)), y: Math.round(y), w: null, h: null, z: ++z,
@@ -2167,6 +2204,14 @@ function togglePin(fieldId: string) {
     const { pinnedFields: _, ...rest } = l;
     return Object.keys(pinnedFields).length ? { ...rest, pinnedFields } : rest;
   });
+}
+
+/** The compare button, or "Compare with target": the tray, with the side by side open (client/compareOpen.ts). */
+function openCompare(recordId: string) {
+  const v = derived.cardVerdict(recordId);
+  if (!v?.linkId || !v.targetId) return;
+  compareRequest.value = { ownerId: recordId, linkId: v.linkId, targetId: v.targetId };
+  emit('open-record', recordId);
 }
 
 function unplace(recordId: string) {

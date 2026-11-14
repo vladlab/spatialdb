@@ -82,9 +82,14 @@ export interface StackLayout { rect: { x: number; y: number; w: number; h: numbe
  * stale), all at the stack's card width. Pure arithmetic over the cards' heights,
  * like cardLayout.ts: arrows and selection work from these numbers.
  */
+/** The width of a stack's CARDS: its own width less padding, or its widest card's default. A card's height depends on it (its title wraps), so it is asked before the layout. */
+export function stackCardWidth(stack: Pick<StackDef, 'w'>, cardWidths: number[]): number {
+  return Math.max(STACK_MIN_W, stack.w ?? Math.max(STACK_MIN_W, ...cardWidths.map((w) => w + 2 * STACK_PAD))) - 2 * STACK_PAD;
+}
+
 export function stackLayout(stack: Pick<StackDef, 'x' | 'y' | 'w' | 'collapsed'> & { name?: string }, cards: StackCard[]): StackLayout {
-  const w = Math.max(STACK_MIN_W, stack.w ?? Math.max(STACK_MIN_W, ...cards.map((c) => c.w + 2 * STACK_PAD)));
-  const cardW = w - 2 * STACK_PAD;
+  const cardW = stackCardWidth(stack, cards.map((c) => c.w));
+  const w = cardW + 2 * STACK_PAD;
   const out = new Map<string, { x: number; y: number; w: number }>();
   const headH = headHeightOf(stack);
   let y = stack.y + headH;

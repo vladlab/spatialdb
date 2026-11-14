@@ -29,6 +29,9 @@
   >
     <header class="card-head" :style="{ background: tableColor, color: textOn(tableColor) }">
       <span class="card-table">{{ tableName }}</span>
+      <!-- Up here, not in the title row: the title WRAPS (cardLayout.ts), and a badge that
+           came and went beside it would re-wrap it — and change the card's height. -->
+      <span v-if="stale" class="card-stale" title="This record no longer matches the stack's filter. Drag it out to keep it on the canvas, or × to remove it.">no longer matches</span>
       <!-- No × on a card its stack claims: the stack would place it again at once. -->
       <button
         v-if="!claimed"
@@ -43,8 +46,20 @@
     <div class="card-title">
       <button class="card-fold" :title="collapsed ? 'Unfold' : 'Fold'"
               @pointerdown.stop @dblclick.stop @click.stop="$emit('fold', recordId)">{{ collapsed ? '▸' : '▾' }}</button>
-      <span class="card-label" :class="{ empty: !title }">{{ title || 'untitled' }}</span>
-      <span v-if="stale" class="card-stale" title="This record no longer matches the stack's filter. Drag it out to keep it on the canvas, or × to remove it.">no longer matches</span>
+      <!-- THE TITLE, as the lines cardLayout.ts `wrapTitle` broke it into — each drawn
+           whole, never re-wrapped by the browser, so the height is the arithmetic's. -->
+      <span class="card-label" :class="{ empty: !title }" :title="title">
+        <template v-if="title"><span v-for="(l, i) in lines" :key="i" class="card-label-line">{{ l }}</span></template>
+        <template v-else>untitled</template>
+      </span>
+      <!-- THE COMPARE BUTTON (CANVAS-BRIEF.md B4): the record's pass/fail light, and the
+           way into the comparison. In the slot wrapTitle keeps free at the end of the
+           first line, on every card of a comparing table. -->
+      <button v-if="verdict" class="card-compare" :class="verdict.state" type="button" :disabled="verdict.state === 'none'" :title="verdict.title"
+              @pointerdown.stop @dblclick.stop @click.stop="$emit('compare', recordId)">
+        <VerdictMark v-if="verdict.state !== 'none'" :kind="verdict.state === 'pass' ? 'ok' : verdict.state === 'fail' ? 'bad' : 'warn'" :size="12" />
+        <span class="card-compare-word">{{ verdict.state === 'pass' ? 'match' : verdict.state === 'fail' ? `${verdict.differ} differ` : verdict.state === 'unknown' ? 'unsure' : 'no target' }}</span>
+      </button>
     </div>
 
     <div v-if="!collapsed && (rows.length || rich?.length)" class="card-body">
@@ -135,9 +150,10 @@ import { computed, defineAsyncComponent } from 'vue';
 import RecordPill from './RecordPill.vue';
 import VideoLayoutStrip from './VideoLayoutStrip.vue';
 import VerdictMark from './VerdictMark.vue';
+import type { CardVerdict } from '../../contract/compare';
 import type { Store } from '../store';
 import {
-  CARD_BODY_PAD, CARD_HEAD_H, CARD_RICH_H, CARD_RICH_LABEL_H, CARD_ROW_H, CARD_TITLE_H, CARD_TITLE_PX, CARD_W, LINK_HANDLE_OUT, LINK_HANDLE_SIZE, effectiveHeight, lineCount,
+  CARD_BODY_PAD, CARD_COMPARE_SLOT, CARD_HEAD_H, CARD_RICH_H, CARD_RICH_LABEL_H, CARD_ROW_H, CARD_TITLE_LINE_H, CARD_TITLE_PX, titleHeight, CARD_W, LINK_HANDLE_OUT, LINK_HANDLE_SIZE, effectiveHeight, lineCount,
 } from '../canvas/cardLayout';
 
 // TipTap's renderer is a large chunk; only a canvas that actually shows a note pays for it.
@@ -230,6 +246,10 @@ const props = defineProps<{
   tint?: string;
   /** How the tint is worn — the canvas's setting (contract/canvasConfig.ts `glow`). */
   glow?: 'ring' | 'glow';
+  /** The title broken into lines at this card's width (cardLayout.ts `wrapTitle`); absent → one line. */
+  titleLines?: string[];
+  /** The compare button's verdict (contract/compare.ts `cardVerdict`); null/absent → no button. */
+  verdict?: CardVerdict | null;
 }>();
 
 const emit = defineEmits<{
@@ -252,18 +272,23 @@ const emit = defineEmits<{
   (e: 'unplace', recordId: string): void;
   (e: 'fold', recordId: string): void;
   (e: 'open', recordId: string): void;
+  /** The compare button: open this record's comparison. */
+  (e: 'compare', recordId: string): void;
   (e: 'hover', recordId: string | null): void;
   (e: 'menu', payload: { recordId: string; x: number; y: number }): void;
 }>();
 
+const lines = computed(() => (props.titleLines?.length ? props.titleLines : [props.title ?? '']));
 const style = computed(() => ({
   transform: `translate(${props.x}px, ${props.y}px)`,
   width: `${props.w ?? CARD_W}px`,
   // Always explicit, from the same function the arrows use — never `auto`.
-  height: `${effectiveHeight(props.h, lineCount(props.rows), props.collapsed, props.rich?.length ?? 0)}px`,
+  height: `${effectiveHeight(props.h, lineCount(props.rows), props.collapsed, props.rich?.length ?? 0, lines.value.length)}px`,
   zIndex: String(props.z),
   '--head-h': `${CARD_HEAD_H}px`,
-  '--title-h': `${CARD_TITLE_H}px`,
+  '--title-h': `${titleHeight(lines.value.length)}px`,
+  '--title-line-h': `${CARD_TITLE_LINE_H}px`,
+  '--compare-slot': `${CARD_COMPARE_SLOT}px`,
   '--title-px': `${CARD_TITLE_PX}px`,
   '--row-h': `${CARD_ROW_H}px`,
   '--body-pad': `${CARD_BODY_PAD / 2}px`,
@@ -359,16 +384,33 @@ function onPointerDown(e: PointerEvent) {
 .card-unplace:hover, .card-fold:hover { opacity: 1; }
 
 .card-title {
-  display: flex; align-items: center; gap: 4px; flex: none;
-  box-sizing: border-box; height: var(--title-h); padding: 0 8px 0 4px;
+  /* Lines start (CARD_TITLE_H − line)/2 from the top, so ONE line sits exactly where the
+     single-line title always did; each more line adds CARD_TITLE_LINE_H below. */
+  display: flex; align-items: flex-start; gap: 4px; flex: none; position: relative;
+  box-sizing: border-box; height: var(--title-h); padding: calc((26px - var(--title-line-h)) / 2) 8px 0 4px;
   font-weight: 600; font-size: var(--title-px); color: var(--text-primary);
 }
-.card-stale { flex: none; margin-left: auto; font-size: 10px; font-weight: 400; font-style: italic; color: var(--warning); white-space: nowrap; }
+.card-title .card-fold { height: var(--title-line-h); }
+.card-label { flex: 1; min-width: 0; line-height: var(--title-line-h); }
+.card-label-line { display: block; white-space: pre; overflow: hidden; text-overflow: clip; }
+.card-stale { flex: none; margin-left: auto; margin-right: 6px; font-size: 10px; font-weight: 400; font-style: italic; white-space: nowrap; opacity: 0.9; }
+/* The compare button: right of the first line, in the slot the wrap keeps free for it. */
+.card-compare {
+  position: absolute; top: calc((26px - 18px) / 2); right: 6px; height: 18px; max-width: calc(var(--compare-slot) - 8px);
+  display: inline-flex; align-items: center; gap: 3px; padding: 0 6px 0 4px; border-radius: 9px;
+  border: 1px solid var(--border-main); background: var(--controls-bg); color: var(--text-secondary);
+  font: inherit; font-size: 11px; font-weight: 600; line-height: 1; cursor: pointer; white-space: nowrap; overflow: hidden;
+}
+.card-compare:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); }
+.card-compare.fail { border-color: var(--danger); color: var(--danger); }
+.card-compare.unknown { border-color: var(--warning); color: var(--warning); }
+.card-compare.pass { color: var(--success); }
+.card-compare.none { font-weight: 400; color: var(--text-faint); cursor: default; border-style: dashed; }
+.card-compare-word { overflow: hidden; text-overflow: ellipsis; }
 /* STALE in a stack: still there, plainly not current — until cleared or dragged out. */
 .card.stale { opacity: 0.55; border-style: dashed; }
 .card.stale:hover, .card.stale.selected { opacity: 0.9; }
 .card-fold { color: inherit; opacity: 0.7; font-size: 10px; width: 14px; }
-.card-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-label.empty { color: var(--text-faint); font-weight: 400; font-style: italic; }
 
 .card-body {

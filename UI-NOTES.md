@@ -363,6 +363,18 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
 
 ## Needs eyes (built, tested headlessly, never SEEN)
 
+- **Wrapping titles and the compare button (Nov 14, CANVAS-BRIEF.md B1 + B4).** A card's
+  default width now stops at 320px (was 720) and a longer name WRAPS — at spaces, then
+  after _ - . /, by character only when there is no break; folded cards wrap too; 8
+  lines at most, then "…". Every card without a hand-set width that used to be wider
+  than 320 is narrower and taller after this deploy. Check: the title's first line sits
+  where it always did; long filenames read well; arrows still meet the card's edge.
+  The stack's "no longer matches" badge moved from the title row to the coloured strip.
+  On every card of a table with a COMPARING link: a button at the end of the title's
+  first line — "✓ match", "✗ 2 differ", "⚠ unsure", or a dashed "no target" — whose
+  click (or the card menu's "Compare with target") opens the tray with the side by
+  side already open. Never seen: how the colours sit on the light theme.
+
 - **Shared card settings (Nov 14, CANVAS-BRIEF.md Part A, sql/023).** The canvas bar's
   new chip, left of "empty": "cards: shared · Works" (solid) or "cards: this canvas
   only" (dashed), and its menu — Use only on this canvas / Use the shared settings /

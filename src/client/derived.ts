@@ -15,7 +15,7 @@
 
 import { computed } from 'vue';
 import type { Store } from './store';
-import { compareOf, compareRecords, type ComparePair, type CompareResult, type PairResult } from '../contract/compare';
+import { cardVerdict as verdictOfCard, compareOf, compareRecords, type CardVerdict, type ComparePair, type CompareResult, type PairResult } from '../contract/compare';
 import { fieldsOf, primaryKeys, type FieldRow } from './state';
 import { resolveMap, type Recipe, type TablesTools } from '../contract/tools';
 import { inputWarnings, type InputWarning } from '../contract/resolveLinks';
@@ -313,6 +313,13 @@ export function useDerived(store: Store) {
     if (!link || !pairs || !owner || !target) return null;
     return compareRecords(pairs, store.state.fields, owner, target, linksFrom, labelOfId);
   }
+  /** The canvas card's compare button (CANVAS-BRIEF.md B4): one verdict for the record, null when its table compares nothing. */
+  function cardVerdict(recordId: string): CardVerdict | null {
+    return verdictOfCard(comparisonsOf(recordId).map((c) => ({
+      linkId: c.link.id, linkName: c.link.name,
+      targets: c.targets.map((t) => ({ id: t, label: plainLabelOfId(t), result: compare(c.link.id, recordId, t) })),
+    })));
+  }
   /**
    * For BADGES: every pair result that is not a match, keyed by the OWNER field, across
    * all of a record's comparing links and all their targets. A field with an entry
@@ -408,6 +415,6 @@ export function useDerived(store: Store) {
     return resolveWarnings(recordId)?.get(fieldId)?.find((w) => w.id === toRecord)?.reason;
   }
 
-  return { labelKeys, linksFrom, linkedTo, idsOf, labelOfId, plainLabelOfId, lookupOf, backlinkOf, textOf, tablesNeededBy, referencedBy, comparisonsOf, compare, differencesOf, fieldVerdicts, resolveWarnings, pillWarning, compareTargetTable, compareTargets,
+  return { labelKeys, linksFrom, linkedTo, idsOf, labelOfId, plainLabelOfId, lookupOf, backlinkOf, textOf, tablesNeededBy, referencedBy, comparisonsOf, compare, cardVerdict, differencesOf, fieldVerdicts, resolveWarnings, pillWarning, compareTargetTable, compareTargets,
     junctionCfg, junctionRow, junctionOfBacklink, junctionChip, junctionRowFor, pillColorOf, pillTableOf, countOf, held, linkMatchRule };
 }

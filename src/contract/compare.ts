@@ -287,3 +287,41 @@ export function seedValues(
   }
   return { set, links, skipped };
 }
+
+/* ── the CARD's verdict (CANVAS-BRIEF.md B4) ───────────────────────────────── */
+
+/**
+ * One verdict for a whole record, for the compare button on its canvas card — which
+ * is also its pass/fail light. Worst wins: a difference anywhere is a FAIL; nothing
+ * differs but something cannot be told (a value missing on the expected side, or the
+ * target not loaded) is UNKNOWN; every pair matching is a PASS; a comparing link with
+ * nothing linked through it is NONE. A record with no comparing link has no button at
+ * all (null). The owner's rule is one target per file; with several, the button opens
+ * the first that is not a pass.
+ */
+export interface CardVerdict {
+  state: 'pass' | 'fail' | 'unknown' | 'none';
+  /** Differences in the comparison the button opens (differ + missing). */
+  differ: number;
+  /** What the button opens: the comparing link and the target. Null for 'none'. */
+  linkId: string | null;
+  targetId: string | null;
+  /** The button's tooltip. */
+  title: string;
+}
+export function cardVerdict(
+  comparisons: Array<{ linkId: string; linkName: string; targets: Array<{ id: string; label: string; result: CompareResult | null }> }>,
+): CardVerdict | null {
+  if (!comparisons.length) return null;
+  const all = comparisons.flatMap((c) => c.targets.map((t) => ({ c, t })));
+  if (!all.length) return { state: 'none', differ: 0, linkId: null, targetId: null, title: `Nothing linked through ${comparisons.map((c) => c.linkName).join(' or ')} to compare against` };
+  const rank = (r: CompareResult | null) => (!r ? 1 : r.results.some((p) => p.status === 'differ' || p.status === 'missing') ? 2 : r.results.some((p) => p.status === 'unspecified') ? 1 : 0);
+  let worst = all[0];
+  for (const e of all) if (rank(e.t.result) > rank(worst.t.result)) worst = e;
+  const r = worst.t.result, k = rank(r);
+  const differ = r ? r.results.filter((p) => p.status === 'differ' || p.status === 'missing').length : 0;
+  const where = `${worst.c.linkName} → ${worst.t.label}`;
+  if (k === 2) return { state: 'fail', differ, linkId: worst.c.linkId, targetId: worst.t.id, title: `${where}: ${differ} difference${differ === 1 ? '' : 's'} — click to compare` };
+  if (k === 1) return { state: 'unknown', differ: 0, linkId: worst.c.linkId, targetId: worst.t.id, title: r ? `${where}: some values cannot be checked (empty on one side) — click to compare` : `${where}: not loaded yet` };
+  return { state: 'pass', differ: 0, linkId: worst.c.linkId, targetId: worst.t.id, title: `${where}: everything matches — click to compare` };
+}
