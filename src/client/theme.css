@@ -147,9 +147,11 @@
   --bg-chrome: #a8a593;
   --bg-surface-hover: rgba(0, 0, 0, 0.07);
   --border-main: #8a8776;
-  --text-primary: #111111;
-  --text-secondary: #24221c;
-  --text-muted: #3a372f;
+  /* Raised Nov 14 2026 at the owner's word — on the tuned card (#a19f91) the labels
+     sat at 4.5:1. Now values 7.9:1, labels 6.3:1, the ladder kept in order. */
+  --text-primary: #000000;
+  --text-secondary: #191813;
+  --text-muted: #1f1d18;
   --text-faint: #403d36;
   --accent: #2b5a99;
   --accent-ring: rgba(43, 90, 153, 0.28);
