@@ -116,7 +116,8 @@
              so the fields below do not jump when it arrives. Keyed by record: a
              different record is a different document, not new content for this one. -->
         <div v-if="f.type === 'rich_text' && !folded(f)" class="rp-rich rp-under" :style="{ minHeight: richReserve + 'px' }">
-          <RichTextEditor :key="recordId + f.id" :store="store" :record-id="recordId" :field-key="f.key" :value="record.data[f.key]"
+          <CanvasNote v-if="isCanvasNote(f)" :key="'n' + recordId + f.id" mode="tray" :store="store" :record-id="recordId" :field-key="f.key" :name="f.name" :value="record.data[f.key]" />
+          <RichTextEditor v-else :key="recordId + f.id" :store="store" :record-id="recordId" :field-key="f.key" :value="record.data[f.key]"
                           @set="setRich" @unset="unsetRich" />
         </div>
 
@@ -271,6 +272,7 @@ import { beginRecordDrag } from '../recordDrag';
 import { compareOf, seedValues } from '../../contract/compare';
 import { SYSTEM_FIELD_TYPES, formatCreated, isSystemKey } from '../../contract/systemFields';
 import SideBySide from './SideBySide.vue';
+import { isCanvasNote } from '../../contract/richtext';
 import JunctionTable from './JunctionTable.vue';
 import { fieldSectionsOf, groupFields } from '../../contract/fieldSections';
 import { isFolded, setFolded } from '../sectionFolds';
@@ -282,6 +284,7 @@ import { richTextToPlain } from '../../contract/richtext';
 // nothing needs them until a record with a rich_text field is opened — so they
 // stay out of the bundle the app starts with.
 const RichTextEditor = defineAsyncComponent(() => import('./RichTextEditor.vue'));
+const CanvasNote = defineAsyncComponent(() => import('./CanvasNote.vue'));
 
 const desktop = isDesktop();
 const noteTabs = notesOffered();

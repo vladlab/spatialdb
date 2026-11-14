@@ -226,6 +226,8 @@
         @fold="toggleFold"
         @open="(id) => (isBoardRecord(id) ? $emit('open-board', id) : $emit('open-record', id))"
         @compare="openCompare"
+        :editing-note="editingNote?.recordId === c.recordId ? editingNote.fieldId : null"
+        @edit-note="startNote" @note-done="endNote"
         @menu="onCardMenu"
       />
     </div>
@@ -440,6 +442,7 @@ import { backLines } from '../../contract/cardBack';
 import { fieldSectionsOf } from '../../contract/fieldSections';
 import { SYSTEM_FIELD_TYPES } from '../../contract/systemFields';
 import { compareOf, compareRows } from '../../contract/compare';
+import { isCanvasNote } from '../../contract/richtext';
 import { CardIcon, iconFor } from '../../contract/cardIcon';
 import { capsuleWidth, JUMP_PAD, pairSlot, textWidth } from '../textWidth';
 import type { CardRow } from './RecordCard.vue';
@@ -657,9 +660,10 @@ function saveRules(tableId: string, rules: ColorRule[]) {
 function setGlow(mode: 'ring' | 'glow') {
   editLook((l) => { const { glow: _, ...rest } = l; return mode === 'ring' ? { ...rest, glow: 'ring' } : rest; });
 }
+// A CANVAS NOTE (CANVAS-BRIEF.md D) is a block even when EMPTY: it is where you type.
 const richBlocks = (rec: RecordRow) => shownFields(rec.table_id)
-  .filter((f) => f.type === 'rich_text' && !isEmptyRichText(rec.data[f.key]))
-  .map((f) => ({ id: f.id, name: f.name, value: rec.data[f.key] }));
+  .filter((f) => f.type === 'rich_text' && (isCanvasNote(f) || !isEmptyRichText(rec.data[f.key])))
+  .map((f) => ({ id: f.id, name: f.name, value: rec.data[f.key], note: isCanvasNote(f), key: f.key }));
 
 function shownFields(tableId: string): FieldRow[] {
   const all = fieldsOf(store.state, tableId);
@@ -2301,6 +2305,22 @@ const examineBack = computed<BackItem[]>(() => {
   });
 });
 watch(examining, (id) => { if (id && !cards.value.some((c) => c.recordId === id)) examining.value = null; });
+
+/* ── CANVAS NOTES (CANVAS-BRIEF.md D2) ───────────────────────────────────────
+   A click in a note types in it — on a card that is ALREADY selected, so the first
+   click on a card still just selects it (and a press that travels still drags it).
+   One note at a time; deselecting the card, or Esc, ends it (CanvasNote saves). */
+const editingNote = ref<{ recordId: string; fieldId: string } | null>(null);
+function startNote(p: { recordId: string; fieldId: string }) {
+  if (!selected.has(p.recordId) || selected.size !== 1) return;
+  editingNote.value = p;
+}
+function endNote(recordId: string) {
+  if (editingNote.value?.recordId !== recordId) return;
+  editingNote.value = null;
+  containerRef.value?.focus({ preventScroll: true });
+}
+watch(() => [...selected].join(), () => { if (editingNote.value && !selected.has(editingNote.value.recordId)) editingNote.value = null; });
 
 /* ── COMPARE EXAMINE (CANVAS-BRIEF.md C4) ─────────────────────────────────────
    The compare button, or "Compare with target": the file and what it is compared

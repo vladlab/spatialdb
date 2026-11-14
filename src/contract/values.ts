@@ -145,7 +145,7 @@ export function validateValue(field: FieldShape, value: unknown): string | null 
       return `'${field.key}' is a lookup — it is computed, not written`;
 
     case 'rich_text':
-      return richTextError(field.key, value);
+      return richTextError(field.key, value, field.options);
 
     case 'attachment':
       return attachmentError(field.key, value);

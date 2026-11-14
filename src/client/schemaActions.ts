@@ -389,6 +389,9 @@ export function useSchemaActions(store: Store) {
     const error = draftError(tableId, d);
     if (error) return { error };
     const options: Record<string, unknown> = {};
+    // "canvas note" is a rich_text field with `canvasNote` (CANVAS-BRIEF.md D1), offered on its own.
+    const note = (d.type as string) === 'canvas_note';
+    if (note) options.canvasNote = true;
     if (d.type === 'link') options.target_table_id = d.target;
     if (d.type === 'lookup') { options.via_field_id = d.via; options.target_field_id = d.show; }
     if (d.type === 'backlink') options.source_field_id = d.source;
@@ -400,7 +403,7 @@ export function useSchemaActions(store: Store) {
     const id = crypto.randomUUID();
     const pos = Math.max(0, ...fields(tableId).map((f) => f.position)) + 1;
     store.mutate({ type: 'field.create', id, tableId, name: d.name.trim(),
-      key: d.key || deriveKey(d.name), fieldType: d.type, options, required: false });
+      key: d.key || deriveKey(d.name), fieldType: note ? 'rich_text' : d.type, options, required: false });
     store.mutate({ type: 'field.update', id, position: pos });
     joinLastSection(tableId, [id]);
     // A link's OTHER FACE: a backlink on the target, named after this table ("Deliverables"

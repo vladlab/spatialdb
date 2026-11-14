@@ -363,6 +363,19 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
 
 ## Needs eyes (built, tested headlessly, never SEEN)
 
+- **Canvas notes (Nov 14, CANVAS-BRIEF.md D).** "canvas note" in the add-field type list:
+  a rich_text field (`canvasNote`) limited to paragraphs, bullet / numbered lists,
+  CHECKLISTS, bold / italic / strike and links (the server refuses the rest). On a
+  card it is a block even when empty ("Type a note…"). A checkbox ticks with one click
+  on any card — no editing, one Ctrl+Z. To type: click a card (selects it), click its
+  note again (an editor in place). It saves about a second after you stop, and as you
+  leave; "saving…" / "saved" in the note's label line; Esc or a click away ends it,
+  and ONE Ctrl+Z afterwards puts back the note as it was before you started. While
+  typing, Space / Z / Delete are text, not canvas keys. The tray shows the same note,
+  saving as you type there too (no Save button for this kind). The block keeps its
+  fixed height and scrolls inside, as notes on cards already did. Never seen: the
+  caret, the checkbox alignment, and how the blue editing outline looks.
+
 - **Compare examine (Nov 14, CANVAS-BRIEF.md C4).** A File card's compare button (or
   "Compare with target" in its menu) now lifts the file AND its target side by side —
   the target fades in when it is not on the canvas — and both turn over by themselves:

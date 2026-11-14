@@ -111,11 +111,17 @@
            Read-only here — a note is written in the record tray. The wheel scrolls a
            note only on a SELECTED card; otherwise it would swallow every pan that
            happened to pass over one. -->
-      <div v-for="b in rich ?? []" :key="b.id" class="card-rich">
-        <div class="card-rich-name">{{ b.name }}</div>
-        <div class="card-rich-body" @wheel="onRichWheel" @click.capture="noFollow">
-          <RichTextView v-if="store" :store="store" :value="b.value" />
-        </div>
+      <div v-for="b in rich ?? []" :key="b.id" class="card-rich" :class="{ note: b.note }">
+        <!-- A CANVAS NOTE (CANVAS-BRIEF.md D): typed in right here, its checkboxes ticked
+             with one click — CanvasNote.vue does all of it; the canvas says when to type. -->
+        <CanvasNote v-if="b.note && store && b.key" :store="store" :record-id="recordId" :field-key="b.key" :name="b.name" :value="b.value"
+                    :editing="editingNote === b.id && !examine" :armed="selected && !examine" @start="$emit('edit-note', { recordId, fieldId: b.id })" @done="$emit('note-done', recordId)" />
+        <template v-else>
+          <div class="card-rich-name">{{ b.name }}</div>
+          <div class="card-rich-body" @wheel="onRichWheel" @click.capture="noFollow">
+            <RichTextView v-if="store" :store="store" :value="b.value" />
+          </div>
+        </template>
       </div>
     </div>
 
@@ -163,6 +169,7 @@ import { computed, defineAsyncComponent } from 'vue';
 import RecordPill from './RecordPill.vue';
 import VideoLayoutStrip from './VideoLayoutStrip.vue';
 import TimelineStrip from './TimelineStrip.vue';
+import CanvasNote from './CanvasNote.vue';
 import VerdictMark from './VerdictMark.vue';
 import type { CardVerdict } from '../../contract/compare';
 import type { CardIconId } from '../../contract/cardIcon';
@@ -227,7 +234,9 @@ const props = defineProps<{
   title: string;
   rows: CardRow[];
   /** Rich text fields that have a note, drawn as blocks under the rows. */
-  rich?: Array<{ id: string; name: string; value: unknown }>;
+  rich?: Array<{ id: string; name: string; value: unknown; note?: boolean; key?: string }>;
+  /** The canvas note being typed in on this card (its field id), if any. */
+  editingNote?: string | null;
   /** For the notes' images, which are asset URLs built by the store. */
   store?: Store;
   collapsed: boolean;
@@ -303,6 +312,9 @@ const emit = defineEmits<{
   (e: 'open', recordId: string): void;
   /** The compare button: open this record's comparison. */
   (e: 'compare', recordId: string): void;
+  /** A click in a canvas note asks to type in it; the caret leaving ends it. */
+  (e: 'edit-note', payload: { recordId: string; fieldId: string }): void;
+  (e: 'note-done', recordId: string): void;
   (e: 'hover', recordId: string | null): void;
   (e: 'menu', payload: { recordId: string; x: number; y: number }): void;
 }>();

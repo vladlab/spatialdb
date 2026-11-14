@@ -54,8 +54,26 @@ const isDoc = (v: unknown): v is RichNode =>
 /** `javascript:` and friends. Links are the one place a document carries a URL. */
 const SAFE_HREF = /^(https?:|mailto:|tel:|\/|#)/i;
 
-export function richTextError(key: string, value: unknown): string | null {
+/* ── CANVAS NOTES (CANVAS-BRIEF.md D1) ──────────────────────────────────────
+   A rich_text field with `options.canvasNote: true`: quick notes typed right on a
+   canvas card — paragraphs, bullet and numbered lists, CHECKLISTS, bold / italic /
+   strike, links. No headings, images, tables, quotes or code: a card is small, and a
+   note that can hold a table is a document. The SAME limits in the editor (the
+   client's `noteExtensions`) and here, on write, so they cannot disagree. */
+export const NOTE_NODES: ReadonlySet<string> = new Set(['doc', 'paragraph', 'text', 'hardBreak', 'bulletList', 'orderedList', 'listItem', 'taskList', 'taskItem']);
+export const NOTE_MARKS: ReadonlySet<string> = new Set(['bold', 'italic', 'strike', 'link']);
+export const NOTE_MAX_BYTES = 64 * 1024;
+export const isCanvasNote = (f: { type: string; options?: Record<string, unknown> | null }) => f.type === 'rich_text' && f.options?.canvasNote === true;
+
+export function richTextError(key: string, value: unknown, options?: Record<string, unknown> | null): string | null {
   if (!isDoc(value)) return `'${key}' must be a rich text document`;
+  if (options?.canvasNote === true) {
+    if (JSON.stringify(value).length > NOTE_MAX_BYTES) return `'${key}' is a canvas note — at most ${NOTE_MAX_BYTES / 1024} KB`;
+    for (const n of walk(value)) {
+      if (n.type && !NOTE_NODES.has(n.type)) return `'${key}' is a canvas note — it cannot hold a ${n.type}`;
+      for (const m of n.marks ?? []) if (m.type && !NOTE_MARKS.has(m.type)) return `'${key}' is a canvas note — it cannot hold ${m.type} text`;
+    }
+  }
   if (JSON.stringify(value).length > RICH_TEXT_MAX_BYTES) {
     return `'${key}' is larger than ${RICH_TEXT_MAX_BYTES / 1024} KB — images belong in the asset store, not in the text`;
   }
@@ -118,3 +136,20 @@ export function richTextToPlain(value: unknown): string {
 
 /** An editor that has been opened and left blank produces a doc with one empty paragraph. */
 export const isEmptyRichText = (value: unknown) => richTextToPlain(value) === '';
+
+/**
+ * Tick or untick the `index`-th checkbox of a document (document order — the order
+ * they are drawn in), returning a NEW document; the same one when there is no such
+ * checkbox. What a click on a canvas note's checkbox writes, with no editor open.
+ */
+export function toggleTask(value: unknown, index: number): unknown {
+  if (!isDoc(value)) return value;
+  let i = -1, hit = false;
+  const visit = (n: RichNode): RichNode => {
+    let out = n;
+    if (n.type === 'taskItem' && ++i === index) { out = { ...n, attrs: { ...(n.attrs ?? {}), checked: !(n.attrs?.checked === true) } }; hit = true; }
+    return out.content ? { ...out, content: out.content.map(visit) } : out;
+  };
+  const next = visit(value);
+  return hit ? next : value;
+}

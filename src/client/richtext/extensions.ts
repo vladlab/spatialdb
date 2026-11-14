@@ -93,3 +93,21 @@ export function richExtensions(assetUrl: (id: string) => string, placeholder = '
     ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
   ];
 }
+
+/**
+ * A CANVAS NOTE's extensions (CANVAS-BRIEF.md D1): the light set — paragraphs, lists,
+ * checklists, bold / italic / strike, links — and nothing the server would refuse
+ * for one (contract/richtext.ts NOTE_NODES, NOTE_MARKS). Used to EDIT a note and to
+ * DRAW it, so a note reads exactly as it was typed.
+ */
+export function noteExtensions(placeholder = '') {
+  return [
+    StarterKit.configure({
+      heading: false, blockquote: false, codeBlock: false, code: false, horizontalRule: false, underline: false,
+      link: { openOnClick: false, autolink: true, protocols: ['http', 'https', 'mailto', 'tel'] },
+    }),
+    TaskList,
+    TaskItem.configure({ nested: true }),
+    ...(placeholder ? [Placeholder.configure({ placeholder })] : []),
+  ];
+}

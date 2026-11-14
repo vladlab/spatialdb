@@ -13,6 +13,8 @@
     <input ref="nameInput" v-model="d.name" class="name" placeholder="field name…" />
     <select v-model="d.type" class="type">
       <option v-for="ty in CREATABLE_TYPES" :key="ty" :value="ty">{{ ty }}</option>
+      <!-- A rich_text with `canvasNote` (CANVAS-BRIEF.md D1): light notes, typed right on the card. -->
+      <option value="canvas_note" title="Quick notes typed right on a canvas card — lists and checkboxes, saved as you type">canvas note</option>
     </select>
     <select v-if="d.type === 'link'" v-model="d.target" class="target">
       <option value="" disabled>links to which table…</option>
