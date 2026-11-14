@@ -363,6 +363,15 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
 
 ## Needs eyes (built, tested headlessly, never SEEN)
 
+- **Compare examine (Nov 14, CANVAS-BRIEF.md C4).** A File card's compare button (or
+  "Compare with target" in its menu) now lifts the file AND its target side by side —
+  the target fades in when it is not on the canvas — and both turn over by themselves:
+  found on the left, expected on the right, one row per compared pair (an audio layout
+  adds a row per track), with a connector between each pair of rows: green ✓, red ✗,
+  amber ⚠, the rule in its tooltip; "N differences" above. The three columns scroll as
+  one. The tray's own "side by side" is unchanged. Never seen: whether rows and
+  connectors line up to the pixel, and whether a narrow window scales the pair well.
+
 - **Examine and flip (Nov 14, CANVAS-BRIEF.md C1–C3, sql/025).** Select one card and TAP
   Space (Space held and dragged still pans), or "Examine" in its menu: it flies up from
   its place to 380 × 520 in the middle of the canvas, over a dimmed backdrop; its place

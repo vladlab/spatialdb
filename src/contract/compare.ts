@@ -15,7 +15,7 @@
  */
 
 import { z } from 'zod';
-import { diffLayouts, AudioLayout, summarise, type LayoutDiff } from './shapes.js';
+import { diffLayouts, AudioLayout, summarise, trackFormat, type AudioTrack, type LayoutDiff } from './shapes.js';
 import { choicesOf } from './values.js';
 import { VideoLayout, resolveLayout } from './videoLayout.js';
 import { baseLabel, labelToTc, tcError, tcToLabel, type TcBase } from './timecode.js';
@@ -324,4 +324,44 @@ export function cardVerdict(
   if (k === 2) return { state: 'fail', differ, linkId: worst.c.linkId, targetId: worst.t.id, title: `${where}: ${differ} difference${differ === 1 ? '' : 's'} — click to compare` };
   if (k === 1) return { state: 'unknown', differ: 0, linkId: worst.c.linkId, targetId: worst.t.id, title: r ? `${where}: some values cannot be checked (empty on one side) — click to compare` : `${where}: not loaded yet` };
   return { state: 'pass', differ: 0, linkId: worst.c.linkId, targetId: worst.t.id, title: `${where}: everything matches — click to compare` };
+}
+
+/* ── the comparison as ROWS (CANVAS-BRIEF.md C4) ─────────────────────────────
+   One list of rows for every view that lines the two records up: the tray's side by
+   side (SideBySide.vue) and the canvas's compare examine (CompareExamine.vue). A pair
+   is one row; an audio LAYOUT pair is its row and then one row per track, aligned. */
+
+/** "5.1 · Full mix · L R C LFE Ls Rs · en" — or "—" for a track the other side has and this one lacks. */
+export const trackText = (t: AudioTrack | undefined) => (t ? [trackFormat(t), t.name || '(unnamed)', t.channels.join(' '), t.language ?? ''].filter(Boolean).join(' · ') : '—');
+/** Is track `i` (0-based) one the diff points at, or beyond the shorter layout? Count, order and grouping issues make every track suspect. */
+export function trackOff(r: PairResult, i: number): boolean {
+  const l = r.layouts; if (!l) return false;
+  if (i >= l.found.tracks.length || i >= l.expected.tracks.length) return true;
+  if (l.diff.issues.some((x) => x.track === i + 1)) return true;
+  return l.diff.issues.some((x) => x.track === undefined && (x.kind === 'count' || x.kind === 'order' || x.kind === 'grouping'));
+}
+
+export interface CompareRow {
+  kind: 'pair' | 'track';
+  status: Status;
+  /** Field names on each side (a track row: "Track 2"). */
+  fromName: string; toName: string;
+  found: string; expected: string;
+  /** The rule in words, and what it found — the connector's tooltip. */
+  rule: string; detail: string;
+}
+export function compareRows(result: CompareResult, nameOf: (fieldId: string) => string): CompareRow[] {
+  const out: CompareRow[] = [];
+  for (const r of result.results) {
+    const issues = r.layouts?.diff.issues.map((x) => x.detail) ?? [];
+    out.push({ kind: 'pair', status: r.status, fromName: nameOf(r.pair.from), toName: nameOf(r.pair.to), found: r.found, expected: r.expected,
+      rule: RULE_LABELS[r.pair.rule], detail: [r.detail, ...issues].filter(Boolean).join(' — ') });
+    if (!r.layouts) continue;
+    const n = Math.max(r.layouts.found.tracks.length, r.layouts.expected.tracks.length);
+    for (let i = 0; i < n; i++) {
+      out.push({ kind: 'track', status: trackOff(r, i) ? 'differ' : 'match', fromName: `Track ${i + 1}`, toName: `Track ${i + 1}`,
+        found: trackText(r.layouts.found.tracks[i]), expected: trackText(r.layouts.expected.tracks[i]), rule: 'track', detail: '' });
+    }
+  }
+  return out;
 }

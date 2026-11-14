@@ -234,6 +234,10 @@
          zoom — in screen space, outside the transform, over the canvas body only. -->
     <CardExamine v-if="examineCard" :key="examineCard.recordId" :store="store" :card="examineCard" :back="examineBack"
                  :from-rect="examineFrom" @close="endExamine" @open-record="(id: string) => emit('open-record', id)" @compare="openCompare" />
+    <!-- COMPARE EXAMINE (C4): a file and its target, side by side, turned over to the comparison. -->
+    <CompareExamine v-if="compareView" :key="compareView.key" :store="store" :owner="compareView.owner" :target="compareView.target" :rows="compareView.rows"
+                    :owner-from="() => rectOnScreen(compareView!.owner.recordId)" :target-from="() => rectOnScreen(compareView!.target.recordId)"
+                    @close="endCompare" @open-record="(id: string) => emit('open-record', id)" />
 
     <!-- Rubber band, drawn in screen space outside the transform. -->
     <div
@@ -399,7 +403,7 @@
 import { vp } from '../uiScale';
 import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import type { MutateOptions, Store } from '../store';
-import { fieldsOf, hasCanvases, isBoardsTable, tablesSorted, type FieldRow, type RecordRow } from '../state';
+import { fieldsOf, hasCanvases, isBoardsTable, tablesSorted, type FieldRow, type PlacementRow, type RecordRow } from '../state';
 import { labelFrom } from '../../contract/labels';
 import { useDerived } from '../derived';
 import { ingestFromResolve, resolveOffered } from '../tools/resolveIngest';
@@ -430,12 +434,12 @@ import { legendOf, paintsOf, type ColorRule, type Paints } from '../../contract/
 import ColorRules from './ColorRules.vue';
 import { timelineStrip } from '../../contract/timelineStrip';
 import { CARD_COMPARE_SLOT, CARD_STRIP_LANES, CARD_W, defaultCardWidth, effectiveHeight, fitCardWidth, lineCount, linkHandleAt, visibleRows, wrapTitle } from '../canvas/cardLayout';
-import { compareRequest } from '../compareOpen';
 import CardExamine, { type BackItem } from './CardExamine.vue';
+import CompareExamine from './CompareExamine.vue';
 import { backLines } from '../../contract/cardBack';
 import { fieldSectionsOf } from '../../contract/fieldSections';
 import { SYSTEM_FIELD_TYPES } from '../../contract/systemFields';
-import { compareOf } from '../../contract/compare';
+import { compareOf, compareRows } from '../../contract/compare';
 import { CardIcon, iconFor } from '../../contract/cardIcon';
 import { capsuleWidth, JUMP_PAD, pairSlot, textWidth } from '../textWidth';
 import type { CardRow } from './RecordCard.vue';
@@ -715,31 +719,38 @@ const tablesRead = computed(() => {
 watch(tablesRead, (joined) => { for (const t of joined.split(',').filter(Boolean)) void store.loadTable(t); }, { immediate: true });
 
 /** Every card as its placement has it — before stacks lay theirs out (below). */
+/**
+ * A card as the canvas draws it, for any record — placed (`p`), or not: the target a
+ * compare examine lifts beside a file may not be on this canvas at all (C4).
+ */
+function cardDataOf(rec: RecordRow, p?: PlacementRow) {
+  const table = store.state.tables.get(rec.table_id);
+  const title = labelFrom(rec.data, labelKeys.value.get(rec.table_id), '');
+  return {
+    recordId: rec.id,
+    tableId: rec.table_id,
+    tableName: table?.name ?? 'unknown',
+    tableColor: colorOf(rec.table_id),
+    title,
+    // ✓ / ⚠ per row from comparing links (COMPARE-BRIEF.md) — derived, live — ride on the rows.
+    rows: cardRows(rec, paints.value.get(rec.id)),
+    rich: richBlocks(rec),
+    tint: paints.value.get(rec.id)?.row?.tint,
+    // The compare button (CANVAS-BRIEF.md B4): null when this table compares nothing.
+    verdict: derived.cardVerdict(rec.id),
+    watermark: watermarkOf(rec, table?.card_icon),
+    collapsed: p?.collapsed ?? false,
+    // No width of its own: as wide as its name (cardLayout.ts) — resolved HERE, once, so the
+    // card, the arrows and the box selection all use the same number.
+    x: p?.x ?? 0, y: p?.y ?? 0, w: p?.w ?? defaultCardWidth(title, textWidth), h: p?.h ?? null, z: p?.z ?? 0,
+    stacked: false, stale: false,
+  };
+}
 const baseCards = computed(() =>
   placements.value.flatMap((p) => {
     const rec = store.state.records.get(p.record_id);
     if (!rec) return [];   // placement without its record: mid-sync, skip a frame
-    const table = store.state.tables.get(rec.table_id);
-    const title = labelFrom(rec.data, labelKeys.value.get(rec.table_id), '');
-    return [{
-      recordId: p.record_id,
-      tableId: rec.table_id,
-      tableName: table?.name ?? 'unknown',
-      tableColor: colorOf(rec.table_id),
-      title,
-      // ✓ / ⚠ per row from comparing links (COMPARE-BRIEF.md) — derived, live — ride on the rows.
-      rows: cardRows(rec, paints.value.get(rec.id)),
-      rich: richBlocks(rec),
-      tint: paints.value.get(rec.id)?.row?.tint,
-      // The compare button (CANVAS-BRIEF.md B4): null when this table compares nothing.
-      verdict: derived.cardVerdict(rec.id),
-      watermark: watermarkOf(rec, table?.card_icon),
-      collapsed: p.collapsed,
-      // No width of its own: as wide as its name (cardLayout.ts) — resolved HERE, once, so the
-      // card, the arrows and the box selection all use the same number.
-      x: p.x, y: p.y, w: p.w ?? defaultCardWidth(title, textWidth), h: p.h, z: p.z,
-      stacked: false, stale: false,
-    }];
+    return [cardDataOf(rec, p)];
   }));
 
 /* ── STACKS: a filter's records, in a column, kept current (contract/canvasStack.ts) ──
@@ -840,7 +851,8 @@ function titleLinesOf(title: string, w: number, verdict: unknown): string[] {
   return lines;
 }
 const cards = computed(() => {
-  return placedCards.value.map((c) => ({ ...c, titleLines: titleLinesOf(c.title, c.w, c.verdict), examined: c.recordId === examining.value }));
+  const up = new Set([examining.value, comparing.value?.ownerId, comparing.value?.targetId].filter(Boolean));
+  return placedCards.value.map((c) => ({ ...c, titleLines: titleLinesOf(c.title, c.w, c.verdict), examined: up.has(c.recordId) }));
 });
 const placedCards = computed(() => {
   const dragging = drag.draggingIds.value;
@@ -2267,12 +2279,12 @@ const examineCard = computed(() => {
   const c = cards.value.find((x) => x.recordId === examining.value);
   return c ? { ...c, w: EXAMINE_W, titleLines: titleLinesOf(c.title, EXAMINE_W, c.verdict), examined: false, collapsed: false } : null;
 });
-/** Where the card is on screen (its see-through copy): where examine flies from and back to. */
-const examineFrom = () => {
-  const id = examining.value;
+/** Where a card is on screen (its see-through copy): where examine flies from and back to. Null when it is not on this canvas. */
+function rectOnScreen(id: string | null | undefined): DOMRect | null {
   const el = id ? containerRef.value?.querySelector(`.canvas-world .card[data-record="${id}"]`) : null;
   return el ? el.getBoundingClientRect() : null;
-};
+}
+const examineFrom = () => rectOnScreen(examining.value);
 /** The BACK (contract/cardBack.ts): the table's chosen fields, or every field under its section names. */
 const examineBack = computed<BackItem[]>(() => {
   const rec = examining.value ? store.state.records.get(examining.value) : undefined;
@@ -2290,13 +2302,32 @@ const examineBack = computed<BackItem[]>(() => {
 });
 watch(examining, (id) => { if (id && !cards.value.some((c) => c.recordId === id)) examining.value = null; });
 
-/** The compare button, or "Compare with target": the tray, with the side by side open (client/compareOpen.ts). */
+/* ── COMPARE EXAMINE (CANVAS-BRIEF.md C4) ─────────────────────────────────────
+   The compare button, or "Compare with target": the file and what it is compared
+   against, lifted side by side and turned over to the comparison (CompareExamine.vue).
+   The target may not be on this canvas: its card is built for the occasion. */
+const comparing = ref<{ ownerId: string; linkId: string; targetId: string } | null>(null);
 function openCompare(recordId: string) {
   const v = derived.cardVerdict(recordId);
   if (!v?.linkId || !v.targetId) return;
-  compareRequest.value = { ownerId: recordId, linkId: v.linkId, targetId: v.targetId };
-  emit('open-record', recordId);
+  menu.value = null;
+  examining.value = null;
+  comparing.value = { ownerId: recordId, linkId: v.linkId, targetId: v.targetId };
 }
+function endCompare() { comparing.value = null; containerRef.value?.focus({ preventScroll: true }); }
+const compareView = computed(() => {
+  const c = comparing.value;
+  if (!c) return null;
+  const ownerRec = store.state.records.get(c.ownerId), targetRec = store.state.records.get(c.targetId);
+  const result = derived.compare(c.linkId, c.ownerId, c.targetId);
+  if (!ownerRec || !targetRec || !result) return null;
+  const lifted = (rec: RecordRow) => {
+    const card = cards.value.find((x) => x.recordId === rec.id) ?? cardDataOf(rec);
+    return { ...card, w: EXAMINE_W, titleLines: titleLinesOf(card.title, EXAMINE_W, card.verdict), examined: false, collapsed: false };
+  };
+  return { key: `${c.ownerId}|${c.targetId}`, owner: lifted(ownerRec), target: lifted(targetRec),
+    rows: compareRows(result, (id) => store.state.fields.get(id)?.name ?? '?') };
+});
 
 function unplace(recordId: string) {
   store.mutate({ type: 'placement.remove', canvasId: props.canvasId, recordId });

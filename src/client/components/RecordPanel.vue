@@ -271,7 +271,6 @@ import { beginRecordDrag } from '../recordDrag';
 import { compareOf, seedValues } from '../../contract/compare';
 import { SYSTEM_FIELD_TYPES, formatCreated, isSystemKey } from '../../contract/systemFields';
 import SideBySide from './SideBySide.vue';
-import { compareRequest } from '../compareOpen';
 import JunctionTable from './JunctionTable.vue';
 import { fieldSectionsOf, groupFields } from '../../contract/fieldSections';
 import { isFolded, setFolded } from '../sectionFolds';
@@ -322,13 +321,6 @@ watch(() => derived.comparisonsOf(props.recordId).map((c) => derived.compareTarg
 const verdicts = computed(() => derived.fieldVerdicts(props.recordId));
 const sideBySide = ref<{ linkId: string; target: string } | null>(null);
 watch(() => props.recordId, () => { sideBySide.value = null; });
-// The canvas card's compare button (client/compareOpen.ts): open THIS record's side by
-// side. `post`: after the line above has cleared it for a record that just changed.
-watch([() => props.recordId, compareRequest], ([id, req]) => {
-  if (!req || req.ownerId !== id) return;
-  sideBySide.value = { linkId: req.linkId, target: req.targetId };
-  compareRequest.value = null;
-}, { immediate: true, flush: 'post' });
 
 /* ── sections ─────────────────────────────────────────────────────────────
    The fields as the tray draws them: groups, each a well. `open` is this person's

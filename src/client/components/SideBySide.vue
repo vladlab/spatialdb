@@ -54,8 +54,7 @@ import { computed } from 'vue';
 import type { Store } from '../store';
 import { useDerived } from '../derived';
 import VerdictMark from './VerdictMark.vue';
-import { RULE_LABELS, type PairResult, type Status } from '../../contract/compare';
-import { trackFormat, type AudioTrack } from '../../contract/shapes';
+import { RULE_LABELS, trackOff, trackText, type Status } from '../../contract/compare';
 
 const props = defineProps<{ store: Store; linkId: string; ownerId: string; targetId: string }>();
 defineEmits<{ close: [] }>();
@@ -66,16 +65,7 @@ const targetLabel = computed(() => derived.labelOfId(props.targetId));
 const nameOf = (id: string) => props.store.state.fields.get(id)?.name ?? '?';
 /** The two statuses without an icon (VerdictMark draws match and differ). */
 const mark = (s: Status) => ({ match: '', differ: '', missing: '∅', unspecified: '·' }[s]);
-/** "5.1 · Full mix · L R C LFE Ls Rs · en" — or "—" for a track the other side has and this one lacks. */
-const trackText = (t: AudioTrack | undefined) => (t ? [trackFormat(t), t.name || '(unnamed)', t.channels.join(' '), t.language ?? ''].filter(Boolean).join(' · ') : '—');
-/** Is track `i` (1-based in the diff) one the diff points at, or beyond the shorter layout? */
-function trackOff(r: PairResult, i: number): boolean {
-  const l = r.layouts; if (!l) return false;
-  if (i >= l.found.tracks.length || i >= l.expected.tracks.length) return true;
-  if (l.diff.issues.some((x) => x.track === i + 1)) return true;
-  // count / order / grouping issues have no track: every track is suspect.
-  return l.diff.issues.some((x) => x.track === undefined && (x.kind === 'count' || x.kind === 'order' || x.kind === 'grouping'));
-}
+// trackText and trackOff live in contract/compare.ts now: the canvas's compare examine lines tracks up the same way.
 </script>
 
 <style scoped>

@@ -3,8 +3,9 @@
  *
  *   W1  a long filename wraps: 320px wide, drawn as the computed lines, the card's
  *       height counts them; a folded card keeps them
- *   W2  the compare button: none / pass / fail, in words; a click opens the tray with
- *       the side by side open; "Compare with target" in the card menu does the same
+ *   W2  the compare button: none / pass / fail, in words; a click lifts the file and its
+ *       target side by side and turns them over to the comparison (C4) — rows opposite
+ *       each other, a red connector where they differ; "Compare with target" the same
  *   W3  the watermark: set "by a field" in Table settings, Media's values guessed;
  *       cards wear their icon; one Ctrl+Z
  *   W4  a timeline's audio as a mini timeline on its card (counted in its height),
@@ -98,18 +99,32 @@ async function main() {
     check('the tooltip says where and what', /Deliverable → Texted ProRes UHD: 1 difference/.test(btn(fFail)!.attributes('title') ?? ''), btn(fFail)!.attributes('title'));
 
     await btn(fFail)!.trigger('click');
-    check('click: the tray opens on that file, its side by side already open', await until(() => w.find('.record-panel .sbs').exists() && w.find('.record-panel .rp-title').text() === 'fail.wav', 8000),
-      w.find('.record-panel').exists() ? w.find('.record-panel .rp-title').text() : 'no tray');
-    check('…showing the difference', /H\.264/.test(w.find('.record-panel .sbs').text()) && /ProRes 4444 XQ/.test(w.find('.record-panel .sbs').text()));
-    await w.find('.record-panel .rp-close').trigger('click');
+    const cx = () => w.find('.cx');
+    check('click: the file and its target are lifted, side by side', await until(() => cx().exists(), 8000)
+      && cx().findAll('.cx-front .card').map((c: any) => c.attributes('data-record')).join() === `${fFail},${spec}`);
+    check('…the target is lifted though it is not on this canvas', !w.findAll('.canvas-world .card').some((c: any) => c.attributes('data-record') === spec));
+    check('…and both turn over by themselves', await until(() => cx().findAll('.cx-flip.flipped').length === 2, 3000));
+    const side = (i: number) => cx().findAll('.cx-back').at(i)!.findAll('.cx-row').map((r: any) => `${r.find('.cx-key').text()}=${r.find('.cx-val').text()}`);
+    check('the backs are the comparison, row for row: found on the left, expected on the right', side(0).join() === 'Codec=H.264' && side(1).join() === 'Codec=ProRes 4444 XQ', `${side(0)} | ${side(1)}`);
+    check('…headed "found" and "expected"', cx().findAll('.cx-role').map((r: any) => r.text()).join() === 'found,expected');
+    const conn = cx().find('.cx-link');
+    check('between them: a RED connector with the ✗ mark, its rule in the tooltip', conn.classes().includes('tint-red') && conn.find('.verdict-mark').classes().includes('bad') && /equals/.test(conn.attributes('title') ?? ''));
+    check('…and the verdict over it: "1 difference"', /1 difference/.test(cx().find('.cx-verdict').text()));
+    check('the file\'s place on the canvas is held, see-through, while it is up', cardOf(fFail)!.classes('examined'));
+    await cx().trigger('keydown', { key: 'f' });
+    check('F turns them both back', cx().findAll('.cx-flip.flipped').length === 0);
+    await cx().trigger('keydown', { key: 'Escape' });
+    check('Esc puts them down', await until(() => !cx().exists(), 3000) && !cardOf(fFail)!.classes('examined'));
     await sleep(200);
 
     await cardOf(fPass)!.trigger('contextmenu', { clientX: 520, clientY: 80 });
     const item = () => w.findAll('.canvas-container .ctx button').find((b: any) => b.text() === 'Compare with target');
     check('the card menu offers "Compare with target"', await until(() => !!item()));
     await item()!.trigger('click');
-    check('…which opens the same', await until(() => w.find('.record-panel .sbs').exists() && w.find('.record-panel .rp-title').text() === 'pass.mov', 8000));
-    await w.find('.record-panel .rp-close').trigger('click');
+    check('…which lifts the same, all green', await until(() => cx().exists() && cx().findAll('.cx-flip.flipped').length === 2, 8000)
+      && cx().find('.cx-link').classes().includes('tint-green') && /No differences/.test(cx().find('.cx-verdict').text()));
+    await cx().find('.cx-scrim').trigger('click');
+    await until(() => !cx().exists(), 3000);
     await cardOf(fNone)!.trigger('contextmenu', { clientX: 520, clientY: 480 });
     check('…and does not, for a file with no target', await until(() => w.find('.canvas-container .ctx').exists()) && !item());
     await w.find('.canvas-container').trigger('pointerdown', { button: 0, clientX: 5, clientY: 5 });

@@ -9,12 +9,13 @@
  *   T6  the watermark (B2) — iconFor, suggestMap, validation
  *   T7  the mini timeline (B3) — shared columns, gaps, the clip cap, lanes, ticks
  *   T8  the card's back (C2) — default by section, a chosen list, validation
+ *   T9  compareRows (C4) — a row per pair, an audio layout's tracks under it
  */
 import {
   wrapTitle, titleHeight, cardHeight, effectiveHeight, defaultCardWidth, fitCardWidth, TITLE_CHROME,
   CARD_TITLE_H, CARD_TITLE_LINE_H, CARD_TITLE_MAX_LINES, CARD_W, CARD_W_DEFAULT_MAX, CARD_W_MAX,
 } from '../src/client/canvas/cardLayout.js';
-import { cardVerdict, type CompareResult, type PairResult } from '../src/contract/compare.js';
+import { cardVerdict, compareRows, type CompareResult, type PairResult } from '../src/contract/compare.js';
 import { stackCardWidth, stackLayout } from '../src/contract/canvasStack.js';
 import { CardIcon, canDriveIcon, iconFor, suggestMap } from '../src/contract/cardIcon.js';
 import { MEDIA } from '../src/contract/tools.js';
@@ -134,6 +135,20 @@ check('chosen: those fields, that order, no headings — the title too, if chose
 check('chosen: an id that no longer resolves is skipped', show(backLines(fs, [U(9), U(2)], [], U(1))) === '2');
 check('chosen and empty: nothing (it was chosen so)', backLines(fs, [], [], U(1)).length === 0);
 check('validation: ids only', CardBack.safeParse([U(1)]).success && !CardBack.safeParse(['x']).success);
+
+console.log('\nT9. compareRows');
+const names: Record<string, string> = { a: 'Codec', b: 'Codec spec', la: 'Audio', lb: 'Audio spec' };
+const lay = (formats: string[][]) => ({ tracks: formats.map((ch) => ({ name: '', channels: ch })) });
+const rowsOf = compareRows({ same: false, results: [
+  { pair: { from: 'a', to: 'b', rule: 'equals' } as never, status: 'differ', detail: 'H.264 ≠ ProRes', expected: 'ProRes', found: 'H.264' },
+  { pair: { from: 'la', to: 'lb', rule: 'layout' } as never, status: 'differ', detail: 'layouts differ', expected: '2 tracks', found: '1 track',
+    layouts: { found: lay([['L', 'R']]), expected: lay([['L', 'R'], ['L', 'R', 'C', 'LFE', 'Ls', 'Rs']]), diff: { same: false, channelCount: [8, 2], issues: [{ kind: 'count', detail: '8 channels expected, 2 found' }] } } },
+] }, (id) => names[id]);
+check('a row per pair, field names from each side, values as found / expected', rowsOf[0].kind === 'pair' && rowsOf[0].fromName === 'Codec' && rowsOf[0].toName === 'Codec spec' && rowsOf[0].found === 'H.264' && rowsOf[0].expected === 'ProRes');
+check('the rule in words, and its detail, for the connector', rowsOf[0].rule === 'equals' && rowsOf[0].detail === 'H.264 ≠ ProRes');
+check('a layout pair: its row, then a row per track of the longer layout', rowsOf.map((r) => r.kind).join() === 'pair,pair,track,track' && rowsOf[2].fromName === 'Track 1');
+check('…a track one side lacks reads "—", and differs', rowsOf[3].found === '—' && rowsOf[3].status === 'differ' && /5\.1/.test(rowsOf[3].expected));
+check('…the diff\'s own words join the pair\'s detail', /8 channels expected, 2 found/.test(rowsOf[1].detail));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
