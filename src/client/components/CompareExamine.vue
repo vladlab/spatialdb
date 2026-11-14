@@ -166,10 +166,18 @@ defineExpose({ close, flip, flipped });
 .cx-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; pointer-events: none; }
 .cx-group { display: flex; align-items: flex-start; gap: 12px; transform-origin: center; }
 .cx-stage { position: relative; flex: none; perspective: 1600px; transform-origin: top left; pointer-events: auto; }
-.cx-flip { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform 0.42s cubic-bezier(0.2, 0.7, 0.2, 1); cursor: pointer; }
+.cx-flip { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform 0.42s ease-in-out; cursor: pointer; }
 .cx-flip.flipped { transform: rotateY(180deg); }
 .cx-face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 8px; box-shadow: var(--card-shadow-drag); }
-.cx-back { transform: rotateY(180deg); background: var(--card-bg); border: 1px solid var(--card-border); overflow: hidden; display: flex; flex-direction: column; }
+/* The faces are ALSO switched by hand, at the flip's halfway point (edge-on, 0.21s into a
+   symmetric 0.42s turn). backface-visibility alone is not enough: WebKit does not apply
+   it to a descendant with a layer of its own (a card's will-change), and drew the front
+   MIRRORED where the back should be (the owner, Nov 14 2026). */
+.cx-front { visibility: visible; transition: visibility 0s linear 0.21s; }
+.cx-flip.flipped .cx-front { visibility: hidden; }
+.cx-flip:not(.flipped) .cx-back { visibility: hidden; }
+.cx-front :deep(.card) { will-change: auto; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.cx-back { transition: visibility 0s linear 0.21s; transform: rotateY(180deg); background: var(--card-bg); border: 1px solid var(--card-border); overflow: hidden; display: flex; flex-direction: column; }
 .cx-front :deep(.card) { box-shadow: none; }
 .cx-hint { margin: 0; color: var(--on-scrim); font-size: 12px; pointer-events: none; }
 
@@ -201,7 +209,7 @@ defineExpose({ close, flip, flipped });
 .cx-link.track .cx-line { height: 1px; opacity: 0.7; }
 
 .nomotion .cx-flip { transition: none; transform: none !important; }
-.nomotion .cx-face { transition: opacity 0.2s ease; }
+.nomotion .cx-face { transition: opacity 0.2s ease; visibility: visible !important; }
 .nomotion .cx-back { transform: none; opacity: 0; pointer-events: none; }
 .nomotion .cx-flip.flipped .cx-back { opacity: 1; pointer-events: auto; }
 .nomotion .cx-flip.flipped .cx-front { opacity: 0; pointer-events: none; }

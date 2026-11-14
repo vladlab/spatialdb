@@ -150,10 +150,18 @@ defineExpose({ close, flip, flipped });
 @keyframes ex-in { from { opacity: 0; } to { opacity: 1; } }
 .ex-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; pointer-events: none; }
 .ex-stage { position: relative; flex: none; perspective: 1600px; transform-origin: top left; pointer-events: auto; }
-.ex-flip { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform 0.42s cubic-bezier(0.2, 0.7, 0.2, 1); cursor: pointer; }
+.ex-flip { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform 0.42s ease-in-out; cursor: pointer; }
 .ex-flip.flipped { transform: rotateY(180deg); }
 .ex-face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 8px; box-shadow: var(--card-shadow-drag); }
-.ex-back { transform: rotateY(180deg); background: var(--card-bg); border: 1px solid var(--card-border); overflow: hidden; display: flex; flex-direction: column; }
+/* The faces are ALSO switched by hand, at the flip's halfway point (edge-on, 0.21s into a
+   symmetric 0.42s turn). backface-visibility alone is not enough: WebKit does not apply
+   it to a descendant with a layer of its own (a card's will-change), and drew the front
+   MIRRORED where the back should be (the owner, Nov 14 2026). */
+.ex-front { visibility: visible; transition: visibility 0s linear 0.21s; }
+.ex-flip.flipped .ex-front { visibility: hidden; }
+.ex-flip:not(.flipped) .ex-back { visibility: hidden; }
+.ex-front :deep(.card) { will-change: auto; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.ex-back { transition: visibility 0s linear 0.21s; transform: rotateY(180deg); background: var(--card-bg); border: 1px solid var(--card-border); overflow: hidden; display: flex; flex-direction: column; }
 /* The examined card throws a bigger shadow than a card on the canvas: it is ABOVE it. */
 .ex-front :deep(.card) { box-shadow: none; }
 .ex-hint { margin: 0; color: var(--on-scrim); font-size: 12px; pointer-events: none; }
@@ -175,7 +183,7 @@ defineExpose({ close, flip, flipped });
 /* No motion: the flip is a cross-fade (the OS's reduced motion, or "Card animations" off —
    `motion()` folds both into the `nomotion` class). */
 .nomotion .ex-flip { transition: none; transform: none !important; }
-.nomotion .ex-face { transition: opacity 0.2s ease; }
+.nomotion .ex-face { transition: opacity 0.2s ease; visibility: visible !important; }
 .nomotion .ex-back { transform: none; opacity: 0; pointer-events: none; }
 .nomotion .ex-flip.flipped .ex-back { opacity: 1; pointer-events: auto; }
 .nomotion .ex-flip.flipped .ex-front { opacity: 0; pointer-events: none; }
