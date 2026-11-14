@@ -45,6 +45,12 @@
           <span>Theme</span>
           <label v-for="t in THEMES" :key="t" class="theme-opt"><input type="radio" name="theme" :value="t" v-model="theme" /> {{ t }}</label>
         </div>
+        <!-- CARD ANIMATIONS (prefs.ts): examine flies a card up, flip turns it over. Per browser. -->
+        <label class="pref card-anim">
+          <input type="checkbox" v-model="cardAnimations" />
+          <span>Card animations</span>
+          <span class="hint">— an examined card flies up from its place and turns over; off, both are a fade</span>
+        </label>
       </section>
 
       <section v-if="me?.role === 'admin'" class="users">
@@ -115,7 +121,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { askFull } from '../dialogs';
-import { scopedFirst, theme, THEMES } from '../prefs';
+import { cardAnimations, scopedFirst, theme, THEMES } from '../prefs';
 import { UI_SCALE_MAX, UI_SCALE_MIN, UI_SCALE_STEP, uiScale } from '../uiScale';
 import type { Store } from '../store';
 import { TOOL_NAMES } from '../../contract/tools';

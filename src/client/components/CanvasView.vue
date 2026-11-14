@@ -230,6 +230,11 @@
       />
     </div>
 
+    <!-- EXAMINE (CANVAS-BRIEF.md C1): one card lifted up, at a fixed size whatever the
+         zoom — in screen space, outside the transform, over the canvas body only. -->
+    <CardExamine v-if="examineCard" :key="examineCard.recordId" :store="store" :card="examineCard" :back="examineBack"
+                 :from-rect="examineFrom" @close="endExamine" @open-record="(id: string) => emit('open-record', id)" @compare="openCompare" />
+
     <!-- Rubber band, drawn in screen space outside the transform. -->
     <div
       v-if="boxSelect.displayRect.value"
@@ -315,6 +320,7 @@
         <!-- A board placed on a board: this is how you walk from one canvas to another. -->
         <button v-if="isBoardRecord(menu.recordId!)" class="open-board" @click="menuDo((m) => $emit('open-board', m.recordId!))">▦ Open this board</button>
         <button @click="menuDo((m) => $emit('open-record', m.recordId!))">Open record</button>
+        <button title="Lift the card up to look at it — Space" @click="menuDo((m) => examine(m.recordId!))">Examine</button>
         <button v-if="derived.cardVerdict(menu.recordId!)?.linkId" @click="menuDo((m) => openCompare(m.recordId!))">Compare with target</button>
         <!-- A note as a whole page, in a new browser tab (client/noteLinks.ts). -->
         <button v-for="nf in noteFields(store, menu.recordId!)" :key="nf.id" class="open-note" :data-field="nf.id"
@@ -425,6 +431,10 @@ import ColorRules from './ColorRules.vue';
 import { timelineStrip } from '../../contract/timelineStrip';
 import { CARD_COMPARE_SLOT, CARD_STRIP_LANES, CARD_W, defaultCardWidth, effectiveHeight, fitCardWidth, lineCount, linkHandleAt, visibleRows, wrapTitle } from '../canvas/cardLayout';
 import { compareRequest } from '../compareOpen';
+import CardExamine, { type BackItem } from './CardExamine.vue';
+import { backLines } from '../../contract/cardBack';
+import { fieldSectionsOf } from '../../contract/fieldSections';
+import { SYSTEM_FIELD_TYPES } from '../../contract/systemFields';
 import { compareOf } from '../../contract/compare';
 import { CardIcon, iconFor } from '../../contract/cardIcon';
 import { capsuleWidth, JUMP_PAD, pairSlot, textWidth } from '../textWidth';
@@ -830,7 +840,7 @@ function titleLinesOf(title: string, w: number, verdict: unknown): string[] {
   return lines;
 }
 const cards = computed(() => {
-  return placedCards.value.map((c) => ({ ...c, titleLines: titleLinesOf(c.title, c.w, c.verdict) }));
+  return placedCards.value.map((c) => ({ ...c, titleLines: titleLinesOf(c.title, c.w, c.verdict), examined: c.recordId === examining.value }));
 });
 const placedCards = computed(() => {
   const dragging = drag.draggingIds.value;
@@ -1860,7 +1870,7 @@ function onCanvasPointerDown(e: PointerEvent) {
   selectedLink.value = null;
   legendOpen.value = false;
   colourOpen.value = false;
-  if (e.button === 1 || spaceHeld.value) { viewport.startPan(e); return; }
+  if (e.button === 1 || spaceHeld.value) { if (spaceHeld.value) spacePanned = true; viewport.startPan(e); return; }
   if (e.button !== 0) return;
   if (e.target !== containerRef.value &&
       !(e.target as HTMLElement).classList.contains('canvas-grid') &&
@@ -1871,7 +1881,7 @@ function onCanvasPointerDown(e: PointerEvent) {
 }
 
 function onKeyDown(e: KeyboardEvent) {
-  if (e.code === 'Space' && !spaceHeld.value) { spaceHeld.value = true; e.preventDefault(); }
+  if (e.code === 'Space' && !spaceHeld.value) { spaceHeld.value = true; spacePanned = false; e.preventDefault(); }
   // Delete removes the PLACEMENT, never the record. This is the distinction the
   // whole schema is built around, so the destructive-looking key gets the
   // non-destructive meaning; deleting a record is a deliberate act elsewhere.
@@ -1902,7 +1912,12 @@ function onKeyDown(e: KeyboardEvent) {
 }
 
 function onKeyUp(e: KeyboardEvent) {
-  if (e.code === 'Space') { spaceHeld.value = false; viewport.onPointerUp(); }
+  if (e.code === 'Space') {
+    const tapped = spaceHeld.value && !spacePanned;
+    spaceHeld.value = false; viewport.onPointerUp();
+    // A TAP, with one card selected: examine it (CanvasView "EXAMINE").
+    if (tapped && selected.size === 1 && !examining.value && !typingIn(e.target)) examine([...selected][0]);
+  }
 }
 
 function toggleScrollMode() {
@@ -2233,6 +2248,47 @@ function togglePin(fieldId: string) {
     return Object.keys(pinnedFields).length ? { ...rest, pinnedFields } : rest;
   });
 }
+
+/* ── EXAMINE (CANVAS-BRIEF.md C1–C3) ─────────────────────────────────────────
+   Space TAPPED with one card selected lifts it up (CardExamine.vue). Space HELD and
+   dragged is still pan: `spacePanned` notes that a pan happened while it was down,
+   and a release after a pan does nothing more. */
+const examining = ref<string | null>(null);
+let spacePanned = false;
+function examine(recordId: string) {
+  if (!cards.value.some((c) => c.recordId === recordId)) return;
+  menu.value = null;
+  examining.value = recordId;
+}
+function endExamine() { examining.value = null; containerRef.value?.focus({ preventScroll: true }); }
+/** The examined card: as the canvas draws it, at the examined width — its title wrapped there. */
+const EXAMINE_W = 380;
+const examineCard = computed(() => {
+  const c = cards.value.find((x) => x.recordId === examining.value);
+  return c ? { ...c, w: EXAMINE_W, titleLines: titleLinesOf(c.title, EXAMINE_W, c.verdict), examined: false, collapsed: false } : null;
+});
+/** Where the card is on screen (its see-through copy): where examine flies from and back to. */
+const examineFrom = () => {
+  const id = examining.value;
+  const el = id ? containerRef.value?.querySelector(`.canvas-world .card[data-record="${id}"]`) : null;
+  return el ? el.getBoundingClientRect() : null;
+};
+/** The BACK (contract/cardBack.ts): the table's chosen fields, or every field under its section names. */
+const examineBack = computed<BackItem[]>(() => {
+  const rec = examining.value ? store.state.records.get(examining.value) : undefined;
+  if (!rec) return [];
+  const table = store.state.tables.get(rec.table_id);
+  const fields = fieldsOf(store.state, rec.table_id).filter((f) => !SYSTEM_FIELD_TYPES.has(f.type));
+  const primaryKey = labelKeys.value.get(rec.table_id);
+  return backLines(fields, table?.card_back, fieldSectionsOf(table), fields.find((f) => f.key === primaryKey)?.id).map((l): BackItem => {
+    if (l.kind === 'head') return l;
+    const f = l.field;
+    if (f.type === 'rich_text') return { kind: 'field', id: f.id, name: f.name, rich: rec.data[f.key], block: true };
+    const row = rowFor(rec, f);
+    return { kind: 'field', id: f.id, name: f.name, row, block: row.timeline !== undefined || row.strip !== undefined };
+  });
+});
+watch(examining, (id) => { if (id && !cards.value.some((c) => c.recordId === id)) examining.value = null; });
 
 /** The compare button, or "Compare with target": the tray, with the side by side open (client/compareOpen.ts). */
 function openCompare(recordId: string) {

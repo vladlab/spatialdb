@@ -22,6 +22,12 @@ export const scopedFirst = stored(local, 'spatialdb.prefs.scopedFirst', false);
  * (It was per canvas, per browser, and re-defaulted to ON on every canvas you opened.)
  */
 export const canvasDefaultsOff = stored(session, 'spatialdb.prefs.canvasDefaultsOff', false);
+/**
+ * CARD ANIMATIONS (CANVAS-BRIEF.md C1): an examined card flies up from its place and
+ * turns over when flipped. Off, both are a plain fade — for a slow machine, or taste.
+ * The OS's "reduce motion" turns them off too, whatever this says (CardExamine.vue).
+ */
+export const cardAnimations = stored(local, 'spatialdb.prefs.cardAnimations', true);
 
 /**
  * THEME (theme.css): dark or light, for this browser — like the UI scale, a monitor

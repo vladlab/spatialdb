@@ -31,6 +31,7 @@ import { Via } from './tools.js';
 import { ViewConfig } from './views.js';
 import { CanvasConfig, CanvasLook } from './canvasConfig.js';
 import { CardIcon } from './cardIcon.js';
+import { CardBack } from './cardBack.js';
 
 /**
  * `z.guid()`, not `z.uuid()`. Zod's strict uuid() enforces RFC 4122 version and
@@ -159,6 +160,11 @@ const TableUpdate = z.strictObject({
    * icon, or one per record from a field's value. Replaced whole; null clears it.
    */
   cardIcon: CardIcon.nullable().optional(),
+  /**
+   * The BACK of this table's cards (sql/025, contract/cardBack.ts): the fields an
+   * examined card shows flipped, in order. Replaced whole; null = every field.
+   */
+  cardBack: CardBack.nullable().optional(),
 });
 
 const TableDelete = z.strictObject({

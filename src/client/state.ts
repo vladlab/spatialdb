@@ -72,6 +72,8 @@ export interface TableRow {
   canvas_look?: unknown;
   /** sql/024: the watermark of this table's cards (contract/cardIcon.ts); null = none. */
   card_icon?: unknown;
+  /** sql/025: the fields on the back of this table's cards (contract/cardBack.ts); null = every field. */
+  card_back?: unknown;
 }
 export interface FieldRow {
   id: string; table_id: string; name: string; key: string; type: string;
@@ -272,6 +274,7 @@ export function applyMutation(state: State, m: Mutation): void {
       if (m.recordCanvases !== undefined) t.record_canvases = m.recordCanvases;
       if (m.canvasLook !== undefined) t.canvas_look = m.canvasLook;
       if (m.cardIcon !== undefined) t.card_icon = m.cardIcon;
+      if (m.cardBack !== undefined) t.card_back = m.cardBack;
       return;
     }
     case 'table.delete':

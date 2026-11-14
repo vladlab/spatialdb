@@ -463,7 +463,8 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
            utility       = coalesce($10, utility),
            record_canvases = coalesce($11, record_canvases),
            canvas_look   = case when $12::boolean then $13::jsonb else canvas_look end,
-           card_icon     = case when $14::boolean then $15::jsonb else card_icon end
+           card_icon     = case when $14::boolean then $15::jsonb else card_icon end,
+           card_back     = case when $16::boolean then $17::jsonb else card_back end
          where id = $1`,
         [m.id, m.name ?? null, m.singularName ?? null, m.color ?? null, m.icon ?? null,
          m.position ?? null, m.tools === undefined ? null : JSON.stringify(m.tools),
@@ -473,7 +474,8 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
          // The shared card look (sql/023): null CLEARS it, so "absent" travels separately.
          m.canvasLook !== undefined, m.canvasLook == null ? null : JSON.stringify(m.canvasLook),
          // The card watermark (sql/024): null clears it, so "absent" travels separately too.
-         m.cardIcon !== undefined, m.cardIcon == null ? null : JSON.stringify(m.cardIcon)],
+         m.cardIcon !== undefined, m.cardIcon == null ? null : JSON.stringify(m.cardIcon),
+         m.cardBack !== undefined, m.cardBack == null ? null : JSON.stringify(m.cardBack)],
       );
       return;
 

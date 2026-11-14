@@ -19,12 +19,13 @@
 <template>
   <div
     class="card"
-    :class="[{ selected, opened, flash, refused, dragging, unconfirmed, collapsed, stacked, stale, tinted: !!tint, ring: glow === 'ring', 'drop-target': dropTarget }, linkTarget ? `link-${linkTarget}` : '', tint ? `tint-${tint}` : '']"
+    :class="[{ selected, opened, flash, refused, dragging, unconfirmed, collapsed, stacked, stale, examine, examined, tinted: !!tint, ring: glow === 'ring', 'drop-target': dropTarget }, linkTarget ? `link-${linkTarget}` : '', tint ? `tint-${tint}` : '']"
     :style="style"
     @pointerdown="onPointerDown"
     @pointerenter="$emit('hover', recordId)"
     @pointerleave="$emit('hover', null)"
-    @dblclick.stop="$emit('open', recordId)"
+    :data-record="recordId"
+    @dblclick.stop="!examine && $emit('open', recordId)"
     @contextmenu.prevent.stop="$emit('menu', { recordId, x: $event.clientX, y: $event.clientY })"
   >
     <!-- THE WATERMARK (CANVAS-BRIEF.md B2): what this card IS, large and faint behind
@@ -42,7 +43,7 @@
       <span v-if="stale" class="card-stale" title="This record no longer matches the stack's filter. Drag it out to keep it on the canvas, or × to remove it.">no longer matches</span>
       <!-- No × on a card its stack claims: the stack would place it again at once. -->
       <button
-        v-if="!claimed"
+        v-if="!claimed && !examine"
         class="card-unplace"
         title="Remove from this canvas (the record is kept)"
         @pointerdown.stop
@@ -52,7 +53,7 @@
     </header>
 
     <div class="card-title">
-      <button class="card-fold" :title="collapsed ? 'Unfold' : 'Fold'"
+      <button v-if="!examine" class="card-fold" :title="collapsed ? 'Unfold' : 'Fold'"
               @pointerdown.stop @dblclick.stop @click.stop="$emit('fold', recordId)">{{ collapsed ? '▸' : '▾' }}</button>
       <!-- THE TITLE, as the lines cardLayout.ts `wrapTitle` broke it into — each drawn
            whole, never re-wrapped by the browser, so the height is the arithmetic's. -->
@@ -70,7 +71,7 @@
       </button>
     </div>
 
-    <div v-if="!collapsed && (rows.length || rich?.length)" class="card-body">
+    <div v-if="(!collapsed || examine) && (rows.length || rich?.length)" class="card-body">
       <div v-for="r in rows" :key="r.id" class="card-field" :class="[{ 'is-link': r.link, tall: (r.ids?.length ?? 0) > 1 || (r.lines?.length ?? 0) > 1 || !!r.stripLines, 'has-strip': !!r.stripLines, tinted: !!r.tint }, r.tint ? `tint-${r.tint}` : '']">
         <span class="card-key"><span v-if="r.color" class="port-dot" :style="{ background: r.color }" />{{ r.name }}</span>
         <!-- Linked records (a link, a backlink, a junction column) are PILLS — the same
@@ -84,12 +85,12 @@
              status as a capsule: `--pair-slot` is where that column starts. -->
         <span v-if="r.ids && r.ids.length" class="card-val card-list pills column" :class="{ derived: r.derived, pairs: r.junction }"
               :style="r.slot ? { '--pair-slot': r.slot + 'px', '--pair-status': (r.statusW ?? 0) + 'px' } : undefined">
-          <RecordPill v-for="(id, i) in r.ids.slice(0, CARD_MAX_LINES)" :key="id + i" class="card-line" :text="(r.lines ?? [r.text])[i] ?? ''" :back="!r.link" :junction="r.junction"
+          <RecordPill v-for="(id, i) in r.ids.slice(0, maxLines)" :key="id + i" class="card-line" :text="(r.lines ?? [r.text])[i] ?? ''" :back="!r.link" :junction="r.junction"
                       :status="r.statuses?.[i]" :color="r.color" :jump="r.here?.[i]" :warn="r.warns?.[i]"
                       :title="r.here?.[i] ? 'Double-click opens it · → goes to its card on this canvas' : 'Double-click opens it · drag it off this card to place it on the canvas'" drag
                       @down="$emit('drag-linked', { recordId: id, from: recordId, e: $event })" @open="$emit('open-linked', id)" @jump="$emit('jump-linked', id)"
                       @edit="r.junction && r.rows && $emit('edit-pair', { recordId, fieldId: r.id, row: r.rows[i] })" />
-          <span v-if="r.ids.length > CARD_MAX_LINES" class="card-line more">+{{ r.ids.length - CARD_MAX_LINES }} more</span>
+          <span v-if="r.ids.length > maxLines" class="card-line more">+{{ r.ids.length - maxLines }} more</span>
         </span>
         <!-- A field shown as a COUNT (contract/pills.ts): one pill on one line, "12 Files";
              it opens THIS card's record, where they are listed. -->
@@ -97,8 +98,8 @@
           <RecordPill class="card-line" :n="r.count" :text="r.text" :title="r.countTitle" :back="!r.link" :color="r.color" @open="$emit('open', recordId)" />
         </span>
         <span v-else-if="r.lines && r.lines.length > 1" class="card-val card-list" :class="{ derived: r.derived }">
-          <span v-for="(l, i) in r.lines.slice(0, CARD_MAX_LINES)" :key="i" class="card-line">{{ l }}</span>
-          <span v-if="r.lines.length > CARD_MAX_LINES" class="card-line more">+{{ r.lines.length - CARD_MAX_LINES }} more</span>
+          <span v-for="(l, i) in r.lines.slice(0, maxLines)" :key="i" class="card-line">{{ l }}</span>
+          <span v-if="r.lines.length > maxLines" class="card-line more">+{{ r.lines.length - maxLines }} more</span>
         </span>
         <span v-else class="card-val" :class="{ empty: !r.text, derived: r.derived, broken: r.broken }"><VideoLayoutStrip v-if="r.strip !== undefined" mini :value="r.strip" />{{ r.text || '—' }}</span>
         <VerdictMark v-if="r.verdict" class="card-warn" :kind="r.verdict.ok ? 'ok' : 'warn'" :title="r.verdict.title" />
@@ -124,6 +125,7 @@
          edge fits the card to what is on it (cardLayout.ts `fitCardWidth`) — the
          window-manager gesture, and the quickest way back from a bad hand resize.
          A card in a STACK has no width of its own (the stack's is the width): no e. -->
+    <template v-if="!examine">
     <div v-if="!stacked" class="handle handle-e" title="Drag to resize · double-click to fit" @pointerdown.stop="$emit('resize', { recordId, handle: 'e', e: $event })" @dblclick.stop="$emit('fit', { recordId, handle: 'e' })" />
     <div v-if="!collapsed" class="handle handle-s" title="Drag to resize · double-click to fit" @pointerdown.stop="$emit('resize', { recordId, handle: 's', e: $event })" @dblclick.stop="$emit('fit', { recordId, handle: 's' })" />
     <div v-if="!collapsed && !stacked" class="handle handle-se" title="Drag to resize · double-click to fit" @pointerdown.stop="$emit('resize', { recordId, handle: 'se', e: $event })" @dblclick.stop="$emit('fit', { recordId, handle: 'se' })" />
@@ -139,12 +141,13 @@
          selected in the file manager. Its colour is what the last click found: green
          until told otherwise; ORANGE when the file was gone but its folder opened;
          RED when neither exists on this machine. -->
-    <button v-if="path" class="path-handle" :class="pathState ?? 'ok'" type="button" tabindex="-1"
+    </template>
+    <button v-if="path && !examine" class="path-handle" :class="pathState ?? 'ok'" type="button" tabindex="-1"
             :title="pathState === 'missing' ? `Not on this machine: ${path}` : pathState === 'folder' ? `The file is gone; its folder opens: ${path}` : `Show in folder: ${path}`"
             @pointerdown.stop @click.stop.prevent="$emit('reveal', { recordId, path })" @dblclick.stop @contextmenu.prevent.stop>
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h3.5l1.5 1.5h6v6.5h-11z" /></svg>
     </button>
-    <button v-if="canLink" class="link-handle" type="button" tabindex="-1"
+    <button v-if="canLink && !examine" class="link-handle" type="button" tabindex="-1"
             title="Drag onto a card to link it · drop on empty canvas, or click, for a new or existing record"
             @pointerdown.stop.prevent="$emit('link-start', { recordId, e: $event })"
             @click.stop @dblclick.stop @contextmenu.prevent.stop>
@@ -269,6 +272,13 @@ const props = defineProps<{
   verdict?: CardVerdict | null;
   /** The watermark icon (contract/cardIcon.ts `iconFor`); null/absent → none. */
   watermark?: CardIconId | null;
+  /**
+   * EXAMINED (CANVAS-BRIEF.md C1): this card is the one lifted up — the copy left on
+   * the canvas is see-through, holding its place, until it is put back.
+   */
+  examined?: boolean;
+  /** This IS the lifted copy: exactly w × h, no handles, no caps on its lists, its body scrolls. */
+  examine?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -297,12 +307,14 @@ const emit = defineEmits<{
   (e: 'menu', payload: { recordId: string; x: number; y: number }): void;
 }>();
 
+/** On the canvas a list stops at CARD_MAX_LINES ("+N more"); examined, it is all there. */
+const maxLines = computed(() => (props.examine ? Infinity : CARD_MAX_LINES));
 const lines = computed(() => (props.titleLines?.length ? props.titleLines : [props.title ?? '']));
 const style = computed(() => ({
   transform: `translate(${props.x}px, ${props.y}px)`,
   width: `${props.w ?? CARD_W}px`,
   // Always explicit, from the same function the arrows use — never `auto`.
-  height: `${effectiveHeight(props.h, lineCount(props.rows), props.collapsed, props.rich?.length ?? 0, lines.value.length)}px`,
+  height: props.examine && props.h ? `${props.h}px` : `${effectiveHeight(props.h, lineCount(props.rows), props.collapsed, props.rich?.length ?? 0, lines.value.length)}px`,
   zIndex: String(props.z),
   '--head-h': `${CARD_HEAD_H}px`,
   '--title-h': `${titleHeight(lines.value.length)}px`,
@@ -406,6 +418,12 @@ function onPointerDown(e: PointerEvent) {
 .card-watermark { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; border-radius: inherit; color: var(--card-watermark); }
 .card-watermark svg { position: absolute; right: -12px; bottom: -14px; width: 104px; height: 104px; }
 .card-head, .card-title, .card-body { position: relative; z-index: 1; }
+/* The copy left behind while its card is examined: it keeps its place, see-through. */
+.card.examined { opacity: 0.35; }
+/* The examined copy: a fixed size; the body takes the rest and scrolls, notes unclipped. */
+.card.examine .card-body { flex: 1; min-height: 0; overflow-y: auto; }
+.card.examine .card-rich { flex: none; }
+.card.examine .card-rich-body { overflow: visible; }
 .card-title {
   /* Lines start (CARD_TITLE_H − line)/2 from the top, so ONE line sits exactly where the
      single-line title always did; each more line adds CARD_TITLE_LINE_H below. */

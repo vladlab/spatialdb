@@ -363,6 +363,17 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
 
 ## Needs eyes (built, tested headlessly, never SEEN)
 
+- **Examine and flip (Nov 14, CANVAS-BRIEF.md C1–C3, sql/025).** Select one card and TAP
+  Space (Space held and dragged still pans), or "Examine" in its menu: it flies up from
+  its place to 380 × 520 in the middle of the canvas, over a dimmed backdrop; its place
+  keeps a see-through copy. F, or a click on it, turns it over (a 3D flip); Space, Esc
+  or a click outside flies it back down. The back is every field but the title, under
+  the table's section names — or what ⚙ Table settings › "Card back" chooses, in order.
+  Settings › This browser › "Card animations" (on by default) turns flight and flip
+  into fades; so does the OS's reduce-motion. NEVER SEEN, and the thing most worth a
+  look on Color 01/02 (WebKit, NVIDIA): is the flight and the flip smooth, does the
+  back come out mirrored (it must not), and does the see-through copy read as "held".
+
 - **Card watermarks and the mini timeline (Nov 14, CANVAS-BRIEF.md B2 + B3, sql/024).**
   ⚙ Table settings → "Card watermark": none / one icon / by a field. "By a field" picks
   the first select (Files → Media) and guesses video, audio, image (→ image sequence)

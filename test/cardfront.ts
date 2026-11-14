@@ -8,6 +8,7 @@
  *   T5  stackCardWidth agrees with stackLayout
  *   T6  the watermark (B2) — iconFor, suggestMap, validation
  *   T7  the mini timeline (B3) — shared columns, gaps, the clip cap, lanes, ticks
+ *   T8  the card's back (C2) — default by section, a chosen list, validation
  */
 import {
   wrapTitle, titleHeight, cardHeight, effectiveHeight, defaultCardWidth, fitCardWidth, TITLE_CHROME,
@@ -19,6 +20,7 @@ import { CardIcon, canDriveIcon, iconFor, suggestMap } from '../src/contract/car
 import { MEDIA } from '../src/contract/tools.js';
 import { labelSeconds, ticksThatFit, timelineStrip, STRIP_MAX_CLIPS } from '../src/contract/timelineStrip.js';
 import { rowLines } from '../src/client/canvas/cardLayout.js';
+import { CardBack, backLines } from '../src/contract/cardBack.js';
 
 let pass = 0, fail = 0;
 function check(label: string, ok: boolean, detail = '') {
@@ -120,6 +122,18 @@ check('a lane cap: the first lanes, and how many were left out', capped.lanes.le
 check('nothing to draw → null (no clips, junk)', timelineStrip({ tracks: [{ index: 1, name: 'A1', format: 'mono', clips: [] }] }) === null && timelineStrip({ nope: 1 }) === null);
 check('ticksThatFit: the first always; then only those that clear the last', ticksThatFit([{ x: 0, tc: 'a' }, { x: 5, tc: 'b' }, { x: 60, tc: 'c' }], 200, 60).map((t) => t.tc).join() === 'a,c');
 check('a timeline row is as many card rows as its strip says', rowLines({ stripLines: 6 }) === 6 && rowLines({}) === 1);
+
+console.log('\nT8. The back');
+const U = (n: number) => `00000000-0000-4000-8000-00000000000${n}`;
+const fs = [{ id: U(1) }, { id: U(2) }, { id: U(3) }, { id: U(4) }];
+const show = (ls: ReturnType<typeof backLines<{ id: string }>>) => ls.map((l) => (l.kind === 'head' ? `#${l.name}` : l.field.id.slice(-1))).join(' ');
+check('default: every field but the title, schema order', show(backLines(fs, null, [], U(1))) === '2 3 4');
+check('default: under the section names, unsectioned first', show(backLines(fs, undefined, [{ id: 's', name: 'Technical', fields: [U(3)] }], U(1))) === '2 #Technical 3 4');
+check('an empty section draws no heading', show(backLines(fs, null, [{ id: 's', name: 'Empty', fields: [] }], U(1))) === '2 3 4');
+check('chosen: those fields, that order, no headings — the title too, if chosen', show(backLines(fs, [U(4), U(1)], [{ id: 's', name: 'Technical', fields: [U(4)] }], U(1))) === '4 1');
+check('chosen: an id that no longer resolves is skipped', show(backLines(fs, [U(9), U(2)], [], U(1))) === '2');
+check('chosen and empty: nothing (it was chosen so)', backLines(fs, [], [], U(1)).length === 0);
+check('validation: ids only', CardBack.safeParse([U(1)]).success && !CardBack.safeParse(['x']).success);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

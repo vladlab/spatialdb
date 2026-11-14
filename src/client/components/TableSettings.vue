@@ -63,6 +63,7 @@
       <JunctionSettings v-if="table.kind === 'junction'" :store="store" :table-id="tableId" />
       <!-- What this table's cards look like on every canvas: a watermark (CANVAS-BRIEF.md B2). -->
       <CardIconSettings :store="store" :table-id="tableId" />
+      <CardBackSettings :store="store" :table-id="tableId" />
 
       <!-- THE SCHEMA. Its order is not any view's column order — that is arranged in
            the grid and saved per view. This one is the DEFAULT (the record tray, canvas
@@ -143,6 +144,7 @@ import { useSchemaActions } from '../schemaActions';
 import ToolSettings from './ToolSettings.vue';
 import JunctionSettings from './JunctionSettings.vue';
 import CardIconSettings from './CardIconSettings.vue';
+import CardBackSettings from './CardBackSettings.vue';
 import FieldSettings from './FieldSettings.vue';
 import FieldForm from './FieldForm.vue';
 import { SYSTEM_FIELD_TYPES } from '../../contract/systemFields';
