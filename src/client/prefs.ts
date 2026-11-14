@@ -35,14 +35,27 @@ export const cardAnimations = stored(local, 'spatialdb.prefs.cardAnimations', tr
  * same attribute from the same key before the first paint, so a light browser never
  * opens dark for a frame. The key and the two names are shared with that script.
  */
-export const THEMES = ['dark', 'light'] as const;
+export const THEMES = ['dark', 'light', 'experimental'] as const;
+/**
+ * 'experimental' is the LIGHT theme with a variant on top (theme.css, the block under
+ * `data-variant="experimental"`): the look of the Nov 14 2026 canvas mockup the owner
+ * liked — lighter cards on the same paper, deeper shadows, the table as a colour chip
+ * and a label instead of a coloured strip. `data-theme` stays "light", so every token
+ * it does not override is the light theme's.
+ */
+export const THEME_LABELS: Record<(typeof THEMES)[number], string> = { dark: 'dark', light: 'light', experimental: 'light (experimental)' };
 export type Theme = (typeof THEMES)[number];
 export const THEME_KEY = 'spatialdb.prefs.theme';
 const readTheme = (): Theme => { try { const v = local?.getItem(THEME_KEY); return v === 'light' ? 'light' : 'dark'; } catch { return 'dark'; } };
 export const theme = ref<Theme>(readTheme());
 /** Called once by the app shell: applies the saved theme and follows changes. */
 export function applyTheme() {
-  const set = (t: Theme) => { if (typeof document !== 'undefined') document.documentElement.setAttribute('data-theme', t); };
+  const set = (t: Theme) => {
+    if (typeof document === 'undefined') return;
+    const el = document.documentElement;
+    el.setAttribute('data-theme', t === 'experimental' ? 'light' : t);
+    if (t === 'experimental') el.setAttribute('data-variant', t); else el.removeAttribute('data-variant');
+  };
   set(theme.value);
   watch(theme, (t) => { try { local?.setItem(THEME_KEY, t); } catch { /* unavailable */ } set(t); });
 }

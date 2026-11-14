@@ -36,7 +36,7 @@
         <path v-for="(d, i) in CARD_ICON_PATHS[watermark]" :key="i" :d="d" />
       </svg>
     </div>
-    <header class="card-head" :style="{ background: tableColor, color: textOn(tableColor) }">
+    <header class="card-head" :style="{ background: tableColor, color: textOn(tableColor), '--table-color': tableColor }">
       <span class="card-table">{{ tableName }}</span>
       <!-- Up here, not in the title row: the title WRAPS (cardLayout.ts), and a badge that
            came and went beside it would re-wrap it — and change the card's height. -->
@@ -428,7 +428,7 @@ function onPointerDown(e: PointerEvent) {
 
 /* Bottom-right, a little off the corner, under everything the card draws. */
 .card-watermark { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; border-radius: inherit; color: var(--card-watermark); }
-.card-watermark svg { position: absolute; right: -12px; bottom: -14px; width: 104px; height: 104px; }
+.card-watermark svg { position: absolute; right: -12px; bottom: -14px; width: 104px; height: 104px; opacity: var(--card-watermark-a); }
 .card-head, .card-title, .card-body { position: relative; z-index: 1; }
 /* The copy left behind while its card is examined: it keeps its place, see-through. */
 .card.examined { opacity: 0.35; }

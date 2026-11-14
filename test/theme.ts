@@ -108,17 +108,22 @@ async function setting() {
     check('a fresh browser is dark, with the attribute set', html().getAttribute('data-theme') === 'dark');
     check('the app mounted', await until(() => w.find('.tree .tree-foot .settings-btn').exists(), 8000));
     await w.find('.tree .tree-foot .settings-btn').trigger('click');
-    check('Settings has a Theme row with dark and light', await until(() => w.find('.settings .pref.theme').exists())
-      && w.findAll('.settings .pref.theme input[type="radio"]').map((r: any) => r.element.value).join() === 'dark,light');
+    check('Settings has a Theme row with dark, light and the experimental light', await until(() => w.find('.settings .pref.theme').exists())
+      && w.findAll('.settings .pref.theme input[type="radio"]').map((r: any) => r.element.value).join() === 'dark,light,experimental');
     const light = w.findAll('.settings .pref.theme input[type="radio"]').find((r: any) => r.element.value === 'light');
     await light.setValue(true);
     await sleep(20);
     check('choosing light sets data-theme="light" on <html>', html().getAttribute('data-theme') === 'light', html().getAttribute('data-theme') ?? 'none');
     check('…and remembers it for this browser', win.localStorage.getItem('spatialdb.prefs.theme') === 'light');
+    const exp = w.findAll('.settings .pref.theme input[type="radio"]').find((r: any) => r.element.value === 'experimental');
+    await exp.setValue(true);
+    await sleep(20);
+    check('experimental is LIGHT with a variant on top: data-theme="light", data-variant="experimental"', html().getAttribute('data-theme') === 'light' && html().getAttribute('data-variant') === 'experimental'
+      && win.localStorage.getItem('spatialdb.prefs.theme') === 'experimental');
     const dark = w.findAll('.settings .pref.theme input[type="radio"]').find((r: any) => r.element.value === 'dark');
     await dark.setValue(true);
     await sleep(20);
-    check('back to dark', html().getAttribute('data-theme') === 'dark' && win.localStorage.getItem('spatialdb.prefs.theme') === 'dark');
+    check('back to dark, the variant gone', html().getAttribute('data-theme') === 'dark' && !html().hasAttribute('data-variant') && win.localStorage.getItem('spatialdb.prefs.theme') === 'dark');
     // The built stylesheet carries both blocks (the lib build extracts CSS).
     const css = readdirSync('.uitest').filter((f) => f.endsWith('.css')).map((f) => readFileSync(`.uitest/${f}`, 'utf8')).join('\n');
     check('the built stylesheet carries both theme blocks', /\[data-theme="light"\]/.test(css) && /\[data-theme="dark"\]/.test(css));
