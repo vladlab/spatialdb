@@ -182,7 +182,7 @@ async function main() {
       { type: 'record.create', id: note, tableId: tNotes, data: { name: 'Slate' } },
       { type: 'link.add', id: randomUUID(), fieldId: fNAbout, fromRecord: note, toRecord: ep3 },
       // Edit cards on this board show ONLY Outputs: Inputs and Work are links the card does not show.
-      { type: 'canvas.update', id: board, config: { cardFields: { [tEdits]: [fOut], [tNotes]: [] } } },
+      { type: 'canvas.update', id: board, config: { ownLook: true, cardFields: { [tEdits]: [fOut], [tNotes]: [] } } },
       ...Object.entries(AT).map(([recordId, p], i) => ({ type: 'placement.add', id: randomUUID(), canvasId: board, recordId, x: p.x, y: p.y, w: null, h: null, z: i + 1 })),
     ]);
     if (res.status !== 200) throw new Error(`fixture refused: ${(await res.text()).slice(0, 300)}`);

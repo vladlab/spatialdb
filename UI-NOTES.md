@@ -363,6 +363,14 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
 
 ## Needs eyes (built, tested headlessly, never SEEN)
 
+- **Shared card settings (Nov 14, CANVAS-BRIEF.md Part A, sql/023).** The canvas bar's
+  new chip, left of "empty": "cards: shared · Works" (solid) or "cards: this canvas
+  only" (dashed), and its menu — Use only on this canvas / Use the shared settings /
+  Make these the shared settings. With it shared, hide-empty, colour, glow and the card
+  menu's fields and pins change EVERY canvas of that table (the field menu's header
+  says "on every Works canvas"). After deploy every canvas you had already set up says
+  "this canvas only" and looks as before; untouched ones and new ones share.
+
 - **Hashes without steps (Nov 10).** ⚙ Table settings → Desktop tools: the "Hashes"
   note under the steps (and its ⚠ form on a table with no Manifest mapped); the
   record tray's ▶ md5 / ▶ sha256 on the Manifest field; a drop of several big

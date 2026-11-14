@@ -816,8 +816,10 @@ async function main() {
     await until(() => Object.keys(rowsOf(cardBy('reel_10'))).join() === 'Status,Show' && Object.keys(rowsOf(cardBy('made on canvas'))).join() === 'Status,Show'),
     JSON.stringify(rowsOf(cardBy('reel_10'))));
   check('a link field reads as the linked records\' names', /Gamma|ZZ|B-2|XJ9/.test(rowsOf(cardBy('reel_10')).Show ?? '') || (rowsOf(cardBy('reel_10')).Show ?? '').length > 1, rowsOf(cardBy('reel_10')).Show);
-  const cfg = await untilDb(`select config from canvases where id = '${boardId}'`, (r) => (r[0].config.cardFields?.[filesId] ?? []).length === 2);
-  check('and is saved on the canvas, so everyone sees the board the same way', cfg[0].config.cardFields[filesId].length === 2, JSON.stringify(cfg[0].config));
+  // A new board SHARES its card settings with every board of its table (sql/023,
+  // CANVAS-BRIEF.md Part A): they are saved on the boards table, not on the canvas.
+  const cfg = await untilDb(`select coalesce(t.canvas_look, '{}'::jsonb) as config from records r join tables t on t.id = r.table_id where r.id = '${boardId}'`, (r) => (r[0].config.cardFields?.[filesId] ?? []).length === 2);
+  check('and is saved as the boards\' shared look, so everyone sees every board the same way', cfg[0].config.cardFields[filesId].length === 2, JSON.stringify(cfg[0].config));
   await bg().trigger('pointerdown', { button: 0, clientX: 5, clientY: 5 });
   check('clicking away closes the menu', !ctx().exists());
 
@@ -836,12 +838,12 @@ async function main() {
     JSON.stringify([rowsOf(cardBy('made on canvas')), rowsOf(cardBy('reel_10')), filled]));
   await fieldLine('Status').find('.field-pin input').setValue(true);
   check('pinning Status brings it back on the empty card, as a gap', await until(() => Object.keys(rowsOf(cardBy('made on canvas'))).join() === 'Status'), JSON.stringify(rowsOf(cardBy('made on canvas'))));
-  const cfgE = await untilDb(`select config from canvases where id = '${boardId}'`, (r) => r[0].config.hideEmpty === true && (r[0].config.pinnedFields?.[filesId] ?? []).length === 1);
-  check('both are saved on the canvas, beside the fields — and the fields were not touched', cfgE[0].config.hideEmpty === true && cfgE[0].config.pinnedFields[filesId].length === 1 && cfgE[0].config.cardFields[filesId].length === 2, JSON.stringify(cfgE[0].config));
+  const cfgE = await untilDb(`select coalesce(t.canvas_look, '{}'::jsonb) as config from records r join tables t on t.id = r.table_id where r.id = '${boardId}'`, (r) => r[0].config.hideEmpty === true && (r[0].config.pinnedFields?.[filesId] ?? []).length === 1);
+  check('both are saved in the shared look, beside the fields — and the fields were not touched', cfgE[0].config.hideEmpty === true && cfgE[0].config.pinnedFields[filesId].length === 1 && cfgE[0].config.cardFields[filesId].length === 2, JSON.stringify(cfgE[0].config));
   check('the menu stays open across the switch (the pins are set there)', ctx().exists() && await until(() => hideEmptyBtn().classes('active')));
   await hideEmptyBtn().trigger('click');
   check('off again: every chosen row is back, the pin kept for next time', await until(() => Object.keys(rowsOf(cardBy('made on canvas'))).join() === 'Status,Show')
-    && (await untilDb(`select config from canvases where id = '${boardId}'`, (r) => r[0].config.hideEmpty === undefined))[0].config.pinnedFields?.[filesId]?.length === 1);
+    && (await untilDb(`select coalesce(t.canvas_look, '{}'::jsonb) as config from records r join tables t on t.id = r.table_id where r.id = '${boardId}'`, (r) => r[0].config.hideEmpty === undefined))[0].config.pinnedFields?.[filesId]?.length === 1);
   await bg().trigger('pointerdown', { button: 0, clientX: 5, clientY: 5 });
 
   await cardBy('reel_10').find('.card-fold').trigger('click');
@@ -1322,7 +1324,7 @@ async function main() {
       { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'QC notes' }] },
       { type: 'paragraph', content: [{ type: 'text', text: 'Slate is ' }, { type: 'text', text: 'wrong', marks: [{ type: 'bold' }] }, { type: 'text', text: ' at 01:00:00:00' }] },
       { type: 'image', attrs: { assetId: adoptedId, width: 64, height: 48, alt: 'inline.png' } }] } }, unset: [] },
-    { type: 'canvas.update', id: boardId, config: { cardFields: { [filesId]: [statusField, linkField, briefField] } } },
+    { type: 'canvas.update', id: boardId, config: { ownLook: true, cardFields: { [filesId]: [statusField, linkField, briefField] } } },
     { type: 'placement.add', id: randomUUID(), canvasId: boardId, recordId: r1, x: 900, y: 40, w: null, h: null, z: 50 },
   ]);
   await nav.openCanvas(boardId);

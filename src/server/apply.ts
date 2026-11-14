@@ -461,13 +461,16 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
            junction      = coalesce($8::jsonb, junction),
            field_sections = coalesce($9::jsonb, field_sections),
            utility       = coalesce($10, utility),
-           record_canvases = coalesce($11, record_canvases)
+           record_canvases = coalesce($11, record_canvases),
+           canvas_look   = case when $12::boolean then $13::jsonb else canvas_look end
          where id = $1`,
         [m.id, m.name ?? null, m.singularName ?? null, m.color ?? null, m.icon ?? null,
          m.position ?? null, m.tools === undefined ? null : JSON.stringify(m.tools),
          m.junction === undefined ? null : JSON.stringify(m.junction),
          m.fieldSections === undefined ? null : JSON.stringify(m.fieldSections),
-         m.utility ?? null, m.recordCanvases ?? null],
+         m.utility ?? null, m.recordCanvases ?? null,
+         // The shared card look (sql/023): null CLEARS it, so "absent" travels separately.
+         m.canvasLook !== undefined, m.canvasLook == null ? null : JSON.stringify(m.canvasLook)],
       );
       return;
 

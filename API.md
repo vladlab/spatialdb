@@ -222,6 +222,19 @@ Two more, optional, beside it (the same send-the-whole-config rule as `defaults`
 set from the canvas: the switch in its toolbar, the pins in the card menu's "Fields on
 … cards…". Neither needs a migration.
 
+**Shared by default (sql/023, Nov 14 2026).** The keys above, with `rules` and
+`glow` — the canvas's LOOK — are read from the canvas's config only when it says
+`"ownLook": true`. Otherwise the canvas wears its HOME TABLE's look: the table of
+the record that is the canvas (Boards, or Works for a Work's canvas), set with
+
+```jsonc
+{ "type": "table.update", "id": "<tableId>", "canvasLook": { "cardFields": { … }, "hideEmpty": true } }  // null clears it
+```
+
+So a script writing card settings onto one canvas must send `ownLook: true` with
+them, or they are kept but not shown. `defaults` and `stacks` are never part of a
+look. Rules: `lookOf` in `src/contract/canvasConfig.ts`.
+
 ### Lookup fields
 
 A `lookup` field has no value of its own. It follows one of its table's link

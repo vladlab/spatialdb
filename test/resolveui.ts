@@ -264,7 +264,7 @@ async function main() {
       { type: 'record.create', id: board, tableId: tBoards, data: { name: 'EP101 board' } },
       { type: 'placement.add', id: randomUUID(), canvasId: board, recordId: oev3, x: 100, y: 100, w: null, h: null, z: 1 },
       // Cards show their first few fields by default; Inputs was added later, so put it on the card.
-      { type: 'canvas.update', id: board, config: { cardFields: { [tEdits]: [fRate, fTracks, fLink] } } },
+      { type: 'canvas.update', id: board, config: { ownLook: true, cardFields: { [tEdits]: [fRate, fTracks, fLink] } } },
     ]);
     dialogs.choice = 'EP102_OEV1';                   // the record already holds EP102_OEV1: no overwrite dialog on these ingests
     win.location.hash = `#/all/canvas/${board}`; win.dispatchEvent(new (win as any).HashChangeEvent('hashchange'));

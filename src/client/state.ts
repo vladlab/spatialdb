@@ -68,6 +68,8 @@ export interface TableRow {
   utility?: boolean;
   /** sql/022: every record of this ordinary table also has a canvas. */
   record_canvases?: boolean;
+  /** sql/023: the shared card look of this table's canvases (contract/canvasConfig.ts `lookOf`); null = none. */
+  canvas_look?: unknown;
 }
 export interface FieldRow {
   id: string; table_id: string; name: string; key: string; type: string;
@@ -266,6 +268,7 @@ export function applyMutation(state: State, m: Mutation): void {
       if (m.fieldSections !== undefined) t.field_sections = m.fieldSections;
       if (m.utility !== undefined) t.utility = m.utility;
       if (m.recordCanvases !== undefined) t.record_canvases = m.recordCanvases;
+      if (m.canvasLook !== undefined) t.canvas_look = m.canvasLook;
       return;
     }
     case 'table.delete':

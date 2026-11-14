@@ -29,7 +29,7 @@
 import { z } from 'zod';
 import { Via } from './tools.js';
 import { ViewConfig } from './views.js';
-import { CanvasConfig } from './canvasConfig.js';
+import { CanvasConfig, CanvasLook } from './canvasConfig.js';
 
 /**
  * `z.guid()`, not `z.uuid()`. Zod's strict uuid() enforces RFC 4122 version and
@@ -146,6 +146,13 @@ const TableUpdate = z.strictObject({
    * stays a data table in every other respect.
    */
   recordCanvases: z.boolean().optional(),
+  /**
+   * The SHARED LOOK of this table's canvases (sql/023, CANVAS-BRIEF.md Part A): how
+   * cards read on every canvas whose record is in this table, unless a canvas keeps
+   * its own (`ownLook` in its config). Replaced WHOLE; null clears it (back to the
+   * defaults). Rules in contract/canvasConfig.ts, `lookOf`.
+   */
+  canvasLook: CanvasLook.nullable().optional(),
 });
 
 const TableDelete = z.strictObject({

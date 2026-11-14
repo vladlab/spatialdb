@@ -71,8 +71,128 @@ export const CanvasConfig = z.strictObject({
    */
   rules: z.record(uuid, z.array(ColorRule).max(MAX_RULES)).optional(),
   glow: z.enum(['ring', 'glow']).optional(),
+  /**
+   * OWN LOOK (CANVAS-BRIEF.md Part A): this canvas keeps its own card settings — the
+   * LOOK_KEYS above, as they are in this config. Absent or false: the canvas ignores
+   * those keys and wears its HOME TABLE's shared look (`tables.canvas_look`), so every
+   * Work's canvas reads the same and is set up once. See `lookOf`.
+   */
+  ownLook: z.boolean().optional(),
 });
 export type CanvasConfig = z.infer<typeof CanvasConfig>;
+
+/* ── THE LOOK: card settings, shared by every canvas of a table ─────────────────
+   CANVAS-BRIEF.md Part A (Nov 14, 2026). A canvas's id is a record's id (sql/010,
+   022); its HOME TABLE is that record's table — a boards table, or an ordinary
+   table with `record_canvases` (Works). The part of a config about how cards READ
+   is its LOOK, and by default a canvas takes it from its home table rather than
+   carrying its own:
+
+     the look        cardFields, hideEmpty, pinnedFields, rules, glow
+     never shared    defaults, stacks — they are about THIS canvas ("new records
+                     here go to Ep 101", "this column of deliverables")
+
+   A canvas that ticks `ownLook` keeps its own look, all of it (not table by table).
+   Nothing about rendering changes: `lookOf` returns an object of the same shape as
+   a config, and every reader above (`cardFieldsFor`, `hidesEmpty`, `pinnedFieldsFor`,
+   `rulesFor`, `glowOf`) is handed THAT instead of the raw config. */
+
+export const LOOK_KEYS = ['cardFields', 'hideEmpty', 'pinnedFields', 'rules', 'glow'] as const;
+export type LookKey = (typeof LOOK_KEYS)[number];
+
+/** A table's shared look, as `tables.canvas_look` stores it. Validated on write (table.update). */
+export const CanvasLook = CanvasConfig.pick({ cardFields: true, hideEmpty: true, pinnedFields: true, rules: true, glow: true })
+  .extend({ cardFields: z.record(uuid, z.array(uuid).max(40)).optional() });
+export type CanvasLook = z.infer<typeof CanvasLook>;
+
+const isBlank = (v: unknown) => v === undefined || v === null || v === false
+  || (typeof v === 'object' && !Array.isArray(v) && Object.keys(v as object).length === 0);
+
+/** Just the look keys of a config (or of a look), the empty ones left out. */
+export function lookPart(config: unknown): CanvasLook {
+  const src = (config && typeof config === 'object' ? config : {}) as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of LOOK_KEYS) if (!isBlank(src[k])) out[k] = src[k];
+  const parsed = CanvasLook.safeParse(out);
+  return parsed.success ? parsed.data : {};
+}
+
+/** Does this config set anything about how cards look? (sql/023 ticks `ownLook` on those.) */
+export const hasLook = (config: unknown): boolean => Object.keys(lookPart(config)).length > 0;
+
+/** Does this canvas keep its own look? */
+export function ownsLook(config: unknown): boolean {
+  const parsed = CanvasConfig.safeParse(config ?? {});
+  return parsed.success && parsed.data.ownLook === true;
+}
+
+/**
+ * THE look a canvas's cards wear: its own when it ticks `ownLook`, else its home
+ * table's (`tables.canvas_look`, null when none is set), else nothing — today's
+ * defaults. Hand the result to the readers above in place of the config.
+ */
+export function lookOf(config: unknown, tableLook: unknown): CanvasLook {
+  return ownsLook(config) ? lookPart(config) : lookPart(tableLook);
+}
+
+/**
+ * Where a change to the look is WRITTEN. The canvas bar's chip says the same thing
+ * in words ("Cards: shared · Works" / "Cards: this canvas only").
+ */
+export const lookTarget = (config: unknown): 'canvas' | 'table' => (ownsLook(config) ? 'canvas' : 'table');
+
+/** The config without any look keys — what is left of a canvas once it stops keeping its own. */
+export function withoutLook(config: unknown): CanvasConfig {
+  const parsed = CanvasConfig.safeParse(config ?? {});
+  const c: Record<string, unknown> = parsed.success ? { ...parsed.data } : { cardFields: {} };
+  for (const k of LOOK_KEYS) delete c[k];
+  delete c.ownLook;
+  for (const k of Object.keys(c)) if (c[k] === undefined) delete c[k];
+  return { ...c, cardFields: {} } as CanvasConfig;
+}
+
+/** The config with `look` as its own look, `ownLook` ticked — everything else kept. */
+export function withOwnLook(config: unknown, look: CanvasLook): CanvasConfig {
+  return { ...withoutLook(config), ...lookPart(look), cardFields: look.cardFields ?? {}, ownLook: true } as CanvasConfig;
+}
+
+/**
+ * The mutations for a change to the look, wherever it lives. `edit` gets the look as
+ * it is now and returns the look as it should be — the canvas view's toggles (a
+ * field, a pin, hide-empty, a rule, the glow) are all written this way, so none of
+ * them needs to know which of the two places it is changing.
+ */
+export function lookEdit(
+  canvasId: string, config: unknown, homeTableId: string | null, tableLook: unknown,
+  edit: (look: CanvasLook) => CanvasLook,
+): Array<{ type: 'canvas.update'; id: string; config: CanvasConfig } | { type: 'table.update'; id: string; canvasLook: CanvasLook | null }> {
+  const next = lookPart(edit(lookOf(config, tableLook)));
+  if (lookTarget(config) === 'canvas' || !homeTableId) return [{ type: 'canvas.update', id: canvasId, config: withOwnLook(config, next) }];
+  return [{ type: 'table.update', id: homeTableId, canvasLook: Object.keys(next).length ? next : null }];
+}
+
+/** "Use only on this canvas": copy the shared look into the canvas and tick `ownLook`. */
+export function detachLook(canvasId: string, config: unknown, tableLook: unknown) {
+  return [{ type: 'canvas.update' as const, id: canvasId, config: withOwnLook(config, lookPart(tableLook)) }];
+}
+
+/** "Use the shared settings": the canvas's own look is dropped (the menu confirms first). */
+export function attachLook(canvasId: string, config: unknown) {
+  return [{ type: 'canvas.update' as const, id: canvasId, config: withoutLook(config) }];
+}
+
+/**
+ * "Make these the shared settings": this canvas's own look becomes its table's, and
+ * the canvas goes back to the shared one — it looks exactly as it did, and so do now
+ * all its siblings that share. ONE batch, so ONE Ctrl+Z puts both back.
+ */
+export function promoteLook(canvasId: string, config: unknown, homeTableId: string) {
+  const look = lookPart(config);
+  return [
+    { type: 'table.update' as const, id: homeTableId, canvasLook: Object.keys(look).length ? look : null },
+    { type: 'canvas.update' as const, id: canvasId, config: withoutLook(config) },
+  ];
+}
 
 /** The colour rules of `tableId` on this canvas, in order; [] when it has none. */
 export function rulesFor(config: unknown, tableId: string): ColorRule[] {

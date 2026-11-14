@@ -52,7 +52,7 @@ async function main() {
       ] } },
       { type: 'record.create', id: board, tableId: tBoards, data: { name: 'Delivery board' } },
       ...[v1, v2, sent].map((r, i) => ({ type: 'placement.add', id: randomUUID(), canvasId: board, recordId: r, x: 100, y: 100 + i * 200, w: null, h: null, z: 1 })),
-      { type: 'canvas.update', id: board, config: { cardFields: {}, rules: { [tFiles]: [
+      { type: 'canvas.update', id: board, config: { ownLook: true, cardFields: {}, rules: { [tFiles]: [
         { id: 'ok', tint: 'green', paint: 'row', when: [{ fieldId: fStatus, op: 'eq', value: 'Accepted' }] },
         { id: 'nodeliv', tint: 'red', paint: { field: fDeliv }, when: [{ fieldId: fDeliv, op: 'empty' }] },
       ] } } },

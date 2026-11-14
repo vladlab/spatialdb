@@ -46,17 +46,36 @@
         </label>
         <p class="legend-note">Colour and direction are set on the link field (⚙ on its column). Shown/hidden is just for you, on this canvas.</p>
       </div>
+      <!-- CARDS: shared or own (CANVAS-BRIEF.md Part A). Which card settings this canvas
+           wears — its home table's, shared by every canvas of that table, or its own —
+           ALWAYS said in words, because the switches beside it (empty, colour) and the
+           card menu's fields and pins write to wherever this says. -->
+      <button class="look-chip" :class="{ active: lookOpen, own: ownLook }"
+              :title="ownLook ? 'Card settings: this canvas keeps its own' : `Card settings: shared by every ${homeTableName} canvas — changes here change all of them`"
+              @click="lookOpen = !lookOpen; legendOpen = false; colourOpen = false">{{ ownLook ? 'cards: this canvas only' : `cards: shared · ${homeTableName}` }}</button>
+      <div v-if="lookOpen" class="look-pop" @pointerdown.stop @keydown.stop>
+        <p class="look-now">
+          <template v-if="ownLook">This canvas keeps its own card settings: fields, pins, empty fields and colour rules.</template>
+          <template v-else>Card settings here — fields, pins, empty fields and colour rules — are shared by every <b>{{ homeTableName }}</b> canvas. A change on one changes all of them.</template>
+        </p>
+        <template v-if="ownLook">
+          <button class="look-act" :disabled="!homeTableId" @click="useSharedLook">Use the shared settings</button>
+          <button class="look-act" :disabled="!homeTableId" @click="makeLookShared">Make these the shared settings</button>
+        </template>
+        <button v-else class="look-act" @click="useOwnLook">Use only on this canvas</button>
+        <p class="legend-note">“New records here” and stacks always belong to this canvas alone.</p>
+      </div>
       <!-- HIDE EMPTY: cards leave out the rows that have no value (contract/canvasConfig.ts).
            Up here, not in the card menu: it is a setting of the whole canvas, and a
            canvas-wide switch inside one card's menu read as local. The pins (which
            fields stay, empty or not) are per table, so those ARE in the card menu. -->
       <button class="hide-empty" :class="{ active: hideEmpty }"
-              :title="hideEmpty ? 'Empty fields are hidden on cards — click to show them (for this canvas, for everyone)' : 'Hide the fields that have no value on cards (for this canvas, for everyone)'"
+              :title="(hideEmpty ? 'Empty fields are hidden on cards — click to show them' : 'Hide the fields that have no value on cards') + ` (${lookWhere})`"
               @click="setHideEmpty(!hideEmpty)">{{ hideEmpty ? 'empty: hidden' : 'empty: shown' }}</button>
       <!-- COLOUR RULES (contract/colorRules.ts): a canvas-wide setting, so up here. Per
            TABLE inside: a canvas mixes tables. A matched card wears a glow in the tint. -->
-      <button class="colour" :class="{ active: ruleCount }" :title="ruleCount ? `${ruleCount} colour rule${ruleCount === 1 ? '' : 's'} on this canvas — for everyone` : 'Colour cards by a rule — “Accepted → green” — for this canvas, for everyone'"
-              @click="colourOpen = !colourOpen; legendOpen = false">colour<template v-if="ruleCount"> · {{ ruleCount }}</template></button>
+      <button class="colour" :class="{ active: ruleCount }" :title="(ruleCount ? `${ruleCount} colour rule${ruleCount === 1 ? '' : 's'}` : 'Colour cards by a rule — “Accepted → green”') + ` (${lookWhere})`"
+              @click="colourOpen = !colourOpen; legendOpen = false; lookOpen = false">colour<template v-if="ruleCount"> · {{ ruleCount }}</template></button>
       <span v-if="tintLegend.length" class="tint-legend"><span v-for="l in tintLegend" :key="l.tint + l.label" :class="`tint-${l.tint}`"><i />{{ l.label }}</span></span>
       <div v-if="colourOpen" class="colour-pop" @pointerdown.stop @keydown.stop>
         <div class="colour-tabs">
@@ -69,7 +88,7 @@
             </select>
           </label>
         </div>
-        <ColorRules v-if="colourTableOn" :key="colourTableOn" :store="store" :table-id="colourTableOn" :rules="rulesFor(canvasConfig, colourTableOn)" row-word="card" @update:rules="saveRules(colourTableOn, $event as ColorRule[])" />
+        <ColorRules v-if="colourTableOn" :key="colourTableOn" :store="store" :table-id="colourTableOn" :rules="rulesFor(look, colourTableOn)" row-word="card" @update:rules="saveRules(colourTableOn, $event as ColorRule[])" />
         <p v-else class="legend-note">Place a card first — rules are per table, and this canvas has none.</p>
         <p class="legend-note">The header keeps the table's colour and pills keep the link's: those say what a card IS. A rule's glow says how it is doing.</p>
       </div>
@@ -349,7 +368,7 @@
            is on. The list scrolls on its own, so a forty-field table never pushes the
            reset off the bottom. -->
       <template v-else-if="menu.kind === 'fields'">
-        <p class="ctx-title">{{ tableNameOf(menu.recordId!) }} cards on this canvas show</p>
+        <p class="ctx-title">{{ tableNameOf(menu.recordId!) }} cards {{ ownLook ? 'on this canvas' : `on every ${homeTableName} canvas` }} show</p>
         <div class="ctx-scroll">
           <div v-for="f in fieldChoices" :key="f.id" class="ctx-check field-choice" :data-field="f.id">
             <label class="field-on"><input type="checkbox" :checked="f.on" @change="toggleCardField(f.id)" /> {{ f.name }}</label>
@@ -398,7 +417,7 @@ import { choicesOf } from '../../contract/values';
 import type { ArrowLink } from './ArrowLayer.vue';
 import { linkKey } from '../state';
 import { bezierPath, rectsIntersect, type AnchorSide, type Point } from '../canvas/geometry';
-import { CanvasConfig, cardFieldsFor, glowOf, hidesEmpty, pinnedFieldsFor, rulesFor } from '../../contract/canvasConfig';
+import { CanvasConfig, attachLook, cardFieldsFor, detachLook, glowOf, hidesEmpty, lookEdit, lookOf, ownsLook, pinnedFieldsFor, promoteLook, rulesFor, type CanvasLook } from '../../contract/canvasConfig';
 import { legendOf, paintsOf, type ColorRule, type Paints } from '../../contract/colorRules';
 import ColorRules from './ColorRules.vue';
 import { CARD_W, defaultCardWidth, effectiveHeight, fitCardWidth, lineCount, linkHandleAt, visibleRows } from '../canvas/cardLayout';
@@ -445,6 +464,41 @@ const derived = useDerived(store);
 const scopeApi = inject(SCOPE, null);
 const labelKeys = derived.labelKeys;
 const canvasConfig = computed(() => store.state.canvases.get(props.canvasId)?.config);
+/* ── THE LOOK (CANVAS-BRIEF.md Part A, contract/canvasConfig.ts `lookOf`) ─────────
+   What the cards wear: this canvas's own settings when it keeps them (`ownLook`),
+   else its HOME TABLE's shared ones — the table of the record that IS this canvas
+   (Boards, or Works for a Work's canvas). Everything below READS `look`, never the
+   raw config, and every change goes through `editLook`, which writes to whichever
+   of the two it is. */
+const homeTableId = computed(() => store.state.records.get(props.canvasId)?.table_id ?? null);
+const homeTable = computed(() => (homeTableId.value ? store.state.tables.get(homeTableId.value) : undefined));
+const tableLook = computed(() => homeTable.value?.canvas_look ?? null);
+const look = computed(() => lookOf(canvasConfig.value, tableLook.value));
+const ownLook = computed(() => ownsLook(canvasConfig.value));
+function editLook(edit: (l: CanvasLook) => CanvasLook) {
+  for (const m of lookEdit(props.canvasId, canvasConfig.value, homeTableId.value, tableLook.value, edit)) store.mutate(m);
+}
+const homeTableName = computed(() => homeTable.value?.name ?? 'board');
+/** Where a card-setting change lands, in words, for the bar's tooltips. */
+const lookWhere = computed(() => (ownLook.value ? 'this canvas only' : `every ${homeTableName.value} canvas, for everyone`));
+const lookOpen = ref(false);
+function useOwnLook() {
+  for (const m of detachLook(props.canvasId, canvasConfig.value, tableLook.value)) store.mutate(m);
+  lookOpen.value = false;
+}
+async function useSharedLook() {
+  lookOpen.value = false;
+  if (!await confirmDialog({ title: 'Use the shared card settings?', okText: 'Use shared',
+    body: `This canvas's own card fields, pins and colour rules are dropped, and its cards look like every other ${homeTableName.value} canvas. Ctrl+Z brings them back.` })) return;
+  for (const m of attachLook(props.canvasId, canvasConfig.value)) store.mutate(m);
+}
+async function makeLookShared() {
+  lookOpen.value = false;
+  if (!homeTableId.value) return;
+  if (!await confirmDialog({ title: `Share these card settings with every ${homeTableName.value} canvas?`, okText: 'Share them',
+    body: `Every ${homeTableName.value} canvas that does not keep its own settings will show cards like this one, and this canvas goes back to sharing. Canvases that keep their own are not changed. Ctrl+Z undoes it.` })) return;
+  for (const m of promoteLook(props.canvasId, canvasConfig.value, homeTableId.value)) store.mutate(m);
+}
 const labelOf = (r: RecordRow) => labelFrom(r.data, labelKeys.value.get(r.table_id), r.id.slice(0, 8));
 
 function rowFor(rec: RecordRow, f: FieldRow): CardRow {
@@ -521,8 +575,8 @@ const rowFields = (tableId: string) => shownFields(tableId).filter((f) => f.type
  * cards of a table may show different rows. Nothing hangs on a row's index any more
  * (cardLayout.ts, `rowPortY`), and heights count the lines a card actually has.
  */
-const hideEmpty = computed(() => hidesEmpty(canvasConfig.value));
-const pinnedOf = (tableId: string) => pinnedFieldsFor(canvasConfig.value, tableId);
+const hideEmpty = computed(() => hidesEmpty(look.value));
+const pinnedOf = (tableId: string) => pinnedFieldsFor(look.value, tableId);
 function cardRows(rec: RecordRow, paint?: Paints): CardRow[] {
   const verdicts = derived.fieldVerdicts(rec.id);
   const rows = rowFields(rec.table_id).map((f) => {
@@ -536,8 +590,8 @@ function cardRows(rec: RecordRow, paint?: Paints): CardRow[] {
    Evaluated over the placed records, once per change; a card reads its row's tint
    (its glow) and each row its field's. The stacks' census evaluates filters the same
    way (`stackLinkLabels`), so a rule reads links as a stack's filter does. */
-const glow = computed(() => glowOf(canvasConfig.value));
-const allRules = computed(() => parsedConfig().rules ?? {});
+const glow = computed(() => glowOf(look.value));
+const allRules = computed(() => look.value.rules ?? {});
 const ruleCount = computed(() => Object.values(allRules.value).reduce((n, rs) => n + rs.length, 0));
 const tintLegend = computed(() => legendOf(Object.values(allRules.value).flat()));
 const paints = computed(() => {
@@ -565,14 +619,15 @@ const ruleTables = computed(() => {
 /** The tab that is open: the chosen table while it is still one of `ruleTables`, else the first. */
 const colourTableOn = computed(() => (ruleTables.value.some((t) => t.id === colourTable.value) ? colourTable.value : ruleTables.value[0]?.id ?? ''));
 function saveRules(tableId: string, rules: ColorRule[]) {
-  const next = { ...allRules.value };
-  if (rules.length) next[tableId] = rules; else delete next[tableId];
-  const { rules: _, ...rest } = parsedConfig();
-  store.mutate({ type: 'canvas.update', id: props.canvasId, config: Object.keys(next).length ? { ...rest, rules: next } : rest });
+  editLook((l) => {
+    const next = { ...(l.rules ?? {}) };
+    if (rules.length) next[tableId] = rules; else delete next[tableId];
+    const { rules: _, ...rest } = l;
+    return Object.keys(next).length ? { ...rest, rules: next } : rest;
+  });
 }
 function setGlow(mode: 'ring' | 'glow') {
-  const { glow: _, ...rest } = parsedConfig();
-  store.mutate({ type: 'canvas.update', id: props.canvasId, config: mode === 'ring' ? { ...rest, glow: 'ring' } : rest });
+  editLook((l) => { const { glow: _, ...rest } = l; return mode === 'ring' ? { ...rest, glow: 'ring' } : rest; });
 }
 const richBlocks = (rec: RecordRow) => shownFields(rec.table_id)
   .filter((f) => f.type === 'rich_text' && !isEmptyRichText(rec.data[f.key]))
@@ -581,7 +636,7 @@ const richBlocks = (rec: RecordRow) => shownFields(rec.table_id)
 function shownFields(tableId: string): FieldRow[] {
   const all = fieldsOf(store.state, tableId);
   const primaryKey = labelKeys.value.get(tableId);
-  return cardFieldsFor(canvasConfig.value, tableId, all, all.find((f) => f.key === primaryKey)?.id);
+  return cardFieldsFor(look.value, tableId, all, all.find((f) => f.key === primaryKey)?.id);
 }
 
 /* ── what the cards READ that the scene does not bring ────────────────────────
@@ -2073,14 +2128,17 @@ function parsedConfig() {
   const p = CanvasConfig.safeParse(canvasConfig.value ?? {});
   return p.success ? p.data : { cardFields: {} };
 }
-const hasCustomFields = computed(() => menuTableId.value in parsedConfig().cardFields);
+const hasCustomFields = computed(() => menuTableId.value in (look.value.cardFields ?? {}));
 
 function saveCardFields(tableId: string, ids: string[] | null) {
-  const cardFields = { ...parsedConfig().cardFields };
-  if (ids) cardFields[tableId] = ids; else delete cardFields[tableId];
-  // MERGED into the config, never `{ cardFields }` alone: canvas.update replaces the
-  // whole config, and that would silently wipe the canvas's defaults.
-  store.mutate({ type: 'canvas.update', id: props.canvasId, config: { ...parsedConfig(), cardFields } });
+  // Through `editLook`: on a sharing canvas this changes every canvas of the table.
+  // (The old warning still holds underneath — a config is replaced WHOLE, so the
+  // contract merges, and a canvas's defaults and stacks survive.)
+  editLook((l) => {
+    const cardFields = { ...(l.cardFields ?? {}) };
+    if (ids) cardFields[tableId] = ids; else delete cardFields[tableId];
+    return { ...l, cardFields };
+  });
 }
 function toggleCardField(fieldId: string) {
   const tableId = menuTableId.value;
@@ -2097,17 +2155,18 @@ function resetCardFields() { saveCardFields(menuTableId.value, null); }
    time the switch goes on the card is as it was. Reset-to-default (above) leaves pins
    alone: it is about which fields, not which of them may be empty. */
 function setHideEmpty(on: boolean) {
-  const { hideEmpty: _, ...rest } = parsedConfig();
-  store.mutate({ type: 'canvas.update', id: props.canvasId, config: on ? { ...rest, hideEmpty: true } : rest });
+  editLook((l) => { const { hideEmpty: _, ...rest } = l; return on ? { ...rest, hideEmpty: true } : rest; });
 }
 function togglePin(fieldId: string) {
   const tableId = menuTableId.value;
-  const pinnedFields = { ...(parsedConfig().pinnedFields ?? {}) };
-  const now = new Set(pinnedFields[tableId] ?? []);
-  if (now.has(fieldId)) now.delete(fieldId); else now.add(fieldId);
-  if (now.size) pinnedFields[tableId] = [...now]; else delete pinnedFields[tableId];
-  const { pinnedFields: _, ...rest } = parsedConfig();
-  store.mutate({ type: 'canvas.update', id: props.canvasId, config: Object.keys(pinnedFields).length ? { ...rest, pinnedFields } : rest });
+  editLook((l) => {
+    const pinnedFields = { ...(l.pinnedFields ?? {}) };
+    const now = new Set(pinnedFields[tableId] ?? []);
+    if (now.has(fieldId)) now.delete(fieldId); else now.add(fieldId);
+    if (now.size) pinnedFields[tableId] = [...now]; else delete pinnedFields[tableId];
+    const { pinnedFields: _, ...rest } = l;
+    return Object.keys(pinnedFields).length ? { ...rest, pinnedFields } : rest;
+  });
 }
 
 function unplace(recordId: string) {
@@ -2290,6 +2349,18 @@ onUnmounted(() => {
 .field-choice .field-pin.dim { opacity: 0.55; }
 .field-choice .field-pin input:disabled { opacity: 0.3; }
 .canvas-controls .hide-empty.active { color: var(--accent); }
+.canvas-controls .look-chip { border: 1px solid var(--border-main); border-radius: 10px; padding: 0 8px; }
+.canvas-controls .look-chip.own { border-style: dashed; }
+.canvas-controls .look-chip.active { color: var(--accent); border-color: var(--accent); }
+.look-pop {
+  position: absolute; top: calc(100% + 4px); left: 12px; z-index: 60; width: 300px; padding: 8px;
+  background: var(--controls-bg); border: 1px solid var(--border-main); border-radius: 6px; box-shadow: var(--card-shadow-drag);
+  display: flex; flex-direction: column; gap: 6px; font-size: 12px;
+}
+.look-now { margin: 0 2px 2px; color: var(--text-secondary); line-height: 1.4; }
+.look-act { text-align: left; background: var(--bg-app); border: 1px solid var(--border-main); color: inherit; border-radius: 4px; padding: 5px 8px; font: inherit; cursor: pointer; }
+.look-act:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.look-act:disabled { opacity: 0.5; cursor: default; }
 .canvas-controls .colour.active { color: var(--accent); }
 .colour-pop {
   position: absolute; top: calc(100% + 4px); left: 12px; z-index: 60; width: 560px; max-width: calc(100vw - 24px); padding: 8px;
