@@ -88,7 +88,7 @@
           <RecordPill v-for="(id, i) in r.ids.slice(0, maxLines)" :key="id + i" class="card-line" :text="(r.lines ?? [r.text])[i] ?? ''" :back="!r.link" :junction="r.junction"
                       :status="r.statuses?.[i]" :color="r.color" :jump="r.here?.[i]" :warn="r.warns?.[i]"
                       :title="r.here?.[i] ? 'Double-click opens it · → goes to its card on this canvas' : 'Double-click opens it · drag it off this card to place it on the canvas'" drag
-                      @down="$emit('drag-linked', { recordId: id, from: recordId, e: $event })" @open="$emit('open-linked', id)" @jump="$emit('jump-linked', id)"
+                      @down="$emit('drag-linked', { recordId: id, from: recordId, e: $event })" @open="$emit('open-linked', id)" @pick="$emit('pick-linked', id)" @jump="$emit('jump-linked', id)"
                       @edit="r.junction && r.rows && $emit('edit-pair', { recordId, fieldId: r.id, row: r.rows[i] })" />
           <span v-if="r.ids.length > maxLines" class="card-line more">+{{ r.ids.length - maxLines }} more</span>
         </span>
@@ -300,6 +300,8 @@ const emit = defineEmits<{
   (e: 'drag-linked', payload: { recordId: string; from: string; e: PointerEvent }): void;
   /** A linked record's pill, double-clicked: open it (the tray). */
   (e: 'open-linked', recordId: string): void;
+  /** A plain click on a linked record's pill (an examined card pulls that record's card up). */
+  (e: 'pick-linked', recordId: string): void;
   /** A linked record that is already on this canvas, its → pressed: go to its card. */
   (e: 'jump-linked', recordId: string): void;
   /** A junction pair's ✎ on this card: edit its status (the pair editor, anchored at the card). */

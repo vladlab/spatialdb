@@ -234,8 +234,8 @@
 
     <!-- EXAMINE (CANVAS-BRIEF.md C1): one card lifted up, at a fixed size whatever the
          zoom — in screen space, outside the transform, over the canvas body only. -->
-    <CardExamine v-if="examineCard" :key="examineCard.recordId" :store="store" :card="examineCard" :back="examineBack"
-                 :from-rect="examineFrom" @close="endExamine" @open-record="(id: string) => emit('open-record', id)" @compare="openCompare" />
+    <CardExamine v-if="examineItems.length" :key="examineLine[0]" :store="store" :items="examineItems"
+                 :from-rect="rectOnScreen" @close="endExamine" @pull="pullCard" @compare="openCompare" />
     <!-- COMPARE EXAMINE (C4): a file and its target, side by side, turned over to the comparison. -->
     <CompareExamine v-if="compareView" :key="compareView.key" :store="store" :owner="compareView.owner" :target="compareView.target" :rows="compareView.rows"
                     :owner-from="() => rectOnScreen(compareView!.owner.recordId)" :target-from="() => rectOnScreen(compareView!.target.recordId)"
@@ -855,7 +855,7 @@ function titleLinesOf(title: string, w: number, verdict: unknown): string[] {
   return lines;
 }
 const cards = computed(() => {
-  const up = new Set([examining.value, comparing.value?.ownerId, comparing.value?.targetId].filter(Boolean));
+  const up = new Set([...examineLine.value, comparing.value?.ownerId, comparing.value?.targetId].filter(Boolean));
   return placedCards.value.map((c) => ({ ...c, titleLines: titleLinesOf(c.title, c.w, c.verdict), examined: up.has(c.recordId) }));
 });
 const placedCards = computed(() => {
@@ -2269,30 +2269,29 @@ function togglePin(fieldId: string) {
    Space TAPPED with one card selected lifts it up (CardExamine.vue). Space HELD and
    dragged is still pan: `spacePanned` notes that a pan happened while it was down,
    and a release after a pan does nothing more. */
-const examining = ref<string | null>(null);
+/** The LINE of lifted cards: the one examined, then every linked record pulled up after it (CardExamine.vue). */
+const examineLine = ref<string[]>([]);
+const examining = computed(() => examineLine.value[0] ?? null);
 let spacePanned = false;
 function examine(recordId: string) {
   if (!cards.value.some((c) => c.recordId === recordId)) return;
   menu.value = null;
-  examining.value = recordId;
+  examineLine.value = [recordId];
 }
-function endExamine() { examining.value = null; containerRef.value?.focus({ preventScroll: true }); }
-/** The examined card: as the canvas draws it, at the examined width — its title wrapped there. */
+function endExamine() { examineLine.value = []; containerRef.value?.focus({ preventScroll: true }); }
+/** A click on a linked record in a lifted card: its card joins the line, at the right — once, and only if the record is loaded. */
+function pullCard(recordId: string) {
+  if (examineLine.value.includes(recordId) || !store.state.records.has(recordId)) return;
+  examineLine.value = [...examineLine.value, recordId];
+}
 const EXAMINE_W = 380;
-const examineCard = computed(() => {
-  const c = cards.value.find((x) => x.recordId === examining.value);
-  return c ? { ...c, w: EXAMINE_W, titleLines: titleLinesOf(c.title, EXAMINE_W, c.verdict), examined: false, collapsed: false } : null;
-});
 /** Where a card is on screen (its see-through copy): where examine flies from and back to. Null when it is not on this canvas. */
 function rectOnScreen(id: string | null | undefined): DOMRect | null {
   const el = id ? containerRef.value?.querySelector(`.canvas-world .card[data-record="${id}"]`) : null;
   return el ? el.getBoundingClientRect() : null;
 }
-const examineFrom = () => rectOnScreen(examining.value);
 /** The BACK (contract/cardBack.ts): the table's chosen fields, or every field under its section names. */
-const examineBack = computed<BackItem[]>(() => {
-  const rec = examining.value ? store.state.records.get(examining.value) : undefined;
-  if (!rec) return [];
+function backOf(rec: RecordRow): BackItem[] {
   const table = store.state.tables.get(rec.table_id);
   const fields = fieldsOf(store.state, rec.table_id).filter((f) => !SYSTEM_FIELD_TYPES.has(f.type));
   const primaryKey = labelKeys.value.get(rec.table_id);
@@ -2303,8 +2302,15 @@ const examineBack = computed<BackItem[]>(() => {
     const row = rowFor(rec, f);
     return { kind: 'field', id: f.id, name: f.name, row, block: row.timeline !== undefined || row.strip !== undefined };
   });
-});
-watch(examining, (id) => { if (id && !cards.value.some((c) => c.recordId === id)) examining.value = null; });
+}
+/** Each lifted card as the canvas draws it (or built for the occasion, when it is not on this canvas), at the examined width, with its back. */
+const examineItems = computed(() => examineLine.value.flatMap((id) => {
+  const rec = store.state.records.get(id);
+  if (!rec) return [];
+  const c = cards.value.find((x) => x.recordId === id) ?? cardDataOf(rec);
+  return [{ card: { ...c, w: EXAMINE_W, titleLines: titleLinesOf(c.title, EXAMINE_W, c.verdict), examined: false, collapsed: false }, back: backOf(rec) }];
+}));
+watch(examining, (id) => { if (id && !cards.value.some((c) => c.recordId === id)) examineLine.value = []; });
 
 /* ── CANVAS NOTES (CANVAS-BRIEF.md D2) ───────────────────────────────────────
    A click in a note types in it — on a card that is ALREADY selected, so the first
@@ -2331,7 +2337,7 @@ function openCompare(recordId: string) {
   const v = derived.cardVerdict(recordId);
   if (!v?.linkId || !v.targetId) return;
   menu.value = null;
-  examining.value = null;
+  examineLine.value = [];
   comparing.value = { ownerId: recordId, linkId: v.linkId, targetId: v.targetId };
 }
 function endCompare() { comparing.value = null; containerRef.value?.focus({ preventScroll: true }); }

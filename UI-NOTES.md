@@ -363,6 +363,15 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
 
 ## Needs eyes (built, tested headlessly, never SEEN)
 
+- **Examine: a line of cards, "reverse", re-fit (Nov 15).** Every lifted card has a
+  small "⇄ REVERSE" button in its strip (front and back; the compare pair too). A
+  CLICK on a linked record's pill on a lifted card pulls that record's card up at the
+  right end of the line (flying from the canvas if it is there, else fading in); cards
+  already up slide over. Each card turns on its own; F turns all. A long line shrinks
+  to half size at most, then scrolls sideways. Both examine and compare re-fit when
+  the tray opens or closes. A pill on a lifted card no longer opens the tray. Never
+  seen: the slide when a card joins, and the button on light table colours.
+
 - **Canvas notes (Nov 14, CANVAS-BRIEF.md D).** "canvas note" in the add-field type list:
   a rich_text field (`canvasNote`) limited to paragraphs, bullet / numbered lists,
   CHECKLISTS, bold / italic / strike and links (the server refuses the rest). On a

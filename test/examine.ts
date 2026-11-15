@@ -138,9 +138,28 @@ async function main() {
     await until(() => ex().exists());
     await ex().trigger('keydown', { key: 'f' });
     check('the back shows the chosen link field\'s pills', await until(() => ex().findAll('.ex-back .ex-pills .pill').length === 8), ex().exists() ? ex().find('.ex-back').html().slice(0, 400) : 'not lifted');
-    await ex().find('.ex-back .ex-pills .pill').trigger('dblclick');
-    check('a double-click on a pill on the back opens that record — and the card goes back down', await until(() => w.find('.record-panel').exists() && /^Ep 10\d$/.test(w.find('.record-panel .rp-title').text()), 8000)
-      && await until(() => !ex().exists(), 3000), w.find('.record-panel').exists() ? w.find('.record-panel .rp-title').text() : 'no tray');
+    await ex().find('.ex-back .ex-pills .pill').trigger('click');
+    const lineIds = () => ex().findAll('.ex-slot .ex-front .card').map((c: any) => c.attributes('data-record'));
+    check('a CLICK on a linked record pulls ITS card up, to the right of the line — though it is not on this canvas', await until(() => lineIds().length === 2, 4000)
+      && lineIds()[0] === fileA && works.includes(lineIds()[1]!), lineIds().join());
+    check('…the tray stays shut, and the first card stays as it was (flipped)', !w.find('.record-panel').exists() && ex().findAll('.ex-flip').at(0)!.classes('flipped') && !ex().findAll('.ex-flip').at(1)!.classes('flipped'));
+    await ex().find('.ex-back .ex-pills .pill').trigger('click');
+    await sleep(150);
+    check('the same record again: still one card of it', lineIds().length === 2);
+
+    console.log('\nE6. Reverse');
+    const rev = (i: number, face: string) => ex().findAll('.ex-slot').at(i)!.find(`.${face} .ex-reverse`);
+    check('every face has a "reverse" button', rev(0, 'ex-front').exists() && rev(0, 'ex-back').exists() && rev(1, 'ex-front').text() === 'reverse');
+    await rev(1, 'ex-front').trigger('click');
+    check('it turns over THAT card only', ex().findAll('.ex-flip').at(1)!.classes('flipped') && ex().findAll('.ex-flip').at(0)!.classes('flipped'));
+    await rev(0, 'ex-back').trigger('click');
+    check('…and back, from the back', !ex().findAll('.ex-flip').at(0)!.classes('flipped') && ex().findAll('.ex-flip').at(1)!.classes('flipped'));
+    await ex().trigger('keydown', { key: 'f' });
+    check('F turns them ALL to the same side', ex().findAll('.ex-flip.flipped').length === 2);
+    await ex().trigger('keydown', { key: 'f' });
+    check('…and all back', ex().findAll('.ex-flip.flipped').length === 0);
+    await ex().trigger('keydown', { key: 'Escape' });
+    check('Esc puts the whole line down', await until(() => !ex().exists(), 3000) && !cardOf('a.mov')!.classes('examined'));
   } finally {
     console.log(`\n${pass} passed, ${fail} failed\n`);
     await ui.close();

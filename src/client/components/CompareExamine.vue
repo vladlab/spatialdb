@@ -23,10 +23,16 @@
             <div class="cx-face cx-front" :aria-hidden="flipped">
               <RecordCard v-bind="side.card" :store="store" examine :x="0" :y="0" :w="W" :h="H" :z="1" :selected="false" :dragging="false" :unconfirmed="false"
                           :can-link="false" :examined="false" :collapsed="false" @open-linked="(id: string) => openRecord(id)" />
+              <button class="cx-reverse" type="button" :style="{ color: textOn(side.card.tableColor) }" title="Turn both cards over — F" @click.stop="flip">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h13l-3.5-3.5M20 15H7l3.5 3.5" /></svg>reverse
+              </button>
             </div>
             <div class="cx-face cx-back" :aria-hidden="!flipped">
               <header class="cx-head" :style="{ background: side.card.tableColor, color: textOn(side.card.tableColor) }">
-                <span>{{ side.card.tableName }}</span><span class="cx-role">{{ side.key === 'owner' ? 'found' : 'expected' }}</span>
+                <span>{{ side.card.tableName }} <span class="cx-role">{{ side.key === 'owner' ? 'found' : 'expected' }}</span></span>
+                <button class="cx-reverse in-head" type="button" title="Turn both cards over — F" @click.stop="flip">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h13l-3.5-3.5M20 15H7l3.5 3.5" /></svg>reverse
+              </button>
               </header>
               <div class="cx-title" :title="side.card.title">{{ side.card.title || 'untitled' }}</div>
               <div :ref="(el) => (scrollers[side.key] = el as HTMLElement)" class="cx-rows" @scroll="sync(side.key)">
@@ -97,9 +103,15 @@ function over(el: HTMLElement, r: DOMRect): string | null {
   return to.width ? `translate(${r.left - to.left}px, ${r.top - to.top}px) scale(${r.width / to.width})` : null;
 }
 let flipTimer: ReturnType<typeof setTimeout> | undefined;
-onMounted(async () => {
+/** Re-fitted whenever the canvas body changes size — the tray opening or closing, the window (the owner, Nov 15 2026). */
+function refit() {
   const box = root.value?.getBoundingClientRect();
   if (box?.width) fit.value = Math.min(1, (box.width - 32) / (2 * W + MID + 24), (box.height - 64) / H);
+}
+let ro: ResizeObserver | undefined;
+onMounted(async () => {
+  refit();
+  if (root.value && typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(refit); ro.observe(root.value); }
   await nextTick();
   root.value?.focus({ preventScroll: true });
   const moving = motion();
@@ -113,7 +125,7 @@ onMounted(async () => {
   // …and once they have landed, both turn over by themselves: the comparison is the point.
   flipTimer = setTimeout(() => { if (!leaving.value) flipped.value = true; }, moving ? 340 : 0);
 });
-onBeforeUnmount(() => clearTimeout(flipTimer));
+onBeforeUnmount(() => { clearTimeout(flipTimer); ro?.disconnect(); });
 
 function close() {
   if (leaving.value) return;
@@ -164,7 +176,7 @@ defineExpose({ close, flip, flipped });
 .cx-scrim.out, .cx-hint.out { opacity: 0; transition: opacity 0.2s ease-in; }
 @keyframes cx-in { from { opacity: 0; } to { opacity: 1; } }
 .cx-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; pointer-events: none; }
-.cx-group { display: flex; align-items: flex-start; gap: 12px; transform-origin: center; }
+.cx-group { display: flex; align-items: flex-start; gap: 12px; transform-origin: center; transition: transform 0.2s ease; }
 .cx-stage { position: relative; flex: none; perspective: 1600px; transform-origin: top left; pointer-events: auto; }
 .cx-flip { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform 0.42s ease-in-out; cursor: pointer; }
 .cx-flip.flipped { transform: rotateY(180deg); }
@@ -184,6 +196,11 @@ defineExpose({ close, flip, flipped });
 /* The same top block on both backs and the middle — 22px strip + 34px title — so row 1 lines up across all three. */
 .cx-head { flex: none; display: flex; justify-content: space-between; align-items: center; height: 22px; padding: 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; }
 .cx-role { font-weight: 400; font-style: italic; opacity: 0.85; }
+.cx-reverse { position: absolute; top: 2px; right: 6px; z-index: 3; height: 18px; display: inline-flex; align-items: center; gap: 4px; padding: 0 7px 0 5px;
+  background: transparent; border: 1px solid currentColor; border-radius: 9px; font: inherit; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1; cursor: pointer; opacity: 0.85; }
+.cx-reverse:hover { opacity: 1; }
+.cx-reverse svg { width: 11px; height: 11px; }
+.cx-reverse.in-head { position: static; color: inherit; }
 .cx-title { flex: none; height: 34px; box-sizing: border-box; padding: 0 10px; line-height: 34px; font-size: 13px; font-weight: 600; color: var(--text-primary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-bottom: 1px solid var(--card-border); }
 .cx-rows { flex: 1; min-height: 0; overflow-y: auto; font-size: 12px; cursor: auto; scrollbar-width: thin; }
