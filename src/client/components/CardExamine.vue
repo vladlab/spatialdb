@@ -34,27 +34,31 @@
             </header>
             <div class="ex-back-title">{{ card.title || 'untitled' }}</div>
             <div class="ex-back-body">
-              <template v-for="(b, i) in back" :key="i">
-                <div v-if="b.kind === 'head'" class="ex-sec">{{ b.name }}</div>
-                <div v-else class="ex-row" :class="{ block: b.block }">
-                  <span class="ex-key">{{ b.name }}</span>
-                  <span class="ex-val">
-                    <RichTextView v-if="b.rich !== undefined" :store="store" :value="b.rich" />
-                    <template v-else-if="b.row">
-                      <span v-if="b.row.ids?.length" class="ex-pills">
-                        <RecordPill v-for="(id, k) in b.row.ids" :key="id + k" :text="(b.row.lines ?? [b.row.text])[k] ?? ''" :back="!b.row.link" :color="b.row.color"
-                                    title="Double-click opens it" @open="openRecord(id)" />
-                      </span>
-                      <template v-else>
-                        <span v-if="b.row.lines?.length" class="ex-lines"><span v-for="(l, k) in b.row.lines" :key="k">{{ l }}</span></span>
-                        <span v-else class="ex-text" :class="{ empty: !b.row.text }">{{ b.row.text || '—' }}</span>
-                        <VideoLayoutStrip v-if="b.row.strip !== undefined" class="ex-strip" :value="b.row.strip" />
-                        <TimelineStrip v-if="b.row.timeline !== undefined" class="ex-strip" :value="b.row.timeline" :width-px="W - 40" />
+              <!-- FIELD GROUPS (the owner, Nov 14 2026): each of the table's field sections is an
+                   inset box with its name in small caps; fields outside any section sit plain. -->
+              <div v-for="(g, gi) in groups" :key="gi" :class="g.name ? 'ex-group' : 'ex-loose'">
+                <div v-if="g.name" class="ex-sec">{{ g.name }}</div>
+                <template v-for="it in g.items" :key="it.id">
+                  <div class="ex-row" :class="{ block: it.block }">
+                    <span class="ex-key">{{ it.name }}</span>
+                    <span class="ex-val">
+                      <RichTextView v-if="it.rich !== undefined" :store="store" :value="it.rich" />
+                      <template v-else-if="it.row">
+                        <span v-if="it.row.ids?.length" class="ex-pills">
+                          <RecordPill v-for="(id, k) in it.row.ids" :key="id + k" :text="(it.row.lines ?? [it.row.text])[k] ?? ''" :back="!it.row.link" :color="it.row.color"
+                                      title="Double-click opens it" @open="openRecord(id)" />
+                        </span>
+                        <template v-else>
+                          <span v-if="it.row.lines?.length" class="ex-lines"><span v-for="(l, k) in it.row.lines" :key="k">{{ l }}</span></span>
+                          <span v-else class="ex-text" :class="{ empty: !it.row.text }">{{ it.row.text || '—' }}</span>
+                          <VideoLayoutStrip v-if="it.row.strip !== undefined" class="ex-strip" :value="it.row.strip" />
+                          <TimelineStrip v-if="it.row.timeline !== undefined" class="ex-strip" :value="it.row.timeline" :width-px="W - 40" />
+                        </template>
                       </template>
-                    </template>
-                  </span>
-                </div>
-              </template>
+                    </span>
+                  </div>
+                </template>
+              </div>
               <p v-if="!back.length" class="ex-none">Nothing on the back. ⚙ Table settings › Card back chooses what is.</p>
             </div>
           </div>
@@ -66,7 +70,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import type { Store } from '../store';
 import RecordCard, { type CardRow } from './RecordCard.vue';
 import RecordPill from './RecordPill.vue';
@@ -90,6 +94,16 @@ const emit = defineEmits<{ close: []; 'open-record': [id: string]; compare: [id:
 
 /** The examined size: fixed, whatever the canvas's zoom (the owner, Nov 14 2026). */
 const W = 380, H = 520;
+type FieldItem = Extract<BackItem, { kind: 'field' }>;
+/** The back's lines, gathered under their headings: a heading starts a group; lines before any heading are loose. */
+const groups = computed(() => {
+  const out: Array<{ name: string | null; items: FieldItem[] }> = [];
+  for (const b of props.back) {
+    if (b.kind === 'head') out.push({ name: b.name, items: [] });
+    else { if (!out.length) out.push({ name: null, items: [] }); out[out.length - 1].items.push(b); }
+  }
+  return out.filter((g) => g.items.length);
+});
 const root = ref<HTMLElement>();
 const stage = ref<HTMLElement>();
 const flipped = ref(false);
@@ -170,7 +184,9 @@ defineExpose({ close, flip, flipped });
 .ex-back-word { font-weight: 400; opacity: 0.8; font-style: italic; }
 .ex-back-title { flex: none; padding: 6px 10px; font-size: 13px; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; border-bottom: 1px solid var(--card-border); }
 .ex-back-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0 8px; font-size: 12px; cursor: auto; }
-.ex-sec { margin: 8px 10px 2px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+.ex-group { margin: 8px 8px 0; padding: 6px 0 2px; background: var(--card-inset); border-radius: 8px; }
+.ex-group .ex-row:last-child { border-bottom: 0; }
+.ex-sec { margin: 0 10px 3px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
 .ex-row { display: flex; gap: 8px; padding: 3px 10px; line-height: 18px; border-bottom: 1px solid var(--line-faint); }
 .ex-row.block { flex-direction: column; gap: 2px; }
 .ex-key { flex: none; width: 112px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
