@@ -198,15 +198,18 @@ defineExpose({ close, flip, flipped });
 .cx-val { flex: 1; min-width: 0; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cx-row.differ .cx-val, .cx-row.missing .cx-val { color: rgb(var(--tint-rgb)); font-weight: 600; }
 
-.cx-mid { flex: none; width: 120px; display: flex; flex-direction: column; opacity: 0; transition: opacity 0.25s ease 0.3s; pointer-events: auto; }
+.cx-mid { flex: none; width: 120px; display: flex; flex-direction: column; opacity: 0; transition: opacity 0.25s ease 0.3s; pointer-events: auto;
+  /* A surface of its OWN: on the bare scrim the connectors had nothing to stand out
+     against in the light theme (the owner, Nov 14 2026). The card's colour, both themes. */
+  box-sizing: border-box; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px; box-shadow: var(--card-shadow-drag); overflow: hidden; }
 .cx-mid.shown { opacity: 1; }
-.cx-verdict { flex: none; height: 57px;   /* the backs: 1px border + 22px strip + 34px title */
-  box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--on-scrim); text-align: center; }
+.cx-verdict { flex: none; height: 56px;   /* the backs' 22px strip + 34px title; this column has their 1px border too */
+  box-sizing: border-box; border-bottom: 1px solid var(--card-border); display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--text-primary); text-align: center; }
 .cx-links { scrollbar-width: none; }
 .cx-links::-webkit-scrollbar { display: none; }
 .cx-link { display: flex; align-items: center; color: rgb(var(--tint-rgb)); }
 .cx-line { flex: 1; height: 3px; background: rgb(var(--tint-rgb)); border-radius: 2px; }
-.cx-link.track .cx-line { height: 1px; opacity: 0.7; }
+.cx-link.track .cx-line { height: 2px; }
 
 .nomotion .cx-flip { transition: none; transform: none !important; }
 .nomotion .cx-face { transition: opacity 0.2s ease; visibility: visible !important; }

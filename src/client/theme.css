@@ -248,11 +248,7 @@ html { background: var(--bg-app); }
 
      paper #bab5a1 · chrome #a8a593 · card #c4bfab · text #24221c · labels #3a372f
      card shadow  0 1px 0 rgba(36,34,28,.25), 0 8px 18px rgba(36,34,28,.18)
-     a card: no border line, 10px corners; its table as an 8px colour chip and a
-             label (11px, 600, .06em), NOT a coloured strip
-
-   Card heights are arithmetic (cardLayout.ts), so the chip-and-label row keeps the
-   strip's 22px: 8px above the label, and the title follows as it always did. */
+     a card: no border line, 10px corners; the coloured table strip as everywhere */
 :root[data-variant="experimental"] {
   --bg-app: #bab5a1;
   --bg-chrome: #a8a593;
@@ -264,10 +260,6 @@ html { background: var(--bg-app); }
   --card-shadow-drag: 0 2px 0 rgba(36, 34, 28, 0.25), 0 18px 44px rgba(36, 34, 28, 0.38);
 }
 :root[data-variant="experimental"] .card { border-color: transparent; border-radius: 10px; }
-:root[data-variant="experimental"] .card-head {
-  background: transparent !important; color: var(--text-muted) !important;
-  justify-content: flex-start; align-items: flex-end; gap: 6px; padding: 0 8px 0 8px;
-  font-size: 11px; font-weight: 600; line-height: 14px; letter-spacing: 0.06em; border-radius: 10px 10px 0 0;
-}
-:root[data-variant="experimental"] .card-head::before { content: ''; flex: none; width: 8px; height: 8px; margin-bottom: 3px; border-radius: 2px; background: var(--table-color); }
-:root[data-variant="experimental"] .card-head .card-table { margin-right: auto; }
+/* The coloured strip with the table's name is BACK (the owner, Nov 14 2026, late): the
+   chip-and-label header was tried and dropped. Only its corners follow the card's. */
+:root[data-variant="experimental"] .card-head { border-radius: 9px 9px 0 0; }
