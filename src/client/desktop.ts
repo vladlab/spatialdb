@@ -15,6 +15,7 @@
  * CSS pixels. Divide by devicePixelRatio (the viznotes lesson).
  */
 
+import { logMessage } from './log';
 import { reactive, ref } from 'vue';
 
 interface TauriGlobal {
@@ -86,8 +87,8 @@ export async function listenFileDrops(onDrop: (paths: string[], clientX: number,
 
 /**
  * What the tools are doing and what they have to say, for a small status strip.
- * Separate from `store.errors` (which is about the connection): a probe that
- * failed is news about a file, not about the database.
+ * The store's own errors (a rejected save, a dropped stream) arrive here too, as
+ * `error` notices (App.vue, `store.onError`): one place to look, one log behind it.
  */
 /**
  * `records`: pills the notice offers to OPEN — the record a dropped file already
@@ -97,12 +98,36 @@ export async function listenFileDrops(onDrop: (paths: string[], clientX: number,
 export interface Notice { id: number; text: string; kind: 'info' | 'warn' | 'error'; at: number; records?: Array<{ id: string; label: string }> }
 export const notices = reactive<Notice[]>([]);
 let nextNotice = 1;
-export function notice(text: string, kind: Notice['kind'] = 'info', records?: Notice['records']) {
-  notices.unshift({ id: nextNotice++, text, kind, at: Date.now(), ...(records?.length ? { records } : {}) });
-  if (notices.length > 20) notices.length = 20;
-  if (kind === 'info') setTimeout(() => dismiss(nextNotice - 1), 8000);
+/**
+ * ONE rule for every notice, whatever its kind (the owner, Nov 16 2026: some hung
+ * until clicked, some left in seconds): it is written to the LOG (client/log.ts),
+ * shown for NOTICE_MS, and goes. Nothing needs to be caught in time — the log in
+ * the sidebar footer has it. While the pointer is over the stack nothing leaves
+ * (you are reading); what came due meanwhile goes NOTICE_LINGER_MS after you move off.
+ *
+ * (Before: only `info` timed out, and its timer dismissed whichever notice was
+ * NEWEST eight seconds later, not itself — so a warning could vanish early and an
+ * info could stay for good.)
+ */
+export const NOTICE_MS = 10_000;
+export const NOTICE_LINGER_MS = 2_000;
+let held = false;
+const overdue = new Set<number>();
+const expire = (id: number) => { if (held) overdue.add(id); else dismiss(id); };
+export function holdNotices(on: boolean) {
+  held = on;
+  if (on || !overdue.size) return;
+  const ids = [...overdue]; overdue.clear();
+  setTimeout(() => ids.forEach(expire), NOTICE_LINGER_MS);
 }
-export function dismiss(id: number) { const i = notices.findIndex((n) => n.id === id); if (i >= 0) notices.splice(i, 1); }
+export function notice(text: string, kind: Notice['kind'] = 'info', records?: Notice['records']) {
+  const id = nextNotice++;
+  logMessage(text, kind, records);
+  notices.unshift({ id, text, kind, at: Date.now(), ...(records?.length ? { records } : {}) });
+  if (notices.length > 20) notices.length = 20;
+  setTimeout(() => expire(id), NOTICE_MS);
+}
+export function dismiss(id: number) { overdue.delete(id); const i = notices.findIndex((n) => n.id === id); if (i >= 0) notices.splice(i, 1); }
 
 /**
  * Background work in flight, per record: what is running ("ffprobe", "Hash (md5)")

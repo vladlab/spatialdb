@@ -60,12 +60,15 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { Store } from '../store';
+import { logMessage } from '../log';
 import { useDerived } from '../derived';
 // Not lazy, unlike in the tray: this page IS the editor.
 import RichTextEditor from './RichTextEditor.vue';
 
 const props = defineProps<{ store: Store; recordId: string; fieldId: string }>();
 const store = props.store;
+// This page has no notice corner: its errors stay in its own strip, and go to the shared log.
+onUnmounted(store.onError((line) => logMessage(line, 'error')));
 const derived = useDerived(store);
 
 const field = computed(() => store.state.fields.get(props.fieldId));

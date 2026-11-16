@@ -118,7 +118,7 @@ until something goes wrong, which is the point. The suite covers it
    line that never cleared, and nothing you typed afterwards was saved. Now: one
    "rejected (409)" line, the card goes, and the next edit saves ("saved" in the
    status readout).
-2. The banner lines are dismissed with a click. Is that discoverable enough? (They
+2. (Superseded Nov 16: errors are corner notices with a log behind them — see Needs eyes.) The banner lines are dismissed with a click. Is that discoverable enough? (They
    never went away at all before.)
 3. A resync must not move you. Sleep a laptop with the app open on a canvas and a
    record in the tray while someone else works (1000+ changes), or restart the
@@ -362,6 +362,18 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
 | 6 | By design | A field's type cannot be changed. | Unchanged. |
 
 ## Needs eyes (built, tested headlessly, never SEEN)
+
+- **The Log, and one rule for notices (Nov 16).** Sidebar footer → **Log** (above
+  Settings): every notice and every store error, newest first, kept in this browser
+  (500 lines) across reloads; a red count = warnings/errors since you last opened it.
+  Every notice now leaves after 10 s whatever its kind (before: warnings and errors
+  hung until clicked, and an info's timer removed whichever notice was newest); the
+  pointer over the stack holds them. Store errors (a rejected save, a dropped stream)
+  are corner notices now, not the red banner — the banner is only the live "Saving is
+  failing…" line, which leaves when saving works again. To look at: is 10 s right
+  with real Resolve/File drop messages; the "+ N more — in the log" line when more
+  than four stack up; the count badge on the light themes; the full-page note keeps
+  its own strip (no corner there) but writes to the same log.
 
 - **Examine: a line of cards, "reverse", re-fit (Nov 15).** Every lifted card has a
   small "⇄ REVERSE" button in its strip (front and back; the compare pair too). A

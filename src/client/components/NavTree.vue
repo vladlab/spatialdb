@@ -83,6 +83,11 @@
          wants a fingerprint), outside the content area so nothing there shifts. -->
     <footer class="tree-foot">
       <FingerprintStrip :store="store" />
+      <!-- THE LOG (client/log.ts): always here, so nothing moves when something is logged;
+           the count is the warnings and errors since it was last opened. -->
+      <button class="row log-btn" :title="unseen ? `Log — ${unseen} warning${unseen === 1 ? '' : 's'} or error${unseen === 1 ? '' : 's'} since you last looked` : 'Log — everything the app has told you, kept'" @click="$emit('log')">
+        <span class="tw">≡</span>Log<span v-if="unseen" class="log-count">{{ unseen > 99 ? '99+' : unseen }}</span>
+      </button>
       <button class="row settings-btn" title="Settings — and History: restore something deleted" @click="$emit('settings')">
         <span class="tw">⚙</span>Settings
       </button>
@@ -93,13 +98,15 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import FingerprintStrip from './FingerprintStrip.vue';
+import { unseenProblems } from '../log';
 import type { Store } from '../store';
 import { sectionsSorted } from '../state';
 import type { ScopeApi } from '../scope';
 import { parseScope } from '../../contract/scope';
 
 const props = defineProps<{ store: Store; sectionKey: string | null; scope: ScopeApi }>();
-defineEmits<{ 'go-section': [key: string]; 'section-settings': [id: string]; settings: [] }>();
+defineEmits<{ 'go-section': [key: string]; 'section-settings': [id: string]; settings: []; log: [] }>();
+const unseen = computed(unseenProblems);
 
 const sections = computed(() => sectionsSorted(props.store.state));
 const scopeTableName = computed(() => props.store.state.tables.get(props.scope.scopeTableId.value)?.name ?? '');
@@ -111,7 +118,8 @@ const setScope = (v: string) => { props.scope.scope.value = parseScope(v); };
 .tree { width: 240px; flex: none; display: flex; flex-direction: column; background: var(--bg-chrome); border-right: 1px solid var(--border-main); font-size: 13px; user-select: none; }
 .tree-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 0; }
 .tree-foot { flex: none; border-top: 1px solid var(--border-main); padding: 4px 0; }
-.settings-btn .tw { font-size: 12px; }
+.settings-btn .tw, .log-btn .tw { font-size: 12px; }
+.log-count { margin-left: 6px; min-width: 16px; padding: 0 5px; border-radius: 8px; background: var(--danger); color: var(--on-accent); font-size: 10px; font-weight: 600; line-height: 16px; text-align: center; }
 .row {
   display: flex; align-items: center; gap: 4px; padding: 3px 8px 3px 10px; cursor: pointer; color: var(--text-secondary);
   text-decoration: none; white-space: nowrap; border: none; background: none; font: inherit; width: 100%; box-sizing: border-box; text-align: left;

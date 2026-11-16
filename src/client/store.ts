@@ -112,6 +112,9 @@ export interface StoreOptions {
   debounceMs?: number;
 }
 
+/** How the one live STATE line among `errors` begins (the app shell shows it as a banner while it lasts). */
+export const SAVING_FAILING = 'Saving is failing';
+
 export function createStore(opts: StoreOptions = {}) {
   const baseUrl = opts.baseUrl ?? '';
   const clientId = opts.clientId ?? crypto.randomUUID();
@@ -165,9 +168,18 @@ export function createStore(opts: StoreOptions = {}) {
     if (eventLog.value.length > 80) eventLog.value.length = 80;
   }
 
+  /**
+   * Who wants to hear of an error as it happens (the app shell: a notice and a line
+   * in the log). `errors` stays the list of record; this is the doorbell.
+   */
+  const errorListeners = new Set<(line: string) => void>();
+  function onError(fn: (line: string) => void): () => void { errorListeners.add(fn); return () => errorListeners.delete(fn); }
+  const tell = (line: string) => { for (const fn of errorListeners) { try { fn(line); } catch { /* a listener's problem */ } } };
+
   function fail(line: string) {
     errors.value.unshift(line);
     if (errors.value.length > 40) errors.value.length = 40;
+    tell(line);
   }
 
   /**
@@ -178,10 +190,11 @@ export function createStore(opts: StoreOptions = {}) {
    */
   let retryLine = '';
   function failRetrying(attempt: number, delayMs: number, why: string) {
-    const line = `Saving is failing (attempt ${attempt}, next try in ${Math.round(delayMs / 100) / 10}s) — `
+    const line = `${SAVING_FAILING} (attempt ${attempt}, next try in ${Math.round(delayMs / 100) / 10}s) — `
       + `${pending.value.length} change(s) are queued, not lost: ${why}`;
     const i = retryLine ? errors.value.indexOf(retryLine) : -1;
     if (i === -1) errors.value.unshift(line); else errors.value.splice(i, 1, line);
+    if (!retryLine) tell(line);      // once per outage, not once per attempt
     retryLine = line;
   }
   function clearRetrying() {
@@ -1063,6 +1076,7 @@ export function createStore(opts: StoreOptions = {}) {
     farLabels,
     streamState,
     errors,
+    fail, onError,
     eventLog,
 
     mutate,

@@ -233,10 +233,16 @@ async function main() {
     store.errors.value.length = 0;
     store.mutate({ type: 'record.update', id: doomed, set: { name: 'edited after it was deleted' }, unset: [] } as never);
     check('editing a row the server no longer has: the row leaves the grid', await until(() => rowCount() === n0, 6000), `${rowCount()} vs ${n0}`);
-    check('…the banner says why', await until(() => w.find('.errors').exists() && w.find('.errors').text().includes('record does not exist')), w.find('.errors').exists() ? w.find('.errors').text().slice(0, 140) : 'no banner');
+    const errNotice = () => w.findAll('.desk-notice.error').map((n: any) => n.text()).join(' | ');
+    check('…a notice in the corner says why — an event, so not the banner', await until(() => errNotice().includes('record does not exist')) && !w.find('.errors').exists(), errNotice().slice(0, 140) || 'no notice');
     check('…and you are still on the same table (it is the second in the list, not the first)', win.location.hash.startsWith(`#/all/table/${tFiles}`), win.location.hash);
-    await w.find('.errors .error-line').trigger('click');
-    check('a banner line goes away when clicked', await until(() => !w.find('.errors').exists()));
+    check('the sidebar footer counts it until the log is opened', /1/.test(w.find('.log-btn .log-count').text()), w.find('.log-btn').text());
+    await w.find('.desk-notice.error').trigger('click');
+    check('a notice goes away when clicked', await until(() => !w.find('.desk-notice.error').exists()));
+    await w.find('.log-btn').trigger('click');
+    check('the Log opens from the footer and still has the line — which is what lets a notice leave by itself — marked as an error', await until(() => w.find('.log .line.error').exists()) && w.find('.log .line').text().includes('record does not exist'), w.find('.log').exists() ? w.find('.log').text().slice(0, 160) : 'no log');
+    check('…and opening it clears the footer count', await until(() => !w.find('.log-btn .log-count').exists()));
+    await w.find('.log .x').trigger('click');
 
     /* ── E ─────────────────────────────────────────────────────────────── */
     console.log('\nE. Leaving the page with unsent changes asks first');

@@ -79,7 +79,7 @@
 
     <div class="body">
       <NavTree v-if="treeOpen" :store="store" :section-key="sectionKey" :scope="scopeApi"
-               @go-section="goSection" @section-settings="sectionSettings = $event" @settings="settingsOpen = true">
+               @go-section="goSection" @section-settings="sectionSettings = $event" @settings="settingsOpen = true" @log="logOpen = true">
         <template #contents>
           <NavContents :tables="treeTables" :canvases="canvasRows" :reports="reportRows" :calendars="calendarRows" :view="view" :table-id="tableId" :canvas-id="canvasId" :report-id="reportId" :calendar-id="calendarId"
                        :scoped-table-ids="scopedTableIds"
@@ -135,6 +135,7 @@
 
     <SectionSettings v-if="sectionSettings" :store="store" :section-id="sectionSettings" @close="sectionSettings = ''" />
     <SettingsDialog v-if="settingsOpen" :store="store" @close="settingsOpen = false" />
+    <MessageLog v-if="logOpen" :store="store" @close="logOpen = false" @open-record="logOpen = false; openRecordId = $event" />
     <TableSettings v-if="tableSettings" :store="store" :table-id="tableSettings" @close="tableSettings = ''" />
 
     <!-- What is being dragged, following the pointer. One ghost for every source. -->
@@ -155,8 +156,11 @@
     <div v-if="fileDrag.active" class="file-drop" :class="{ ok: dropReady, onto: !!dropTarget }">
       <div class="file-drop-msg" :class="{ follow: !!dropTarget }" :style="dropTarget ? { left: `${fileDrag.x + 18}px`, top: `${fileDrag.y + 18}px` } : undefined">{{ dropMessage }}</div>
     </div>
-    <div v-if="notices.length || jobs.size" class="desk-notices">
+    <!-- Every notice leaves by itself (NOTICE_MS) and is in the LOG; while the pointer is
+         over the stack nothing leaves. Past four, a line says how many more and opens the log. -->
+    <div v-if="notices.length || jobs.size" class="desk-notices" @mouseenter="holdNotices(true)" @mouseleave="holdNotices(false)">
       <div v-if="jobs.size" class="desk-job">{{ jobs.size }} file{{ jobs.size === 1 ? '' : 's' }} being read…</div>
+      <button v-if="notices.length > 4" class="desk-more" title="Open the log" @click="logOpen = true">+ {{ notices.length - 4 }} more — in the log</button>
       <div v-for="n in notices.slice(0, 4)" :key="n.id" class="desk-notice" :class="n.kind" @click="dismiss(n.id)">
         {{ n.text }}
         <!-- The records a notice offers to OPEN — in the tray, staying where you are. -->
@@ -166,8 +170,11 @@
       </div>
     </div>
 
-    <div v-if="store.errors.value.length" class="errors">
-      <div v-for="(e, i) in store.errors.value.slice(0, 5)" :key="i" class="error-line" title="Click to dismiss" @click="store.errors.value.splice(i, 1)">{{ e }}</div>
+    <!-- The banner is for a STATE, not an event: saving is failing right now, and the
+         line leaves when saving works again (store.clearRetrying). Every other store
+         error is an event — a notice in the corner and a line in the log, like the rest. -->
+    <div v-if="savingFailing.length" class="errors">
+      <div v-for="e in savingFailing" :key="e" class="error-line">{{ e }}</div>
     </div>
   </div>
 </template>
@@ -177,13 +184,15 @@ import { applyUiScale } from './uiScale';
 import { applyTheme } from './prefs';
 import './theme.css';
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue';
-import { dismiss, fileDrag, handshake, isDesktop, jobs, listenFileDrops, notice, notices } from './desktop';
+import { dismiss, fileDrag, handshake, holdNotices, isDesktop, jobs, listenFileDrops, notice, notices } from './desktop';
+import { logMessage } from './log';
+import MessageLog from './components/MessageLog.vue';
 import { runFileDrop } from './tools/fileDrop';
 import { SCOPE, useScope } from './scope';
 import { CANVAS_JUMP } from './canvasJump';
 import { formatScope, parseScope } from '../contract/scope';
 import { dragGhost } from './recordDrag';
-import { createStore } from './store';
+import { createStore, SAVING_FAILING } from './store';
 import { boardsOf, calendarsOf, hasCanvases, isBoardsTable, isCalendarsTable, isReportsTable, isUtilityTable, reportsOf, tablesOfSection, tablesSorted } from './state';
 import { useDerived } from './derived';
 import { formatRoute, lastRoute, parseNote, parseRoute, rememberRoute, sameRoute, startHash, type Route, type ViewName } from './router';
@@ -218,6 +227,11 @@ const openRecordId = ref('');
 /** What the main area shows. Set by what you open in the tree — there is no tab for it. */
 const view = ref<ViewName>('table');
 const settingsOpen = ref(false);
+const logOpen = ref(false);
+// The store's errors, as they happen. "Saving is failing" is a state the banner shows
+// while it lasts (logged once per outage); everything else is a notice like any other.
+const savingFailing = computed(() => store.errors.value.filter((e) => e.startsWith(SAVING_FAILING)));
+onUnmounted(store.onError((line) => { if (line.startsWith(SAVING_FAILING)) logMessage(line, 'error'); else notice(line, 'error'); }));
 /* ── shell state: per browser, because it is about this screen ───────────── */
 const readLocal = (k: string, d: string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
 const writeLocal = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* unavailable */ } };
@@ -720,7 +734,7 @@ async function enter() {
   catch (e) {
     // A 401 here has already flipped us back to the login screen (store.get). Anything
     // else is the server being unreachable: say so; the stream's retry will recover.
-    if (store.auth.value === 'in') store.errors.value.unshift(`could not load: ${(e as Error).message}`);
+    if (store.auth.value === 'in') store.fail(`could not load: ${(e as Error).message}`);
     return;
   }
   store.start();
@@ -1068,6 +1082,8 @@ p.hint { padding: 24px; }
 .notice-pill:hover { background: var(--accent); color: var(--on-accent); }
 .desk-notices { position: fixed; right: 12px; bottom: 12px; z-index: 300; display: flex; flex-direction: column; gap: 4px; max-width: 420px; }
 .desk-job { font-size: 11px; color: var(--accent); text-align: right; }
+.desk-more { align-self: flex-end; background: var(--bg-app); border: 1px solid var(--border-main); border-radius: 4px; padding: 2px 8px; font: inherit; font-size: 11px; color: var(--text-secondary); cursor: pointer; box-shadow: var(--card-shadow-drag); }
+.desk-more:hover { color: var(--text-primary); border-color: var(--accent); }
 .desk-notice { background: var(--bg-app); border: 1px solid var(--border-main); border-left: 3px solid var(--accent); border-radius: 4px; padding: 6px 10px; font-size: 12px; cursor: pointer; box-shadow: var(--card-shadow-drag); }
 .desk-notice.warn { border-left-color: var(--notice-warn); }
 .desk-notice.error { border-left-color: var(--danger); }
