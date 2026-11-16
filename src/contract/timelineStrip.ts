@@ -13,7 +13,8 @@
  *  boundary; the spans between boundaries are columns, each as wide as the LOG of
  *  its length (the video strip's rule — 2s of tone and 52 minutes of mix are both
  *  readable, still in order of size). So A1's Mix and A2's Mix that start at the same
- *  timecode start at the same x, and a gap is a gap on that lane only.
+ *  timecode start at the same x, and a gap is a gap on that lane only. Columns that
+ *  are no clip's body — gaps, offsets between lanes — are drawn at half that width.
  *
  *  Lengths come from the labels themselves, at a nominal 30 frames a second: the
  *  record's real rate is another field, a shape never reads a second field, and a
@@ -31,6 +32,8 @@ export function labelSeconds(label: string): number {
 }
 
 const weightOf = (seconds: number) => 3 + Math.log2(1 + Math.max(0, seconds));
+/** How much of its log weight an in-between column (a gap, an offset between lanes) keeps. */
+export const GAP_SHARE = 0.5;
 /** A lane with more clips than this draws as one block, "N clips". */
 export const STRIP_MAX_CLIPS = 12;
 /** Clip colours: a stable pick per clip NAME, so a stem is the same colour on every lane. Not red — red means a problem here. */
@@ -72,7 +75,17 @@ export function timelineStrip(value: unknown, maxLanes = Infinity): TimelineStri
   const at = [...bounds.keys()].sort((a, b) => a - b);
   if (at.length < 2) return null;
   // x of each boundary, in percent: the columns between them weighted by log length.
-  const weights = at.slice(1).map((t, i) => weightOf(t - at[i]));
+  // A column is the BODY of a clip when it is the longest column that clip covers; every
+  // other column is in-between — a gap no lane fills, or the few seconds by which two
+  // lanes are out of step. In-between columns get GAP_SHARE of their weight: enough to
+  // see that things do not line up, not a third of the card (the owner, Nov 16 2026).
+  const body = new Set<number>();
+  for (const sp of spans) for (const c of sp.clips) {
+    let best = -1, len = -1;
+    at.forEach((t, i) => { if (i < at.length - 1 && t >= c.s && at[i + 1] <= c.e && at[i + 1] - t > len) { len = at[i + 1] - t; best = i; } });
+    if (best >= 0) body.add(best);
+  }
+  const weights = at.slice(1).map((t, i) => weightOf(t - at[i]) * (body.has(i) ? 1 : GAP_SHARE));
   const total = weights.reduce((a, b) => a + b, 0);
   const x = new Map<number, number>([[at[0], 0]]);
   let acc = 0;

@@ -118,6 +118,23 @@ check('the same clip name is the same colour on every lane; no file → grey', s
 check('ticks at every clip START, labelled as stored', st.ticks.map((t) => t.tc).join() === '00:59:30:00,01:00:00:00,01:00:10:00');
 const busy = { tracks: [{ index: 1, name: 'A1', format: 'mono', clips: Array.from({ length: STRIP_MAX_CLIPS + 3 }, (_, i) => clip(`c${i}`, `01:00:${String(i * 2).padStart(2, '0')}:00`, `01:00:${String(i * 2 + 1).padStart(2, '0')}:00`, '/x')) }] };
 check(`more than ${STRIP_MAX_CLIPS} clips on a lane: one block, "N clips"`, timelineStrip(busy)!.lanes[0].clips.length === 1 && timelineStrip(busy)!.lanes[0].clips[0].name === `${STRIP_MAX_CLIPS + 3} clips`);
+{ // In-between columns (a gap nobody fills, lanes out of step) are drawn at half their weight.
+  const c = (name: string, start: string, end: string) => ({ name, path: `/m/${name}`, start, end, frames: 1 });
+  const gap = timelineStrip({ tracks: [{ index: 1, name: 'A1', format: 'stereo', clips: [c('tone', '00:58:30:00', '00:58:40:00'), c('mix', '01:00:00:00', '01:52:00:00')] }] })!;
+  const [tone, mix] = gap.lanes[0].clips;
+  const w = (s: number) => 3 + Math.log2(1 + s);
+  const total = w(10) + w(80) / 2 + w(3120);
+  check('a gap no lane fills takes HALF its log weight', Math.abs((mix.left - tone.width) - (w(80) / 2 / total) * 100) < 1e-9 && Math.abs(tone.width - (w(10) / total) * 100) < 1e-9, String(mix.left - tone.width));
+  const off = timelineStrip({ tracks: [
+    { index: 1, name: 'A1', format: 'stereo', clips: [c('v4', '00:59:55:00', '01:40:00:00')] },
+    { index: 2, name: 'A2', format: 'stereo', clips: [c('v5', '01:00:00:00', '01:52:00:00')] }] })!;
+  const lead = off.lanes[1].clips[0].left, t2 = w(5) / 2 + w(2400) + w(720) / 2;
+  check('lanes out of step: the offset columns are halved too, the shared body is not', Math.abs(lead - (w(5) / 2 / t2) * 100) < 1e-9 && Math.abs(off.lanes[0].clips[0].width - ((w(5) / 2 + w(2400)) / t2) * 100) < 1e-9, String(lead));
+  const solo = timelineStrip({ tracks: [
+    { index: 1, name: 'A1', format: 'stereo', clips: [c('tone', '00:59:30:00', '00:59:40:00')] },
+    { index: 2, name: 'A2', format: 'stereo', clips: [c('mix', '01:00:00:00', '01:52:00:00')] }] })!;
+  check('a clip alone on its lane keeps its full width (it is a body, not a gap)', Math.abs(solo.lanes[0].clips[0].width - (w(10) / (w(10) + w(20) / 2 + w(3120))) * 100) < 1e-9);
+}
 const capped = timelineStrip(ta, 2)!;
 check('a lane cap: the first lanes, and how many were left out', capped.lanes.length === 2 && capped.hidden === 1);
 check('nothing to draw → null (no clips, junk)', timelineStrip({ tracks: [{ index: 1, name: 'A1', format: 'mono', clips: [] }] }) === null && timelineStrip({ nope: 1 }) === null);
