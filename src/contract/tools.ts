@@ -199,7 +199,7 @@ const FFPROBE: Analyzer = {
     { key: 'mxf_op',           name: 'MXF pattern (raw)', type: 'text', note: 'the operational pattern decoded from the MXF\'s operational_pattern_ul tag: "OP1a", "OP1b", "OP-Atom"; absent for anything but an MXF' },
     { key: 'codec',            name: 'Codec',           type: 'select', vocabulary: 'video_codec', choices: VOCABULARIES.video_codec.choices, note: 'the CANONICAL name, looked up from codec + profile in contract/vocab.ts: "ProRes 4444 XQ", "H.264"; absent when the table has no entry' },
     { key: 'video_codec',      name: 'Video codec (raw)', type: 'text', note: 'as ffprobe says it: "prores", "dnxhd", "h264", "exr"' },
-    { key: 'codec_profile',    name: 'Codec profile (raw)', type: 'text', note: 'as ffprobe says it: "4444 XQ", "HQ", "High"' },
+    { key: 'codec_profile',    name: 'Codec profile (raw)', type: 'text', note: 'as ffprobe says it: "XQ", "HQ", "High"' },
     { key: 'dimensions',       name: 'Dimensions',      type: 'dimensions', note: 'the stored frame size as ONE value, "1920×1080" (contract/dimensions.ts) — what a spec says; as coded (anamorphic: not the display size)' },
     { key: 'width',            name: 'Width',           type: 'number', note: 'stored frame size, as coded (anamorphic: not the display size) — the two plain numbers, for a table that wants them apart' },
     { key: 'height',           name: 'Height',          type: 'number' },

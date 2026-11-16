@@ -30,7 +30,7 @@ ffprobe output: `Codec`. Raw keys read: `codec`, `profile`.
 
 | Canonical name | id | codec | profile |
 |---|---|---|---|
-| ProRes 4444 XQ | `prores_4444_xq` | `prores` | `4444 XQ` |
+| ProRes 4444 XQ | `prores_4444_xq` | `prores` | `XQ` |
 | ProRes 4444 | `prores_4444` | `prores` | `4444` |
 | ProRes 422 HQ | `prores_422_hq` | `prores` | `HQ` |
 | ProRes 422 | `prores_422` | `prores` | `Standard` |

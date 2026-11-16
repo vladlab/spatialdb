@@ -92,13 +92,13 @@ async function main() {
     check('the table is unambiguous: no two entries can match one input without one being strictly more specific', ambiguities().length === 0, JSON.stringify(ambiguities()));
     check('entry ids and names are unique, in every list', Object.values(VOCABULARY_TABLES).every((v) => new Set(v.entries.map((c) => c.id)).size === v.entries.length && new Set(v.entries.map((c) => c.name)).size === v.entries.length));
     check('every list reads only the raw keys it declares', Object.values(VOCABULARY_TABLES).every((v) => v.entries.every((e) => Object.keys(e.raw).every((k) => v.keys.includes(k)))));
-    check('ProRes keeps its profiles apart: prores / 4444 XQ → "ProRes 4444 XQ", prores / HQ → "ProRes 422 HQ"', lookupCodec('prores', '4444 XQ')?.name === 'ProRes 4444 XQ' && lookupCodec('prores', 'HQ')?.name === 'ProRes 422 HQ');
+    check('ProRes keeps its profiles apart: prores / XQ → "ProRes 4444 XQ", prores / HQ → "ProRes 422 HQ"', lookupCodec('prores', 'XQ')?.name === 'ProRes 4444 XQ' && lookupCodec('prores', 'HQ')?.name === 'ProRes 422 HQ');
     check('H.264 gathers EVERY profile into one name — the rare spec that cares rules on the raw profile', lookupCodec('h264', 'High')?.name === 'H.264' && lookupCodec('h264', 'Main')?.name === 'H.264' && lookupCodec('h264', 'High 4:2:2')?.name === 'H.264' && lookupCodec('h264', undefined)?.name === 'H.264');
     check('the MOST SPECIFIC entry wins: dnxhd / DNxHR HQX → "DNxHR HQX", dnxhd / anything else → "DNxHD"', lookupCodec('dnxhd', 'DNxHR HQX')?.name === 'DNxHR HQX' && lookupCodec('dnxhd', 'DNxHD 145')?.name === 'DNxHD' && lookupCodec('dnxhd', undefined)?.name === 'DNxHD');
     check('…and mpeg2video / 4:2:2 → "XDCAM HD422" while plain mpeg2video → "MPEG-2"', lookupCodec('mpeg2video', '4:2:2')?.name === 'XDCAM HD422' && lookupCodec('mpeg2video', 'Main')?.name === 'MPEG-2');
     check('one entry gathers several raw spellings: hevc and h265 → "HEVC"', lookupCodec('hevc', 'Main 10')?.name === 'HEVC' && lookupCodec('h265', undefined)?.name === 'HEVC');
-    check('matching is case-insensitive on both fields', lookupCodec('PRORES', '4444 xq')?.name === 'ProRes 4444 XQ');
-    check('an unknown pair yields NOTHING — never a guess', lookupCodec('prores', '4444 XQ HDR-ish') === undefined && lookupCodec('some_new_codec', undefined) === undefined && lookupCodec(undefined, 'High') === undefined);
+    check('matching is case-insensitive on both fields', lookupCodec('PRORES', 'xq')?.name === 'ProRes 4444 XQ');
+    check('an unknown pair yields NOTHING — never a guess', lookupCodec('prores', 'XQ HDR-ish') === undefined && lookupCodec('some_new_codec', undefined) === undefined && lookupCodec(undefined, 'High') === undefined);
     check('a ProRes with an unknown profile does NOT fall back to some other ProRes', lookupCodec('prores', 'Something New') === undefined);
     check('the vocabulary\'s choices ARE the canonical names, in table order', JSON.stringify(VOCABULARIES.video_codec.choices) === JSON.stringify(VIDEO_CODECS.map((c) => c.name)));
 
@@ -141,7 +141,7 @@ async function main() {
     check('splitAliases: one per line, or comma- or semicolon-separated, trimmed', JSON.stringify(splitAliases('MXF; op1a')) === '["MXF","op1a"]' && JSON.stringify(splitAliases(' a ,\n b ;; c ')) === '["a","b","c"]' && splitAliases(undefined).length === 0 && splitAliases(3).length === 0);
     check('1. a row NAMED the canonical name, case-insensitively', resolveRow(vrows, 'mp4', ['x'])?.id === 'd' && resolveRow(vrows, 'QuickTime')?.id === 'a');
     check('2. else a row with the canonical name among its ALIASES ("MXF" → the OP1a row the owner made the default)', resolveRow(vrows, 'MXF', ['mxf'])?.id === 'b');
-    check('3. else the raw spelling, or any one raw value, among the aliases — what the code did not know', resolveRow(vrows, undefined, ['opatom'])?.id === 'c' && resolveRow(vrows, undefined, ['mov,mp4,m4a,3gp,3g2,mj2', 'qt', 'mov'])?.id === 'a' && rawSpelling(['prores', '4444 XQ']) === 'prores / 4444 XQ');
+    check('3. else the raw spelling, or any one raw value, among the aliases — what the code did not know', resolveRow(vrows, undefined, ['opatom'])?.id === 'c' && resolveRow(vrows, undefined, ['mov,mp4,m4a,3gp,3g2,mj2', 'qt', 'mov'])?.id === 'a' && rawSpelling(['prores', 'XQ']) === 'prores / XQ');
     check('nothing matches → undefined, never a guess; nothing raw and no name → undefined', resolveRow(vrows, 'WAV', ['wav']) === undefined && resolveRow(vrows, undefined, ['wav']) === undefined && resolveRow(vrows, undefined, []) === undefined && resolveRow([], 'MP4') === undefined);
 
     /* ── T2. Storing it ─────────────────────────────────────────────────── */

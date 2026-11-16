@@ -3,7 +3,7 @@
  *  Vocabularies — curated choice lists that live in the code, not in a table.
  * ============================================================================
  *
- *  The problem: ffprobe says `prores` / `4444 XQ`, a client's spec says
+ *  The problem: ffprobe says `prores` / `XQ`, a client's spec says
  *  "Apple ProRes 4444 XQ", a colleague types "PR4444XQ", and a comparison between
  *  any two of those is meaningless. Normalising at COMPARE time (fuzzy matching)
  *  is what makes QC systems untrustworthy. So normalisation happens ONCE, at
@@ -37,7 +37,7 @@
  *  key may give several spellings, a trailing `*` matches a prefix ("pcm_*"), and
  *  "" matches the key being ABSENT. The MOST SPECIFIC matching entry (the most
  *  listed keys) wins, so `{ codec: 'h264' }` gathers every H.264 profile while
- *  `{ codec: 'prores', profile: '4444 XQ' }` keeps ProRes profiles apart — because
+ *  `{ codec: 'prores', profile: 'XQ' }` keeps ProRes profiles apart — because
  *  for ProRes the profile IS the deliverable, and for H.264 the rare spec that
  *  cares can rule on the raw "Codec profile" output instead. No match → undefined,
  *  never a guess: the raw value stays in its own column and the drop reports what
@@ -65,7 +65,7 @@ export interface Vocabulary {
 /** `codec` is ffprobe's `codec_name`; `profile` its `profile`, when it matters. */
 export const VIDEO_CODECS: readonly VocabEntry[] = [
   // Apple ProRes — the profile is the deliverable
-  { id: 'prores_4444_xq', name: 'ProRes 4444 XQ', raw: { codec: 'prores', profile: '4444 XQ' } },
+  { id: 'prores_4444_xq', name: 'ProRes 4444 XQ', raw: { codec: 'prores', profile: 'XQ' } },   // FFmpeg names the profile plain "XQ"
   { id: 'prores_4444',    name: 'ProRes 4444',    raw: { codec: 'prores', profile: '4444' } },
   { id: 'prores_422_hq',  name: 'ProRes 422 HQ',  raw: { codec: 'prores', profile: 'HQ' } },
   { id: 'prores_422',     name: 'ProRes 422',     raw: { codec: 'prores', profile: 'Standard' } },
@@ -290,7 +290,7 @@ export const ALIASES_KEY = 'aliases';
 export function splitAliases(text: unknown): string[] {
   return typeof text === 'string' ? text.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean) : [];
 }
-/** The raw values as ONE spelling a person can paste into Aliases: "prores / 4444 XQ". */
+/** The raw values as ONE spelling a person can paste into Aliases: "prores / XQ". */
 export const rawSpelling = (raw: readonly string[]): string => raw.join(' / ');
 
 const norm = (s: string) => s.trim().toLowerCase();

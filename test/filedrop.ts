@@ -65,7 +65,7 @@ const shell = {
               ? { 'ffprobe.version': '7.1', container_raw: 'wav', audio_codec_raw: 'pcm_s24le', audio_channels: 2, audio_layout: { tracks: [{ name: 'A1', channels: ['L', 'R'] }] } }
               : args.unit.path.includes('weird')
                 ? { 'ffprobe.version': '7.1', container_raw: 'mov,mp4,m4a,3gp,3g2,mj2', major_brand: 'qt  ', video_codec: 'prores', codec_profile: 'Something New', width: 1920 }
-                : { 'ffprobe.version': '7.1', raw_dump: '{\n  "streams": [\n    { "codec_name": "prores" }\n  ]\n}', container_raw: 'mov,mp4,m4a,3gp,3g2,mj2', major_brand: 'qt  ', video_codec: 'prores', codec_profile: '4444 XQ', width: 1920, height: 1080, frame_rate: 23.976, scan: 'progressive', color_range: 'legal', color_primaries_raw: 'bt709', color_transfer_raw: 'bt709', color_matrix_raw: 'bt709' } };
+                : { 'ffprobe.version': '7.1', raw_dump: '{\n  "streams": [\n    { "codec_name": "prores" }\n  ]\n}', container_raw: 'mov,mp4,m4a,3gp,3g2,mj2', major_brand: 'qt  ', video_codec: 'prores', codec_profile: 'XQ', width: 1920, height: 1080, frame_rate: 23.976, scan: 'progressive', color_range: 'legal', color_primaries_raw: 'bt709', color_transfer_raw: 'bt709', color_matrix_raw: 'bt709' } };
           }
           return hashOutputs(args.unit, args.analyzer);
         case 'analyze_path': {
