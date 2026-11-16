@@ -120,6 +120,8 @@ async function setting() {
     await sleep(20);
     check('experimental is LIGHT with a variant on top: data-theme="light", data-variant="experimental"', html().getAttribute('data-theme') === 'light' && html().getAttribute('data-variant') === 'experimental'
       && win.localStorage.getItem('spatialdb.prefs.theme') === 'experimental');
+    // A reload READS it back (it came back as dark: the reader only knew 'light').
+    check('prefs.ts reads every theme it writes — experimental survives a reload', /readTheme = [^\n]*THEMES[^\n]*includes\(/.test(readFileSync('src/client/prefs.ts', 'utf8')) && !/v === 'light' \? 'light' : 'dark'/.test(readFileSync('src/client/prefs.ts', 'utf8')));
     const dark = w.findAll('.settings .pref.theme input[type="radio"]').find((r: any) => r.element.value === 'dark');
     await dark.setValue(true);
     await sleep(20);

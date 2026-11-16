@@ -46,7 +46,7 @@ export const THEMES = ['dark', 'light', 'experimental'] as const;
 export const THEME_LABELS: Record<(typeof THEMES)[number], string> = { dark: 'dark', light: 'light', experimental: 'light (experimental)' };
 export type Theme = (typeof THEMES)[number];
 export const THEME_KEY = 'spatialdb.prefs.theme';
-const readTheme = (): Theme => { try { const v = local?.getItem(THEME_KEY); return v === 'light' ? 'light' : 'dark'; } catch { return 'dark'; } };
+const readTheme = (): Theme => { try { const v = local?.getItem(THEME_KEY); return (THEMES as readonly string[]).includes(v ?? '') ? (v as Theme) : 'dark'; } catch { return 'dark'; } };
 export const theme = ref<Theme>(readTheme());
 /** Called once by the app shell: applies the saved theme and follows changes. */
 export function applyTheme() {

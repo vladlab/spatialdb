@@ -1,7 +1,7 @@
 <!--
   A timeline's audio lanes, DRAWN (CANVAS-BRIEF.md B3): one lane per track, its clips
   as blocks on columns every lane shares — so "A1: 30s of tone, then the mix" reads at
-  a glance. Not to scale (contract/timelineStrip.ts says why); the timecodes under it
+  a glance. Every clip wears its name, cut with "…" where it is too narrow. Not to scale (contract/timelineStrip.ts says why); the timecodes under it
   are the stored labels. All the arithmetic is the contract's; this is the paint.
 
   `mini` is the canvas card's: every line exactly one card row tall (18px), so the
@@ -16,7 +16,7 @@
       <span class="tls-track">
         <span v-for="(c, i) in lane.clips" :key="i" class="tls-clip" :class="`tint-${c.tint}`"
               :style="{ left: c.left + '%', width: `calc(${c.width}% - 2px)` }" :title="c.title">
-          <span v-if="fits(c)" class="tls-name">{{ c.name }}</span>
+          <span v-if="roomFor(c)" class="tls-name">{{ c.name }}</span>
         </span>
       </span>
     </div>
@@ -53,8 +53,13 @@ onBeforeUnmount(() => ro?.disconnect());
 const trackPx = computed(() => Math.max(40, (props.widthPx ?? measured.value) - LABEL_W));
 
 const ticks = computed(() => (strip.value ? ticksThatFit(strip.value.ticks, trackPx.value, props.mini ? 58 : 68) : []));
-/** A clip's name is printed inside it only when it fits; the tooltip always has it. */
-const fits = (c: StripClip) => (c.width / 100) * trackPx.value >= c.name.length * (props.mini ? 5.6 : 6.4) + 8;
+/**
+ * A clip's name is ALWAYS printed inside it, cut with an ellipsis when the clip is
+ * narrower than the name (the owner, Nov 16 2026: a clip with no name on it reads as a
+ * blank placeholder, not as a file) — on the card too, tiny. Only a sliver too narrow
+ * for a couple of letters and the "…" stays bare; the tooltip always has the whole name.
+ */
+const roomFor = (c: StripClip) => (c.width / 100) * trackPx.value >= (props.mini ? 20 : 24);
 </script>
 
 <style scoped>
@@ -67,7 +72,7 @@ const fits = (c: StripClip) => (c.width / 100) * trackPx.value >= c.name.length 
   background: rgba(var(--tint-rgb), 0.55); border: 1px solid rgba(var(--tint-rgb), 0.9); box-sizing: border-box;
   display: flex; align-items: center; justify-content: center;
 }
-.tls-name { color: var(--text-primary); font-size: 10px; font-weight: 600; white-space: nowrap; padding: 0 3px; }
+.tls-name { color: var(--text-primary); font-size: 10px; font-weight: 600; white-space: nowrap; padding: 0 3px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tls-ticks .tls-track { height: 14px; }
 .tls-tc { position: absolute; top: 0; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; white-space: nowrap; }
 .tls-more { color: var(--text-faint); font-style: italic; }
@@ -77,5 +82,5 @@ const fits = (c: StripClip) => (c.width / 100) * trackPx.value >= c.name.length 
 .mini .tls-track { height: 12px; }
 .mini .tls-ticks .tls-track { height: 12px; }
 .mini .tls-tc, .mini .tls-label { font-size: 9.5px; }
-.mini .tls-name { font-size: 9px; }
+.mini .tls-name { font-size: 8.5px; padding: 0 2px; letter-spacing: -0.01em; }
 </style>
