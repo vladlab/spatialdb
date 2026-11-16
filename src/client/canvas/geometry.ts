@@ -59,8 +59,20 @@ export function anchorPoint(r: Rect, side: AnchorSide, offset = 4): Point {
  * run. Comparing all sixteen combinations is trivial at this scale and avoids the
  * classic failure where two side-by-side cards connect top-to-top and the curve
  * loops over both of them.
+ *
+ * `flow` adds the owner's house rule (Nov 16 2026): an arrow LEAVES by the right or
+ * bottom edge and ARRIVES at the top or left — so a board reads left-to-right,
+ * top-to-bottom without anyone assigning edges by hand. It is a strong preference, not
+ * a law: each end on a non-preferred edge costs FLOW_BIAS, and the facing term still
+ * counts, so when the preferred edges would bend the curve back on itself (the target
+ * is straight to the left, or straight above) the arrow snaps to the edges that face
+ * each other. `from` is then the arrow's TAIL and `to` its HEAD (the caller swaps them
+ * for a `reversed` field).
  */
-export function bestSides(from: Rect, to: Rect): { from: AnchorSide; to: AnchorSide } {
+export const FLOW_BIAS = 250;
+const LEAVES: ReadonlySet<AnchorSide> = new Set(['right', 'bottom']);
+const ARRIVES: ReadonlySet<AnchorSide> = new Set(['left', 'top']);
+export function bestSides(from: Rect, to: Rect, flow = false): { from: AnchorSide; to: AnchorSide } {
   const sides: AnchorSide[] = ['top', 'bottom', 'left', 'right'];
   let best = { from: 'right' as AnchorSide, to: 'left' as AnchorSide };
   let bestScore = Infinity;
@@ -80,7 +92,7 @@ export function bestSides(from: Rect, to: Rect): { from: AnchorSide; to: AnchorS
       const uy = (pb.y - pa.y) / (dist || 1);
       const facing = (da.x * ux + da.y * uy) + (db.x * -ux + db.y * -uy);
 
-      const score = dist - facing * 120;
+      const score = dist - facing * 120 + (flow ? (LEAVES.has(a) ? 0 : FLOW_BIAS) + (ARRIVES.has(b) ? 0 : FLOW_BIAS) : 0);
       if (score < bestScore) { bestScore = score; best = { from: a, to: b }; }
     }
   }
@@ -226,4 +238,52 @@ export function bezierMid(a: Point, aSide: AnchorSide, b: Point, bSide: AnchorSi
   const c1 = { x: a.x + d1.x * curve, y: a.y + d1.y * curve };
   const c2 = { x: b.x + d2.x * curve, y: b.y + d2.y * curve };
   return { x: (a.x + 3 * c1.x + 3 * c2.x + b.x) / 8, y: (a.y + 3 * c1.y + 3 * c2.y + b.y) / 8 };
+}
+
+/* ── Align and distribute (ported from viznotes' CanvasView, as pure functions) ── */
+
+export type AlignMode = 'left' | 'center-h' | 'right' | 'top' | 'center-v' | 'bottom';
+export interface Placed extends Rect { id: string }
+
+/**
+ * Where each rect goes to line up with the others. Edges go to the outermost edge of
+ * the set (left → the leftmost left); centres go to the centre of the set's bounding
+ * box, so nothing drifts toward wherever most cards happen to be. Only rects that
+ * actually move are returned, at whole pixels.
+ */
+export function alignRects(items: readonly Placed[], mode: AlignMode): Array<{ id: string; x: number; y: number }> {
+  const b = boundsOf(items as Placed[]);
+  if (!b || items.length < 2) return [];
+  return items.map((i) => {
+    let { x, y } = i;
+    if (mode === 'left') x = b.x;
+    else if (mode === 'right') x = b.x + b.w - i.w;
+    else if (mode === 'center-h') x = b.x + b.w / 2 - i.w / 2;
+    else if (mode === 'top') y = b.y;
+    else if (mode === 'bottom') y = b.y + b.h - i.h;
+    else y = b.y + b.h / 2 - i.h / 2;
+    return { id: i.id, x: Math.round(x), y: Math.round(y) };
+  }).filter((m, k) => m.x !== Math.round(items[k].x) || m.y !== Math.round(items[k].y));
+}
+
+/**
+ * Equal GAPS between three or more rects along an axis: the first and the last stay
+ * where they are, the ones between are spaced so the empty space between neighbours is
+ * the same (cards differ in size — equal gaps, not equal centres, is what looks even).
+ */
+export function distributeRects(items: readonly Placed[], axis: 'horizontal' | 'vertical'): Array<{ id: string; x: number; y: number }> {
+  if (items.length < 3) return [];
+  const h = axis === 'horizontal';
+  const pos = (i: Placed) => (h ? i.x : i.y), size = (i: Placed) => (h ? i.w : i.h);
+  const sorted = [...items].sort((a, b) => pos(a) - pos(b) || a.id.localeCompare(b.id));
+  const first = pos(sorted[0]), lastItem = sorted[sorted.length - 1];
+  const gap = (pos(lastItem) + size(lastItem) - first - sorted.reduce((n, i) => n + size(i), 0)) / (sorted.length - 1);
+  const out: Array<{ id: string; x: number; y: number }> = [];
+  let at = first;
+  for (const i of sorted) {
+    const v = Math.round(at);
+    if (v !== Math.round(pos(i))) out.push({ id: i.id, x: h ? v : Math.round(i.x), y: h ? Math.round(i.y) : v });
+    at += size(i) + gap;
+  }
+  return out;
 }

@@ -26,6 +26,7 @@ import { createStore } from '../src/client/store.js';
 import { cardHeight, effectiveHeight, rowPortY, CARD_RICH_H, CARD_ROW_H, CARD_MAX_LINES, lineCount, rowLines, rowIsEmpty, visibleRows } from '../src/client/canvas/cardLayout.js';
 import { arrowStyleError, arrowStyleOf } from '../src/contract/arrows.js';
 import { bezierMid } from '../src/client/canvas/geometry.js';
+import { alignRects, distributeRects, type Placed } from '../src/client/canvas/geometry.js';
 import { CanvasConfig, defaultLinkField, hidesEmpty, pinnedFieldsFor } from '../src/contract/canvasConfig.js';
 import { cardFieldsFor, DEFAULT_CARD_FIELDS } from '../src/contract/canvasConfig.js';
 import { placementKey } from '../src/client/state.js';
@@ -85,6 +86,49 @@ function partA() {
   const back = bestSides(right, left);
   check('the reverse direction mirrors',
     back.from === 'left' && back.to === 'right', `${back.from} → ${back.to}`);
+
+  // THE FLOW RULE (the owner, Nov 16 2026): drawn arrows leave by the right or bottom and
+  // arrive at the top or left — strongly, but not when that bends the curve back on itself.
+  {
+    const card = (x: number, y: number): Rect => ({ x, y, w: 300, h: 150 });
+    const A = card(0, 0);
+    const f = (to: Rect) => { const s = bestSides(A, to, true); return `${s.from} → ${s.to}`; };
+    check('flow: a card to the right is still right → left', f(card(500, 0)) === 'right → left', f(card(500, 0)));
+    check('flow: a card below is still bottom → top', f(card(0, 400)) === 'bottom → top', f(card(0, 400)));
+    check('flow: down and to the LEFT leaves by the bottom and arrives at the top (unbiased: left → right)',
+      f(card(-500, 300)) === 'bottom → top' && bestSides(A, card(-500, 300)).from === 'left', f(card(-500, 300)));
+    check('flow: up and to the RIGHT leaves by the right, arrives at the left', f(card(500, -300)) === 'right → left', f(card(500, -300)));
+    check('flow: just below-right, close in, keeps to preferred edges', ['right → top', 'bottom → left', 'right → left', 'bottom → top'].includes(f(card(350, 200))), f(card(350, 200)));
+    check('flow: straight to the LEFT snaps to the facing edges — the preferred ones would loop', f(card(-400, 0)) === 'left → right', f(card(-400, 0)));
+    check('flow: straight ABOVE snaps to top → bottom', f(card(0, -250)) === 'top → bottom', f(card(0, -250)));
+    let off = 0, pref = 0, n = 0;
+    for (let deg = 0; deg < 360; deg += 5) {
+      const rad = (deg * Math.PI) / 180, T = card(700 * Math.cos(rad), 700 * Math.sin(rad));
+      const s = bestSides(A, T, true), pa = anchorPoint(A, s.from, 0), pb = anchorPoint(T, s.to, 0);
+      const len = Math.hypot(pb.x - pa.x, pb.y - pa.y) || 1, ux = (pb.x - pa.x) / len, uy = (pb.y - pa.y) / len;
+      const da = anchorDirection(s.from), db = anchorDirection(s.to);
+      // Never an end pointing AWAY from the other card by more than a hook's worth.
+      if (da.x * ux + da.y * uy < -0.5 || db.x * -ux + db.y * -uy < -0.5) off++;
+      n++; if ((s.from === 'right' || s.from === 'bottom') && (s.to === 'left' || s.to === 'top')) pref++;
+    }
+    check('flow: all the way round, no end ever points away from the other card', off === 0, `${off} of ${n}`);
+    check('flow: and well over half the compass gets both preferred edges', pref / n > 0.55, `${pref} of ${n}`);
+  }
+
+  // ALIGN and DISTRIBUTE (ported from viznotes).
+  {
+    const items: Placed[] = [{ id: 'a', x: 10, y: 0, w: 100, h: 50 }, { id: 'b', x: 200, y: 40, w: 60, h: 100 }, { id: 'c', x: 500, y: 300, w: 200, h: 80 }];
+    const as = (ms: Array<{ id: string; x: number; y: number }>) => ms.map((m) => `${m.id}:${m.x},${m.y}`).join(' ');
+    check('align left: everything to the leftmost edge; the card already there is not moved', as(alignRects(items, 'left')) === 'b:10,40 c:10,300', as(alignRects(items, 'left')));
+    check('align right: right edges meet at the rightmost', as(alignRects(items, 'right')) === 'a:600,0 b:640,40', as(alignRects(items, 'right')));
+    check('align bottom: bottoms meet at the lowest', as(alignRects(items, 'bottom')) === 'a:10,330 b:200,280', as(alignRects(items, 'bottom')));
+    check('align centres: on the middle of the set\'s bounding box', as(alignRects(items, 'center-h')) === 'a:305,0 b:325,40 c:255,300', as(alignRects(items, 'center-h')));
+    check('one card: nothing to align', alignRects(items.slice(0, 1), 'top').length === 0);
+    const d = distributeRects(items, 'horizontal');
+    check('distribute: the outer two stay, the middle one gets equal GAPS (not equal centres)', as(d) === 'b:275,40', as(d));   // gaps: (700-10-360)/2 = 165 → 10+100+165
+    check('distribute vertical works on y', as(distributeRects(items, 'vertical')) === 'b:200,125', as(distributeRects(items, 'vertical')));
+    check('distribute needs three', distributeRects(items.slice(0, 2), 'horizontal').length === 0);
+  }
 
   // Sweep the target all the way round and confirm both chosen sides FACE each
   // other — the exit normal points toward the target, the entry normal points

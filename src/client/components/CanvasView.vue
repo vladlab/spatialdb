@@ -241,6 +241,24 @@
                     :owner-from="() => rectOnScreen(compareView!.owner.recordId)" :target-from="() => rectOnScreen(compareView!.target.recordId)"
                     @close="endCompare" @open-record="(id: string) => emit('open-record', id)" />
 
+    <!-- ALIGN and SPACE (ported from viznotes): up while two or more loose cards are
+         selected, floating over the canvas's bottom-left corner so nothing moves when
+         it comes and goes. Cards in a stack are the stack's to lay out and are left out.
+         One click = one `placement.move` = one Ctrl+Z. -->
+    <div v-if="arrangeable.length > 1" class="align-bar" @pointerdown.stop @dblclick.stop>
+      <span class="align-label">Align</span>
+      <button title="Align left edges" @click="arrange('left')"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="2" height="18"/><rect x="7" y="5" width="14" height="4" rx="1"/><rect x="7" y="13" width="10" height="4" rx="1"/></svg></button>
+      <button title="Align centres on a vertical line" @click="arrange('center-h')"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="11" y="2" width="2" height="20"/><rect x="4" y="5" width="16" height="4" rx="1"/><rect x="6" y="13" width="12" height="4" rx="1"/></svg></button>
+      <button title="Align right edges" @click="arrange('right')"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="19" y="3" width="2" height="18"/><rect x="3" y="5" width="14" height="4" rx="1"/><rect x="7" y="13" width="10" height="4" rx="1"/></svg></button>
+      <button title="Align top edges" @click="arrange('top')"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="2"/><rect x="5" y="7" width="4" height="14" rx="1"/><rect x="13" y="7" width="4" height="10" rx="1"/></svg></button>
+      <button title="Align centres on a horizontal line" @click="arrange('center-v')"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="11" width="20" height="2"/><rect x="5" y="4" width="4" height="16" rx="1"/><rect x="13" y="6" width="4" height="12" rx="1"/></svg></button>
+      <button title="Align bottom edges" @click="arrange('bottom')"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="19" width="18" height="2"/><rect x="5" y="5" width="4" height="14" rx="1"/><rect x="13" y="9" width="4" height="10" rx="1"/></svg></button>
+      <span class="align-sep" />
+      <span class="align-label">Space</span>
+      <button :disabled="arrangeable.length < 3" :title="arrangeable.length < 3 ? 'Select three or more cards to space them evenly' : 'Even gaps, left to right (the outer two stay put)'" @click="arrange('horizontal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="3" width="2" height="18"/><rect x="20" y="3" width="2" height="18"/><rect x="6" y="8" width="4" height="8" rx="1"/><rect x="14" y="8" width="4" height="8" rx="1"/></svg></button>
+      <button :disabled="arrangeable.length < 3" :title="arrangeable.length < 3 ? 'Select three or more cards to space them evenly' : 'Even gaps, top to bottom (the outer two stay put)'" @click="arrange('vertical')"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="2" width="18" height="2"/><rect x="3" y="20" width="18" height="2"/><rect x="8" y="6" width="8" height="4" rx="1"/><rect x="8" y="14" width="8" height="4" rx="1"/></svg></button>
+    </div>
+
     <!-- Rubber band, drawn in screen space outside the transform. -->
     <div
       v-if="boxSelect.displayRect.value"
@@ -430,7 +448,7 @@ import { junctionOf, otherEnd, type JunctionConfig } from '../../contract/juncti
 import { choicesOf } from '../../contract/values';
 import type { ArrowLink } from './ArrowLayer.vue';
 import { linkKey } from '../state';
-import { bezierPath, rectsIntersect, type AnchorSide, type Point } from '../canvas/geometry';
+import { alignRects, bezierPath, distributeRects, rectsIntersect, type AlignMode, type AnchorSide, type Placed, type Point } from '../canvas/geometry';
 import { CanvasConfig, attachLook, cardFieldsFor, detachLook, glowOf, hidesEmpty, lookEdit, lookOf, ownsLook, pinnedFieldsFor, promoteLook, rulesFor, type CanvasLook } from '../../contract/canvasConfig';
 import { legendOf, paintsOf, type ColorRule, type Paints } from '../../contract/colorRules';
 import ColorRules from './ColorRules.vue';
@@ -1944,6 +1962,19 @@ function fitAll() {
   viewport.fit([...cardRects.value.values(), ...[...stackLayouts.value.values()].map((l) => l.rect)]);
 }
 const hasSelection = computed(() => selected.size > 0 || !!selectedStack.value);
+
+/* ── align and distribute the selection (geometry.ts `alignRects`, `distributeRects`) ──
+   The rects are the ones the cards are DRAWN at (cardRects: the same heights arrows and
+   the box selection use), so "bottom edges" means the bottoms you see. Cards in a stack
+   are not ours to move. */
+const arrangeable = computed<Placed[]>(() => [...selected].flatMap((id) => {
+  const r = cardRects.value.get(id);
+  return r && !placedIn(id) ? [{ id, ...r }] : [];
+}));
+function arrange(how: AlignMode | 'horizontal' | 'vertical') {
+  const to = how === 'horizontal' || how === 'vertical' ? distributeRects(arrangeable.value, how) : alignRects(arrangeable.value, how);
+  if (to.length) store.mutate({ type: 'placement.move', canvasId: props.canvasId, moves: to.map((m) => ({ recordId: m.id, x: m.x, y: m.y })) });
+}
 /** The selection's rects: the selected cards, or the selected stack's frame. */
 function selectionRects(): Rect[] {
   const out: Rect[] = [];
@@ -2525,6 +2556,12 @@ onUnmounted(() => {
 /* The menu's LOOK is global (App.vue, `.ctx`) — the grid's row menu wears it too.
    Here: where the canvas's sits, and the parts only it has. */
 .ctx { position: absolute; z-index: 40; }
+.align-bar { position: absolute; left: 14px; bottom: 14px; z-index: 38; display: flex; align-items: center; gap: 2px; padding: 4px 6px; background: var(--controls-bg); border: 1px solid var(--border-main); border-radius: 8px; box-shadow: var(--card-shadow-drag); }
+.align-bar button { width: 26px; height: 26px; border: none; background: none; color: var(--text-secondary); cursor: pointer; border-radius: 4px; display: flex; align-items: center; justify-content: center; padding: 0; }
+.align-bar button:hover:not(:disabled) { background: var(--bg-surface-hover); color: var(--text-primary); }
+.align-bar button:disabled { opacity: 0.35; cursor: default; }
+.align-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; padding: 0 4px; user-select: none; }
+.align-sep { width: 1px; height: 16px; background: var(--border-main); margin: 0 4px; }
 .ctx-check { display: flex; gap: 6px; align-items: center; padding: 3px 8px; cursor: pointer; }
 /* The field list: its own scroll, so the switch under it and the reset stay in reach. */
 .ctx-scroll { max-height: min(40vh, 320px); overflow-y: auto; overscroll-behavior: contain; }

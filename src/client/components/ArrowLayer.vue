@@ -92,15 +92,15 @@ const arrows = computed(() => {
     const to = props.rects.get(l.to_record);
     if (!from || !to) continue;   // endpoint not on this canvas
 
-    // Every arrow anchors to the CARD, on whichever sides face each other — never to a
-    // field's row (see the header).
-    const edge = bestSides(from, to);
-    const a = { side: edge.from, p: anchorPoint(from, edge.from) };
-    const b = { side: edge.to, p: anchorPoint(to, edge.to) };
-
-    // `reversed` swaps which end gets the head; the geometry is otherwise identical.
+    // Every arrow anchors to the CARD — never to a field's row (see the header) — on
+    // edges chosen for the FLOW: out by the right or bottom, in at the top or left,
+    // unless that would bend the curve back on itself (geometry.ts `bestSides`, flow).
+    // `reversed` swaps which record is the tail; the rule is about the arrow as drawn.
     const style = props.styles?.get(l.field_id);
-    const [tail, tip] = style?.reversed ? [b, a] : [a, b];
+    const [tailRect, tipRect] = style?.reversed ? [to, from] : [from, to];
+    const edge = bestSides(tailRect, tipRect, true);
+    const tail = { side: edge.from, p: anchorPoint(tailRect, edge.from) };
+    const tip = { side: edge.to, p: anchorPoint(tipRect, edge.to) };
     out.push({
       key: `${l.field_id}|${l.from_record}|${l.to_record}`,
       fieldId: l.field_id,
