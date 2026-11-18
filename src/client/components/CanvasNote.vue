@@ -199,7 +199,6 @@ defineExpose({ flush });
 .cn-state.elsewhere { color: var(--warning); font-style: normal; }
 .cn-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; border-top: 1px solid var(--card-border); padding: 3px 2px 0; font-size: 12px; cursor: text; }
 .tray .cn-body { min-height: 80px; max-height: 320px; border: 1px solid var(--border-main); border-radius: 6px; padding: 6px 8px; background: var(--bg-app); }
-.editing .cn-body { box-shadow: inset 0 0 0 1px var(--accent); border-radius: 3px; }
 .cn-empty { color: var(--text-faint); font-style: italic; }
 .cn-body :deep(p) { margin: 0 0 2px; }
 .cn-body :deep(ul), .cn-body :deep(ol) { margin: 0 0 2px; padding-left: 18px; }
