@@ -224,10 +224,12 @@
         @fit="onCardFit"
         @unplace="unplace"
         @fold="toggleFold"
-        @open="(id) => (isBoardRecord(id) ? $emit('open-board', id) : $emit('open-record', id))"
+        @open="openFromCard"
         @compare="openCompare"
         :editing-note="editingNote?.recordId === c.recordId ? editingNote.fieldId : null"
         @edit-note="startNote" @note-done="endNote"
+        :editing-field="editingField?.recordId === c.recordId ? editingField.fieldId : null"
+        @edit-field="startField" @field-done="endField" @field-set="setField" @field-unset="unsetField"
         @menu="onCardMenu"
       />
     </div>
@@ -597,15 +599,20 @@ function rowFor(rec: RecordRow, f: FieldRow): CardRow {
   }
   const v = rec.data[f.key];
   if (f.type === 'created_at') return { id: f.id, name: f.name, text: formatCreated(v), derived: true };
+  // A PLAIN value is typed in right on the card (CardValueEdit.vue): the row carries its field and stored value.
+  const edit = CARD_EDITABLE.has(f.type) ? { edit: { key: f.key, type: f.type, options: f.options ?? {} }, raw: v } : {};
   const formatted = formatNumberField(f, v);
-  if (formatted !== null) return { id: f.id, name: f.name, text: formatted };
+  if (formatted !== null) return { id: f.id, name: f.name, text: formatted, ...edit };
   const text = v === undefined || v === null || v === '' ? ''
     : typeof v === 'boolean' ? (v ? 'yes' : 'no')
     : Array.isArray(v) ? v.join(', ')
     // One line per row, always: the first line of a long text, not all of it.
     : String(v).split('\n', 1)[0];
-  return { id: f.id, name: f.name, text };
+  return { id: f.id, name: f.name, text, ...edit };
 }
+/** The field types typed in on a card: one-line values. Long text (a card shows its first
+    line only), selects, links and summaries are not (the owner, Nov 18 2026). */
+const CARD_EDITABLE = new Set(['text', 'number', 'date', 'dimensions']);
 
 /** The fields a card of this table shows on THIS canvas. */
 /**
@@ -747,8 +754,13 @@ watch(tablesRead, (joined) => { for (const t of joined.split(',').filter(Boolean
  */
 function cardDataOf(rec: RecordRow, p?: PlacementRow) {
   const table = store.state.tables.get(rec.table_id);
-  const title = labelFrom(rec.data, labelKeys.value.get(rec.table_id), '');
+  const primaryKey = labelKeys.value.get(rec.table_id);
+  const title = labelFrom(rec.data, primaryKey, '');
+  const primary = primaryKey ? fieldsOf(store.state, rec.table_id).find((f) => f.key === primaryKey) : undefined;
   return {
+    // The title is typed in on the card too, when its field is a plain one.
+    titleEdit: primary && CARD_EDITABLE.has(primary.type) ? { key: primary.key, type: primary.type, options: primary.options ?? {} } : null,
+    titleRaw: primary ? rec.data[primary.key] : undefined,
     recordId: rec.id,
     tableId: rec.table_id,
     tableName: table?.name ?? 'unknown',
@@ -2350,6 +2362,7 @@ watch(examining, (id) => { if (id && !cards.value.some((c) => c.recordId === id)
 const editingNote = ref<{ recordId: string; fieldId: string } | null>(null);
 function startNote(p: { recordId: string; fieldId: string }) {
   if (!selected.has(p.recordId) || selected.size !== 1) return;
+  editingField.value = null;
   editingNote.value = p;
 }
 function endNote(recordId: string) {
@@ -2358,6 +2371,37 @@ function endNote(recordId: string) {
   containerRef.value?.focus({ preventScroll: true });
 }
 watch(() => [...selected].join(), () => { if (editingNote.value && !selected.has(editingNote.value.recordId)) editingNote.value = null; });
+
+/* ── PLAIN VALUES typed in on the card (CardValueEdit.vue) ────────────────────
+   The note's rule: a click on a value (or the title) of a card that is already
+   selected, alone, types in it. The editor is the grid's cell editor — Enter or
+   leaving saves, Esc does not — and each save is one record.update, one Ctrl+Z. */
+const editingField = ref<{ recordId: string; fieldId: string } | null>(null);
+function startField(p: { recordId: string; fieldId: string }) {
+  if (!selected.has(p.recordId) || selected.size !== 1) return;
+  editingNote.value = null;
+  editingField.value = p;
+}
+function endField(recordId: string) {
+  if (editingField.value?.recordId !== recordId) return;
+  editingField.value = null;
+  // Enter and Esc leave the keyboard with nothing: give it back to the canvas. A click
+  // into something else (the tray, another value) has taken it already — leave it there.
+  void nextTick(() => { const a = document.activeElement; if (!a || a === document.body) containerRef.value?.focus({ preventScroll: true }); });
+}
+function setField({ recordId, key, value }: { recordId: string; key: string; value: unknown }) {
+  store.mutate({ type: 'record.update', id: recordId, set: { [key]: value }, unset: [] });
+}
+function unsetField({ recordId, key }: { recordId: string; key: string }) {
+  store.mutate({ type: 'record.update', id: recordId, set: {}, unset: [key] });
+}
+watch(() => [...selected].join(), () => { if (editingField.value && !selected.has(editingField.value.recordId)) editingField.value = null; });
+/** A card double-clicked: open it. A double-click on an unselected card's value has, by
+    its second click, also asked to type there — the double-click wins. */
+function openFromCard(id: string) {
+  editingField.value = null; editingNote.value = null;
+  if (isBoardRecord(id)) emit('open-board', id); else emit('open-record', id);
+}
 
 /* ── COMPARE EXAMINE (CANVAS-BRIEF.md C4) ─────────────────────────────────────
    The compare button, or "Compare with target": the file and what it is compared

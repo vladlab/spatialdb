@@ -40,8 +40,8 @@
 -->
 <template>
   <span class="editor" @keydown="onKey">
-    <textarea v-if="field.type === 'long_text'" ref="el" v-model="draft" :rows="multiline ? 8 : 1"
-              :class="{ invalid, multi: multiline }" :title="invalid || undefined" @blur="onBlur" />
+    <textarea v-if="field.type === 'long_text' || block" ref="el" v-model="draft" :rows="block ?? (multiline ? 8 : 1)"
+              :class="{ invalid, multi: multiline, block: !!block }" :title="invalid || undefined" @blur="onBlur" />
 
     <!-- SELECT: a searching picker, not a native dropdown (ChoicePicker.vue). A stored
          value that is no longer among the choices stays as the draft, so Enter on an
@@ -91,6 +91,11 @@ const props = defineProps<{
    * for everything else there.
    */
   multiline?: boolean;
+  /**
+   * A one-line value typed in a box of this many lines that WRAPS (a canvas card's
+   * title, which wraps): Enter still commits, and a pasted line break becomes a space.
+   */
+  block?: number;
 }>();
 const emit = defineEmits<{
   set: [key: string, value: unknown];
@@ -140,7 +145,7 @@ function commit(): boolean {
     return false;
   }
 
-  const raw = draft.value.trim();
+  const raw = (props.block ? draft.value.replace(/\s*\n\s*/g, ' ') : draft.value).trim();
   if (raw === '') {
     invalid.value = null;
     if (props.value !== undefined) emit('unset', props.field.key);
@@ -214,6 +219,7 @@ input, textarea, select {
 }
 textarea { resize: none; height: 1.5em; overflow: hidden; white-space: nowrap; }
 textarea.multi { resize: vertical; overflow: auto; white-space: pre-wrap; line-height: 1.4; }
+textarea.block { display: block; height: auto; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; line-height: inherit; }
 input[type='date'] { color-scheme: dark; }
 select option { background: var(--controls-bg); }
 .chip-add { width: auto; }

@@ -57,7 +57,17 @@
               @pointerdown.stop @dblclick.stop @click.stop="$emit('fold', recordId)">{{ collapsed ? '▸' : '▾' }}</button>
       <!-- THE TITLE, as the lines cardLayout.ts `wrapTitle` broke it into — each drawn
            whole, never re-wrapped by the browser, so the height is the arithmetic's. -->
-      <span class="card-label" :class="{ empty: !title }" :title="title">
+      <!-- Typed in right here when its field is a plain one (CardValueEdit.vue): in a box
+           of the title's own lines, so the card does not change height under the caret. -->
+      <CardValueEdit v-if="titleEdit && !examine" class="card-label" :class="{ empty: !title, 'has-compare': !!verdict }" :title="editingField === TITLE ? undefined : title"
+                     :field="titleEdit" :value="titleRaw" :block="titleEdit.type === 'text' ? lines.length : undefined"
+                     :editing="editingField === TITLE" :armed="selected"
+                     @start="$emit('edit-field', { recordId, fieldId: TITLE })" @done="$emit('field-done', recordId)"
+                     @set="(key, value) => $emit('field-set', { recordId, key, value })" @unset="(key) => $emit('field-unset', { recordId, key })">
+        <template v-if="title"><span v-for="(l, i) in lines" :key="i" class="card-label-line">{{ l }}</span></template>
+        <template v-else>untitled</template>
+      </CardValueEdit>
+      <span v-else class="card-label" :class="{ empty: !title }" :title="title">
         <template v-if="title"><span v-for="(l, i) in lines" :key="i" class="card-label-line">{{ l }}</span></template>
         <template v-else>untitled</template>
       </span>
@@ -101,6 +111,11 @@
           <span v-for="(l, i) in r.lines.slice(0, maxLines)" :key="i" class="card-line">{{ l }}</span>
           <span v-if="r.lines.length > maxLines" class="card-line more">+{{ r.lines.length - maxLines }} more</span>
         </span>
+        <!-- A plain value — text, number, date, size — is typed in right here (CardValueEdit.vue). -->
+        <CardValueEdit v-else-if="r.edit && !examine" class="card-val" :class="{ empty: !r.text }" :field="r.edit" :value="r.raw"
+                       :editing="editingField === r.id" :armed="selected"
+                       @start="$emit('edit-field', { recordId, fieldId: r.id })" @done="$emit('field-done', recordId)"
+                       @set="(key, value) => $emit('field-set', { recordId, key, value })" @unset="(key) => $emit('field-unset', { recordId, key })">{{ r.text || '—' }}</CardValueEdit>
         <span v-else class="card-val" :class="{ empty: !r.text, derived: r.derived, broken: r.broken }"><VideoLayoutStrip v-if="r.strip !== undefined" mini :value="r.strip" />{{ r.text || '—' }}</span>
         <VerdictMark v-if="r.verdict" class="card-warn" :kind="r.verdict.ok ? 'ok' : 'warn'" :title="r.verdict.title" />
         <!-- A timeline's audio lanes, full card width under the row's name and summary. -->
@@ -170,6 +185,7 @@ import RecordPill from './RecordPill.vue';
 import VideoLayoutStrip from './VideoLayoutStrip.vue';
 import TimelineStrip from './TimelineStrip.vue';
 import CanvasNote from './CanvasNote.vue';
+import CardValueEdit from './CardValueEdit.vue';
 import VerdictMark from './VerdictMark.vue';
 import type { CardVerdict } from '../../contract/compare';
 import type { CardIconId } from '../../contract/cardIcon';
@@ -223,7 +239,15 @@ export interface CardRow {
   color?: string;
   /** A colour rule painted THIS field (contract/colorRules.ts): its value sits in the tint's capsule. */
   tint?: string;
+  /** A plain value (text, number, date, size) that can be typed in on the card: its field, as the cell editor wants it… */
+  edit?: CardEditField;
+  /** …and the stored value (`text` is the formatted one). */
+  raw?: unknown;
 }
+/** A field a card value is edited as (CellEditor.vue's `field`). */
+export interface CardEditField { key: string; type: string; options: Record<string, unknown> }
+/** `editingField` for the card's TITLE (a row's is its field id). */
+const TITLE = 'title';
 
 const props = defineProps<{
   recordId: string;
@@ -235,6 +259,11 @@ const props = defineProps<{
   rows: CardRow[];
   /** Rich text fields that have a note, drawn as blocks under the rows. */
   rich?: Array<{ id: string; name: string; value: unknown; note?: boolean; key?: string }>;
+  /** The title's field, when it is one that can be typed in on the card, and its stored value. */
+  titleEdit?: CardEditField | null;
+  titleRaw?: unknown;
+  /** The value being typed in on this card — a row's field id, or TITLE — if any. */
+  editingField?: string | null;
   /** The canvas note being typed in on this card (its field id), if any. */
   editingNote?: string | null;
   /** For the notes' images, which are asset URLs built by the store. */
@@ -317,6 +346,11 @@ const emit = defineEmits<{
   /** A click in a canvas note asks to type in it; the caret leaving ends it. */
   (e: 'edit-note', payload: { recordId: string; fieldId: string }): void;
   (e: 'note-done', recordId: string): void;
+  /** A click on a plain value (or the title) of a selected card asks to type in it; `field-done` ends it. */
+  (e: 'edit-field', payload: { recordId: string; fieldId: string }): void;
+  (e: 'field-done', recordId: string): void;
+  (e: 'field-set', payload: { recordId: string; key: string; value: unknown }): void;
+  (e: 'field-unset', payload: { recordId: string; key: string }): void;
   (e: 'hover', recordId: string | null): void;
   (e: 'menu', payload: { recordId: string; x: number; y: number }): void;
 }>();
@@ -589,6 +623,10 @@ function onPointerDown(e: PointerEvent) {
   text-overflow: ellipsis; white-space: nowrap;
 }
 .card-val.empty { color: var(--text-faint); }
+/* An empty value that can be typed in: wide enough to click. */
+.card-val.cve.empty { min-width: 3em; }
+/* The title while typed in: clear of the compare button on its first line. */
+.card-label.live.has-compare { padding-right: var(--compare-slot); }
 .card-val.derived { color: var(--text-secondary); font-style: italic; }
 .card-val.broken { color: var(--danger); }
 

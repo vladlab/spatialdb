@@ -384,6 +384,19 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
   the tray opens or closes. A pill on a lifted card no longer opens the tray. Never
   seen: the slide when a card joins, and the button on light table colours.
 
+- **Values typed in on a card (Nov 18, `CardValueEdit.vue`).** Text, number, date and
+  size rows, and the title when its field is one of those, are edited on the card
+  front: click a card (selects it), click the value (the grid's cell editor, in the
+  row). Enter or clicking away saves, Esc does not, a refused value stays open with a
+  red ring; one Ctrl+Z per edit. Long text, selects, links, file paths and summaries
+  are NOT editable there (his call for this round). The title is typed in a box of its
+  own lines that wraps. A double-click on an unselected card still opens the tray.
+  Same day: a click in a canvas note never started typing in a real browser (the
+  card's pointer capture took the click — the release is now heard on the window),
+  and the border around a note being typed in is gone. Never seen in a browser: any
+  of it — the caret landing, the date input in an 18px row, the title box under the
+  compare button, the verdict mark sliding right while its row is typed in.
+
 - **Canvas notes (Nov 14, CANVAS-BRIEF.md D).** "canvas note" in the add-field type list:
   a rich_text field (`canvasNote`) limited to paragraphs, bullet / numbered lists,
   CHECKLISTS, bold / italic / strike and links (the server refuses the rest). On a
