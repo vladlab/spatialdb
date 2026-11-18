@@ -80,7 +80,9 @@ async function main() {
 
     console.log('\nN4. Typing');
     const PE = (win as any).PointerEvent ?? (win as any).MouseEvent;
-    const press = async (el: any) => { await el.trigger('pointerdown', { button: 0, clientX: 520, clientY: 120 }); win.dispatchEvent(new PE('pointerup', { bubbles: true, clientX: 520, clientY: 120 })); await el.trigger('click', { clientX: 520, clientY: 120 }); };
+    // As a browser does it: the card captures the pointer at the press, so the release and
+    // the CLICK go to the card, never to the note inside it (the bug of Nov 18 2026).
+    const press = async (el: any) => { await el.trigger('pointerdown', { button: 0, clientX: 520, clientY: 120 }); win.dispatchEvent(new PE('pointerup', { bubbles: true, button: 0, clientX: 520, clientY: 120 })); await cardOf(dB)!.trigger('click', { clientX: 520, clientY: 120 }); };
     await press(note(dB).find('.cn-body'));
     check('the FIRST click on a card selects it — it does not start typing', await until(() => cardOf(dB)!.classes('selected')) && !note(dB).classes('editing'));
     await press(note(dB).find('.cn-body'));

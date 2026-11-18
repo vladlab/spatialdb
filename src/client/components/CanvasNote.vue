@@ -123,7 +123,7 @@ function stopEditing() {
   savedInSession.value = false; elsewhere.value = false;
 }
 watch(() => props.editing || props.mode === 'tray', (on) => (on ? startEditing() : stopEditing()), { immediate: true });
-onBeforeUnmount(() => { stopEditing(); clearTimeout(savedTimer); });
+onBeforeUnmount(() => { stopEditing(); clearTimeout(savedTimer); stopWatching(); });
 
 /** A save of someone else's arriving while the editor is open. */
 watch(() => props.value, (v) => {
@@ -144,6 +144,27 @@ function onPointerDown(e: PointerEvent) {
   if ((e.target as HTMLElement).closest('input[type="checkbox"]')) { e.stopPropagation(); return; }
   downAt = { x: e.clientX, y: e.clientY };
   armedAtDown = props.armed;
+  // The RELEASE is listened for on the window, not as a `click` here: this press goes
+  // on to the card, which CAPTURES the pointer for its drag (useCardDrag.ts), and a
+  // browser sends the click of a captured pointer to the capturing element — the card
+  // — so a click handler on the note never hears it. (A checkbox stops its press
+  // above, so nothing is captured and its click arrives as usual.)
+  stopWatching();
+  window.addEventListener('pointerup', onRelease);
+  window.addEventListener('pointercancel', stopWatching);
+}
+function stopWatching() {
+  window.removeEventListener('pointerup', onRelease);
+  window.removeEventListener('pointercancel', stopWatching);
+}
+/** A press and release that did not travel asks to type here. Whether it may (only on
+    a card that is already selected, alone) is the canvas's to say. */
+function onRelease(e: PointerEvent) {
+  stopWatching();
+  const at = downAt; downAt = null;
+  if (live.value || !armedAtDown || !at || e.button !== 0) return;
+  if (Math.hypot(e.clientX - at.x, e.clientY - at.y) > 4) return;      // it travelled: the card was dragged
+  emit('start');
 }
 function onClick(e: MouseEvent) {
   if (live.value) return;
@@ -155,12 +176,7 @@ function onClick(e: MouseEvent) {
     const all = [...(e.currentTarget as HTMLElement).querySelectorAll('.cn-read input[type="checkbox"]')];
     const next = toggleTask(props.value, all.indexOf(box));
     if (next !== props.value) write(next, true);
-    return;
   }
-  // A click — a press and release that did not travel — asks to type here. Whether it
-  // may (only on a card that is already selected) is the canvas's to say.
-  if (!armedAtDown || (downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 4)) return;
-  emit('start');
 }
 function onKey(e: KeyboardEvent) {
   // Nothing typed here reaches the canvas — Space is a space, Z a letter, Delete deletes text.
