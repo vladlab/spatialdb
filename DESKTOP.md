@@ -32,9 +32,10 @@ API.md "Tools".
   page: `tools_available` (the handshake: version, and every analyzer with the
   version of the program it runs), `server_url`, `set_server` (setup page only),
   `classify`, `analyze(unit, analyzer, job?)` — the analyzer named by id from the
-  closed set — `analyze_path(path, analyzer, job?)` (a recipe's MANUAL step run
-  from a record, such as an md5, and the fingerprint run), `hash_cancel(job)`,
-  `allow_paths(paths, why)` and `reveal` — and, for the Resolve tool,
+  closed set — `analyze_path(path, analyzer, job?, expect?)` (a recipe's MANUAL step, or
+  a checksum, run from a record; `expect` is the size / date / file count the
+  record holds — the call fails BEFORE reading when the file no longer has them),
+  `hash_cancel(job)`, `allow_paths(paths, why)` (no caller since Nov 23) and `reveal` — and, for the Resolve tool,
   `resolve_timelines` and `resolve_read(timeline?)` (below). A hash given a `job` id reports
   `hash-progress` events (bytes done) under it and can be cancelled between
   chunks; the page's hash line (`client/tools/hashJobs.ts`) runs one at a time
@@ -46,24 +47,25 @@ API.md "Tools".
   the page supplies, so for a file not under something dropped this session it
   first asks in a NATIVE dialog (tauri-plugin-dialog — the page cannot draw or
   answer it), and a yes allows that path for the rest of the session; `allow_paths`
-  asks the same for a whole batch in ONE dialog (the fingerprint run from the
-  footer, which would otherwise be a dialog per file). `reveal` takes any path (it selects a file in
+  asks the same for a whole batch in ONE dialog (it served the automatic
+  fingerprint run, which is gone since Nov 23; nothing calls it now). `reveal` takes any path (it selects a file in
   the file manager and executes nothing). There is deliberately no "open with the
   default app" command: `xdg-open` on the wrong file runs it.
 - **File drop** (the first tool): drop files or folders onto an open table, or onto a
   canvas. A file whose path is already a record is skipped and offered to open, never
   updated behind your back; to update a record with a file, drop the file ONTO it —
   a card, or a grid row — where a ring and a label say which record. The file is
-  compared with the record by its FINGERPRINT (an xxh3 kept in the manifest, taken at
-  every drop): same bytes at another path → the path follows; different bytes →
-  "Replace file info?" first. (TAURI-HANDOFF.md §5.2–3; `contract/fingerprint.ts`.)
+  compared with the record by its FINGERPRINT — size and modified date, a stat the
+  classifier writes into the manifest; nothing is read (Nov 23) — and a dialog shows
+  both sides before anything changes: the same size and date at another path →
+  "Update path?"; a different size or date → "Replace file info?".
+  (TAURI-HANDOFF.md §5.2–3; `contract/fingerprint.ts`.)
   What it writes is the table's RECIPE — ⚙ Table settings → Desktop tools —
   an ordered list of steps, each an ANALYZER (`filesystem`, `sequence`, `imf`,
   `ffprobe`), what it runs on, and which outputs go to which fields. Hashes are
-  NOT steps (Nov 10): the xxh3 fingerprint runs at every drop and md5 / sha256 run
-  from a record (▶ on its Manifest), all kept in the manifest, nothing to set up;
-  a multi-file drop gets every file's details first, then fingerprints, smallest
-  first. The
+  NOT steps (Nov 10) and nothing is hashed at a drop (Nov 23): md5 / xxh3 / sha256
+  run from a record (▶ on its Manifest), kept in the manifest, nothing to set up.
+  The
   editor shows the same recipe three ways: Steps, JSON, and a Summary in sentences
   ("If video or audio: ffprobe 7.1 → Width → Width"), so whoever reads it in a year
   can tell where every value came from. `contract/tools.ts` is the reference;

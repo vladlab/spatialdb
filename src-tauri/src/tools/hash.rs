@@ -1,4 +1,6 @@
-//! Stage 3, usually last: a fingerprint of what was dropped. `<algo>:<hex>` — the
+//! A checksum of a record's file, asked for BY HAND (the page's ▶ md5 / xxh3 /
+//! sha256) — never at a drop: a hash of a large file off a NAS is ten minutes of
+//! reading, so nothing here runs on its own (the owner, Nov 23). `<algo>:<hex>` — the
 //! algorithm is IN the value (contract/shapes.ts `Hash`), so xxh3, sha256 and md5
 //! can coexist in one column. Hashes are PER FILE, always (the owner's call, Oct 15:
 //! a hash of several files concatenated is nothing a client can verify): a single
@@ -121,7 +123,7 @@ mod tests {
 
     fn unit(kind: &str, path: &str, members: Vec<String>) -> Unit {
         Unit { kind: kind.into(), path: path.into(), name: String::new(), extension: String::new(), media: String::new(),
-               manifest: serde_json::Value::Null, file_count: 0, total_size: 0, modified: String::new(), probe_target: None, members, bundle_type: None, cpl_title: None }
+               manifest: serde_json::Value::Null, file_count: 0, total_size: 0, modified: String::new(), mtime: 0, probe_target: None, members, bundle_type: None, cpl_title: None }
     }
 
     #[test]

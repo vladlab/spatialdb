@@ -6,7 +6,7 @@
   away by themselves: nothing has to be read in time.
 
   A line that named records (the file a drop already knew, the record a
-  fingerprint failed on) keeps its pills; one opens the record in the tray and
+  checksum failed on) keeps its pills; one opens the record in the tray and
   closes this, when that record is loaded here.
 -->
 <template>

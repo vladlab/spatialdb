@@ -152,20 +152,22 @@ These were agreed with the owner. Treat them as constraints, not suggestions.
    invisible", no path history): on empty space, a path already in the table is
    SKIPPED and offered (a dialog or a pill to open that record), never updated;
    dropped ONTO a record (one file; a card or a grid row, with a ring and a label
-   while dragging), the file is compared with the record by size, then by its
-   fingerprint: same bytes, same path → nothing; same bytes, another path → the
-   path and name follow silently (a rename or a move, proven); anything else →
-   "Replace file info?" (both names and paths, the reason), Replace / Cancel. A
-   path another record holds is refused. `contract/fingerprint.ts`,
-   `runFileDrop` in `client/tools/fileDrop.ts`.
-3. ~~Which hash~~ — decided Oct 18: the xxh3 is THE fingerprint, fixed, not a
-   setting — run at every drop into the manifest (`hashes.xxh3`); since Nov 10 no
-   hash is a recipe step or has a column (API.md "Tools") — and offered for every record that still has
-   none (the sidebar footer's strip: "N files have no fingerprint — Run", one
-   native dialog allows the batch, one hash at a time with progress, cancellable;
-   the list is a QUERY over the records, nothing stored). md5 / sha256 are a
-   client's checksums: manual, kept beside the fingerprint (`hashes.md5`), never
-   compared. The algorithm stays in the value (`xxh3:…`).
+   while dragging), the file is compared with the record — REVISED AGAIN Nov 23:
+   by SIZE AND MODIFIED DATE (the manifest's `stat`), never by a hash, and never
+   silently. Same path, size and date → "nothing to update". Anything else → ONE
+   dialog with both sides row by row (name, path, size, modified), what differs
+   marked: looks the same at another path → "Update path?" (name and path only);
+   differs or cannot be told → "Replace file info?". A path another record holds
+   is refused. `contract/fingerprint.ts`, `runFileDrop` in
+   `client/tools/fileDrop.ts`.
+3. ~~Which hash~~ — decided Oct 18 (an xxh3 of every file, automatically),
+   REVERSED Nov 23: hashing a large ProRes off the NAS takes ten minutes and more,
+   and that is the storage, not the algorithm. So NOTHING is hashed by default —
+   not at a drop, and there is no "N files have no fingerprint — Run" offer any
+   more. md5, xxh3 and sha256 are all checksums run by hand from a record (▶ on
+   its Manifest), kept in the manifest (`hashes.md5`), never compared; the footer
+   strip only shows their progress. No hash is a recipe step or has a column
+   (Nov 10, API.md "Tools"). The algorithm stays in the value (`xxh3:…`).
 4. ~~Paths across machines~~ — plain absolute paths; the finishing systems share a
    mount convention. No storage-root mapping.
 5. ~~Where probing runs~~ — the host's own ffprobe/ffmpeg (and Resolve + Python for
@@ -208,7 +210,7 @@ checks). See API.md "Tools". Decisions taken with the owner on the way: ONE File
 table (not per-kind tables); no raw ffprobe kept, only mapped outputs; N loose files
 that form no sequence/bundle/channel set become N records (capped, one Ctrl+Z);
 dropping a file ONTO an existing record of the table updates it by the rules of
-§5.2 (compared by fingerprint; a replace asks); same absolute path already in the
+§5.2 (compared by size and modified date; it always asks); same absolute path already in the
 table → skipped and offered, not touched (§5.2); a tool's follow-up writes are
 queued `undoable: false`.
 

@@ -52,7 +52,6 @@
 import { z } from 'zod';
 import { MANIFEST_KINDS } from './shapes.js';
 import { VOCABULARIES } from './vocab.js';
-import { FINGERPRINT } from './fingerprint.js';
 
 /* ── the tools ───────────────────────────────────────────────────────────── */
 
@@ -240,10 +239,12 @@ const FFPROBE: Analyzer = {
  *    field the filesystem step maps — which File drop therefore REQUIRES. A sequence
  *    is not hashed. No hash has a column of its own; copy one out of the manifest
  *    when a column is wanted.
- *  - The xxh3 is the FINGERPRINT (contract/fingerprint.ts): run at every drop, and
- *    later for any record with a path and none.
- *  - md5 and sha256 are a client's CHECKSUMS (`CHECKSUMS`): run by hand from any
- *    record of a File-drop table (▶ on its Manifest), never read by the app.
+ *  - NOTHING is hashed at a drop (the owner, Nov 23: a hash of a large file off the
+ *    NAS is ten minutes of reading, whatever the algorithm). "Is this the same
+ *    file" is size + modified date (contract/fingerprint.ts), which costs a stat.
+ *  - md5, xxh3 and sha256 are CHECKSUMS (`CHECKSUMS`): run by hand from any record
+ *    of a File-drop table (▶ on its Manifest), never read by the app. xxh3 is the
+ *    quick one on local storage; md5 is the one clients ask for.
  *
  * The analyzers stay in ANALYZERS — the shell runs them by these ids and the
  * handshake reports them — but `analyzersOf` does not offer them to a recipe and
@@ -257,7 +258,7 @@ const hashAnalyzer = (algo: string, note: string): Analyzer => ({
 });
 export const HASH_ALGORITHMS = ['xxh3', 'sha256', 'md5'] as const;
 /** The checksums a record offers to run by hand, in the order the tray shows them. */
-export const CHECKSUMS = ['md5', 'sha256'] as const;
+export const CHECKSUMS = ['md5', 'xxh3', 'sha256'] as const;
 
 /**
  * The Resolve tool's one analyzer (RESOLVE-BRIEF.md R1.2): the desktop runs the
@@ -297,7 +298,7 @@ const RESOLVE: Analyzer = {
 
 export const ANALYZERS: readonly Analyzer[] = [
   FILESYSTEM, SEQUENCE, IMF, FFPROBE, RESOLVE,
-  hashAnalyzer('xxh3', 'xxh3-64, fast, NOT cryptographic — a fingerprint for "is this the same file"'),
+  hashAnalyzer('xxh3', 'xxh3-64, fast, NOT cryptographic — a quick checksum; no quicker than md5 when the storage is what is slow'),
   hashAnalyzer('sha256', 'SHA-256 — slow on large files; for a checksum a client will verify'),
   hashAnalyzer('md5', 'MD5 — what a delivery\'s checksum request almost always means; slow on large files'),
 ];
@@ -372,7 +373,7 @@ export function toolsProblem(tools: unknown, fields: Iterable<ToolFieldLike>): s
     for (const [i, step] of recipe.steps.entries()) {
       const a = analyzerOf(step.analyzer);
       if (!a) return `${toolId} step ${i + 1}: unknown analyzer "${step.analyzer}"`;
-      if (isHashStep(step)) return `${toolName} step ${i + 1}: a hash is not a recipe step — the fingerprint (xxh3) runs at every drop and md5 / sha256 run from the record, all into the manifest`;
+      if (isHashStep(step)) return `${toolName} step ${i + 1}: a hash is not a recipe step — md5, xxh3 and sha256 run by hand from the record, into its manifest`;
       if (a.tool !== tool) return `${toolName} step ${i + 1}: "${a.name}" belongs to ${TOOL_NAMES[a.tool] ?? a.tool}, not to ${toolName}`;
       for (const [key, fieldId] of Object.entries(step.map)) {
         const out = a.outputs.find((o) => o.key === key);
@@ -429,9 +430,8 @@ export function pruneTools(tools: TablesTools, fields: Iterable<ToolFieldLike>):
   return { tools: out, dropped };
 }
 
-/** A hash as the step it runs as: the fingerprint at every drop, a checksum by hand. Never stored in a recipe. */
+/** A checksum as the step it runs as, by hand from the record. Never stored in a recipe, never run at a drop. */
 export const hashStep = (algo: string): Step => ({ analyzer: `hash-${algo}`, map: {} });
-export const fingerprintStep = (): Step => hashStep(FINGERPRINT);
 /** A recipe's own steps. A hash step in a stored recipe (one sql/021 has not reached) is ignored, not run twice. */
 export const stepsOf = (recipe: Recipe): Step[] => recipe.steps.filter((s) => !isHashStep(s));
 
@@ -488,7 +488,7 @@ export function defaultRecipe(tool: ToolId = 'file_drop'): Recipe {
 }
 
 /** What File drop does with hashes, as the Summary's closing line — there is no step to read it from. */
-export const HASHES_SUMMARY = 'Always: every dropped file is fingerprinted (xxh3) into the manifest. md5 and sha256 run from the record when asked, into the manifest too.';
+export const HASHES_SUMMARY = 'Nothing is hashed at a drop: a file is matched to its record by size and modified date. md5, xxh3 and sha256 run from the record when asked, into the manifest.';
 
 /* ── provenance ──────────────────────────────────────────────────────────── */
 

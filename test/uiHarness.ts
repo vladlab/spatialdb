@@ -52,7 +52,8 @@ export function navigator(w: any, until: (p: () => boolean, ms?: number) => Prom
     busy = true;
     try {
       dialogs.seen.push(d.find('h2').text());
-      dialogs.bodies.push(d.find('.dlg-body').exists() ? d.find('.dlg-body').text() : '');
+      // A before/after dialog's verdict and table read as part of its body: one string to test against.
+      dialogs.bodies.push(['.dlg-verdict', '.dlg-compare', '.dlg-body'].map((sel) => (d.find(sel).exists() ? (sel === '.dlg-compare' ? d.findAll('.dlg-compare tr').map((r: any) => r.findAll('th, td').map((c: any) => c.text()).join(' | ') + (r.classes('differs') ? ' [differs]' : '')).join('\n') : d.find(sel).text()) : '')).filter(Boolean).join('\n'));
       if (dialogs.cancelNext) { dialogs.cancelNext = false; await d.find('.dlg-cancel').trigger('click'); return; }
       if (d.find('.dlg-input').exists()) await d.find('.dlg-input').setValue(dialogs.text);
       if (dialogs.choice && d.find('.dlg-select').exists()) await d.find('.dlg-select').setValue(dialogs.choice);

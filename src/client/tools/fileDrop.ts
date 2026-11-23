@@ -14,7 +14,7 @@
  *                dropped ONTO a record is compared with it and updates it only by
  *                the rules at `runFileDrop` — nothing invisible (Oct 18).
  *   3. ANALYZE   afterwards, per unit, per remaining step that applies to it
- *                (ffprobe, a hash…) in recipe order — each its own `record.update`,
+ *                (ffprobe) in recipe order — each its own `record.update`,
  *                queued `undoable: false` so Ctrl+Z on the drop takes the results
  *                with it instead of peeling them off one at a time.
  *
@@ -22,6 +22,11 @@
  * `validateValue` accepts: a select output whose value is not one of the field's
  * choices is skipped and reported, never written, never turned into a schema
  * change.
+ *
+ * NOTHING IS HASHED AT A DROP (the owner, Nov 23): a hash of a large file off the
+ * NAS is ten minutes of reading. A file is matched to a record by size and
+ * modified date (contract/fingerprint.ts); md5 / xxh3 / sha256 run by hand from
+ * the record (`runChecksum`).
  *
  * The pure parts (`immediateOutputs`, `mappedData`) are what test/filedrop.ts pins
  * down; the shell is faked there.
@@ -32,13 +37,13 @@ import type { FieldRow, RecordRow } from '../state';
 export type { Step };
 import { fieldsOf, linkKey, primaryKeys, recordsOf } from '../state';
 import { validateValue } from '../../contract/values';
-import { CHECKSUMS, analyzerOf, fingerprintStep, hashStep, isHashStep, isManual, resolveMap, stepApplies, stepsOf, type Recipe, type Step, type TablesTools } from '../../contract/tools';
-import { compareAlgorithm, compareManifests } from '../../contract/fingerprint';
-import { Manifest } from '../../contract/shapes';
+import { CHECKSUMS, analyzerOf, hashStep, isManual, resolveMap, stepApplies, stepsOf, type Recipe, type Step, type TablesTools } from '../../contract/tools';
+import { compareFingerprints, fingerprintOf, formatModified, looksSame, type Comparison, type Fingerprint } from '../../contract/fingerprint';
+import { Manifest, formatBytes } from '../../contract/shapes';
 import { runHash } from './hashJobs';
 import { ALIASES_KEY, lookup, rawSpelling, resolveRow, type VocabRow } from '../../contract/vocab';
 import { invoke, jobs, notice } from '../desktop';
-import { confirmDialog, askFull } from '../dialogs';
+import { confirmDialog, askFull, type CompareTable } from '../dialogs';
 
 /** What src-tauri/src/tools/classify.rs returns per unit. */
 export interface Unit {
@@ -46,6 +51,8 @@ export interface Unit {
   path: string; name: string; extension: string; media: string;
   manifest: Record<string, unknown>;
   file_count: number; total_size: number; modified: string;
+  /** Newest modification time, unix seconds (0: unknown). Also in `manifest.stat`. Absent from a desktop build before Nov 23, 2026. */
+  mtime?: number;
   probe_target: string | null; members: string[];
   bundle_type: string | null; cpl_title: string | null;
 }
@@ -219,8 +226,9 @@ function writeLinks(store: Store, recordId: string, links: RoutedLinks['links'],
  * manifest's `hashes` map under its algorithm (`{ kind: 'file', size, hashes: { xxh3 } }`);
  * a set's `member_hashes` go beside the members of the manifest — the record's
  * CURRENT one when it has it, else the unit's fresh one. An md5 run after an xxh3
- * sits BESIDE it (contract/fingerprint.ts: the xxh3 is what the app compares, the
- * md5 is what a client verifies); the older single `hash` slot is left as it was.
+ * sits BESIDE it; the older single `hash` slot is left as it was. A record whose
+ * manifest has no `stat` yet (made before Nov 23, 2026) is given the fresh one in
+ * the same write, so the hash is tied to the size and date it was read at.
  * The manifest is written through the field the FILESYSTEM step maps, since the
  * hash step has no manifest output of its own. Pure.
  */
@@ -230,10 +238,12 @@ export function withHashes(outputs: Record<string, unknown>, unit: Unit, current
   delete out.member_hashes;
   const base = (current && typeof current === 'object' ? current : unit.manifest) as Record<string, unknown>;
   const add = (thing: Record<string, unknown>, hash: string) => ({ ...thing, hashes: { ...(thing.hashes as Record<string, string> | undefined), [hash.split(':')[0]]: hash } });
-  if (typeof out.hash === 'string' && base.kind === 'file') out.manifest = add(base, out.hash);
+  const fresh = (unit.manifest as Record<string, unknown> | undefined)?.stat;
+  const stat = base.stat === undefined && fresh !== undefined ? { stat: fresh } : {};
+  if (typeof out.hash === 'string' && base.kind === 'file') out.manifest = { ...add(base, out.hash), ...stat };
   else if (members?.length && Array.isArray(base.members)) {
     const byPath = new Map(members.map((m) => [m.path, m.hash]));
-    out.manifest = { ...base, members: (base.members as Array<Record<string, unknown>>).map((m) => (byPath.has(String(m.path)) ? add(m, byPath.get(String(m.path))!) : m)) };
+    out.manifest = { ...base, members: (base.members as Array<Record<string, unknown>>).map((m) => (byPath.has(String(m.path)) ? add(m, byPath.get(String(m.path))!) : m)), ...stat };
   }
   return out;
 }
@@ -330,30 +340,64 @@ async function chooseTable(store: Store, target: DropTarget): Promise<string | n
   return r?.choice ?? null;
 }
 
-/** A unit's name and path on two lines, for a dialog. */
-const describeUnit = (name: string, path: string) => `  ${name}\n  ${path}`;
+const DIFFERENCE_WORDS: Record<string, string> = { kind: 'kind', files: 'file count', size: 'size', modified: 'modified date' };
+const list = (xs: string[]) => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+const kindWord = (k: string) => k.replace('_', ' ');
 
 /**
- * The rules of a drop (the owner, Oct 18 — no path history, nothing invisible):
+ * A file dropped onto a record, as the dialog shows it: both sides row by row —
+ * name, path, size, modified, and the kind / file count when they say anything —
+ * the rows that differ marked, and one line saying what it adds up to. Sizes are
+ * given to the byte when they differ, since two files can both be "12.4 GB".
+ * Pure (the date is formatted in the local time zone).
+ */
+export function comparisonTable(before: { name: string; path: string; print: Fingerprint | null }, after: { name: string; path: string; print: Fingerprint | null }, cmp: Comparison): CompareTable {
+  const a = before.print, b = after.print;
+  const differs = new Set<string>(cmp.differs);
+  const size = (f: Fingerprint | null) => (f?.bytes === null || f?.bytes === undefined ? 'not recorded' : differs.has('size') ? `${formatBytes(f.bytes)} (${f.bytes.toLocaleString('en-US')} bytes)` : formatBytes(f.bytes));
+  const modified = (f: Fingerprint | null) => (f?.modified === null || f?.modified === undefined ? 'not recorded' : formatModified(f.modified));
+  const rows: CompareTable['rows'] = [
+    { label: 'Name', cells: [before.name || '(none)', after.name], differs: before.name !== after.name },
+    { label: 'Path', cells: [before.path || '(no path)', after.path], differs: before.path !== after.path },
+  ];
+  if (differs.has('kind')) rows.push({ label: 'Kind', cells: [a ? kindWord(a.kind) : '—', b ? kindWord(b.kind) : '—'], differs: true });
+  if (differs.has('files') || (a?.files ?? 1) > 1 || (b?.files ?? 1) > 1) rows.push({ label: 'Files', cells: [a?.files?.toLocaleString('en-US') ?? 'not recorded', b?.files?.toLocaleString('en-US') ?? 'not recorded'], differs: differs.has('files') });
+  rows.push({ label: 'Size', cells: [size(a), size(b)], differs: differs.has('size') });
+  rows.push({ label: 'Modified', cells: [modified(a), modified(b)], differs: differs.has('modified') });
+  const text = cmp.verdict === 'same' ? 'Same size and modified date — this looks like the same file, moved or renamed.'
+    : cmp.verdict === 'same-size' ? `Same size. ${a?.modified === null || a?.modified === undefined ? 'This record has no modified date to compare (it was made before dates were kept)' : 'The dropped file has no modified date to compare'}, so this is by size alone.`
+    : cmp.verdict === 'differs' ? `A different file: the ${list(cmp.differs.map((d) => DIFFERENCE_WORDS[d]))} ${cmp.differs.length === 1 ? 'differs' : 'differ'}.`
+    : !a ? 'This record has no manifest to compare with.' : 'This record has no size to compare with.';
+  return { head: ['This record', 'Dropped'], rows, verdict: { text, tone: looksSame(cmp) ? 'same' : 'differs' } };
+}
+
+/**
+ * The rules of a drop (the owner, Oct 18 — no path history, nothing invisible;
+ * Nov 23 — matched by size and date, never by a hash):
  *
  *   ON EMPTY SPACE (the grid, the canvas between cards): a file whose path is
  *   already a record of the table is NOT touched — it is skipped and the person
  *   is told, with the record to open. Everything else becomes a new record.
  *
- *   ONTO A RECORD (one file only; more flash the card and do nothing): the file is
- *   compared with what the record describes (contract/fingerprint.ts). Same
- *   bytes, same path → nothing to do. Same bytes, another path → the path (and
- *   name) are updated, silently: that is a rename or a move, and the fingerprint
- *   proves it. Anything else — the sizes differ, the fingerprints differ, the
- *   record has nothing to compare with — asks: "Replace file info?", showing both
- *   names and paths; Replace clears every field the recipe writes and runs it
- *   again; Cancel does nothing. A path already held by ANOTHER record is refused
- *   with that record to open, so two records never claim one file.
+ *   ONTO A RECORD (one file only; more flash the card and do nothing): the file's
+ *   fingerprint — size and modified date, and the file count of a set — is compared
+ *   with the record's (contract/fingerprint.ts). A stat; nothing is read.
  *
- *   The compare needs the dropped file hashed under the record's algorithm
- *   (its fingerprint, normally). Sizes are checked first, which settles most
- *   "differs" without a read; the hash, when needed, is a PRIORITY job
- *   (hashJobs.ts) — someone is waiting on a dialog.
+ *     same path, same size and date   "nothing to update". No dialog.
+ *     anything else                   ONE dialog, both sides row by row, what
+ *                                     differs marked — and the person decides:
+ *
+ *       looks the same (another path)   "Update path?" → the name and path follow;
+ *                                       details and hashes are kept; no recipe.
+ *       differs, or cannot be told      "Replace file info?" → every field the
+ *                                       recipe writes is cleared and it runs
+ *                                       again; the manifest is the new file's, so
+ *                                       the old file's hashes go with it.
+ *
+ *   Never silent: size and date are evidence, not proof, and a drop onto a record
+ *   is already a deliberate gesture — one Enter is cheap. A path already held by
+ *   ANOTHER record is refused with that record to open, so two records never
+ *   claim one file.
  */
 export async function runFileDrop(ctx: DropContext, paths: string[], target: DropTarget): Promise<DropOutcome> {
   const { store } = ctx;
@@ -366,13 +410,11 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
   const pathKey = steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('path');
   if (!pathKey) { notice(`File drop on ${table.name}: its Path output is mapped to a field that no longer exists`, 'error'); return {}; }
   const manifestKey = steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('manifest');
-  if (!manifestKey) notice(`File drop on ${table.name}: no Manifest field is mapped, so files are not fingerprinted — map one in ⚙ Table settings → Desktop tools`, 'warn');
-  // The fingerprint runs at every drop: it is not a recipe step (contract/tools.ts), it is appended here.
-  steps.push({ step: fingerprintStep(), map: new Map() });
+  if (!manifestKey) notice(`File drop on ${table.name}: no Manifest field is mapped, so a file's size and date are not kept and a file dropped onto a record cannot be compared with it — map one in ⚙ Table settings → Desktop tools`, 'warn');
   // A MANUAL step is the record's to ask for (`runManualStep`), not the drop's.
-  // A step with nothing to write is skipped — a hash has the manifest to write into.
-  const writes = (step: Step, map: Map<string, string>) => (isHashStep(step) ? !!manifestKey : map.size > 0);
-  const applying = (u: Unit) => steps.filter(({ step, map }) => writes(step, map) && !isManual(step) && stepApplies(step, u));
+  // A step with nothing to write is skipped. (`stepsOf` leaves out any hash step a
+  // stored recipe still carries: nothing is hashed at a drop.)
+  const applying = (u: Unit) => steps.filter(({ step, map }) => map.size > 0 && !isManual(step) && stepApplies(step, u));
   const labelOf = ctx.labelOf ?? ((id: string) => String(store.state.records.get(id)?.data[pathKey] ?? id));
 
   let units: Unit[];
@@ -400,39 +442,33 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
       return {};
     }
     const recorded = manifestKey ? (Manifest.safeParse(onto.data[manifestKey]).data ?? null) : null;
-    let dropped = Manifest.safeParse(u.manifest).data ?? null;
-    let verdict = compareManifests(recorded, dropped);
-    const algo = compareAlgorithm(recorded);
-    if (verdict === null && recorded && dropped && algo && dropped.kind !== 'sequence' && dropped.kind === recorded.kind) {
-      // Sizes agree and the record carries a hash: read the dropped file under that
-      // algorithm. Someone is waiting, so this job goes to the front of the line.
-      jobs.set(onto.id, { label: `comparing (${algo})`, manual: false });
-      try {
-        const r = await runHash({ kind: 'unit', unit: u, analyzer: `hash-${algo}` }, { recordId: onto.id, name: u.name, total: u.total_size, priority: true });
-        dropped = Manifest.safeParse(withHashes(r.outputs as Record<string, unknown>, u, u.manifest).manifest).data ?? dropped;
-        verdict = compareManifests(recorded, dropped);
-      } catch (e) { notice(`${u.name}: could not be compared — ${String(e)}`, 'warn'); }
-      finally { jobs.delete(onto.id); }
-    }
+    const dropped = Manifest.safeParse(u.manifest).data ?? null;
+    const cmp = compareFingerprints(recorded, dropped);
     const current = String(onto.data[pathKey] ?? '');
-    if (verdict?.same) {
-      if (current === u.path) { notice(`${u.name}: nothing to update — it is the file this record describes (same ${verdict.by})`); return {}; }
-      // A rename or a move, proven: the path and name follow; the manifest keeps its hashes; no recipe.
-      const fs = steps.find((s) => s.step.analyzer === 'filesystem')!;
+    const fs = steps.find((s) => s.step.analyzer === 'filesystem')!;
+    if (cmp.verdict === 'same' && current === u.path) { notice(`${u.name}: nothing to update — same path, size and modified date as this record`); return {}; }
+    // Looks the same AND sits somewhere else: a move or a rename. (The same path
+    // with only a size to go by is offered as a Replace — a refresh is the one
+    // thing dropping a file onto its own record can be asking for.)
+    const moved = looksSame(cmp) && current !== u.path;
+    const compare = comparisonTable(
+      { name: String(onto.data[fs.map.get('name') ?? ''] ?? labelOf(onto.id)), path: current, print: fingerprintOf(recorded) },
+      { name: u.name, path: u.path, print: fingerprintOf(dropped) }, cmp);
+    const ok = await confirmDialog(moved
+      ? { title: 'Update path?', okText: 'Update path', compare, body: 'Update path changes this record\'s name and path. Its details and hashes are kept, and everything else — status, notes, links.' }
+      : { title: 'Replace file info?', okText: 'Replace', danger: true, compare, body: 'Replace reads the file\'s details again and keeps everything else — status, notes, links. Hashes are cleared: they describe the file that was here before.' });
+    if (!ok) return {};
+    if (!store.state.records.has(onto.id)) return {};
+    if (moved) {
+      // The path and name follow; the manifest keeps its hashes and takes the dropped file's stat (a record from before dates were kept gets its date here).
       const m = mappedData(immediateOutputs('filesystem', u), fs.map, fields);
-      delete m.data[manifestKey ?? '\0'];
+      const raw = manifestKey ? onto.data[manifestKey] : undefined;
+      if (manifestKey && dropped?.stat && raw && typeof raw === 'object') m.data[manifestKey] = { ...(raw as Record<string, unknown>), stat: dropped.stat };
+      else delete m.data[manifestKey ?? '\0'];
       store.mutate({ type: 'record.update', id: onto.id, set: m.data, unset: [] }, VIA);
-      notice(`${labelOf(onto.id)}: path updated to ${u.path} (same file by ${verdict.by})`);
+      notice(`${labelOf(onto.id)}: path updated to ${u.path}`);
       return {};
     }
-    const why = verdict ? (verdict.by === 'size' ? 'Their sizes differ.' : `Their ${verdict.by} fingerprints differ.`)
-      : !recorded ? 'The record has no manifest to compare with.'
-      : !algo ? 'The record has no fingerprint to compare with.'
-      : recorded.kind !== dropped?.kind ? `The record is a ${recorded.kind.replace('_', ' ')}, the drop a ${dropped?.kind.replace('_', ' ') ?? 'file'}.`
-      : 'They could not be compared.';
-    const ok = await confirmDialog({ title: 'Replace file info?', okText: 'Replace', danger: true,
-      body: `This record describes:\n${describeUnit(String(onto.data[steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('name') ?? ''] ?? labelOf(onto.id)), current || '(no path)')}\n\nYou dropped:\n${describeUnit(u.name, u.path)}\n\n${why}\n\nReplace fills in the fields the drop recipe writes and keeps everything else — status, notes, links.` });
-    if (!ok) return {};
     if (!store.state.records.has(onto.id)) return {};
     // ── one synchronous run: clear what the recipe owns, write what is known now ──
     const data: Record<string, unknown> = {};
@@ -452,7 +488,7 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
     // ── end of the undo step ──
     notice(`${u.name}: file info replaced on ${labelOf(onto.id)}`);
     for (const sk of new Set(allSkipped)) notice(`not written — ${sk}`, 'warn');
-    await followUp(store, [{ id: onto.id, unit: u }], applying, fields, rowsOf, tableNameOf, manifestKey);
+    await followUp(store, [{ id: onto.id, unit: u }], applying, fields, rowsOf, tableNameOf);
     return {};
   }
 
@@ -497,41 +533,31 @@ export async function runFileDrop(ctx: DropContext, paths: string[], target: Dro
       existing.map((u) => ({ id: byPath.get(u.path)!.id, label: labelOf(byPath.get(u.path)!.id) })));
   }
   for (const s of new Set(allSkipped)) notice(`not written — ${s}`, 'warn');
-  await followUp(store, touched, applying, fields, rowsOf, tableNameOf, manifestKey);
+  await followUp(store, touched, applying, fields, rowsOf, tableNameOf);
   return {};
 }
 
 /**
- * Stage 3: the analyzers that run a program or read the bytes, each its own small
- * update, not undoable. In TWO passes over the whole drop (the owner, Nov 10):
- * first the quick steps for EVERY file, in recipe order — so twenty files have
- * their ffprobe details in seconds — and only then the fingerprints, SMALLEST
- * FILE FIRST, so most records are complete early and one huge file holds up
- * nothing but itself. A hash goes through the hash line (hashJobs.ts): one at a
- * time, with progress, cancellable.
+ * Stage 3: the analyzers that run a program (ffprobe), each its own small update,
+ * not undoable — file by file, in recipe order. Nothing here reads a whole file:
+ * no hash runs at a drop (the owner, Nov 23), so twenty files have their details
+ * in seconds and nothing waits behind a 100 GB read.
  */
 async function followUp(store: Store, touched: Array<{ id: string; unit: Unit }>, applying: (u: Unit) => Array<{ step: Step; map: Map<string, string> }>,
-                        fields: FieldRow[], rowsOf: RowsOf, tableNameOf: (id: string) => string, manifestKey: string | undefined) {
+                        fields: FieldRow[], rowsOf: RowsOf, tableNameOf: (id: string) => string) {
   const run = async (id: string, unit: Unit, step: Step, map: Map<string, string>) => {
     if (!store.state.records.has(id)) return;   // undone meanwhile: write nothing
     const a = analyzerOf(step.analyzer);
-    const hashing = isHashStep(step);
     jobs.set(id, { label: a?.program ?? a?.name ?? step.analyzer, manual: false });
     try {
-      const raw = hashing
-        ? await runHash({ kind: 'unit', unit, analyzer: step.analyzer }, { recordId: id, name: unit.name, total: unit.total_size })
-        : await invoke<{ outputs: Record<string, unknown> }>('analyze', { unit, analyzer: step.analyzer });
+      const raw = await invoke<{ outputs: Record<string, unknown> }>('analyze', { unit, analyzer: step.analyzer });
       const { outputs, unknown, raws } = withVocabulary(step.analyzer, raw.outputs as Record<string, unknown>, unit);
       const routed = routeLinks(outputs, raws, map, fields, rowsOf, tableNameOf);
-      const current = manifestKey ? store.state.records.get(id)?.data[manifestKey] : undefined;
-      const placed = hashing ? withHashes(routed.outputs, unit, current) : routed.outputs;
-      const { data, skipped } = mappedData(placed, hashing ? hashMap(manifestKey) : map, fields);
+      const { data, skipped } = mappedData(routed.outputs, map, fields);
       if (store.state.records.has(id)) {
         if (Object.keys(data).length) store.mutate({ type: 'record.update', id, set: data, unset: [] }, FOLLOW_UP);
         writeLinks(store, id, routed.links, FOLLOW_UP);
       }
-      const unplaced = hashing ? hashPlacementProblem(placed, unit, current) : null;
-      if (unplaced) notice(`${unit.name}: ${a?.name ?? step.analyzer} not stored — ${unplaced}`, 'warn', [{ id, label: unit.name }]);
       for (const sk of skipped) notice(`${unit.name}: not written — ${sk}`, 'warn');
       for (const u of routed.unresolved) notice(`${unit.name}: not linked — ${u.message}`, 'warn');
       // Only worth saying when the table wanted the canonical name — and a link
@@ -539,18 +565,12 @@ async function followUp(store: Store, touched: Array<{ id: string; unit: Unit }>
       const linked = new Set(routed.links.map((l) => l.fieldId)), said = new Set(routed.unresolved.map((u) => u.key));
       for (const u of unknown) if (map.has(u.key) && !said.has(u.key) && !linked.has(fields.find((f) => f.key === map.get(u.key))?.id ?? '')) notice(`${unit.name}: not written — ${u.message}`, 'warn');
     } catch (e) {
-      if (!/cancelled/.test(String(e))) notice(`${unit.name}: ${a?.name ?? step.analyzer} — ${String(e)}`, 'error');
+      notice(`${unit.name}: ${a?.name ?? step.analyzer} — ${String(e)}`, 'error');
     }
     jobs.delete(id);
   };
-  // Pass 1: everything but the hashes, file by file, in recipe order.
   for (const { id, unit } of touched) {
-    for (const { step, map } of applying(unit)) if (!IMMEDIATE.has(step.analyzer) && !isHashStep(step)) await run(id, unit, step, map);
-  }
-  // Pass 2: the hashes, smallest first (a stable sort: equal sizes keep the drop's order).
-  const bySize = [...touched].sort((a, b) => (a.unit.total_size ?? 0) - (b.unit.total_size ?? 0));
-  for (const { id, unit } of bySize) {
-    for (const { step, map } of applying(unit)) if (isHashStep(step)) await run(id, unit, step, map);
+    for (const { step, map } of applying(unit)) if (!IMMEDIATE.has(step.analyzer)) await run(id, unit, step, map);
   }
 }
 
@@ -568,13 +588,13 @@ export const pathKeyOf = (store: Store, tableId: string) => filesystemKey(store,
 export function manualSteps(store: Store, tableId: string): Array<{ index: number; step: Step; name: string }> {
   const recipe = recipeOf(store, tableId);
   if (!recipe) return [];
-  return recipe.steps.flatMap((step, index) => (isManual(step) && !isHashStep(step) && Object.keys(step.map).length ? [{ index, step, name: analyzerOf(step.analyzer)?.name ?? step.analyzer }] : []));
+  return recipe.steps.flatMap((step, index) => (isManual(step) && !step.analyzer.startsWith('hash-') && Object.keys(step.map).length ? [{ index, step, name: analyzerOf(step.analyzer)?.name ?? step.analyzer }] : []));
 }
 
 /**
- * The checksums this table's records offer to run by hand — md5 and sha256, on
- * EVERY File-drop table with a Manifest field to keep them in. Nothing to enable
- * (contract/tools.ts).
+ * The checksums this table's records offer to run by hand — md5, xxh3 and sha256,
+ * on EVERY File-drop table with a Manifest field to keep them in. Nothing to
+ * enable (contract/tools.ts). The only way a file is ever hashed.
  */
 export function checksumsOf(store: Store, tableId: string): Array<{ algo: string; name: string }> {
   if (!recipeOf(store, tableId) || !filesystemKey(store, tableId, 'manifest')) return [];
@@ -607,7 +627,7 @@ export async function runManualStep(store: Store, recordId: string, stepIndex: n
   const table = store.state.tables.get(record.table_id);
   const recipe = (table?.tools as Partial<TablesTools> | undefined)?.file_drop;
   const step = recipe?.steps[stepIndex];
-  if (!table || !recipe || !step || isHashStep(step)) { notice('That step is no longer in the recipe', 'warn'); return; }
+  if (!table || !recipe || !step || step.analyzer.startsWith('hash-')) { notice('That step is no longer in the recipe', 'warn'); return; }
   const fields = fieldsOf(store.state, record.table_id);
   const steps = recipe.steps.map((st) => ({ step: st, map: resolveMap(st, fields) }));
   const pathKey = steps.find((s) => s.step.analyzer === 'filesystem')?.map.get('path');
@@ -639,12 +659,29 @@ export async function runManualStep(store: Store, recordId: string, stepIndex: n
 }
 
 /**
- * Run ONE checksum (md5, sha256) on one record, from its path — the ▶ on its
- * Manifest in the record tray, offered on every File-drop table. Through the hash
- * line (progress, cancel); for a file not dropped this session the shell asks in
- * a native dialog first. The result goes into the record's manifest beside the
- * fingerprint, as one undoable `record.update`: a checksum asked for by hand is a
- * deliberate change.
+ * Why a checksum must not be stored: the file at the record's path is no longer
+ * the one the record describes — its size, date or file count has changed since
+ * (a re-export over the same name). Null when nothing known differs. Pure.
+ */
+export function changedSinceRecorded(stored: unknown, fresh: unknown): string | null {
+  const cmp = compareFingerprints(Manifest.safeParse(stored).data ?? null, Manifest.safeParse(fresh).data ?? null);
+  if (cmp.verdict !== 'differs' || cmp.differs.includes('kind')) return null;   // a different KIND has its own, clearer message (`hashPlacementProblem`)
+  return `its ${list(cmp.differs.map((d) => DIFFERENCE_WORDS[d]))} ${cmp.differs.length === 1 ? 'has' : 'have'} changed since it was recorded`;
+}
+
+/**
+ * Run ONE checksum (md5, xxh3, sha256) on one record, from its path — the ▶ on
+ * its Manifest in the record tray, offered on every File-drop table. Through the
+ * hash line (progress, cancel); for a file not dropped this session the shell
+ * asks in a native dialog first. The result goes into the record's manifest
+ * beside any other hash, as one undoable `record.update`: a checksum asked for
+ * by hand is a deliberate change.
+ *
+ * A hash is only stored while the file still has the size and date the record
+ * holds (contract/fingerprint.ts) — otherwise it would describe a file the record
+ * does not. The shell checks BEFORE it reads (`expect`), so a changed file costs
+ * a stat, not ten minutes; the same check is made again here on what came back,
+ * for a desktop build that does not know `expect`.
  */
 export async function runChecksum(store: Store, recordId: string, algo: string): Promise<void> {
   const record = store.state.records.get(recordId);
@@ -657,20 +694,31 @@ export async function runChecksum(store: Store, recordId: string, algo: string):
   const step = hashStep(algo);
   const label = analyzerOf(step.analyzer)?.name ?? algo;
   const name = path.split('/').pop() ?? path;
+  const refresh = 'Drop the file onto the record to refresh its file info, then run it again.';
+  const print = fingerprintOf(Manifest.safeParse(record.data[manifestKey]).data ?? null);
+  const expect = print && print.bytes !== null ? { files: print.files, bytes: print.bytes, modified: print.modified } : undefined;
   jobs.set(recordId, { label, manual: true });
   try {
-    const r = await runHash({ kind: 'path', path, analyzer: step.analyzer }, { recordId, name, total: Number(record.data[filesystemKey(store, record.table_id, 'total_size') ?? ''] ?? 0) || 0 }) as { unit: Unit; outputs: Record<string, unknown> };
+    const r = await runHash({ kind: 'path', path, analyzer: step.analyzer, expect }, { recordId, name, total: Number(record.data[filesystemKey(store, record.table_id, 'total_size') ?? ''] ?? 0) || 0 }) as { unit: Unit; outputs: Record<string, unknown> };
     if (!stepApplies(step, r.unit)) { notice(`${r.unit.name}: an image sequence is not hashed`, 'warn'); return; }
     const current = store.state.records.get(recordId)?.data[manifestKey];
     const placed = withHashes(r.outputs, r.unit, current);
     const problem = hashPlacementProblem(placed, r.unit, current);
     if (problem) { notice(`${r.unit.name}: ${label} not stored — ${problem}`, 'warn', [{ id: recordId, label: r.unit.name }]); return; }
+    const changed = changedSinceRecorded(current, r.unit.manifest);
+    if (changed) { notice(`${r.unit.name}: ${label} not stored — the file at this record's path is not the one recorded (${changed}). ${refresh}`, 'warn', [{ id: recordId, label: r.unit.name }]); return; }
     const { data, skipped } = mappedData(placed, hashMap(manifestKey), fields);
     if (Object.keys(data).length && store.state.records.has(recordId)) {
       store.mutate({ type: 'record.update', id: recordId, set: data, unset: [] }, VIA);
       notice(`${r.unit.name}: ${label} done`);
     }
     for (const sk of skipped) notice(`${r.unit.name}: not written — ${sk}`, 'warn');
-  } catch (e) { if (!/cancelled/.test(String(e))) notice(`${label} — ${String(e)}`, 'error'); }
+  } catch (e) {
+    const msg = String(e);
+    // The shell's early refusal (lib.rs `analyze_path`, `expect`): nothing was read.
+    const early = /changed since it was recorded/.exec(msg) ? msg.replace(/^.*?: (?=its |the )/, '') : null;
+    if (early) notice(`${name}: ${label} not run — the file at this record's path is not the one recorded (${early}). ${refresh}`, 'warn', [{ id: recordId, label: name }]);
+    else if (!/cancelled/.test(msg)) notice(`${label} — ${msg}`, 'error');
+  }
   finally { jobs.delete(recordId); }
 }

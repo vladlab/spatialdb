@@ -1,27 +1,39 @@
 /**
  * ============================================================================
- *  The fingerprint: how the app decides whether two files are the same bytes.
+ *  The fingerprint: how the app decides whether a file is the one a record
+ *  describes. SIZE AND MODIFIED DATE — a stat, never a read.
  * ============================================================================
  *
- *  FIXED, not a setting (the owner, Oct 18): the fingerprint is an xxh3 of every
- *  file, run automatically — at the drop, and later for any record that has a
- *  path and no fingerprint yet. md5 and sha256 are a different thing: a checksum
- *  a client asked for, run by hand from the record; the app never reads them to
- *  decide anything. One fallback keeps older records usable: when a record has
- *  no xxh3 but does have another hash, that algorithm is compared instead, since
- *  the same algorithm on both sides is all a comparison needs.
+ *  The owner, Nov 23 (superseding Oct 18's "an xxh3 of every file, run
+ *  automatically"): hashing a large ProRes off the NAS takes ten minutes and
+ *  more, and that is the storage reading the whole file — no faster algorithm
+ *  fixes it. So NOTHING IS HASHED BY DEFAULT, and identity is what viznotes
+ *  used: how big the file is and when it was last modified, shown before and
+ *  after in a dialog the person confirms.
  *
- *  Where it lives: in the record's MANIFEST, beside the size — `hashes.xxh3` on a
- *  single file, on each member of a bundle or channel set. Never on a sequence
- *  (its manifest lists a range, not files). A column may carry a copy, through a
- *  recipe step; the manifest is what is read.
+ *  What is compared (`Stat`, contract/shapes.ts — written by the desktop's
+ *  classifier into the manifest): the number of files, the total bytes, and the
+ *  newest modification time. For one file that is its size and date; for a
+ *  sequence, an IMF/DCP folder or a channel set it is count + total + newest —
+ *  good enough, by the owner's word.
+ *
+ *  It is EVIDENCE, not proof, and the code treats it so:
+ *   - nothing is ever updated silently on the strength of it — the drop rules
+ *     (client/tools/fileDrop.ts) always ask, with both sides on screen;
+ *   - the modified time gets 2 seconds of tolerance, because filesystems round
+ *     it differently (FAT to 2 s, some NAS exports to 1 s);
+ *   - a record made before the date was kept compares on size alone and says so.
+ *
+ *  Hashes (md5, xxh3, sha256) are a different thing now: checksums run by hand
+ *  from the record, kept in the manifest, never read to decide anything. One
+ *  rule ties them to the fingerprint: a hash is only stored while the file at
+ *  the path still has the fingerprint the record holds, and a Replace clears
+ *  them — so a stored hash always describes the file the record describes.
  *
  *  Pure, so the server, the web app and the tests share one definition.
  */
 
 import type { Manifest } from './shapes.js';
-
-export const FINGERPRINT = 'xxh3';
 
 type HashedThing = { hash?: string; hashes?: Record<string, string> };
 
@@ -34,71 +46,58 @@ export function hashesOf(x: HashedThing | undefined | null): Record<string, stri
   return out;
 }
 
+/** Seconds two modification times may differ by and still be the same moment. */
+export const MODIFIED_TOLERANCE = 2;
+
+/** What a manifest says its files measure; `null` where it does not say. */
+export interface Fingerprint { kind: Manifest['kind']; files: number | null; bytes: number | null; modified: number | null }
+
 /**
- * What a manifest says about its bytes under one algorithm, as one string that
- * is equal exactly when the files are: a single file's hash; for a set, every
- * member's path and hash, in path order — null unless EVERY member has one, since
- * half a fingerprint proves nothing. A sequence has none.
+ * A manifest's fingerprint: its `stat` when the desktop wrote one, else what the
+ * older shape still tells — a file's size, a set's member count and (when every
+ * member has a size) their total, a sequence's frame count. Never a date: only
+ * the stat has one.
  */
-export function identityOf(m: Manifest | undefined | null, algo: string): string | null {
+export function fingerprintOf(m: Manifest | undefined | null): Fingerprint | null {
   if (!m) return null;
-  if (m.kind === 'file') return hashesOf(m)[algo] ?? null;
-  if (m.kind === 'sequence') return null;
-  const parts: string[] = [];
-  for (const x of m.members) { const h = hashesOf(x)[algo]; if (!h) return null; parts.push(`${x.path}=${h}`); }
-  return parts.sort().join('\n');
+  if (m.stat) return { kind: m.kind, files: m.stat.files, bytes: m.stat.bytes, modified: m.stat.modified ?? null };
+  if (m.kind === 'file') return { kind: m.kind, files: 1, bytes: m.size, modified: null };
+  if (m.kind === 'sequence') return { kind: m.kind, files: m.count, bytes: null, modified: null };
+  let bytes: number | null = 0;
+  for (const x of m.members) { if (typeof x.size !== 'number') { bytes = null; break; } bytes += x.size; }
+  return { kind: m.kind, files: m.members.length, bytes, modified: null };
 }
 
-/** The algorithms a manifest is fully hashed under, fingerprint first, then the rest. */
-export function algorithmsOf(m: Manifest | undefined | null): string[] {
-  if (!m || m.kind === 'sequence') return [];
-  const things: HashedThing[] = m.kind === 'file' ? [m] : m.members;
-  if (!things.length) return [];
-  let algos: string[] | null = null;
-  for (const t of things) {
-    const here = new Set(Object.keys(hashesOf(t)));
-    algos = algos === null ? [...here] : algos.filter((a) => here.has(a));
-  }
-  return (algos ?? []).sort((a, b) => (a === FINGERPRINT ? -1 : b === FINGERPRINT ? 1 : a.localeCompare(b)));
-}
-
-/** Does this manifest still want its fingerprint? (A sequence never does.) */
-export const needsFingerprint = (m: Manifest | undefined | null): boolean => !!m && m.kind !== 'sequence' && identityOf(m, FINGERPRINT) === null;
-
-/** The total bytes a manifest describes, when it says. */
-export function sizeOf(m: Manifest | undefined | null): number | null {
-  if (!m) return null;
-  if (m.kind === 'file') return m.size;
-  if (m.kind === 'sequence') return null;
-  let n = 0;
-  for (const x of m.members) { if (typeof x.size !== 'number') return null; n += x.size; }
-  return n;
-}
+export type Difference = 'kind' | 'files' | 'size' | 'modified';
 
 /**
- * The algorithm a dropped file must be hashed under to be compared with a
- * record: the fastest the record is fully hashed with — the fingerprint when it
- * has one — or null when the record carries no hash to compare against.
+ *   same       size and date agree (and the count, and the kind)
+ *   same-size  the sizes agree and nothing known differs, but one side has no date
+ *   differs    something known differs — `differs` names what
+ *   unknown    there is no size on one side to compare (no manifest; an old sequence)
  */
-export const compareAlgorithm = (recorded: Manifest | undefined | null): string | null => algorithmsOf(recorded)[0] ?? null;
+export interface Comparison { verdict: 'same' | 'same-size' | 'differs' | 'unknown'; differs: Difference[] }
 
-export type Verdict = { same: true; by: string } | { same: false; by: string };
+/** The recorded manifest against a fresh one of the dropped thing. Reads nothing. */
+export function compareFingerprints(recorded: Manifest | undefined | null, dropped: Manifest | undefined | null): Comparison {
+  const a = fingerprintOf(recorded), b = fingerprintOf(dropped);
+  if (!a || !b) return { verdict: 'unknown', differs: [] };
+  const differs: Difference[] = [];
+  if (a.kind !== b.kind) differs.push('kind');
+  if (a.files !== null && b.files !== null && a.files !== b.files) differs.push('files');
+  if (a.bytes !== null && b.bytes !== null && a.bytes !== b.bytes) differs.push('size');
+  if (a.modified !== null && b.modified !== null && Math.abs(a.modified - b.modified) > MODIFIED_TOLERANCE) differs.push('modified');
+  if (differs.length) return { verdict: 'differs', differs };
+  if (a.bytes === null || b.bytes === null) return { verdict: 'unknown', differs };
+  return { verdict: a.modified !== null && b.modified !== null ? 'same' : 'same-size', differs };
+}
 
-/**
- * Same bytes or not — the recorded manifest against a fresh one of the dropped
- * thing, hashed under `compareAlgorithm(recorded)`. Sizes first: a different size
- * is a different file without reading a byte. Then the hash. `null` means it
- * cannot say — the record has no hash, the drop was not hashed, or the shapes
- * differ in kind — and the caller treats that as "differs", because a replace
- * that was not proven safe asks first.
- */
-export function compareManifests(recorded: Manifest | undefined | null, dropped: Manifest | undefined | null): Verdict | null {
-  if (!recorded || !dropped || recorded.kind !== dropped.kind || recorded.kind === 'sequence') return null;
-  const a = sizeOf(recorded), b = sizeOf(dropped);
-  if (a !== null && b !== null && a !== b) return { same: false, by: 'size' };
-  const algo = compareAlgorithm(recorded);
-  if (!algo) return null;
-  const x = identityOf(recorded, algo), y = identityOf(dropped, algo);
-  if (x === null || y === null) return null;
-  return x === y ? { same: true, by: algo } : { same: false, by: algo };
+/** The two verdicts that read as "the same file": a move or a rename, not a replacement. */
+export const looksSame = (c: Comparison): boolean => c.verdict === 'same' || c.verdict === 'same-size';
+
+const two = (n: number) => String(n).padStart(2, '0');
+/** A modification time as the person's own clock shows it: "2026-11-23 13:20:05". */
+export function formatModified(secs: number): string {
+  const d = new Date(secs * 1000);
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
 }

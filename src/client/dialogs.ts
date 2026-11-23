@@ -46,8 +46,19 @@ export interface AskOptions {
 }
 export interface AskResult { value: string; checks: Record<string, boolean>; choice: string }
 
-/** `cancelText`: what the second button says when it is not a cancel — "Close" beside an "Open". `noCancel`: one button only — a dialog that only TELLS (the Resolve tool's readout). */
-export interface ConfirmOptions { title: string; body?: string; okText?: string; cancelText?: string; danger?: boolean; noCancel?: boolean }
+/**
+ * A before/after table inside a confirm: one row per property, one cell per side.
+ * A row that `differs` is highlighted, so the eye lands on what changed. `verdict`
+ * is the one line above it that says what the table adds up to.
+ */
+export interface CompareTable {
+  head: string[];
+  rows: Array<{ label: string; cells: string[]; differs?: boolean }>;
+  verdict?: { text: string; tone: 'same' | 'differs' };
+}
+
+/** `cancelText`: what the second button says when it is not a cancel — "Close" beside an "Open". `noCancel`: one button only — a dialog that only TELLS (the Resolve tool's readout). `compare`: a before/after table above the body (a file dropped onto a record). */
+export interface ConfirmOptions { title: string; body?: string; okText?: string; cancelText?: string; danger?: boolean; noCancel?: boolean; compare?: CompareTable }
 
 type Pending =
   | { kind: 'ask'; opts: AskOptions; resolve: (r: AskResult | null) => void }

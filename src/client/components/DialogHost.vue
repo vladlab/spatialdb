@@ -7,7 +7,7 @@
 -->
 <template>
   <div v-if="current" class="dlg-backdrop" @mousedown.self="cancel">
-    <div class="dlg" role="dialog" aria-modal="true" @keydown.stop="onKey">
+    <div class="dlg" :class="{ wide: !!compare }" role="dialog" aria-modal="true" @keydown.stop="onKey">
       <h2>{{ current.opts.title }}</h2>
 
       <template v-if="current.kind === 'ask'">
@@ -28,7 +28,22 @@
           <span v-if="c.hint" class="dlg-hint">{{ c.hint }}</span>
         </label>
       </template>
-      <p v-else-if="current.opts.body" class="dlg-body">{{ current.opts.body }}</p>
+      <template v-else>
+        <!-- Before / after (a file dropped onto a record): the verdict, then both sides row by row, what differs marked. -->
+        <template v-if="compare">
+          <p v-if="compare.verdict" class="dlg-verdict" :class="compare.verdict.tone">{{ compare.verdict.text }}</p>
+          <table class="dlg-compare">
+            <thead><tr><th></th><th v-for="h in compare.head" :key="h">{{ h }}</th></tr></thead>
+            <tbody>
+              <tr v-for="r in compare.rows" :key="r.label" :class="{ differs: r.differs }">
+                <th>{{ r.label }}</th>
+                <td v-for="(c, i) in r.cells" :key="i">{{ c }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </template>
+        <p v-if="current.opts.body" class="dlg-body">{{ current.opts.body }}</p>
+      </template>
 
       <footer>
         <button v-if="!(current.kind === 'confirm' && current.opts.noCancel)" ref="cancelBtn" class="dlg-cancel" @click="cancel">{{ current.kind === 'confirm' && current.opts.cancelText ? current.opts.cancelText : 'Cancel' }}</button>
@@ -45,6 +60,7 @@ import { computed, nextTick, reactive, ref, watch } from 'vue';
 import { dialogQueue, settle } from '../dialogs';
 
 const current = computed(() => dialogQueue[0]);
+const compare = computed(() => (current.value?.kind === 'confirm' ? current.value.opts.compare : undefined));
 const value = ref('');
 const choice = ref('');
 const checks = reactive<Record<string, boolean>>({});
@@ -89,7 +105,18 @@ function onKey(e: KeyboardEvent) {
 <style scoped>
 .dlg-backdrop { position: fixed; inset: 0; z-index: 400; background: var(--bg-overlay); display: flex; justify-content: center; align-items: flex-start; padding-top: 18vh; }
 .dlg { width: min(420px, 92vw); background: var(--bg-app); border: 1px solid var(--border-main); border-radius: 8px; padding: 16px 18px; box-shadow: var(--card-shadow-drag); font-size: 13px; }
+.dlg.wide { width: min(680px, 94vw); }
 h2 { margin: 0 0 12px; font-size: 15px; }
+.dlg-verdict { margin: 0 0 10px; padding: 6px 10px; border-radius: 4px; border-left: 3px solid var(--border-main); background: var(--controls-bg); color: var(--text-primary); line-height: 1.4; }
+.dlg-verdict.same { border-left-color: var(--success, var(--accent)); }
+.dlg-verdict.differs { border-left-color: var(--warning); }
+.dlg-compare { width: 100%; border-collapse: collapse; margin: 0 0 12px; table-layout: fixed; font-size: 12px; }
+.dlg-compare th, .dlg-compare td { text-align: left; vertical-align: top; padding: 4px 8px; border-bottom: 1px solid var(--border-main); }
+.dlg-compare thead th { color: var(--text-muted); font-weight: 600; font-size: 11px; }
+.dlg-compare th:first-child { width: 78px; color: var(--text-muted); font-weight: 400; white-space: nowrap; }
+.dlg-compare td { color: var(--text-primary); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.dlg-compare tr.differs th:first-child { color: var(--warning); font-weight: 600; }
+.dlg-compare tr.differs td { background: color-mix(in srgb, var(--warning) 16%, transparent); }
 .dlg-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; color: var(--text-muted); font-size: 11px; }
 .dlg-input, .dlg-select { background: var(--controls-bg); border: 1px solid var(--border-main); color: var(--text-primary); border-radius: 4px; padding: 6px 8px; font: inherit; font-size: 13px; }
 .dlg-input:focus, .dlg-select:focus { outline: none; border-color: var(--accent); }

@@ -1,19 +1,17 @@
 /**
  * Hash jobs: ONE at a time, with progress, cancellable.
  *
- * Every hash the desktop runs goes through here — a drop's fingerprint, the
- * launch-time fingerprint run (fingerprints.ts), an md5 asked for from a record,
- * and the hash a drop-onto-a-record needs to compare with — so that two reads of
- * 100 GB files never thrash the same NAS at once, and so that one strip in the
- * sidebar footer can show all of it. A job the person is WAITING on (the compare
- * behind a dialog) is `priority` and goes to the front of the line.
+ * Every hash the desktop runs goes through here, and every one is asked for BY
+ * HAND — an md5, xxh3 or sha256 from a record (the owner, Nov 23: nothing hashes
+ * on its own; a drop reads no file). One line, so that two reads of 100 GB files
+ * never thrash the same NAS at once, and so that one strip in the sidebar footer
+ * (HashStrip.vue) can show all of it.
  *
  * The shell (src-tauri/src/lib.rs) does the reading: `analyze` / `analyze_path`
  * with a `job` id emit `hash-progress` events under it, and `hash_cancel(job)`
  * stops one between two chunks. Here is only the line, the bookkeeping, and the
- * list a footer draws. Nothing persists: the list of what still WANTS a
- * fingerprint is a query over the records (contract/fingerprint.ts
- * `needsFingerprint`), which is correct after a crash by definition.
+ * list a footer draws. Nothing persists: a hash that did not finish was not
+ * written, and is asked for again from the record.
  */
 
 import { reactive } from 'vue';
@@ -42,7 +40,8 @@ const KEEP_FINISHED = 6;
 
 type Request =
   | { kind: 'unit'; unit: unknown; analyzer: string }
-  | { kind: 'path'; path: string; analyzer: string };
+  /** `expect`: the size / date / file count the record holds — the shell refuses before reading when the file no longer has them. */
+  | { kind: 'path'; path: string; analyzer: string; expect?: { files: number | null; bytes: number; modified: number | null } };
 
 interface Pending { job: HashJob; req: Request; resolve: (v: unknown) => void; reject: (e: unknown) => void }
 const line: Pending[] = [];
@@ -66,9 +65,13 @@ function listen() {
  */
 export function runHash(req: Request, meta: { recordId: string | null; name: string; total: number; priority?: boolean }): Promise<Record<string, unknown>> {
   listen();
-  const job: HashJob = { id: nextId++, recordId: meta.recordId, name: meta.name, label: `Hash (${req.analyzer.replace('hash-', '')})`,
+  const raw: HashJob = { id: nextId++, recordId: meta.recordId, name: meta.name, label: `Hash (${req.analyzer.replace('hash-', '')})`,
                          state: 'queued', done: 0, total: meta.total, priority: !!meta.priority };
-  hashJobs.push(job);
+  hashJobs.push(raw);
+  // The REACTIVE object, not the raw one: the line sets `state` on it as the job
+  // runs, and a write to the raw object would never reach the footer strip — it
+  // would go on showing a finished hash as running.
+  const job = hashJobs[hashJobs.length - 1];
   return new Promise((resolve, reject) => {
     const p: Pending = { job, req, resolve: resolve as (v: unknown) => void, reject };
     if (job.priority) line.unshift(p); else line.push(p);
@@ -110,7 +113,7 @@ async function pump() {
   try {
     const r = p.req.kind === 'unit'
       ? await invoke<{ outputs: Record<string, unknown> }>('analyze', { unit: p.req.unit, analyzer: p.req.analyzer, job: p.job.id })
-      : await invoke<{ unit: unknown; outputs: Record<string, unknown> }>('analyze_path', { path: p.req.path, analyzer: p.req.analyzer, job: p.job.id });
+      : await invoke<{ unit: unknown; outputs: Record<string, unknown> }>('analyze_path', { path: p.req.path, analyzer: p.req.analyzer, job: p.job.id, ...(p.req.expect ? { expect: p.req.expect } : {}) });
     p.job.state = 'done'; p.job.done = p.job.total;
     p.resolve(r);
   } catch (e) {

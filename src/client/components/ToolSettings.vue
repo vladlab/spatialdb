@@ -83,8 +83,8 @@
         <!-- Hashes are not steps: nothing to add, nothing to map (contract/tools.ts). Said here so nobody looks for them. -->
         <div v-if="tool === 'file_drop'" class="hashes-note" :class="{ warn: !manifestMapped }">
           <b>Hashes</b>
-          <span v-if="manifestMapped">Automatic — every dropped file is fingerprinted (xxh3) into its Manifest. md5 and sha256 run from a record (▶ on its Manifest) and are kept there too. Nothing to set up.</span>
-          <span v-else>⚠ Map a <b>Manifest</b> field in the Filesystem step: it is where the fingerprint and checksums are kept.</span>
+          <span v-if="manifestMapped">Never automatic — reading a large file off the NAS takes minutes. A dropped file is matched to its record by size and modified date, kept in its Manifest. md5, xxh3 and sha256 run from a record (▶ on its Manifest) and are kept there too. Nothing to set up.</span>
+          <span v-else>⚠ Map a <b>Manifest</b> field in the Filesystem step: it is where a file's size and date, and its checksums, are kept.</span>
         </div>
 
         <div v-if="!single" class="add">

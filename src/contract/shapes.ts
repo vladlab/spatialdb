@@ -40,35 +40,51 @@ export const MANIFEST_MAX_MEMBERS = 2000;
  */
 export const Hash = z.string().regex(/^[a-z0-9_-]{2,20}:[0-9a-f]{8,128}$/i, 'a hash looks like "sha256:9f2c…"');
 /**
- * Several hashes of ONE file, keyed by algorithm: `{ xxh3: "xxh3:…", md5: "md5:…" }`.
- * The xxh3 is the FINGERPRINT (contract/fingerprint.ts) — the one the app reads to
- * decide "is this the same file"; an md5 is a deliverable's checksum, asked for by
- * hand. They coexist: running one never replaces another (the owner, Oct 18). The
- * older single `hash` is read as one entry of this map (`hashesOf`) and left alone
- * on records that still carry it.
+ * Several hashes of ONE file, keyed by algorithm: `{ md5: "md5:…", xxh3: "xxh3:…" }`.
+ * Every one is run BY HAND from the record (the owner, Nov 23: reading 100 GB off a
+ * NAS is ten minutes whatever the algorithm, so nothing hashes on its own) and the
+ * app never reads one to decide anything — "is this the same file" is the STAT
+ * below. They coexist: running one never replaces another. The older single `hash`
+ * is read as one entry of this map (`hashesOf`) and left alone on records that
+ * still carry it.
  */
 export const Hashes = z.record(z.string().regex(/^[a-z0-9_-]{2,20}$/i), Hash);
 const bytes = z.number().int().nonnegative();
+/**
+ * What the files measured when the desktop last looked at them — a `stat`, never a
+ * read: how many files, how many bytes in all, and the NEWEST modification time
+ * among them (unix seconds, UTC). This is the app's FINGERPRINT
+ * (contract/fingerprint.ts): what a file dropped onto a record is compared by.
+ * Modification time, not creation time: creation time is often unavailable over
+ * NFS/SMB and a copy gets a new one, where `rsync -a` and `cp -p` keep the other.
+ * Absent on records made before Nov 23, 2026, and `modified` when a filesystem
+ * would not say.
+ */
+export const Stat = z.strictObject({ files: bytes, bytes, modified: bytes.optional() });
+export type Stat = z.infer<typeof Stat>;
 /** Relative to the RECORD's path — never absolute, so the cross-machine path question stays in one place. */
 const relPath = z.string().min(1).max(1024).refine((p) => !p.startsWith('/') && !/^[a-z]:[\\/]/i.test(p) && !p.split(/[\\/]/).includes('..'),
   'member paths are relative to the record\'s path (no leading "/", no "..")');
 
 export const Manifest = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('file'), size: bytes, hash: Hash.optional(), hashes: Hashes.optional() }),
+  z.strictObject({ kind: z.literal('file'), size: bytes, hash: Hash.optional(), hashes: Hashes.optional(), stat: Stat.optional() }),
   z.strictObject({
     kind: z.literal('bundle'),                                   // an IMF / DCP folder
     members: z.array(z.strictObject({ path: relPath, size: bytes, hash: Hash.optional(), hashes: Hashes.optional() })).max(MANIFEST_MAX_MEMBERS),
     source: z.string().max(200).optional(),                       // "ASSETMAP.xml", "PKL_….xml" — what the list was read from
+    stat: Stat.optional(),
   }),
   z.strictObject({
     kind: z.literal('sequence'),                                 // pattern + range; NEVER the file list
     pattern: z.string().min(1).max(1024),                         // "shot_010.%07d.exr"
     first: z.number().int(), last: z.number().int(), count: z.number().int().nonnegative(),
     gaps: z.array(z.tuple([z.number().int(), z.number().int()])).max(1000),
+    stat: Stat.optional(),
   }).refine((s) => s.last >= s.first, 'last frame is before first'),
   z.strictObject({
     kind: z.literal('channel_set'),                              // a multi-mono mix: 6 wavs = one 5.1
     members: z.array(z.strictObject({ path: relPath, channel: z.string().min(1).max(16), size: bytes.optional(), hash: Hash.optional(), hashes: Hashes.optional() })).min(1).max(64),
+    stat: Stat.optional(),
   }),
 ]);
 export type Manifest = z.infer<typeof Manifest>;

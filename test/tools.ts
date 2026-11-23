@@ -63,7 +63,7 @@ async function main() {
     check('the required output (Path, from the filesystem) must be mapped', /needs "Path" \(Filesystem\) mapped/.test(String(toolsProblem(rcp(fs({ name: fName })), fields))));
     check('…mapping "path" on some OTHER analyzer would not count (there is none, and the rule names the analyzer)', /needs "Path"/.test(String(toolsProblem(rcp(ff({ width: fWidth })), fields))));
     check('two steps into ONE field is refused, naming both outputs', /two outputs \(filesystem.name and ffprobe.container_raw\)/.test(String(toolsProblem(rcp(fs({ path: fPath, name: fName }), ff({ container_raw: fName })), fields))), String(toolsProblem(rcp(fs({ path: fPath, name: fName }), ff({ container_raw: fName })), fields)));
-    check('the Manifest is REQUIRED too — it is where the fingerprint and checksums are kept', /needs "Manifest" \(Filesystem\) mapped/.test(String(toolsProblem(rcp(fs({ path: fPath }, true)), fields))));
+    check('the Manifest is REQUIRED too — it is where the fingerprint (size + date) and checksums are kept', /needs "Manifest" \(Filesystem\) mapped/.test(String(toolsProblem(rcp(fs({ path: fPath }, true)), fields))));
     for (const algo of ['xxh3', 'md5', 'sha256']) check(`a hash-${algo} step in a recipe is refused: hashes are not steps`, /a hash is not a recipe step/.test(String(toolsProblem(rcp(fs({ path: fPath }), { analyzer: `hash-${algo}`, map: {} }), fields))));
     check('…and the editor does not offer one, while the shell\'s analyzers are still known by id', !analyzersOf('file_drop').some((a) => a.id.startsWith('hash-')) && ['xxh3', 'md5', 'sha256'].every((a) => !!analyzerOf(`hash-${a}`)));
     check('stepsOf ignores a hash step left in a stored recipe (one sql/021 has not reached)', stepsOf({ steps: [fs({ path: fPath }), { analyzer: 'hash-md5', map: {} }, ff({})] } as never).map((x) => x.analyzer).join() === 'filesystem,ffprobe');
@@ -380,7 +380,7 @@ async function main() {
     check('clicking the "audio" chip on ffprobe writes an EXPLICIT runs_on of video only', JSON.stringify(cfg[0].tools.file_drop.steps[1].runs_on) === JSON.stringify({ media: ['video'] }), JSON.stringify(cfg[0].tools.file_drop.steps[1]));
     check('…and a "default" button appears to take it back', stepCard(1).findAll('button.mini').some((b: any) => b.text() === 'default'));
     check('hashes are NOT offered as steps; a note says they are automatic and need no setup', !w.find('.ts .tools .add select').findAll('option').some((o: any) => /hash/i.test(o.text()))
-      && /Automatic — every dropped file is fingerprinted \(xxh3\) into its Manifest\. md5 and sha256 run from a record/.test(w.find('.ts .tools .hashes-note').text()) && !w.find('.ts .tools .into-manifest').exists(), w.find('.ts .tools .hashes-note').text());
+      && /Never automatic — reading a large file off the NAS takes minutes\. A dropped file is matched to its record by size and modified date, kept in its Manifest\. md5, xxh3 and sha256 run from a record/.test(w.find('.ts .tools .hashes-note').text()) && !w.find('.ts .tools .into-manifest').exists(), w.find('.ts .tools .hashes-note').text());
     await w.find('.ts .tools .add select').setValue('sequence');
     await w.find('.ts .tools .add button').trigger('click');
     cfg = await ui.untilDb(`select tools from tables where id = '${tNew}'`, (x) => x[0]?.tools?.file_drop?.steps?.length === 3);
@@ -394,7 +394,7 @@ async function main() {
 
     console.log('\nT5b. The Summary and JSON views of the same recipe');
     await w.findAll('.ts .tools .view').find((b: any) => b.text() === 'Summary')!.trigger('click');
-    check('Summary is the recipe as sentences a reader can check against the table', await until(() => w.find('.ts .summary').exists()) && /1\. For everything: Filesystem → Path → Path, File name → Title, Kind → Kind, Manifest → Manifest\./.test(w.find('.ts .summary').text()) && /2\. If video: ffprobe → nothing mapped\./.test(w.find('.ts .summary').text()) && /Always: every dropped file is fingerprinted \(xxh3\) into the manifest/.test(w.find('.ts .summary').text()), w.find('.ts .summary').text());
+    check('Summary is the recipe as sentences a reader can check against the table', await until(() => w.find('.ts .summary').exists()) && /1\. For everything: Filesystem → Path → Path, File name → Title, Kind → Kind, Manifest → Manifest\./.test(w.find('.ts .summary').text()) && /2\. If video: ffprobe → nothing mapped\./.test(w.find('.ts .summary').text()) && /Nothing is hashed at a drop: a file is matched to its record by size and modified date/.test(w.find('.ts .summary').text()), w.find('.ts .summary').text());
     await w.findAll('.ts .tools .view').find((b: any) => b.text() === 'JSON')!.trigger('click');
     check('JSON shows the stored recipe verbatim, and says it is valid', await until(() => w.find('.ts .json textarea').exists()) && JSON.parse((w.find('.ts .json textarea').element as HTMLTextAreaElement).value).steps[0].map.name === nName && /valid/.test(w.find('.ts .json-foot').text()));
     const ta = w.find('.ts .json textarea');

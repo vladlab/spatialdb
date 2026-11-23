@@ -351,6 +351,7 @@ options: `field.create { fieldType: 'structured', options: { shape } }`.
 type Hash = string;   // "<algo>:<hex>" — "sha256:…", "xxh3:…", "md5:…". The algorithm is IN the value.
 
 type Manifest =
+  // every kind also takes  stat?: { files: number; bytes: number; modified?: number }  — the fingerprint (below)
   | { kind: 'file';        size: number; hash?: Hash }
   | { kind: 'bundle';      members: { path: string; size: number; hash?: Hash }[]; source?: string }   // IMF / DCP; ≤ 2000 members
   | { kind: 'sequence';    pattern: string; first: number; last: number; count: number; gaps: [number, number][] }   // NEVER the file list
@@ -473,12 +474,28 @@ RECIPE:
   member of a bundle or channel set; a sequence is not hashed — written through
   the Manifest field the filesystem step maps, which File drop therefore REQUIRES
   beside Path (`REQUIRED_BY_TOOL`; enabling the tool creates both fields). No hash
-  has a column. The xxh3 FINGERPRINT runs at every drop; md5 and sha256
-  (`CHECKSUMS`) run by hand from any record of a File-drop table — ▶ on its
+  has a column. **Nothing is hashed at a drop** (Nov 23 — a hash of a large file
+  off the NAS is ten minutes of reading, whatever the algorithm): md5, xxh3 and
+  sha256 (`CHECKSUMS`) run by hand from any record of a File-drop table — ▶ on its
   Manifest field, `runChecksum` — as one undoable `record.update`.
-- **Order at a drop** (Nov 10): the quick steps for EVERY file first, in recipe
-  order, then the fingerprints, smallest file first (`followUp`), so a multi-file
-  drop has its details at once and one big file delays only itself.
+- **The fingerprint is size + modified date** (Nov 23; `contract/fingerprint.ts`).
+  The desktop's classifier writes a `stat` into every manifest — `{ files, bytes,
+  modified }`: the file count, the total bytes, the NEWEST modification time (unix
+  seconds; modified, not created — creation time is unreliable over NFS/SMB and a
+  copy gets a new one). A file dropped ONTO a record is compared by it
+  (`compareFingerprints`, 2 s of tolerance on the date) and the result is always
+  put to the person in a before/after dialog: looks the same at another path →
+  "Update path?" (name and path only; details and hashes kept); differs, or cannot
+  be told → "Replace file info?" (the recipe runs again; the manifest is the new
+  file's, so the old hashes go). Same path, size and date → "nothing to update",
+  no dialog. A manifest from before Nov 23 has no stat: it compares on size alone
+  and the dialog says so.
+- **A stored hash always describes the recorded file**: a checksum is refused when
+  the file at the path no longer has the record's size / date / count — by the
+  shell before it reads (`analyze_path`'s `expect`), and again by the page on what
+  came back (`changedSinceRecorded`).
+- **Order at a drop**: file by file, the recipe's steps in order (`followUp`).
+  Nothing reads a whole file, so nothing waits behind one.
   Each that runs a program offers its version as an output (`ffprobe.version`) —
   provenance a table may keep per record. The desktop's handshake reports which
   analyzers a build has and their versions.

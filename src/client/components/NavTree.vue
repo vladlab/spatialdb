@@ -79,10 +79,11 @@
 
     <!-- The footer: things about the WHOLE app. (A table, a section and a canvas each
          have their own ⚙ where they are listed.) History lives in here; so does the
-         desktop app's fingerprint strip (what the hash line is doing, what still
-         wants a fingerprint), outside the content area so nothing there shifts. -->
+         desktop app's hash strip (what the hash line is doing, while a checksum
+         asked for from a record is being read), outside the content area so
+         nothing there shifts. -->
     <footer class="tree-foot">
-      <FingerprintStrip :store="store" />
+      <HashStrip />
       <!-- THE LOG (client/log.ts): always here, so nothing moves when something is logged;
            the count is the warnings and errors since it was last opened. -->
       <button class="row log-btn" :title="unseen ? `Log — ${unseen} warning${unseen === 1 ? '' : 's'} or error${unseen === 1 ? '' : 's'} since you last looked` : 'Log — everything the app has told you, kept'" @click="$emit('log')">
@@ -97,7 +98,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import FingerprintStrip from './FingerprintStrip.vue';
+import HashStrip from './HashStrip.vue';
 import { unseenProblems } from '../log';
 import type { Store } from '../store';
 import { sectionsSorted } from '../state';

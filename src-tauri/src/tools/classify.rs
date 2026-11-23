@@ -35,6 +35,12 @@ pub struct Unit {
     pub file_count: u64,
     pub total_size: u64,
     pub modified: String,      // YYYY-MM-DD (UTC) of the newest member
+    /// The newest member's modification time, unix seconds (0: the filesystem would
+    /// not say). With `file_count` and `total_size` it is the manifest's `stat` —
+    /// what a file dropped onto a record is compared by (contract/fingerprint.ts).
+    /// `default`: the page hands units back, and an older page's lack the field.
+    #[serde(default)]
+    pub mtime: u64,
     /// The file to ffprobe: the file itself, a sequence's first frame, a channel
     /// set's first member; none for a bundle.
     pub probe_target: Option<String>,
@@ -90,6 +96,48 @@ fn day_of(meta: &fs::Metadata) -> String {
     format!("{:04}-{:02}-{:02}", if m <= 2 { y + 1 } else { y }, m, d)
 }
 
+/// A file's modification time as unix seconds; 0 when the filesystem would not say.
+/// MODIFIED, not created: creation time is often unavailable over NFS/SMB, and a
+/// copy gets a new one where `rsync -a` / `cp -p` keep this.
+fn secs_of(meta: &fs::Metadata) -> u64 {
+    meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// A manifest with its `stat` (contract/shapes.ts `Stat`): how many files, how many
+/// bytes, the newest modification time — left out when unknown. A stat, never a read.
+fn with_stat(mut manifest: serde_json::Value, files: u64, bytes: u64, mtime: u64) -> serde_json::Value {
+    let mut stat = serde_json::json!({ "files": files, "bytes": bytes });
+    if mtime > 0 { stat["modified"] = mtime.into(); }
+    manifest["stat"] = stat;
+    manifest
+}
+
+/// What the record a hash was asked from holds about its file (the page sends it
+/// with `analyze_path`): the fingerprint of contract/fingerprint.ts.
+#[derive(Deserialize, Clone, Debug)]
+pub struct Expect { pub files: Option<u64>, pub bytes: u64, pub modified: Option<u64> }
+
+/// Seconds two modification times may differ by and still be the same moment
+/// (filesystems round differently). contract/fingerprint.ts `MODIFIED_TOLERANCE`.
+const MODIFIED_TOLERANCE: u64 = 2;
+
+/// Why what is at the path is NOT the file the record describes — its size, date or
+/// file count is another — or None when nothing known differs. Asked BEFORE a hash
+/// reads a byte: ten minutes of NAS for a checksum that would describe the wrong
+/// file is the thing to avoid. Worded as the page words it (fileDrop.ts).
+pub fn changed(unit: &Unit, e: &Expect) -> Option<String> {
+    let mut what: Vec<&str> = Vec::new();
+    if e.files.is_some_and(|n| n != unit.file_count) { what.push("file count"); }
+    if e.bytes != unit.total_size { what.push("size"); }
+    if e.modified.is_some_and(|m| unit.mtime > 0 && m.abs_diff(unit.mtime) > MODIFIED_TOLERANCE) { what.push("modified date"); }
+    if what.is_empty() { return None; }
+    let (list, verb) = match what.len() {
+        1 => (what[0].to_string(), "has"),
+        n => (format!("{} and {}", what[..n - 1].join(", "), what[n - 1]), "have"),
+    };
+    Some(format!("its {list} {verb} changed since it was recorded"))
+}
+
 /// The dropped roots, in order, expanded into units. Duplicates (two frames of one
 /// sequence dropped together) collapse into one.
 pub fn classify(roots: &[PathBuf]) -> Vec<Unit> {
@@ -133,8 +181,8 @@ fn file(p: &Path, meta: &fs::Metadata) -> Unit {
     let ext = ext_of(p);
     Unit {
         kind: "file".into(), path: p.to_string_lossy().into_owned(), name: name_of(p), media: media_of(&ext).into(),
-        manifest: serde_json::json!({ "kind": "file", "size": meta.len() }),
-        file_count: 1, total_size: meta.len(), modified: day_of(meta),
+        manifest: with_stat(serde_json::json!({ "kind": "file", "size": meta.len() }), 1, meta.len(), secs_of(meta)),
+        file_count: 1, total_size: meta.len(), modified: day_of(meta), mtime: secs_of(meta),
         probe_target: Some(p.to_string_lossy().into_owned()), members: vec![], bundle_type: None, cpl_title: None, extension: ext,
     }
 }
@@ -205,13 +253,14 @@ fn sequence(dir: &Path, f: &Frame) -> Option<Unit> {
     for w in frames.windows(2) { if w[1].0 > w[0].0 + 1 { gaps.push([w[0].0 + 1, w[1].0 - 1]); } }
     let total: u64 = frames.iter().map(|x| x.2).sum();
     let newest = frames.iter().map(|x| day_of(&x.3)).max().unwrap_or_default();
+    let mtime = frames.iter().map(|x| secs_of(&x.3)).max().unwrap_or(0);
     let stem = f.prefix.trim_end_matches(['.', '_', '-']);
     Some(Unit {
         kind: "sequence".into(), path: dir.to_string_lossy().into_owned(),
         name: if stem.is_empty() { name_of(dir) } else { stem.to_string() },
         extension: f.ext.clone(), media: "image".into(),
-        manifest: serde_json::json!({ "kind": "sequence", "pattern": f.pattern, "first": first, "last": last, "count": frames.len(), "gaps": gaps }),
-        file_count: frames.len() as u64, total_size: total, modified: newest,
+        manifest: with_stat(serde_json::json!({ "kind": "sequence", "pattern": f.pattern, "first": first, "last": last, "count": frames.len(), "gaps": gaps }), frames.len() as u64, total, mtime),
+        file_count: frames.len() as u64, total_size: total, modified: newest, mtime,
         probe_target: Some(frames[0].1.to_string_lossy().into_owned()),
         members: frames.iter().map(|x| x.1.to_string_lossy().into_owned()).collect(),
         bundle_type: None, cpl_title: None,
@@ -234,18 +283,18 @@ fn channel_set(dir: &Path, stem: &str, members: &[PathBuf]) -> Option<Unit> {
     let mut members: Vec<PathBuf> = members.to_vec();
     members.sort_by_key(|m| channel_of(m).map(|(_, ch)| channel_rank(&ch)).unwrap_or(usize::MAX));
     let members = &members;
-    let mut total = 0; let mut newest = String::new(); let mut list = Vec::new();
+    let mut total = 0; let mut newest = String::new(); let mut mtime = 0; let mut list = Vec::new();
     for m in members {
         let meta = fs::metadata(m).ok()?;
-        total += meta.len(); newest = newest.max(day_of(&meta));
+        total += meta.len(); newest = newest.max(day_of(&meta)); mtime = mtime.max(secs_of(&meta));
         let rel = m.strip_prefix(dir).ok()?.to_string_lossy().into_owned();
         list.push(serde_json::json!({ "path": rel, "channel": channel_of(m)?.1 }));
     }
     Some(Unit {
         kind: "channel_set".into(), path: dir.to_string_lossy().into_owned(), name: stem.to_string(),
         extension: ext_of(&members[0]), media: "audio".into(),
-        manifest: serde_json::json!({ "kind": "channel_set", "members": list }),
-        file_count: members.len() as u64, total_size: total, modified: newest,
+        manifest: with_stat(serde_json::json!({ "kind": "channel_set", "members": list }), members.len() as u64, total, mtime),
+        file_count: members.len() as u64, total_size: total, modified: newest, mtime,
         probe_target: Some(members[0].to_string_lossy().into_owned()),
         members: members.iter().map(|m| m.to_string_lossy().into_owned()).collect(),
         bundle_type: None, cpl_title: None,
@@ -284,15 +333,72 @@ fn bundle(dir: &Path) -> Option<Unit> {
     files.sort_by(|a, b| a.0.cmp(&b.0));
     let total: u64 = files.iter().map(|f| f.1).sum();
     let newest = files.iter().map(|f| day_of(&f.2)).max().unwrap_or_default();
+    let mtime = files.iter().map(|f| secs_of(&f.2)).max().unwrap_or(0);
     let truncated = files.len() > MAX_MEMBERS;
     let members: Vec<serde_json::Value> = files.iter().take(MAX_MEMBERS).map(|f| serde_json::json!({ "path": f.0, "size": f.1 })).collect();
     Some(Unit {
         kind: "bundle".into(), path: dir.to_string_lossy().into_owned(), name: name_of(dir), extension: bundle_type.into(),
         media: "video".into(),
-        manifest: serde_json::json!({ "kind": "bundle", "members": members, "source": if truncated { format!("walk of {assetmap}'s folder, first {MAX_MEMBERS} of {} files", files.len()) } else { format!("walk of {assetmap}'s folder") } }),
-        file_count: files.len() as u64, total_size: total, modified: newest,
+        manifest: with_stat(serde_json::json!({ "kind": "bundle", "members": members, "source": if truncated { format!("walk of {assetmap}'s folder, first {MAX_MEMBERS} of {} files", files.len()) } else { format!("walk of {assetmap}'s folder") } }), files.len() as u64, total, mtime),
+        file_count: files.len() as u64, total_size: total, modified: newest, mtime,
         probe_target: None,
         members: files.iter().map(|f| dir.join(&f.0).to_string_lossy().into_owned()).collect(),
         bundle_type: Some(bundle_type.into()), cpl_title,
     })
+}
+
+#[cfg(test)]
+mod stat_tests {
+    use super::*;
+
+    /// The stat is in every manifest: count, bytes, newest modification time.
+    #[test]
+    fn a_manifest_carries_its_stat() {
+        let dir = std::env::temp_dir().join(format!("spatialdb-stat-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let one = dir.join("master.mov"); fs::write(&one, b"twelve bytes").unwrap();
+        let u = classify(&[one.clone()]).remove(0);
+        let mtime = fs::metadata(&one).unwrap().modified().unwrap().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        assert_eq!(u.mtime, mtime);
+        assert_eq!(u.manifest["stat"], serde_json::json!({ "files": 1, "bytes": 12, "modified": mtime }));
+        assert_eq!(u.manifest["size"], 12);
+
+        // A set: the count, the total, the NEWEST member's time.
+        let (l, r) = (dir.join("mix_L.wav"), dir.join("mix_R.wav"));
+        fs::write(&l, b"abc").unwrap(); fs::write(&r, b"defgh").unwrap();
+        let set = classify(&[l.clone(), r.clone()]).into_iter().find(|u| u.kind == "channel_set").unwrap();
+        assert_eq!(set.manifest["stat"]["files"], 2);
+        assert_eq!(set.manifest["stat"]["bytes"], 8);
+        assert_eq!(set.manifest["stat"]["modified"], set.mtime);
+        assert!(set.mtime >= mtime);
+
+        // A sequence has no size anywhere else in its manifest: the stat is where it is.
+        for n in 1..=3 { fs::write(dir.join(format!("plate.{n:04}.exr")), b"frame").unwrap(); }
+        let seq = classify(&[dir.join("plate.0001.exr")]).remove(0);
+        assert_eq!(seq.kind, "sequence");
+        assert_eq!(seq.manifest["stat"]["files"], 3);
+        assert_eq!(seq.manifest["stat"]["bytes"], 15);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    fn unit(files: u64, bytes: u64, mtime: u64) -> Unit {
+        Unit { kind: "file".into(), path: "/x".into(), name: String::new(), extension: String::new(), media: String::new(),
+               manifest: serde_json::Value::Null, file_count: files, total_size: bytes, modified: String::new(), mtime,
+               probe_target: None, members: vec![], bundle_type: None, cpl_title: None }
+    }
+
+    #[test]
+    fn changed_names_what_differs_and_forgives_two_seconds() {
+        let e = |files, bytes, modified| Expect { files, bytes, modified };
+        assert_eq!(changed(&unit(1, 100, 5000), &e(Some(1), 100, Some(5000))), None);
+        // Filesystems round modification times differently: 2 s either way is the same moment.
+        assert_eq!(changed(&unit(1, 100, 5002), &e(Some(1), 100, Some(5000))), None);
+        assert_eq!(changed(&unit(1, 100, 4998), &e(Some(1), 100, Some(5000))), None);
+        assert_eq!(changed(&unit(1, 100, 5003), &e(Some(1), 100, Some(5000))).as_deref(), Some("its modified date has changed since it was recorded"));
+        assert_eq!(changed(&unit(1, 101, 5000), &e(Some(1), 100, Some(5000))).as_deref(), Some("its size has changed since it was recorded"));
+        assert_eq!(changed(&unit(7, 101, 9000), &e(Some(6), 100, Some(5000))).as_deref(), Some("its file count, size and modified date have changed since it was recorded"));
+        // A record from before dates were kept, or a filesystem that will not say: size alone.
+        assert_eq!(changed(&unit(1, 100, 9000), &e(None, 100, None)), None);
+        assert_eq!(changed(&unit(1, 100, 0), &e(Some(1), 100, Some(5000))), None);
+    }
 }

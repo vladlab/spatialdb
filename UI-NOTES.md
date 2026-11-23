@@ -462,6 +462,18 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
   says "on every Works canvas"). After deploy every canvas you had already set up says
   "this canvas only" and looks as before; untouched ones and new ones share.
 
+- **No automatic hash; size + date instead (Nov 23).** Needs a desktop REBUILD
+  (the classifier now records each file's modified time) — deploy the server
+  first. To look at: a drop of a big file finishing in seconds with no hash bar;
+  the tray's Manifest line saying "· modified <date>"; ▶ md5 / ▶ xxh3 / ▶ sha256
+  on it; dropping a moved file onto its card → "Update path?" with the
+  before/after table; a re-export over the same name dropped onto its card →
+  "Replace file info?" with the Size / Modified rows marked; ▶ md5 on a record
+  whose file was re-exported since → refused at once, telling you to drop the file
+  onto the record first. Records dropped before this have no date: the dialog says
+  "not recorded" and goes by size alone until they are next replaced, moved, or
+  hashed.
+
 - **Hashes without steps (Nov 10).** ⚙ Table settings → Desktop tools: the "Hashes"
   note under the steps (and its ⚠ form on a table with no Manifest mapped); the
   record tray's ▶ md5 / ▶ sha256 on the Manifest field; a drop of several big

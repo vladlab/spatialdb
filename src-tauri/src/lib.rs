@@ -253,12 +253,13 @@ fn hash_cancel(jobs: State<Jobs>, job: u64) {
 }
 
 /// Allow a BATCH of paths the page holds (records whose files were never dropped
-/// this session — the launch-time fingerprint run) with ONE native dialog listing
+/// this session) with ONE native dialog listing
 /// them, instead of one per file. Rule 3: the dialog is the shell's, the page
 /// cannot draw or answer it. Paths that do not exist are left out of the question
 /// and the answer (the page learns that when it tries to read them). Returns
 /// whether the person said yes; on yes, every listed path is allowed for the
-/// rest of the session.
+/// rest of the session. NO CALLER since Nov 23: it served the automatic fingerprint
+/// run, which is gone (nothing is hashed unasked); kept for the next batch tool.
 #[tauri::command]
 async fn allow_paths(app: AppHandle, allowed: State<'_, Allowed>, paths: Vec<String>, why: String) -> Result<bool, String> {
     let wanted: Vec<PathBuf> = paths.iter().map(PathBuf::from).filter(|p| allowed.check(&p.to_string_lossy()).is_err() && p.exists()).collect();
@@ -288,9 +289,10 @@ pub struct AnalyzedPath { unit: tools::classify::Unit, outputs: serde_json::Map<
 /// applies: unless it is already under something dropped this session, a NATIVE
 /// dialog — one the served page cannot draw or answer — asks the person first, and
 /// a yes allows that path for the rest of the session. Classified fresh, so a
-/// folder of mono WAVs is hashed as the channel set it is.
+/// folder of mono WAVs is hashed as the channel set it is. `expect` (optional): what
+/// the record holds about the file; the call fails before reading when it differs.
 #[tauri::command]
-async fn analyze_path(app: AppHandle, allowed: State<'_, Allowed>, jobs: State<'_, Jobs>, path: String, analyzer: String, job: Option<u64>) -> Result<AnalyzedPath, String> {
+async fn analyze_path(app: AppHandle, allowed: State<'_, Allowed>, jobs: State<'_, Jobs>, path: String, analyzer: String, job: Option<u64>, expect: Option<tools::classify::Expect>) -> Result<AnalyzedPath, String> {
     if allowed.check(&path).is_err() {
         if !Path::new(&path).exists() { return Err(format!("{path}: not found on this computer")); }
         let (a, p, h) = (analyzer.clone(), path.clone(), app.clone());
@@ -306,6 +308,11 @@ async fn analyze_path(app: AppHandle, allowed: State<'_, Allowed>, jobs: State<'
     }
     let root = allowed.check(&path)?;
     let unit = tools::classify::classify(&[root]).into_iter().next().ok_or_else(|| format!("{path}: nothing there to analyze"))?;
+    // `expect`: the size, date and file count the record holds. A file that no
+    // longer has them is not the file the record describes, and a hash of it would
+    // be stored against the wrong one — so say so now, for the price of a stat,
+    // rather than after reading all of it.
+    if let Some(why) = expect.as_ref().and_then(|e| tools::classify::changed(&unit, e)) { return Err(format!("{path}: {why}")); }
     let probed = run_analyzer(app, &jobs, unit.clone(), analyzer, job).await?;
     Ok(AnalyzedPath { unit, outputs: probed.outputs })
 }
