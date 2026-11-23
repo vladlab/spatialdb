@@ -375,6 +375,33 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
   than four stack up; the count badge on the light themes; the full-page note keeps
   its own strip (no corner there) but writes to the same log.
 
+- **Open cards: the dock, lifted cards, the palette (Nov 23).** The record tray is gone;
+  the full record is the record's CARD, bigger (coloured strip with the table name, a
+  title that wraps, rounded, a shadow) — `RecordPanel.vue`, in two places:
+  * THE DOCK (`client/dock.ts`, App.vue `.dock`): the tray's column, now a row of cards.
+    PINS (per browser, `spatialdb.dock.pins`; on every view; across a reload) then one
+    PREVIEW (the record last opened; the next one replaces it). "pin" in a card's strip;
+    × closes (and unpins); Esc closes the preview only. Opening a pinned record makes no
+    second card — it scrolls to it and rings it. The splitter sets the dock's width,
+    which never changes by itself; a card is at least 420px (`CARD_MIN`) or the dock's
+    width, shares spare room, and the row scrolls sideways past that.
+  * LIFTED (`CardExamine.vue`): Space / "Examine" lifts the OPEN card, editable, 460px
+    (`LIFT_W`), as tall as its fields up to the canvas's height. No flip and no "card
+    back" any more (flip stays in the compare pair; Table settings › Card back is
+    removed, `tables.card_back` is left in place, unused). A DOUBLE-click on a pill
+    brings that record up beside it; "pin" sends a card to the dock; "place" puts one
+    that is not on the canvas onto it ("on canvas →" goes to one that is); a card's × or
+    Esc inside it puts that card back; Space / Esc / a click outside put all back. A
+    record with a card in the dock is not lifted as well.
+  * PALETTE: Enter brings the card up (lifted on a canvas; the dock's preview elsewhere,
+    without leaving the view); Ctrl+Enter places / goes to its table; Shift keeps it open.
+  * Block folds in an open card are per TABLE and field now (were per view).
+  Seen once, headless Chromium, dark theme, seed data. For the owner's eyes: the strip's
+  chips on light table colours and both light themes; the dock's floor colour; whether
+  420 / 460 are the right widths; sideways scrolling with a mouse wheel (Shift+wheel);
+  several rich-text editors open at once on WebKit; double-click and Enter on a canvas
+  card still open the dock's preview rather than lifting — say if they should lift.
+
 - **Examine: a line of cards, "reverse", re-fit (Nov 15).** Every lifted card has a
   small "⇄ REVERSE" button in its strip (front and back; the compare pair too). A
   CLICK on a linked record's pill on a lifted card pulls that record's card up at the

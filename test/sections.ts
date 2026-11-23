@@ -157,7 +157,7 @@ async function main() {
       await until(() => labels().length === 2) && labels()[0] === 'zebra master' && labels()[1] === 'zebra workstation', labels().join());
     check('the one from elsewhere is marked', w.findAll('.palette .ptable.far').length === 1);
     await w.find('.palette input.pq').trigger('keydown', { key: 'ArrowDown' });
-    await w.find('.palette input.pq').trigger('keydown', { key: 'Enter' });
+    await w.find('.palette input.pq').trigger('keydown', { key: 'Enter', ctrlKey: true });   // the direct act: go to it / place it
     check('choosing it takes you to where it lives (Everything), not to a picker that cannot show it',
       await until(() => w.find('.record-panel').exists() && w.find('.record-panel .rp-title').text() === 'zebra workstation', 8000)
       && nav.currentSection() === 'all', win.location.hash);
@@ -217,7 +217,7 @@ async function main() {
     await until(() => w.find('.palette').exists());
     await w.find('.palette input.pq').setValue('delivery');
     check('boards are found by the palette like any record', await until(() => w.findAll('.palette .presults li .plabel').some((x: any) => x.text() === 'Duke — delivery')));
-    await w.find('.palette input.pq').trigger('keydown', { key: 'Enter' });
+    await w.find('.palette input.pq').trigger('keydown', { key: 'Enter', ctrlKey: true });   // the direct act: go to it / place it
     const cardNamed2 = (n: string) => w.findAll('.canvas-world .card').find((c: any) => c.find('.card-label').text() === n);
     check('…and placed on another board as a card', await until(() => !!cardNamed2('Duke — delivery')));
     const placedBoard = await untilDb(`select 1 from placements where canvas_id = '${b1}' and record_id = '${b2}'`, (r) => r.length === 1);
@@ -254,9 +254,9 @@ async function main() {
     await w.findAll('.gridview tr.row')[0].find('.expand').trigger('click');
     await until(() => w.find('.record-panel').exists());
     const stageKids = w.find('.stage').element.children;
-    check('the record panel is a TRAY beside the viewport — a sibling, not an overlay inside it',
-      [...stageKids].some((el: any) => el.classList.contains('viewport')) && [...stageKids].some((el: any) => el.classList.contains('record-panel'))
-      && !w.find('.viewport .record-panel').exists() && w.find('.stage .tray-splitter').exists());
+    check('the open record is a card in the DOCK beside the viewport — a sibling, not an overlay inside it',
+      [...stageKids].some((el: any) => el.classList.contains('viewport')) && [...stageKids].some((el: any) => el.classList.contains('dock'))
+      && !w.find('.viewport .record-panel').exists() && w.find('.stage > .dock > .record-panel').exists() && w.find('.stage .tray-splitter').exists());
     await w.find('.record-panel .rp-close').trigger('click');
 
     const tablesBefore = (await pool.query(`select count(*)::int n from tables`)).rows[0].n;

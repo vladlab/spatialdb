@@ -10,12 +10,15 @@
     edit:             the newest records in those tables
     reel 3 prores     all three words, anywhere in the record, any order
 
-  What Enter does depends on where you are, and the footer says so:
+  What Enter does (the owner, Nov 23 2026) — the footer says so:
 
-    on a canvas   place the record at the cursor (or jump to it if it is already
-                  there — a record sits on a canvas once). Shift+Enter places and
-                  KEEPS the palette open, so a board is built in one visit.
-    elsewhere     open the record.
+    Enter         BRING THE CARD UP: on a canvas the record's open card is lifted over
+                  it (from there it can be placed or pinned); elsewhere it opens in the
+                  dock's preview. Either way you stay where you are.
+    Ctrl+Enter    on a canvas, PLACE the record at the cursor (or jump to it if it is
+                  already there — a record sits on a canvas once); elsewhere, GO to the
+                  record in its own table.
+    Shift         with either: keep the palette open, so a board is built in one visit.
 
   Records are searched on the SERVER (GET /api/search): the client holds only the
   tables it has opened, and "cannot find a record in a table I have not visited"
@@ -47,7 +50,7 @@
           <span class="prest">search only this table</span>
         </li>
         <li v-for="(r, j) in results" :key="r.record.id" :class="{ hi: tableHints.length + j === hi }"
-            @mousedown.prevent="choose(r, $event.shiftKey)" @mousemove="hi = tableHints.length + j">
+            @mousedown.prevent="choose(r, $event.shiftKey, $event.ctrlKey || $event.metaKey)" @mousemove="hi = tableHints.length + j">
           <span class="swatch" :style="{ background: colorOf(r.record.table_id) }" />
           <span class="plabel">{{ r.label }}</span>
           <span class="ptable" :class="{ far: preferTables?.size && !preferTables.has(r.record.table_id) }"
@@ -67,8 +70,7 @@
         <span v-else>{{ results.length }} result{{ results.length === 1 ? '' : 's' }}</span>
         <span class="spacer" />
         <span class="keys">
-          <template v-if="canPlace"><b>↵</b> place · <b>⇧↵</b> place, keep open · </template>
-          <template v-else><b>↵</b> open · </template>
+          <b>↵</b> bring up · <b>Ctrl ↵</b> {{ canPlace ? 'place' : 'go to its table' }} · <b>⇧</b> keep open ·{{ ' ' }}
           <b>Tab</b> complete table · <b>Esc</b> close
         </span>
       </div>
@@ -87,7 +89,7 @@ interface Hit { record: RecordRow; label: string; inScope?: boolean }
 
 const props = defineProps<{
   store: Store;
-  /** True on a canvas: Enter places. Otherwise Enter opens. */
+  /** True on a canvas: Ctrl+Enter places. Otherwise Ctrl+Enter goes to the record's table. */
   canPlace: boolean;
   /** Records already on the current canvas — shown as such, and jumped to. */
   placedIds?: Set<string>;
@@ -104,8 +106,8 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   close: [];
-  /** `keepOpen` is Shift+Enter. The parent decides place-vs-jump-vs-open. */
-  choose: [record: RecordRow, keepOpen: boolean];
+  /** `keepOpen` is Shift. `direct` is Ctrl: place it / go to it, rather than bring its card up. The parent does it. */
+  choose: [record: RecordRow, keepOpen: boolean, direct: boolean];
 }>();
 
 const input = ref<HTMLInputElement>();
@@ -165,8 +167,8 @@ function scopeTo(name: string) {
   void nextTick(() => input.value?.focus());
 }
 
-function choose(r: Hit, keepOpen: boolean) {
-  emit('choose', r.record, keepOpen);
+function choose(r: Hit, keepOpen: boolean, direct = false) {
+  emit('choose', r.record, keepOpen, direct);
   if (keepOpen) void nextTick(() => input.value?.select());
 }
 
@@ -186,7 +188,7 @@ function onKey(e: KeyboardEvent) {
       e.preventDefault();
       if (hi.value < tableHints.value.length) return scopeTo(tableHints.value[hi.value].name);
       const r = results.value[hi.value - tableHints.value.length];
-      if (r) choose(r, e.shiftKey);
+      if (r) choose(r, e.shiftKey, e.ctrlKey || e.metaKey);
       return;
     }
   }

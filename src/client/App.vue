@@ -23,7 +23,8 @@
                    wants later, and that design should be free to decide how two views
                    share a screen.)
       viewport     the grid or the canvas
-      record tray  RIGHT, and it takes its own space — it shrinks the viewport
+      the dock     (was: record tray; client/dock.ts — open cards, pins + a preview)
+                   RIGHT, and it takes its own space — it shrinks the viewport
                    rather than floating over it, so the grid's "+" column stays
                    reachable and "fit" fits what you can actually see. It sits UNDER
                    the context bar, not beside it: the stage is a grid whose first
@@ -96,7 +97,7 @@
               <!-- `open-record-id`: the record in the tray — its card (and, in the grid, its
                    row) is marked, so the tray never has to be matched to its record by name. -->
               <CanvasView v-if="view === 'canvas' && canvasId" ref="canvasRef" :key="canvasId" :store="store" :canvas-id="canvasId" :open-record-id="openRecordId"
-                          :drop-target-id="dropTarget?.recordId ?? ''" @open-record="openRecordId = $event" @open-board="openBoard" />
+                          :drop-target-id="dropTarget?.recordId ?? ''" @open-record="openRecordId = $event" @open-board="openBoard" @open-report="openReport" @open-calendar="openCalendar" @pin-record="pinCard" />
               <p v-else-if="view === 'canvas'" class="hint">No canvas open — pick one in the tree, or press + beside “Canvases” to make one.</p>
 
               <!-- Keyed by table so switching tables is a fresh component: scroll
@@ -118,15 +119,20 @@
 
             </div>
 
-            <!-- A TRAY, not a float: a sibling of the view's body in the stage grid, so
-                 opening it makes the body narrower instead of covering its right edge —
-                 and leaves the bars above both of them at full width. -->
-            <template v-if="openRecordId && (view === 'canvas' || view === 'table' || view === 'report' || view === 'calendar')">
+            <!-- THE DOCK (client/dock.ts): the column of OPEN CARDS — the pinned ones, then the
+                 preview (the record just opened). A sibling of the view's body in the stage
+                 grid, as the tray it replaced was: it makes the body narrower instead of
+                 covering its right edge, and leaves the bars above both at full width. Its
+                 width is the user's and never changes by itself; cards that do not fit
+                 scroll sideways inside it. -->
+            <template v-if="dockCards.length && (view === 'canvas' || view === 'table' || view === 'report' || view === 'calendar')">
               <div class="tray-splitter" title="Drag to resize" @pointerdown="startTrayResize" />
-              <!-- `view-key`: what is open behind the tray — a canvas, a table, a report — so a
-                   block field folded here (client/fieldFolds.ts) stays folded on this view only. -->
-              <RecordPanel :store="store" :record-id="openRecordId" :view-key="`${view}:${viewTarget}`" :style="{ width: trayShown + 'px' }"
-                           @close="openRecordId = ''" @open="openRecordId = $event" @open-board="openBoard" @open-report="openReport" @open-calendar="openCalendar" />
+              <div ref="dockRef" class="dock" :style="{ width: trayShown + 'px', '--card-min': Math.max(280, Math.min(CARD_MIN, trayShown - 17)) + 'px' }">
+                <RecordPanel v-for="c in dockCards" :key="c.id" :data-dock="c.id" :class="{ current: c.id === openRecordId && dockCards.length > 1 }"
+                             :store="store" :record-id="c.id" :pinned="c.pinned" pinnable
+                             @close="closeCard(c.id)" @pin="pinCard(c.id)" @unpin="unpinCard(c.id)" @open="openRecordId = $event"
+                             @open-board="openBoard" @open-report="openReport" @open-calendar="openCalendar" />
+              </div>
             </template>
           </div>
         </template>
@@ -204,6 +210,7 @@ import GridView from './components/GridView.vue';
 import ReportView from './components/ReportView.vue';
 import CalendarView from './components/CalendarView.vue';
 import RecordPanel from './components/RecordPanel.vue';
+import { CARD_MIN, dropPins, isPinned, pin, pins, previewId, unpin } from './dock';
 import CommandPalette from './components/CommandPalette.vue';
 import type { RecordRow } from './state';
 import { useSchemaActions } from './schemaActions';
@@ -256,6 +263,46 @@ onMounted(() => {
 });
 onUnmounted(() => stageWatch?.disconnect());
 const trayShown = computed(() => stageWidth.value ? Math.min(trayWidth.value, Math.max(320, stageWidth.value - BODY_MIN)) : trayWidth.value);
+/* ── the dock's cards (client/dock.ts) ─────────────────────────────────────
+   Pins first, in the order they were pinned; the preview last, at the right — so
+   pinning the preview changes its button and nothing else, and a new preview arrives
+   where the old one was. A pin whose record is not here yet (its table is still
+   loading after a reload) simply is not drawn yet. */
+const dockRef = ref<HTMLElement | null>(null);
+// The PREVIEW (`previewId`, client/dock.ts): the record last opened that is not pinned. Opening a pinned
+// record makes that card current and leaves the preview be — nothing vanishes.
+const dockCards = computed(() => {
+  const out = pins.value.filter((p) => store.state.records.has(p.id)).map((p) => ({ id: p.id, pinned: true }));
+  if (previewId.value && !isPinned(previewId.value)) out.push({ id: previewId.value, pinned: false });
+  return out;
+});
+function pinCard(id: string) {
+  const rec = store.state.records.get(id);
+  if (rec) pin(id, rec.table_id);
+}
+/** Unpinned, a card is the preview again (it does not vanish under the pointer): the next record opened replaces it. */
+function unpinCard(id: string) { unpin(id); previewId.value = id; openRecordId.value = id; }
+function closeCard(id: string) {
+  unpin(id);
+  if (previewId.value === id) previewId.value = '';
+  if (openRecordId.value === id) openRecordId.value = '';
+}
+// A pin's table, loaded when the app is up: the record may live in a table nobody has opened.
+watch(() => pins.value.map((p) => p.table).filter((t) => store.state.tables.has(t)).join(','), (joined) => { for (const t of new Set(joined.split(',').filter(Boolean))) void store.loadTable(t); }, { immediate: true });
+// A pinned record that is GONE (its table is fully here and it is not in it) leaves the dock.
+watch(() => pins.value.map((p) => `${store.tableLoads.get(p.table)?.state}:${store.state.records.has(p.id)}`).join(), () => {
+  dropPins((id) => { const p = pins.value.find((x) => x.id === id); return !!p && store.tableLoads.get(p.table)?.state === 'loaded' && !store.state.records.has(id); });
+});
+// The record just opened is SHOWN: the dock scrolls to its card, pinned or preview.
+watch(openRecordId, (id) => {
+  if (!id) { previewId.value = ''; return; }
+  if (!isPinned(id)) previewId.value = id;
+  void nextTick(() => {
+    const el = [...(dockRef.value?.children ?? [])].find((c) => (c as HTMLElement).dataset?.dock === id) as HTMLElement | undefined;
+    if (typeof el?.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
+});
+
 function startTrayResize(e: PointerEvent) {
   e.preventDefault();
   const start = trayWidth.value, x0 = e.clientX;
@@ -529,20 +576,30 @@ const paletteOpen = ref(false);
 const canvasRef = ref<InstanceType<typeof CanvasView> | null>(null);
 
 function closePalette() { paletteOpen.value = false; }
-function onPaletteChoose(rec: RecordRow, keepOpen: boolean) {
-  if (view.value === 'canvas' && canvasRef.value) {
-    canvasRef.value.placeOrJump(rec);
-  } else {
-    // Not on a canvas: go to the record. Its table becomes the open one, so the
-    // grid behind the panel is the grid the record lives in.
-    store.adopt([rec]);
-    // A hit from another section: go where it lives rather than show a table the
-    // current section's picker does not list.
+function onPaletteChoose(rec: RecordRow, keepOpen: boolean, direct: boolean) {
+  const onCanvas = view.value === 'canvas' && !!canvasRef.value;
+  // The record may be in a table this client has never opened: it is adopted (the
+  // card can draw at once) and its table walked, so its links and lookups follow.
+  store.adopt([rec]);
+  void store.loadTable(rec.table_id);
+  if (direct && onCanvas) {
+    canvasRef.value!.placeOrJump(rec);
+  } else if (direct) {
+    // GO to the record: its table becomes the open one, so the grid behind its card is
+    // the grid it lives in. A hit from another section: go where it lives rather than
+    // show a table the current section's picker does not list.
     if (section.value && !section.value.table_ids.includes(rec.table_id)) sectionKey.value = 'all';
     if (sectionKey.value === null) sectionKey.value = 'all';
     tableId.value = rec.table_id;
     view.value = 'table';
     openRecordId.value = rec.id;
+  } else if (onCanvas) {
+    canvasRef.value!.lift(rec);          // BRING IT UP: lifted over the canvas, to look, edit, place or pin
+  } else if (sectionKey.value === null) {
+    // Home has no dock to bring a card up in: go to the record, as before.
+    sectionKey.value = 'all'; tableId.value = rec.table_id; view.value = 'table'; openRecordId.value = rec.id;
+  } else {
+    openRecordId.value = rec.id;         // …or in the dock's preview; you stay on the view you are on
   }
   if (!keepOpen) closePalette();
 }
@@ -870,7 +927,17 @@ body {
 .context-bar-2 { grid-row: 2; grid-column: 1 / -1; min-width: 0; }
 .stage-body { grid-row: 3; grid-column: 1; min-width: 0; min-height: 0; }
 .stage > .tray-splitter { grid-row: 3; grid-column: 2; }
-.stage > .record-panel { grid-row: 3; grid-column: 3; }
+.stage > .dock { grid-row: 3; grid-column: 3; }
+/* THE DOCK: open cards side by side on a recessed floor. Each card is at least
+   `--card-min` wide and shares what room there is; more cards than fit scroll sideways
+   (the bar is the dock's own, at its foot — a card scrolls up and down inside itself). */
+.dock {
+  display: flex; gap: 8px; padding: 8px; box-sizing: border-box; min-height: 0; min-width: 0;
+  overflow-x: auto; overflow-y: hidden; background: var(--bg-well); scrollbar-width: thin;
+}
+.dock > .record-panel { flex: 1 0 var(--card-min); min-width: var(--card-min); max-width: none; }
+/* Among several, the card of the record just opened wears the accent — as its row and its canvas card do. */
+.dock > .record-panel.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--card-shadow); }
 .tray-splitter { width: 5px; cursor: col-resize; background: var(--border-main); }
 .tray-splitter:hover { background: var(--accent); }
 .panel { padding: 16px; overflow: auto; flex: 1; }

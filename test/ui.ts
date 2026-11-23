@@ -1021,7 +1021,8 @@ async function main() {
   const palInput = () => pal().find('input.pq');
   const palRows = () => pal().findAll('.presults li');
   const palLabels = () => palRows().map((r) => r.find('.plabel').text());
-  const palKey = (k: string, shiftKey = false) => palInput().trigger('keydown', { key: k, shiftKey });
+  // Ctrl+Enter is the DIRECT act — place it / go to it (Nov 23 2026: plain Enter brings the card up; test/examine.ts E7).
+  const palKey = (k: string, shiftKey = false) => palInput().trigger('keydown', { key: k, shiftKey, ctrlKey: k === 'Enter' });
   const ctrlK = () => win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));
 
   ctrlK();
@@ -1038,7 +1039,7 @@ async function main() {
   check('"file:reel_2" fuzzy-matches the Files table and searches inside it',
     await until(() => palLabels().join() === 'reel_2'), palLabels().join());
   await palKey('Enter');
-  check('Enter (not on a canvas) goes to the record: its table opens, and the panel',
+  check('Ctrl+Enter (not on a canvas) goes to the record: its table opens, and the panel',
     await until(() => !pal().exists() && panel().exists() && panel().find('.rp-title').text() === 'reel_2')
     && nav.currentTable() === filesId, panel().exists() ? panel().find('.rp-title').text() : 'no panel');
   await panel().find('.rp-close').trigger('click');
@@ -1050,11 +1051,11 @@ async function main() {
   await palInput().setValue('show:alpha');
   await until(() => palRows().length === 1);
   await palKey('Enter', true);
-  check('on a canvas, Shift+Enter PLACES the record and keeps the palette open',
+  check('on a canvas, Ctrl+Shift+Enter PLACES the record and keeps the palette open',
     await until(() => cardsNow().length === cardsBeforePal + 1) && pal().exists(), `${cardsNow().length} cards, palette ${pal().exists()}`);
   await palInput().setValue('reel_2');
   await until(() => palLabels().includes('reel_2'));
-  await palRows()[palLabels().indexOf('reel_2')].trigger('mousedown');
+  await palRows()[palLabels().indexOf('reel_2')].trigger('mousedown', { ctrlKey: true });
   check('a plain pick places and closes', await until(() => cardsNow().length === cardsBeforePal + 2 && !pal().exists()));
   // reel_2 → Alpha is a link. Neither record came from this canvas's scene, so the
   // link was not in memory; it has to be fetched once the placements have landed.

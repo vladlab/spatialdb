@@ -21,14 +21,26 @@
 <template>
   <aside v-if="record" class="record-panel" tabindex="-1" @keydown.stop="onPanelKey"
          @pointerdown.stop @dblclick.stop @wheel.stop @contextmenu.stop>
-    <header class="rp-head" :style="{ borderTopColor: tableColor }">
-      <span class="rp-table">{{ table?.name ?? 'record' }}</span>
-      <h2 class="rp-title" :class="{ empty: !title }">{{ title || 'untitled' }}</h2>
-      <button v-if="table?.kind === 'canvas'" class="rp-open-board" title="This record is a canvas — open it" @click="$emit('open-board', recordId)">▦ open board</button>
-      <button v-if="table?.kind === 'report'" class="rp-open-board rp-open-report" title="This record is a report — open it" @click="$emit('open-report', recordId)">▤ open report</button>
-      <button v-if="table?.kind === 'calendar'" class="rp-open-board rp-open-calendar" title="This record is a calendar — open it" @click="$emit('open-calendar', recordId)">▥ open calendar</button>
-      <button v-if="table?.kind !== 'junction'" class="rp-dup" title="Duplicate this record (its values and links; created now, by you)" @click="duplicate">⧉ duplicate</button>
-      <button class="rp-close" title="Close (Esc)" @click="$emit('close')">×</button>
+    <!-- THE HEAD OF A CARD (the owner, Nov 23 2026): the open record is the record's card,
+         only bigger — the table's coloured strip with its name, as on a canvas card, then
+         the title, which wraps. In the strip: "place" (a lifted card that is not on the
+         canvas yet), "pin" (keep this card in the dock) and ×. -->
+    <header class="rp-head">
+      <div class="rp-strip" :style="{ background: tableColor, color: textOn(tableColor) }">
+        <span class="rp-table">{{ table?.name ?? 'record' }}</span>
+        <button v-if="place" class="rp-chip rp-place" :title="place === 'show' ? 'Put the cards down and go to this one on the canvas' : 'Put this record on the canvas'" @click="$emit('place')">{{ place === 'show' ? 'on canvas →' : 'place' }}</button>
+        <button v-if="pinnable" class="rp-chip rp-pin" :class="{ on: pinned }" :aria-pressed="!!pinned"
+                :title="pinned ? 'Pinned: it stays in the dock, on every view, until closed. Click to unpin' : 'Pin: keep this card in the dock at the right, on every view'"
+                @click="pinned ? $emit('unpin') : $emit('pin')">{{ pinned ? '● pinned' : 'pin' }}</button>
+        <button class="rp-close" :title="pinned ? 'Close (unpins it)' : 'Close (Esc)'" @click="$emit('close')">×</button>
+      </div>
+      <div class="rp-headline">
+        <h2 class="rp-title" :class="{ empty: !title }">{{ title || 'untitled' }}</h2>
+        <button v-if="table?.kind === 'canvas'" class="rp-open-board" title="This record is a canvas — open it" @click="$emit('open-board', recordId)">▦ open board</button>
+        <button v-if="table?.kind === 'report'" class="rp-open-board rp-open-report" title="This record is a report — open it" @click="$emit('open-report', recordId)">▤ open report</button>
+        <button v-if="table?.kind === 'calendar'" class="rp-open-board rp-open-calendar" title="This record is a calendar — open it" @click="$emit('open-calendar', recordId)">▥ open calendar</button>
+        <button v-if="table?.kind !== 'junction'" class="rp-dup" title="Duplicate this record (its values and links; created now, by you)" @click="duplicate">⧉ duplicate</button>
+      </div>
     </header>
 
     <!-- COMPARISONS (COMPARE-BRIEF.md): for each comparing link this record has, and
@@ -272,6 +284,7 @@ import { beginRecordDrag } from '../recordDrag';
 import { compareOf, seedValues } from '../../contract/compare';
 import { SYSTEM_FIELD_TYPES, formatCreated, isSystemKey } from '../../contract/systemFields';
 import SideBySide from './SideBySide.vue';
+import { textOn } from '../colorText';
 import { isCanvasNote } from '../../contract/richtext';
 import JunctionTable from './JunctionTable.vue';
 import { fieldSectionsOf, groupFields } from '../../contract/fieldSections';
@@ -292,8 +305,18 @@ const reveal = (path: string) => invoke<string>('reveal', { path })
   .then((r) => { if (r === 'folder') notice('The file is not there any more — its folder was opened.', 'info'); })
   .catch((e) => notice(String(e), 'error'));
 
-const props = defineProps<{ store: Store; recordId: string; /** What is open behind the tray (App.vue): the key a field fold is remembered under. */ viewKey?: string }>();
-const emit = defineEmits<{ close: []; open: [recordId: string]; 'open-board': [recordId: string]; 'open-report': [recordId: string]; 'open-calendar': [recordId: string] }>();
+const props = defineProps<{
+  store: Store; recordId: string;
+  /** Unused since Nov 23 2026: a block's fold is remembered per TABLE now (a pinned card follows you between views). Kept so callers need not change. */
+  viewKey?: string;
+  /** This card is pinned in the dock (client/dock.ts): Esc does not close it; its × unpins. */
+  pinned?: boolean;
+  /** Offer the pin button — everywhere a card can be pinned from. */
+  pinnable?: boolean;
+  /** A LIFTED card on a canvas: offer to place it there ('place'), or to go to where it already is ('show'). */
+  place?: 'place' | 'show';
+}>();
+const emit = defineEmits<{ close: []; open: [recordId: string]; 'open-board': [recordId: string]; 'open-report': [recordId: string]; 'open-calendar': [recordId: string]; pin: []; unpin: []; place: [] }>();
 const store = props.store;
 // Declared FIRST: an `immediate` watcher below calls into it during setup, and a
 // `const` used before its declaration line is a runtime error typecheck cannot see.
@@ -367,14 +390,16 @@ function summaryOf(f: FieldRow): string {
   return isEmpty(v) ? '' : String(v).split('\n', 1)[0];
 }
 /** A block folded to its line — this person's, for the view behind the tray (client/fieldFolds.ts). */
-const folded = (f: FieldRow) => isFieldFolded(props.viewKey ?? '', f.id);
+/** Folds are per browser, per TABLE and field: `table:<id>` is also what the grid's view key was, so folds made beside a grid carry over. */
+const foldKey = computed(() => `table:${record.value?.table_id ?? ''}`);
+const folded = (f: FieldRow) => isFieldFolded(foldKey.value, f.id);
 function summaryClick(f: FieldRow) {
-  if (folded(f)) setFieldFolded(props.viewKey ?? '', f.id, false); else startEdit(f);
+  if (folded(f)) setFieldFolded(foldKey.value, f.id, false); else startEdit(f);
 }
 function toggleFold(f: FieldRow) {
   const now = !folded(f);
   if (now && editingId.value === f.id) editingId.value = '';   // its editor is about to go
-  setFieldFolded(props.viewKey ?? '', f.id, now);
+  setFieldFolded(foldKey.value, f.id, now);
 }
 
 /** The one label-cell width for every row on this record: the widest field name
@@ -529,7 +554,7 @@ const EDITABLE = (f: FieldRow) => !READONLY(f) && !['checkbox', 'attachment', 'r
 
 function startEdit(f: FieldRow) {
   if (!EDITABLE(f) || editingId.value === f.id) return;
-  if (!isRow(f) && folded(f)) setFieldFolded(props.viewKey ?? '', f.id, false);   // its editor lives under the row
+  if (!isRow(f) && folded(f)) setFieldFolded(foldKey.value, f.id, false);   // its editor lives under the row
   editingId.value = f.id;
 }
 
@@ -545,7 +570,8 @@ function onDone(exit: EditExit) {
 }
 
 function onPanelKey(e: KeyboardEvent) {
-  if (e.key === 'Escape' && !editingId.value) emit('close');
+  // Esc puts the PREVIEW away. A pinned card stays until its own ×: pinned means "do not lose this".
+  if (e.key === 'Escape' && !editingId.value && !props.pinned) emit('close');
 }
 
 function setValue(key: string, value: unknown) {
@@ -593,27 +619,33 @@ watch(() => props.recordId, () => {
 
 <style scoped>
 .record-panel {
-  /* A TRAY: a cell of App's stage grid, beside the view's BODY and under its bars
-     (App.vue sets its width and the splitter beside it resizes it). It used to be
-     `position: absolute` over the right edge, where it covered the grid's "+" column
-     and made "fit" fit a viewport you could not fully see. */
-  position: relative; min-width: 320px; max-width: 70vw; min-height: 0;
+  /* AN OPEN CARD: the record's full, editable view, in the language of its canvas card —
+     a coloured strip, rounded corners, a shadow. It stands in the dock (App.vue, beside
+     the view's body, never over it) or in the line of lifted cards (CardExamine.vue);
+     whichever holds it sets its width, and it scrolls inside itself. */
+  position: relative; min-width: 280px; max-width: 70vw; min-height: 0; box-sizing: border-box;
+  border: 1px solid var(--card-border); border-radius: 8px; overflow: hidden; box-shadow: var(--card-shadow);
   display: flex; flex-direction: column; outline: none;
   background: var(--bg-app); font-size: 13px;
 }
-.rp-head {
-  flex: none; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center;
-  padding: 10px 12px; border-top: 3px solid; border-bottom: 1px solid var(--border-main); background: var(--bg-chrome);
-}
-.rp-table { grid-column: 1; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
-.rp-title { grid-column: 1; margin: 0; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-head { flex: none; border-bottom: 1px solid var(--border-main); background: var(--bg-chrome); }
+/* The strip: the canvas card's own (RecordCard .card-head), a little taller for its buttons. */
+.rp-strip { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 4px 0 10px; color: var(--card-head-text); }
+.rp-table { flex: 1; min-width: 0; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-chip { flex: none; height: 18px; display: inline-flex; align-items: center; padding: 0 8px; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 9px;
+  font: inherit; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1; cursor: pointer; opacity: 0.8; }
+.rp-chip:hover { opacity: 1; }
+/* Pinned: full strength and a doubled edge, with a dot in its text — never colour alone. */
+.rp-pin.on { opacity: 1; box-shadow: inset 0 0 0 1px currentColor; }
+.rp-close { flex: none; background: none; border: none; color: inherit; font-size: 18px; line-height: 1; padding: 0 6px; cursor: pointer; opacity: 0.75; }
+.rp-close:hover { opacity: 1; }
+.rp-headline { display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px 9px; }
+/* The title WRAPS, as a card's does (a filename breaks anywhere): the whole name is the point of opening it. */
+.rp-title { flex: 1; min-width: 0; margin: 0; font-size: 16px; line-height: 1.25; font-weight: 600; overflow-wrap: anywhere; }
 .rp-title.empty { color: var(--text-faint); font-weight: 400; font-style: italic; }
-.rp-head { grid-template-columns: 1fr auto auto auto !important; }
-.rp-open-board { grid-row: 1 / span 2; background: none; border: 1px solid var(--border-main); color: var(--accent); border-radius: 4px; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12px; }
-.rp-dup { grid-row: 1 / span 2; justify-self: end; background: none; border: 1px solid var(--border-main); border-radius: 4px; color: var(--text-secondary); cursor: pointer; font: inherit; font-size: 11px; padding: 1px 7px; }
+.rp-open-board { flex: none; background: none; border: 1px solid var(--border-main); color: var(--accent); border-radius: 4px; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12px; }
+.rp-dup { flex: none; background: none; border: 1px solid var(--border-main); border-radius: 4px; color: var(--text-secondary); cursor: pointer; font: inherit; font-size: 11px; padding: 1px 7px; }
 .rp-dup:hover { color: var(--text-primary); border-color: var(--text-muted); }
-.rp-close { grid-column: 4; grid-row: 1 / span 2; background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; }
-.rp-close:hover { color: var(--text-primary); }
 
 .rp-body { flex: 1; overflow-y: auto; padding: 8px 10px; }
 /* A WELL, as in the tree (NavTree.vue): recessed, an accent rule down the left. */
