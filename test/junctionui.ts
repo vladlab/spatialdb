@@ -319,9 +319,12 @@ async function main() {
     await jrow(1).find('.act.del').trigger('click');
     check('× at a row\'s end deletes that pair', (await untilDb(`select count(*)::int n from records where id = '${p2}'`, (r) => r[0].n === 0, 4000))[0].n === 0 && await until(() => jt().findAll('.jt-row').length === 1));
     await jrow(0).find('td.other .pill').trigger('dblclick');
+    // A record opened FROM an open card comes up BESIDE it (a line of cards); the first is put down so the checks below read the new one.
+    await until(() => w.findAll('.record-panel').length === 2); await w.findAll('.record-panel')[0].find('.rp-close').trigger('click');
     check('a double-click on the pill opens the OTHER record', await until(() => w.find('.record-panel .rp-title').text() === 'Texted Master'), w.find('.record-panel .rp-title').text());
     check('…where the same pair is a row too, seen from its other end', await until(() => jt().exists() && jt().findAll('th')[0].text() === 'File' && jrow(0).find('td.other .pill').text().includes('a.mov')), jt().exists() ? jt().html().slice(0, 200) : 'no table');
     await jrow(0).find('.act.open').trigger('click');
+    await until(() => w.findAll('.record-panel').length === 2); await w.findAll('.record-panel')[0].find('.rp-close').trigger('click');
     check('⤢ at the row\'s end opens the pair row itself', await until(() => w.find('.record-panel .rp-table').text() === 'Delivery'), w.find('.record-panel .rp-table').text());
     await sleep(100);
   } finally {

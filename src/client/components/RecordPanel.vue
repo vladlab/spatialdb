@@ -24,15 +24,20 @@
     <!-- THE HEAD OF A CARD (the owner, Nov 23 2026): the open record is the record's card,
          only bigger — the table's coloured strip with its name, as on a canvas card, then
          the title, which wraps. In the strip: "place" (a lifted card that is not on the
-         canvas yet), "pin" (keep this card in the dock) and ×. -->
+         canvas yet), "hand" (keep it in the hand), "pin" (float it at the right) and ×. -->
     <header class="rp-head">
-      <div class="rp-strip" :style="{ background: tableColor, color: textOn(tableColor) }">
+      <!-- In a LIFTED card the strip is also the handle: dragged down onto the hand (the strip
+           along the bottom), the record is kept there. -->
+      <div class="rp-strip" :class="{ grab: pinnable && !pinned }" :style="{ background: tableColor, color: textOn(tableColor) }" @pointerdown="onStripDown">
         <span class="rp-table">{{ table?.name ?? 'record' }}</span>
         <button v-if="place" class="rp-chip rp-place" :title="place === 'show' ? 'Put the cards down and go to this one on the canvas' : 'Put this record on the canvas'" @click="$emit('place')">{{ place === 'show' ? 'on canvas →' : 'place' }}</button>
+        <button v-if="pinnable && !pinned" class="rp-chip rp-hand" :class="{ on: held }" :aria-pressed="held"
+                :title="held ? 'In your hand, the strip along the bottom. Click to take it out' : 'Keep this record in your hand, the strip along the bottom — or drag this card down onto it'"
+                @click="toggleHand">{{ held ? '◆ in hand' : 'hand' }}</button>
         <button v-if="pinnable" class="rp-chip rp-pin" :class="{ on: pinned }" :aria-pressed="!!pinned"
-                :title="pinned ? 'Pinned: it stays in the dock, on every view, until closed. Click to unpin' : 'Pin: keep this card in the dock at the right, on every view'"
+                :title="pinned ? 'Pinned: it floats here, on every view. Click to send it back to your hand' : 'Pin: float this card at the right, on every view, and keep it in your hand'"
                 @click="pinned ? $emit('unpin') : $emit('pin')">{{ pinned ? '● pinned' : 'pin' }}</button>
-        <button class="rp-close" :title="pinned ? 'Close (unpins it)' : 'Close (Esc)'" @click="$emit('close')">×</button>
+        <button class="rp-close" :title="pinned ? 'Back to your hand' : 'Put this card down (Esc)'" @click="$emit('close')">×</button>
       </div>
       <div class="rp-headline">
         <h2 class="rp-title" :class="{ empty: !title }">{{ title || 'untitled' }}</h2>
@@ -285,6 +290,7 @@ import { compareOf, seedValues } from '../../contract/compare';
 import { SYSTEM_FIELD_TYPES, formatCreated, isSystemKey } from '../../contract/systemFields';
 import SideBySide from './SideBySide.vue';
 import { textOn } from '../colorText';
+import { handDrag, hold, inHand, toggleHeld } from '../hand';
 import { isCanvasNote } from '../../contract/richtext';
 import JunctionTable from './JunctionTable.vue';
 import { fieldSectionsOf, groupFields } from '../../contract/fieldSections';
@@ -309,15 +315,42 @@ const props = defineProps<{
   store: Store; recordId: string;
   /** Unused since Nov 23 2026: a block's fold is remembered per TABLE now (a pinned card follows you between views). Kept so callers need not change. */
   viewKey?: string;
-  /** This card is pinned in the dock (client/dock.ts): Esc does not close it; its × unpins. */
+  /** This card is PINNED (client/hand.ts), floating at the right: Esc does not close it; its × sends it back to the hand. */
   pinned?: boolean;
-  /** Offer the pin button — everywhere a card can be pinned from. */
+  /** Offer the hand and pin chips — everywhere a card can be kept from. */
   pinnable?: boolean;
   /** A LIFTED card on a canvas: offer to place it there ('place'), or to go to where it already is ('show'). */
   place?: 'place' | 'show';
 }>();
 const emit = defineEmits<{ close: []; open: [recordId: string]; 'open-board': [recordId: string]; 'open-report': [recordId: string]; 'open-calendar': [recordId: string]; pin: []; unpin: []; place: [] }>();
 const store = props.store;
+
+/* ── the hand (client/hand.ts) ─────────────────────────────────────────── */
+const held = computed(() => inHand(props.recordId));
+function toggleHand() { const r = record.value; if (r) toggleHeld(r.id, r.table_id); }
+/** A lifted card's strip, dragged: a stub follows the pointer, and let go over the hand the record is kept there and the card put down. A press that does not travel is nothing (the chips have their own clicks). */
+function onStripDown(e: PointerEvent) {
+  if (!props.pinnable || props.pinned || e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
+  const x0 = e.clientX, y0 = e.clientY, id = props.recordId;
+  const overHand = (x: number, y: number) => {
+    const r = document.querySelector('.hand')?.getBoundingClientRect();
+    return !!r && x >= r.left && x <= r.right && y >= r.top - 24 && y <= r.bottom;
+  };
+  const move = (ev: PointerEvent) => {
+    if (!handDrag.value && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
+    handDrag.value = { id, x: ev.clientX, y: ev.clientY, over: overHand(ev.clientX, ev.clientY) };
+  };
+  const up = (ev: PointerEvent) => {
+    window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
+    const d = handDrag.value;
+    handDrag.value = null;
+    if (!d || ev.type === 'pointercancel' || !overHand(ev.clientX, ev.clientY)) return;
+    const r = record.value;
+    if (r) { hold(r.id, r.table_id); emit('close'); }
+  };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+}
+
 // Declared FIRST: an `immediate` watcher below calls into it during setup, and a
 // `const` used before its declaration line is a runtime error typecheck cannot see.
 const derived = useDerived(store);
@@ -620,8 +653,8 @@ watch(() => props.recordId, () => {
 <style scoped>
 .record-panel {
   /* AN OPEN CARD: the record's full, editable view, in the language of its canvas card —
-     a coloured strip, rounded corners, a shadow. It stands in the dock (App.vue, beside
-     the view's body, never over it) or in the line of lifted cards (CardExamine.vue);
+     a coloured strip, rounded corners, a shadow. It is PINNED (App.vue `.pins`, floating over the right of
+     the view's body) or UP in the line of lifted cards (CardExamine.vue) — client/hand.ts;
      whichever holds it sets its width, and it scrolls inside itself. */
   position: relative; min-width: 280px; max-width: 70vw; min-height: 0; box-sizing: border-box;
   border: 1px solid var(--card-border); border-radius: 8px; overflow: hidden; box-shadow: var(--card-shadow);
@@ -636,7 +669,8 @@ watch(() => props.recordId, () => {
   font: inherit; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1; cursor: pointer; opacity: 0.8; }
 .rp-chip:hover { opacity: 1; }
 /* Pinned: full strength and a doubled edge, with a dot in its text — never colour alone. */
-.rp-pin.on { opacity: 1; box-shadow: inset 0 0 0 1px currentColor; }
+.rp-pin.on, .rp-hand.on { opacity: 1; box-shadow: inset 0 0 0 1px currentColor; }
+.rp-strip.grab { cursor: grab; touch-action: none; }
 .rp-close { flex: none; background: none; border: none; color: inherit; font-size: 18px; line-height: 1; padding: 0 6px; cursor: pointer; opacity: 0.75; }
 .rp-close:hover { opacity: 1; }
 .rp-headline { display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px 9px; }

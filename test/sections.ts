@@ -254,9 +254,9 @@ async function main() {
     await w.findAll('.gridview tr.row')[0].find('.expand').trigger('click');
     await until(() => w.find('.record-panel').exists());
     const stageKids = w.find('.stage').element.children;
-    check('the open record is a card in the DOCK beside the viewport — a sibling, not an overlay inside it',
-      [...stageKids].some((el: any) => el.classList.contains('viewport')) && [...stageKids].some((el: any) => el.classList.contains('dock'))
-      && !w.find('.viewport .record-panel').exists() && w.find('.stage > .dock > .record-panel').exists() && w.find('.stage .tray-splitter').exists());
+    check('the open record is a card lifted OVER the body of the view — a layer of the stage, not something inside the view',
+      [...stageKids].some((el: any) => el.classList.contains('viewport')) && [...stageKids].some((el: any) => el.classList.contains('lift-layer'))
+      && !w.find('.viewport .record-panel').exists() && w.find('.stage > .lift-layer .record-panel').exists());
     await w.find('.record-panel .rp-close').trigger('click');
 
     const tablesBefore = (await pool.query(`select count(*)::int n from tables`)).rows[0].n;
@@ -289,7 +289,7 @@ async function main() {
       // Comments OUT first: the note in App.vue explaining this very bug mentions
       // `.workspace`, and the first version of this check matched that and passed.
       .replace(/\/\*[\s\S]*?\*\//g, '');
-    const LAYOUT = ['app', 'topbar', 'body', 'main', 'stage', 'viewport', 'tray-splitter',
+    const LAYOUT = ['app', 'topbar', 'body', 'main', 'stage', 'viewport', 'pins', 'lift-layer',
       'drag-ghost', 'canvas-view', 'canvas-container', 'canvas-controls', 'canvas-world', 'tree', 'tree-scroll', 'tree-foot', 'well', 'record-panel', 'gridview', 'scroller', 'home',
       // the steady editor: its fixed-height body and the wrapper that holds its place
       'rte', 'rte-bar', 'rte-body', 'rp-rich',

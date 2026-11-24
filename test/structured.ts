@@ -68,6 +68,8 @@ async function main() {
     await openRecord('ep101.mov');
     // In the tray a pill is DRAGGABLE (onto a canvas); a double-click walks the tray.
     await pField('Targets').find('.pill').trigger('dblclick');
+    // A record opened FROM an open card comes up BESIDE it (a line of cards); the first is put down so the checks below read the new one.
+    await until(() => w.findAll('.record-panel').length === 2); await w.findAll('.record-panel')[0].find('.rp-close').trigger('click');
     check('a double-click on a pill INSIDE the tray walks the tray to the linked record — and does not open the field\'s picker', !w.find('.picker').exists() && await until(() => w.find('.record-panel .rp-title').text() === 'Network master'));
     await w.find('.record-panel .rp-close').trigger('click');
 

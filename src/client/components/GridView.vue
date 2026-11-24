@@ -256,7 +256,10 @@
                 :card-fields="shown.filter((f) => f.id !== primaryField?.id)" :primary="primaryField" :open-id="openRecordId"
                 @open-record="$emit('open-record', $event)" @create="createInColumn" />
     <div v-else ref="scroller" class="scroller stage-body" tabindex="0" @scroll.passive="onScroll" @keydown="onGridKey" @copy="onCopy" @paste="onPaste">
-      <table class="grid">
+      <!-- `padRight`: PINNED cards float over the view's right edge (App.vue). The table gets that
+           much see-through border, so its last column and the add-field column can always be
+           scrolled clear of them — the view is covered, never unreachable. -->
+      <table class="grid" :style="padRight ? { borderRight: `${padRight}px solid transparent` } : undefined">
         <thead>
           <tr>
             <th class="num pin">#</th>
@@ -492,6 +495,7 @@
       <div class="ctx-head">{{ rowMenu.ids.length > 1 ? `${rowMenu.ids.length} records` : labelFor(rowMenu.id) || 'untitled' }}</div>
       <hr />
       <button class="open-record" @click="rowMenuDo((m) => emit('open-record', m.id))">{{ rowMenu.ids.length > 1 ? `Open “${labelFor(rowMenu.id) || 'untitled'}”` : 'Open record' }}</button>
+      <button class="to-hand" title="Keep track of these in the hand, the strip along the bottom — Ctrl+H" @click="rowMenuDo((m) => toggleHand(m.ids))">{{ rowMenu.ids.every((id) => inHand(id)) ? 'Remove from hand' : 'To hand' }}</button>
       <button v-if="isBoards" class="open-board-item" @click="rowMenuDo((m) => emit('open-board', m.id))">▦ Open this board</button>
       <button v-if="isReports" class="open-report-item" @click="rowMenuDo((m) => emit('open-report', m.id))">▤ Open this report</button>
       <button v-if="isCalendars" class="open-calendar-item" @click="rowMenuDo((m) => emit('open-calendar', m.id))">▥ Open this calendar</button>
@@ -519,6 +523,7 @@ import { rectVp, toVp, vp } from '../uiScale';
 import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { SCOPE } from '../scope';
 import type { Store } from '../store';
+import { inHand, toggleHeld } from '../hand';
 import { fieldsOf, hasCanvases, recordsOf, viewsOf, type FieldRow } from '../state';
 import {
   applyView, quickSearch, ViewConfig, EMPTY_VIEW,
@@ -563,6 +568,8 @@ const props = defineProps<{
   openRecordId?: string;
   /** The row a FILE is being dragged over (App.vue, from the shell's drag stream), or '' — it gets the drop ring. */
   dropTargetId?: string;
+  /** Width, in px, of the pinned cards floating over the right edge: scroll room so nothing stays under them. */
+  padRight?: number;
 }>();
 const emit = defineEmits<{ 'open-record': [recordId: string]; 'open-board': [recordId: string]; 'open-report': [recordId: string]; 'open-calendar': [recordId: string] }>();
 const store = props.store;
@@ -976,6 +983,11 @@ function onRowMenu(id: string, e: MouseEvent) {
   });
 }
 /** Close the menu, THEN act — handing the action the menu as it was (as the canvas's `menuDo` does, and for its reason). */
+/** Into the hand (client/hand.ts), or — when all of them are there — out of it. */
+function toggleHand(ids: string[]) {
+  const allIn = ids.length > 0 && ids.every((id) => inHand(id));
+  for (const id of ids) if (allIn || !inHand(id)) toggleHeld(id, props.tableId);
+}
 function rowMenuDo(fn: (m: RowMenu) => void) {
   const m = rowMenu.value;
   rowMenu.value = null;
@@ -1364,6 +1376,12 @@ function onGridKey(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
     const ids = rowSel.size ? rows.value.filter((r) => rowSel.has(r.id)).map((r) => r.id) : sel.value ? [sel.value.rec] : [];
     if (ids.length) { e.preventDefault(); duplicateRows(ids); }
+    return;
+  }
+  // Ctrl+H: the selected rows (or the selected cell's row) into the hand — or out of it, when all are in. (A bare H types into the cell.)
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'h') {
+    const ids = rowSel.size ? rows.value.filter((r) => rowSel.has(r.id)).map((r) => r.id) : sel.value ? [sel.value.rec] : [];
+    if (ids.length) { e.preventDefault(); toggleHand(ids); }
     return;
   }
   const s = sel.value;

@@ -375,32 +375,43 @@ From the Sept 20 session. Numbers are the agreed build order (PLAN.md).
   than four stack up; the count badge on the light themes; the full-page note keeps
   its own strip (no corner there) but writes to the same log.
 
-- **Open cards: the dock, lifted cards, the palette (Nov 23).** The record tray is gone;
-  the full record is the record's CARD, bigger (coloured strip with the table name, a
-  title that wraps, rounded, a shadow) — `RecordPanel.vue`, in two places:
-  * THE DOCK (`client/dock.ts`, App.vue `.dock`): the tray's column, now a row of cards.
-    PINS (per browser, `spatialdb.dock.pins`; on every view; across a reload) then one
-    PREVIEW (the record last opened; the next one replaces it). "pin" in a card's strip;
-    × closes (and unpins); Esc closes the preview only. Opening a pinned record makes no
-    second card — it scrolls to it and rings it. The splitter sets the dock's width,
-    which never changes by itself; a card is at least 420px (`CARD_MIN`) or the dock's
-    width, shares spare room, and the row scrolls sideways past that.
-  * LIFTED (`CardExamine.vue`): Space / "Examine" lifts the OPEN card, editable, 460px
-    (`LIFT_W`), as tall as its fields up to the canvas's height. No flip and no "card
-    back" any more (flip stays in the compare pair; Table settings › Card back is
-    removed, `tables.card_back` is left in place, unused). A DOUBLE-click on a pill
-    brings that record up beside it; "pin" sends a card to the dock; "place" puts one
-    that is not on the canvas onto it ("on canvas →" goes to one that is); a card's × or
-    Esc inside it puts that card back; Space / Esc / a click outside put all back. A
-    record with a card in the dock is not lifted as well.
-  * PALETTE: Enter brings the card up (lifted on a canvas; the dock's preview elsewhere,
-    without leaving the view); Ctrl+Enter places / goes to its table; Shift keeps it open.
-  * Block folds in an open card are per TABLE and field now (were per view).
-  Seen once, headless Chromium, dark theme, seed data. For the owner's eyes: the strip's
-  chips on light table colours and both light themes; the dock's floor colour; whether
-  420 / 460 are the right widths; sideways scrolling with a mouse wheel (Shift+wheel);
-  several rich-text editors open at once on WebKit; double-click and Enter on a canvas
-  card still open the dock's preview rather than lifting — say if they should lift.
+- **Open cards: the hand, lifted, pinned (Nov 23, evening — replaces the dock of that
+  afternoon).** The full record is the record's CARD, bigger (`RecordPanel.vue`: coloured
+  strip with the table name, a title that wraps). `client/hand.ts` holds all of it.
+  * THE HAND (`HandStrip.vue`, the stage's last row, every view, per browser
+    `spatialdb.hand`): stubs — table name on its colour, record name. In: H on selected
+    canvas cards, Ctrl+H on grid rows, "To hand" in the card / row / kanban menus, a
+    lifted card's "hand" chip, or dragging a lifted card's strip onto the strip. A stub:
+    click = bring up alone (again = put down), Ctrl/Shift+click = beside what is up,
+    "all up", its "pin", its ×. A stub never leaves while its card is up or pinned — it
+    is marked. A held record's canvas card wears a ◆ in its strip.
+  * UP / LIFTED (`CardExamine.vue`, now drawn by App over ANY view's body): opening a
+    record anywhere lifts it — Space, double-click, Enter, a row's ⤢, a notice's pill,
+    the palette. There is no preview slot: put down, a record not in the hand is gone.
+    Chips: "place" / "on canvas →" (canvas only), "hand", "pin", ×. A record opened FROM
+    a lifted card (a pill double-click, ⧉ duplicate, a junction row's ⤢) comes up BESIDE
+    it. Leaving a view puts the line down.
+  * PINNED (`.stage > .pins`): floats at the right, ABOVE the view, which keeps its
+    size; 400px (`PIN_W`), as tall as its fields; the layer takes no clicks between
+    cards. A pinned record is always in the hand; unpin or × sends it back to its stub;
+    Esc does nothing. Opening a pinned record rings its card instead of lifting it. The
+    GRID gets scroll room as wide as up to two pinned cards (a see-through right border
+    on the table) so its last columns can be scrolled clear; kanban, calendar and
+    reports do not yet.
+  * The definition of the report / calendar you are LOOKING AT is not lifted (that would
+    cover what it defines): it floats at the right like a pinned card, with a ×.
+  * PALETTE: Enter brings the card up, wherever you are; Ctrl+Enter places / goes to
+    its table; Shift keeps it open.
+  * Gone: the dock column, its splitter and saved width (`spatialdb.tray`), the preview.
+    The afternoon's pins (`spatialdb.dock.pins`) are read once as pinned cards in the hand.
+  * Block folds in an open card are per TABLE and field (were per view). No flip and no
+    "card back" on ordinary cards (flip stays in the compare pair; `tables.card_back`
+    is left in place, unused).
+  Seen once, headless Chromium, dark theme, seed data. For the owner's eyes: stubs and
+  strip chips on light table colours and both light themes; a pinned card over a canvas
+  and over a wide grid; several pinned at once; dragging a card's strip to the hand
+  with a real pointer; that a pill cannot be dragged from a LIFTED card onto the canvas
+  (it is modal — pin the card first); not built: dragging a stub onto a canvas to place.
 
 - **Examine: a line of cards, "reverse", re-fit (Nov 15).** Every lifted card has a
   small "⇄ REVERSE" button in its strip (front and back; the compare pair too). A

@@ -1001,6 +1001,8 @@ async function main() {
     panel().find('.rp-refs').exists() && /Files · Show/.test(panel().find('.rp-refs').text()) && /reel_10/.test(panel().find('.rp-refs').text()),
     panel().find('.rp-refs').exists() ? panel().find('.rp-refs').text() : 'no section');
   await panel().find('.rp-refs .pill.back').trigger('dblclick');
+  // A record opened FROM an open card comes up BESIDE it (a line of cards); the first is put down so the checks below read the new one.
+  await until(() => w.findAll('.record-panel').length === 2); await w.findAll('.record-panel')[0].find('.rp-close').trigger('click');
   check('a double-click on a referrer opens THAT record', await until(() => panel().find('.rp-title').text() === 'reel_10'), panel().find('.rp-title').text());
   await panel().find('.rp-close').trigger('click');
 

@@ -340,6 +340,8 @@ async function main() {
     await new Promise((r) => setTimeout(r, 150));
     check('a still press on the pill opens nothing — only a double-click does', w.find('.record-panel .rp-title').text() !== 'Ep 102');
     await pill().trigger('dblclick');
+    // A record opened FROM an open card comes up BESIDE it (a line of cards); the first is put down so the checks below read the new one.
+    await until(() => w.findAll('.record-panel').length === 2); await w.findAll('.record-panel')[0].find('.rp-close').trigger('click');
     check('a double-click opens the record', await until(() => w.find('.record-panel .rp-title').text() === 'Ep 102'));
     await w.find('.record-panel .rp-close').trigger('click');
     await post([{ type: 'record.delete', id: dragFile }]);

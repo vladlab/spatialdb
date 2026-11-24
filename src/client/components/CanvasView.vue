@@ -202,6 +202,7 @@
         :store="store"
         :selected="selected.has(c.recordId)"
         :opened="c.recordId === openRecordId"
+        :held="c.held"
         :flash="flashed === c.recordId"
         :dragging="drag.draggingIds.value.has(c.recordId)"
         :unconfirmed="store.unconfirmed.value.has(c.recordId)"
@@ -234,11 +235,6 @@
       />
     </div>
 
-    <!-- LIFTED CARDS: records brought up as their open, editable cards — in screen space,
-         outside the transform, over the canvas body only (CardExamine.vue). -->
-    <CardExamine v-if="liftedIds.length" :key="liftedIds[0]" :store="store" :ids="liftedIds" :from-rect="rectOnScreen" :placed="(id: string) => cardRects.has(id)"
-                 @close="endExamine" @pull="pullCard" @put="putBack" @pin="pinLifted" @place="placeLifted"
-                 @open-board="(id: string) => { endExamine(); emit('open-board', id); }" @open-report="(id: string) => emit('open-report', id)" @open-calendar="(id: string) => emit('open-calendar', id)" />
     <!-- COMPARE EXAMINE (C4): a file and its target, side by side, turned over to the comparison. -->
     <CompareExamine v-if="compareView" :key="compareView.key" :store="store" :owner="compareView.owner" :target="compareView.target" :rows="compareView.rows"
                     :owner-from="() => rectOnScreen(compareView!.owner.recordId)" :target-from="() => rectOnScreen(compareView!.target.recordId)"
@@ -347,7 +343,8 @@
         <!-- A board placed on a board: this is how you walk from one canvas to another. -->
         <button v-if="isBoardRecord(menu.recordId!)" class="open-board" @click="menuDo((m) => $emit('open-board', m.recordId!))">▦ Open this board</button>
         <button @click="menuDo((m) => $emit('open-record', m.recordId!))">Open record</button>
-        <button title="Lift the card up to look at it — Space" @click="menuDo((m) => examine(m.recordId!))">Examine</button>
+        <button title="Lift the card up to look at it and edit it — Space" @click="menuDo((m) => examine(m.recordId!))">Examine</button>
+        <button class="to-hand" title="Keep track of this record in the hand, the strip along the bottom — H" @click="menuDo((m) => toggleHand([m.recordId!]))">{{ inHand(menu.recordId!) ? 'Remove from hand' : 'To hand' }}</button>
         <button v-if="derived.cardVerdict(menu.recordId!)?.linkId" @click="menuDo((m) => openCompare(m.recordId!))">Compare with target</button>
         <!-- A note as a whole page, in a new browser tab (client/noteLinks.ts). -->
         <button v-for="nf in noteFields(store, menu.recordId!)" :key="nf.id" class="open-note" :data-field="nf.id"
@@ -457,8 +454,7 @@ import { legendOf, paintsOf, type ColorRule, type Paints } from '../../contract/
 import ColorRules from './ColorRules.vue';
 import { timelineStrip } from '../../contract/timelineStrip';
 import { CARD_COMPARE_SLOT, CARD_STRIP_LANES, CARD_W, defaultCardWidth, effectiveHeight, fitCardWidth, lineCount, linkHandleAt, visibleRows, wrapTitle } from '../canvas/cardLayout';
-import CardExamine from './CardExamine.vue';
-import { inDock } from '../dock';
+import { inHand, lifted, putAllDown, toggleHeld } from '../hand';
 import CompareExamine from './CompareExamine.vue';
 import { compareOf, compareRows } from '../../contract/compare';
 import { isCanvasNote } from '../../contract/richtext';
@@ -478,7 +474,7 @@ import { placementKey, recordsOf } from '../state';
 
 const props = defineProps<{ store: Store; canvasId: string; /** The record open in the tray, or '' — its card is marked. */ openRecordId?: string;
   /** The card a FILE is being dragged over (App.vue, from the shell's drag stream), or '' — it gets the drop ring. */ dropTargetId?: string }>();
-const emit = defineEmits<{ 'open-record': [recordId: string]; 'open-board': [recordId: string]; 'open-report': [recordId: string]; 'open-calendar': [recordId: string]; /** A lifted card's "pin": the record goes to the dock (App.vue). */ 'pin-record': [recordId: string] }>();
+const emit = defineEmits<{ 'open-record': [recordId: string]; 'open-board': [recordId: string]; 'open-report': [recordId: string]; 'open-calendar': [recordId: string]; }>();
 const isBoardRecord = (id: string) => store.state.tables.get(store.state.records.get(id)?.table_id ?? '')?.kind === 'canvas';
 const store = props.store;
 
@@ -884,8 +880,8 @@ function titleLinesOf(title: string, w: number, verdict: unknown): string[] {
   return lines;
 }
 const cards = computed(() => {
-  const up = new Set([...examineLine.value, comparing.value?.ownerId, comparing.value?.targetId].filter(Boolean));
-  return placedCards.value.map((c) => ({ ...c, titleLines: titleLinesOf(c.title, c.w, c.verdict), examined: up.has(c.recordId) }));
+  const up = new Set([...lifted.value, comparing.value?.ownerId, comparing.value?.targetId].filter(Boolean));
+  return placedCards.value.map((c) => ({ ...c, titleLines: titleLinesOf(c.title, c.w, c.verdict), examined: up.has(c.recordId), held: inHand(c.recordId) }));
 });
 const placedCards = computed(() => {
   const dragging = drag.draggingIds.value;
@@ -1940,6 +1936,8 @@ function onKeyDown(e: KeyboardEvent) {
   }
   if (e.key === 'Escape') { if (menu.value) { menu.value = null; return; } selected.clear(); selectedLink.value = null; selectedStack.value = null; drag.cancel(); }
   if (e.key === 'Enter' && selected.size === 1) { emit('open-record', [...selected][0]); e.preventDefault(); }
+  // H: the selected cards' records into the hand (App.vue's strip) — or out of it, when every one is there already.
+  if ((e.key === 'h' || e.key === 'H') && !e.ctrlKey && !e.metaKey && !e.altKey && selected.size) { toggleHand([...selected]); e.preventDefault(); }
   // Tab folds or unfolds what is selected. Several cards go the SAME way, as one undo
   // step: if any of them is open they all fold, if all are folded they all open (a
   // per-card flip would leave a mixed selection mixed). A selected stack folds like a
@@ -1961,7 +1959,7 @@ function onKeyUp(e: KeyboardEvent) {
     const tapped = spaceHeld.value && !spacePanned;
     spaceHeld.value = false; viewport.onPointerUp();
     // A TAP, with one card selected: examine it (CanvasView "EXAMINE").
-    if (tapped && selected.size === 1 && !examining.value && !typingIn(e.target)) examine([...selected][0]);
+    if (tapped && selected.size === 1 && !lifted.value.length && !typingIn(e.target)) examine([...selected][0]);
   }
 }
 
@@ -2236,7 +2234,7 @@ function placeMany(records: RecordRow[], clientX: number, clientY: number, optio
 const placedIds = computed(() => new Set(cardRects.value.keys()));
 /** The card under a CLIENT point, for a native file drop (client/desktop.ts). */
 const cardAtClient = (clientX: number, clientY: number) => cardAt(viewport.clientToWorld(clientX, clientY));
-defineExpose({ lift, placeOrJump, placeMany, placedIds, jumpTo, cardAtClient, activeDefaults, refuse, resetCascade: () => { cascade = 0; } });
+defineExpose({ hasCard: (id: string) => cardRects.value.has(id), placeOrJump, placeMany, placedIds, jumpTo, cardAtClient, activeDefaults, refuse, resetCascade: () => { cascade = 0; } });
 
 /** The one place the canvas can destroy DATA, so it says so, and says it is undoable. */
 async function deleteRecord(recordId: string) {
@@ -2311,51 +2309,27 @@ function togglePin(fieldId: string) {
    Space TAPPED with one card selected lifts it up (CardExamine.vue). Space HELD and
    dragged is still pan: `spacePanned` notes that a pan happened while it was down,
    and a release after a pan does nothing more. */
-/** The LINE of lifted cards: the one examined, then every linked record pulled up after it (CardExamine.vue). */
-const examineLine = ref<string[]>([]);
-const examining = computed(() => examineLine.value[0] ?? null);
 let spacePanned = false;
-// A record with an open card in the DOCK already (`inDock`: pinned, or the preview) is not lifted as well —
-// one open card per record: the dock shows it.
+/** Lift a card: its record's open card comes up over the view. Lifting is the app's (App.vue, client/hand.ts) — the same from a grid row or the palette. */
 function examine(recordId: string) {
   if (!store.state.records.has(recordId)) return;
   menu.value = null;
-  if (inDock(recordId)) { emit('open-record', recordId); return; }
-  examineLine.value = [recordId];
+  emit('open-record', recordId);
 }
-/** From the palette: a record brought up whether or not it is on this canvas. */
-function lift(rec: RecordRow) { store.adopt([rec]); examine(rec.id); }
-function endExamine() { examineLine.value = []; containerRef.value?.focus({ preventScroll: true }); }
-/** A double-click on a linked record in a lifted card: its card joins the line, at the right — once, and only if the record is here. */
-function pullCard(recordId: string) {
-  if (examineLine.value.includes(recordId) || !store.state.records.has(recordId)) return;
-  if (inDock(recordId)) { emit('open-record', recordId); return; }
-  examineLine.value = [...examineLine.value, recordId];
+/** Into the hand, or — when all of them are there — out of it. */
+function toggleHand(ids: string[]) {
+  const recs = ids.map((id) => store.state.records.get(id)).filter((r): r is RecordRow => !!r);
+  const allIn = recs.length > 0 && recs.every((r) => inHand(r.id));
+  for (const r of recs) if (allIn || !inHand(r.id)) toggleHeld(r.id, r.table_id);
 }
-/** One lifted card put back; the last one ends the line. */
-function putBack(recordId: string) {
-  const rest = examineLine.value.filter((id) => id !== recordId);
-  if (rest.length) examineLine.value = rest; else endExamine();
-}
-/** "pin" on a lifted card: it goes to the dock and leaves the line. */
-function pinLifted(recordId: string) { emit('pin-record', recordId); putBack(recordId); }
-/** "place" on a lifted card: onto this canvas (at the pointer's last place, as the palette places) — or, already on it, down and to it. */
-function placeLifted(recordId: string) {
-  const rec = store.state.records.get(recordId);
-  if (!rec) return;
-  if (cardRects.value.has(recordId)) { endExamine(); jumpTo(recordId); return; }
-  placeOrJump(rec);
-  putBack(recordId);
-}
-/** Where a card is on screen (its see-through copy): where a lifted card flies from and back to. Null when it is not on this canvas. */
+// The cards went back down: the canvas has the keyboard again.
+watch(() => lifted.value.length, (n, was) => { if (!n && was) containerRef.value?.focus({ preventScroll: true }); });
+/** Where a card is on screen: where the compare pair flies from and back to. Null when it is not on this canvas. */
 function rectOnScreen(id: string | null | undefined): DOMRect | null {
   const el = id ? containerRef.value?.querySelector(`.canvas-world .card[data-record="${id}"]`) : null;
   return el ? el.getBoundingClientRect() : null;
 }
 const EXAMINE_W = 380;   // the compare pair's cards (CompareExamine.vue)
-/** The lifted line, less any record that has gone (deleted here or elsewhere). */
-const liftedIds = computed(() => examineLine.value.filter((id) => store.state.records.has(id)));
-watch(liftedIds, (ids) => { if (examineLine.value.length && !ids.length) examineLine.value = []; });
 
 /* ── CANVAS NOTES (CANVAS-BRIEF.md D2) ───────────────────────────────────────
    A click in a note types in it — on a card that is ALREADY selected, so the first
@@ -2414,7 +2388,7 @@ function openCompare(recordId: string) {
   const v = derived.cardVerdict(recordId);
   if (!v?.linkId || !v.targetId) return;
   menu.value = null;
-  examineLine.value = [];
+  putAllDown();
   comparing.value = { ownerId: recordId, linkId: v.linkId, targetId: v.targetId };
 }
 function endCompare() { comparing.value = null; containerRef.value?.focus({ preventScroll: true }); }

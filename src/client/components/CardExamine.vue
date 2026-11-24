@@ -1,26 +1,27 @@
 <!--
-  LIFTED CARDS: records brought up off the canvas, over the canvas body (the bars and
-  the dock stay as they are). The first flies up from its place on the canvas — or
-  fades in, when it came from the palette and is not on it; a card's place on the
-  canvas stays held by a see-through copy (RecordCard `examined`) until it is put back.
+  LIFTED CARDS: records brought UP over the view's body — any view (the bars, the hand
+  and the pinned cards stay as they are). App.vue draws this; client/hand.ts holds the
+  line. A card flies up from where it came from — its card on the canvas, or its stub
+  in the hand — or fades in when it has neither (a grid row, the palette); a canvas
+  card's place is kept by a see-through copy (RecordCard `examined`) meanwhile.
 
-  A lifted card is the record's OPEN CARD (the owner, Nov 23 2026): the full record,
-  every field, editable — RecordPanel, the same card the dock holds. It is a quick look
-  or a quick edit without pinning, and the way to pinning: "pin" in its strip sends it
-  to the dock; "place" puts a record that is not on this canvas onto it. It is as tall
-  as its fields, up to the height of the canvas, and scrolls inside itself.
+  A lifted card is the record's OPEN CARD (RecordPanel): the full record, every field,
+  editable. From here it can be PLACED on the canvas, kept in the HAND (its chip, or
+  drag its strip down onto the hand) or PINNED at the right. Put down, a record that is
+  not in the hand simply goes away. It is as tall as its fields, up to the height of
+  the view, and scrolls inside itself.
 
-  There is no flip here any more: turning a card over is kept for where it earns its
-  place — the compare pair (CompareExamine.vue).
+  There is no flip here: turning a card over is kept for the compare pair
+  (CompareExamine.vue).
 
   A LINE OF CARDS: a double-click on a linked record's pill (a single click selects the
-  pill, as everywhere a link is edited) brings THAT record's card up too, at the right.
-  The line is never scaled — these cards are typed into; one too long for the canvas
-  scrolls sideways.
+  pill, as everywhere a link is edited) brings THAT record's card up too, at the right;
+  so does Ctrl+click on a stub in the hand. The line is never scaled — these cards are
+  typed into; one too long for the view scrolls sideways.
 
-  KEYS: a card owns its own (RecordPanel) — Esc inside a card puts that card back.
-  With no card focused, Space or Esc put the whole line back, as a click outside does.
-  Nothing reaches the canvas behind. Nothing about what is lifted is saved.
+  KEYS: a card owns its own (RecordPanel) — Esc inside a card puts that card down.
+  With no card focused, Space or Esc put the whole line down, as a click outside does.
+  Nothing reaches the view behind. Nothing about what is lifted is saved.
 
   Motion is transform and opacity only. With "Card animations" off (Settings › This
   browser) or the OS asking for reduced motion, flights are fades.
@@ -32,12 +33,12 @@
     <div ref="line" class="ex-line" @click.self="close">
       <!-- A SLOT is the card's place in the line; it is what flies. -->
       <div v-for="id in ids" :key="id" :ref="(el) => setSlot(id, el as HTMLElement | null)" class="ex-slot" :data-record="id" :style="{ width: W + 'px' }">
-        <RecordPanel :store="store" :record-id="id" pinnable :place="placed(id) ? 'show' : 'place'"
+        <RecordPanel :store="store" :record-id="id" pinnable :place="place?.(id)"
                      @close="emit('put', id)" @pin="emit('pin', id)" @place="emit('place', id)" @open="pull"
                      @open-board="(r: string) => emit('open-board', r)" @open-report="(r: string) => emit('open-report', r)" @open-calendar="(r: string) => emit('open-calendar', r)" />
       </div>
     </div>
-    <p class="ex-hint" :class="{ out: leaving }">Double-click a linked record to bring its card up · pin keeps a card in the dock · Space or Esc put them back</p>
+    <p class="ex-hint" :class="{ out: leaving }">Double-click a linked record to bring its card up · drag a card to the hand to keep it · Space or Esc put them down</p>
   </div>
 </template>
 
@@ -46,7 +47,7 @@ import { nextTick, onMounted, ref, watch } from 'vue';
 import type { Store } from '../store';
 import RecordPanel from './RecordPanel.vue';
 import { cardAnimations } from '../prefs';
-import { LIFT_W } from '../dock';
+import { CARD_W } from '../hand';
 
 const props = defineProps<{
   store: Store;
@@ -54,8 +55,8 @@ const props = defineProps<{
   ids: string[];
   /** Where a record's card is on the canvas now (null: not on it) — asked again on the way back down. */
   fromRect: (recordId: string) => DOMRect | null;
-  /** Whether a record has a card on this canvas: its strip says "on canvas →" rather than "place". */
-  placed: (recordId: string) => boolean;
+  /** On a canvas: 'show' for a record that has a card on it, 'place' for one that has not. Elsewhere there is nowhere to place. */
+  place?: (recordId: string) => 'place' | 'show' | undefined;
 }>();
 const emit = defineEmits<{
   close: []; pull: [id: string];
@@ -65,8 +66,8 @@ const emit = defineEmits<{
   'open-board': [id: string]; 'open-report': [id: string]; 'open-calendar': [id: string];
 }>();
 
-/** A lifted card's width: fixed, whatever the canvas's zoom (client/dock.ts). */
-const W = LIFT_W;
+/** A lifted card's width: fixed, whatever the canvas's zoom (client/hand.ts). */
+const W = CARD_W;
 const root = ref<HTMLElement>();
 const line = ref<HTMLElement>();
 const slots = new Map<string, HTMLElement>();
@@ -118,7 +119,7 @@ watch(() => [...props.ids], async (now, before) => {
 function close() {
   if (leaving.value) return;
   leaving.value = true;
-  // An editor with unsaved typing commits on blur, as it does when the dock's card closes.
+  // An editor with unsaved typing commits on blur, as it does when any open card closes.
   (document.activeElement as HTMLElement | null)?.blur?.();
   const moving = motion();
   let pending = 0;
@@ -159,7 +160,7 @@ defineExpose({ close });
 .ex-slot { flex: none; display: flex; flex-direction: column; max-width: calc(100% - 0px); max-height: 100%; min-height: 0; transform-origin: top left; }
 .ex-slot:first-child { margin-left: auto; }
 .ex-slot:last-child { margin-right: auto; }
-/* A lifted card throws a bigger shadow than a card on the canvas or in the dock: it is ABOVE them. */
+/* A lifted card throws a bigger shadow than a card on the canvas: it is ABOVE it. */
 .ex-slot > :deep(.record-panel) { width: 100%; max-width: none; min-height: 0; flex: 0 1 auto; box-shadow: var(--card-shadow-drag); }
 .ex-hint { position: absolute; left: 0; right: 0; bottom: 12px; margin: 0; text-align: center; color: var(--on-scrim); font-size: 12px; pointer-events: none; }
 </style>

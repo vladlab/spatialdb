@@ -59,6 +59,7 @@
       <div class="ctx-head">{{ derived.labelOfId(cardMenu.id) || 'untitled' }}</div>
       <hr />
       <button class="open-record" @click="cardMenuDo((id) => $emit('open-record', id))">Open record</button>
+      <button class="to-hand" title="Keep track of this record in the hand, the strip along the bottom" @click="cardMenuDo((id) => { const r = props.store.state.records.get(id); if (r) toggleHeld(id, r.table_id); })">{{ inHand(cardMenu.id) ? 'Remove from hand' : 'To hand' }}</button>
       <button class="resolve-ingest" @click="cardMenuDo((id) => ingestFromResolve(props.store, id, derived.labelOfId(id)))">Ingest info from Resolve…</button>
     </div>
   </div>
@@ -69,6 +70,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { vp } from '../uiScale';
 import { ingestFromResolve, resolveOffered } from '../tools/resolveIngest';
 import type { Store } from '../store';
+import { inHand, toggleHeld } from '../hand';
 import type { FieldRow, RecordRow } from '../state';
 import { useDerived } from '../derived';
 import { beginRecordDrag, registerDropTarget } from '../recordDrag';

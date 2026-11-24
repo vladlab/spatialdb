@@ -12,9 +12,8 @@
 
   What Enter does (the owner, Nov 23 2026) — the footer says so:
 
-    Enter         BRING THE CARD UP: on a canvas the record's open card is lifted over
-                  it (from there it can be placed or pinned); elsewhere it opens in the
-                  dock's preview. Either way you stay where you are.
+    Enter         BRING THE CARD UP: the record's open card is lifted over the view you
+                  are on (client/hand.ts) — to look, edit, place, keep in the hand or pin.
     Ctrl+Enter    on a canvas, PLACE the record at the cursor (or jump to it if it is
                   already there — a record sits on a canvas once); elsewhere, GO to the
                   record in its own table.

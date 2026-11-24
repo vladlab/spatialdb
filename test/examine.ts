@@ -1,18 +1,21 @@
 /**
- * LIFTED CARDS (CANVAS-BRIEF.md C1; reworked Nov 23 2026), in the app.
+ * OPEN CARDS (client/hand.ts; Nov 23 2026), in the app: lifted, the hand, pinned.
  *
  *   E1  Space TAPPED on a selected card lifts it; Space held and dragged pans and does not
  *   E2  the lifted card is the record's OPEN card: its strip, its whole title, every
  *       field, every link; its place on the canvas kept by a see-through copy
- *   E3  it is EDITABLE, with the editors the dock's card has
+ *   E3  it is EDITABLE
  *   E4  while it is up the canvas hears nothing (Delete, Z); Esc, Space or a click
- *       outside put it back; "Examine" in the card menu
+ *       outside put it down; "Examine" in the card menu
  *   E5  a LINE: a double-click on a linked record brings its card up at the right, once;
- *       a card's own × (or Esc inside it) puts that one back
- *   E6  "pin" sends a lifted card to the dock, where it stays — and a record with a card
- *       in the dock is not lifted as well
- *   E7  the palette: Enter BRINGS A CARD UP (a record that is not on the canvas, from a
- *       table never opened); "place" puts it on the canvas
+ *       a card's own × (or Esc inside it) puts that one down
+ *   E6  THE HAND: H, the card menu, a lifted card's chip and a drag of its strip put a
+ *       record in it; a stub brings its card up, alone or beside others; a record not
+ *       in the hand, put down, just goes away
+ *   E7  PINNED: the card floats at the right of every view, above it; unpinned it is
+ *       back in the hand; a pinned record is not lifted as well; the grid opens rows
+ *       by lifting them too, and gets scroll room for what floats over it
+ *   E8  the palette: Enter BRINGS A CARD UP; "place" puts it on the canvas
  */
 import { randomUUID } from 'node:crypto';
 import { mountApp, sleep } from './uiHarness.js';
@@ -86,11 +89,11 @@ async function main() {
     check('…every field of the record', ['Name', 'Status', 'Works', 'Codec'].every((n) => !!fieldOf(card(), n)), card().findAll('.rp-name-text').map((n: any) => n.text()).join());
     check('…every linked record — the canvas card stops at six, "+2 more"', await until(() => fieldOf(card(), 'Works').findAll('.pill').length === 8) && /\+2 more/.test(cardOf('a.mov')!.text()),
       String(fieldOf(card(), 'Works').findAll('.pill').length));
-    check('…"pin", and — it is on this canvas — "on canvas →" rather than "place"', card().find('.rp-pin').text() === 'pin' && card().find('.rp-place').text() === 'on canvas →');
+    check('…"hand", "pin", and — it is on this canvas — "on canvas →" rather than "place"', card().find('.rp-pin').text() === 'pin' && card().find('.rp-hand').text() === 'hand' && card().find('.rp-place').text() === 'on canvas →');
     check('no flip here any more', !ex().find('.ex-flip').exists() && !ex().find('.ex-reverse').exists());
     check('its place on the canvas is kept by a see-through copy', cardOf('a.mov')!.classes('examined') && !cardOf('b.mov')!.classes('examined'));
     check('the overlay has the keyboard', win.document.activeElement === ex().element);
-    check('the dock stays shut: lifting is not opening in the dock', !w.find('.dock').exists());
+    check('lifting keeps nothing: the hand is still empty, nothing is pinned', !w.find('.hand').exists() && !w.find('.pins').exists());
 
     console.log('\nE3. It is editable');
     await fieldOf(card(), 'Status').find('.rp-value').trigger('click');
@@ -144,45 +147,115 @@ async function main() {
     await card(0).find('.rp-close').trigger('click');
     check('…and the last card down ends it', await until(() => !ex().exists(), 3000));
 
-    console.log('\nE6. Pin: from the line to the dock');
-    const dock = () => w.findAll('.dock > .record-panel');
+    console.log('\nE6. The hand');
+    const stubs = () => w.findAll('.hand .stub');
+    const stub = (name: string) => stubs().find((x: any) => x.find('.stub-name').text() === name);
+    const stored = () => { try { return JSON.parse((win as any).localStorage.getItem('spatialdb.hand') ?? '[]'); } catch { return null; } };
     await select('b.mov');
+    await w.find('.canvas-container').trigger('keydown', { key: 'h' });
+    check('H on a selected card: its record is in the hand — a stub with its table and its name', await until(() => stubs().length === 1)
+      && stub('b.mov')!.find('.stub-table').text() === 'Files', stubs().map((x: any) => x.text()).join());
+    check('…remembered in this browser, with its table', (() => { const h = stored(); return h === null || (h.length === 1 && h[0].id === fileB && h[0].table === tFiles); })());
+    check('…and its card on the canvas is marked; it has not moved', cardOf('b.mov')!.find('.card-held').exists() && !cardOf('a.mov')!.find('.card-held').exists()
+      && (await pool.query(`select count(*)::int n from placements where canvas_id = $1`, [board])).rows[0].n === 2);
+    await w.find('.canvas-container').trigger('keydown', { key: 'h' });
+    check('H again takes it out; the strip goes with its last stub', await until(() => !w.find('.hand').exists()));
+    await cardOf('b.mov')!.trigger('contextmenu', { clientX: 520, clientY: 80 });
+    await until(() => w.find('.canvas-container .ctx .to-hand').exists());
+    check('the card menu says "To hand"', w.find('.canvas-container .ctx .to-hand').text() === 'To hand');
+    await w.find('.canvas-container .ctx .to-hand').trigger('click');
+    await until(() => stubs().length === 1);
+    // from a lifted card: its chip
+    await select('a.mov');
     await tapSpace();
     await until(() => ex().exists());
+    await card().find('.rp-hand').trigger('click');
+    check('a lifted card\'s "hand" chip keeps its record: a second stub, at the end, marked "up"', await until(() => stubs().length === 2) && stubs()[1].find('.stub-name').text() === 'a.mov'
+      && stubs()[1].classes('up') && stubs()[1].find('.stub-state').text() === 'up' && /in hand/.test(card().find('.rp-hand').text()));
+    await ex().trigger('keydown', { key: 'Escape' });
+    check('put down, its stub stays', await until(() => !ex().exists(), 3000) && stubs().length === 2 && !stub('a.mov')!.classes('up'));
+    await stub('a.mov')!.find('.stub-main').trigger('click');
+    check('a click on a stub brings its card up', await until(() => ex().exists() && lineIds().join() === fileA));
+    await stub('b.mov')!.find('.stub-main').trigger('click', { ctrlKey: true });
+    check('Ctrl+click on another brings that one up BESIDE it', await until(() => lineIds().join() === [fileA, fileB].join()), lineIds().join());
+    await stub('a.mov')!.find('.stub-main').trigger('click');
+    check('a click on the stub of a card that is up puts that card down', await until(() => lineIds().join() === fileB) && !stub('a.mov')!.classes('up'));
+    await stub('a.mov')!.find('.stub-main').trigger('click');
+    check('a plain click brings its card up ALONE', await until(() => lineIds().join() === fileA));
+    await w.find('.hand .hand-all').trigger('click');
+    check('"all up": the whole hand, side by side', await until(() => lineIds().join() === [fileB, fileA].join()), lineIds().join());
+    await ex().find('.ex-scrim').trigger('click');
+    await until(() => !ex().exists(), 3000);
+    // a record that is NOT in the hand: up, then down, and it is gone
+    await stub('a.mov')!.find('.stub-main').trigger('click');
+    await until(() => ex().exists() && fieldOf(card(), 'Works').findAll('.pill').length === 8);
+    await fieldOf(card(), 'Works').find('.pill').trigger('dblclick');
+    await until(() => lineIds().length === 2, 4000);
+    const workUp = lineIds()[1]!;
+    check('a card brought up from a link is not in the hand', stubs().length === 2 && card(1).find('.rp-hand').text() === 'hand');
+    // …unless its strip is DRAGGED to the hand
+    // (PE: the pointer event class, declared with E1's helpers)
+    const handEl = w.find('.hand').element as HTMLElement;
+    handEl.getBoundingClientRect = () => ({ left: 0, right: 1200, top: 760, bottom: 794, width: 1200, height: 34, x: 0, y: 760, toJSON() {} }) as DOMRect;
+    await card(1).find('.rp-strip').trigger('pointerdown', { button: 0, clientX: 700, clientY: 100 });
+    win.dispatchEvent(new PE('pointermove', { bubbles: true, clientX: 700, clientY: 400 }));
+    check('dragging a lifted card\'s strip: a stub follows the pointer and the hand offers itself', await until(() => w.find('.hand-ghost').exists() && w.find('.hand').classes('dropping') && w.find('.hand .hand-drop').exists()));
+    win.dispatchEvent(new PE('pointermove', { bubbles: true, clientX: 700, clientY: 775 }));
+    await until(() => w.find('.hand').classes('over'));
+    win.dispatchEvent(new PE('pointerup', { bubbles: true, clientX: 700, clientY: 775 }));
+    check('…let go over the hand: the record is kept there, and its card goes down', await until(() => stubs().length === 3 && lineIds().join() === fileA) && stubs()[2].attributes('data-record') === workUp && !w.find('.hand-ghost').exists());
+    await stubs()[2].find('.stub-x').trigger('click');
+    check('a stub\'s × takes it out of the hand', await until(() => stubs().length === 2));
+    await ex().trigger('keydown', { key: 'Escape' });
+    await until(() => !ex().exists(), 3000);
+
+    console.log('\nE7. Pinned: floating at the right');
+    const pinsEl = () => w.findAll('.stage > .pins > .record-panel');
+    await stub('b.mov')!.find('.stub-main').trigger('click');
+    await until(() => ex().exists());
     await card().find('.rp-pin').trigger('click');
-    check('"pin" on a lifted card: it leaves the line (the last one ends it)…', await until(() => !ex().exists(), 3000));
-    check('…and stands in the dock, pinned', await until(() => dock().length === 1) && dock()[0].find('.rp-title').text() === 'b.mov' && /pinned/.test(dock()[0].find('.rp-pin').text()));
-    check('…remembered in this browser, with its table', (() => { try { const p = JSON.parse((win as any).localStorage.getItem('spatialdb.dock.pins') ?? '[]'); return p.length === 1 && p[0].id === fileB && p[0].table === tFiles; } catch { return true; } })());
+    check('"pin" on a lifted card: it leaves the line…', await until(() => !ex().exists(), 3000));
+    check('…and floats at the right — a layer of the stage over the body, not a column beside it', await until(() => pinsEl().length === 1) && pinsEl()[0].find('.rp-title').text() === 'b.mov'
+      && /pinned/.test(pinsEl()[0].find('.rp-pin').text()) && !pinsEl()[0].find('.rp-hand').exists());
+    check('its stub stays in the hand, marked pinned', stubs().length === 2 && stub('b.mov')!.classes('pinned') && /pinned/.test(stub('b.mov')!.find('.stub-pin').text()) && stored()?.find((h: any) => h.id === fileB)?.pinned !== false);
+    await select('b.mov');
     await tapSpace();
     await sleep(250);
-    check('a record with a card in the dock is not lifted as well: one open card per record', !ex().exists() && dock().length === 1);
-    await dock()[0].trigger('keydown', { key: 'Escape' });
+    check('a pinned record is not lifted as well: one open card per record — its pinned card rings', !ex().exists() && pinsEl().length === 1 && pinsEl()[0].classes('current'));
+    await pinsEl()[0].trigger('keydown', { key: 'Escape' });
     await sleep(100);
-    check('Esc does not close a pinned card', dock().length === 1);
+    check('Esc does not close a pinned card', pinsEl().length === 1);
     await cardOf('a.mov')!.trigger('dblclick');
-    check('a double-click on another card opens it in the dock too: the PREVIEW, beside the pin', await until(() => dock().length === 2) && dock()[1].find('.rp-title').text() === 'a.mov' && dock()[1].find('.rp-pin').text() === 'pin');
-    await dock()[1].trigger('keydown', { key: 'Escape' });
-    check('…which Esc does close', await until(() => dock().length === 1) && dock()[0].find('.rp-title').text() === 'b.mov');
+    check('a double-click on a canvas card LIFTS it now (there is no preview slot), the pinned card staying', await until(() => ex().exists() && lineIds().join() === fileA) && pinsEl().length === 1);
+    await ex().trigger('keydown', { key: 'Escape' });
+    await until(() => !ex().exists(), 3000);
     await nav.openTable(tWorks);
-    check('the pin follows you to another view: the Works grid, with b.mov\'s card still beside it', await until(() => w.find('.gridview').exists() && dock().length === 1, 6000) && dock()[0].find('.rp-title').text() === 'b.mov');
+    check('the pin and the hand follow you to another view: the Works grid', await until(() => w.find('.gridview').exists() && pinsEl().length === 1 && stubs().length === 2, 6000));
+    check('…whose table is given scroll room for what floats over its right edge', /border-right(-width)?: \d+px/.test(w.find('.gridview table.grid').attributes('style') ?? ''), w.find('.gridview table.grid').attributes('style'));
     await w.findAll('.gridview tr.row')[0].find('.expand').trigger('click');
-    check('…a row opened there is the preview, at the pin\'s right', await until(() => dock().length === 2) && dock()[0].find('.rp-title').text() === 'b.mov' && dock()[1].find('.rp-pin').text() === 'pin');
-    await dock()[1].find('.rp-pin').trigger('click');
-    check('…pinned, it stays where it is', await until(() => /pinned/.test(dock()[1].find('.rp-pin').text())) && dock()[0].find('.rp-title').text() === 'b.mov');
-    await w.findAll('.gridview tr.row')[1].find('.expand').trigger('click');
-    check('…and the next row opened is a third card, not a replacement', await until(() => dock().length === 3));
-    await w.findAll('.gridview tr.row')[0].find('.expand').trigger('click');
-    check('opening a record that is pinned makes no second card of it', (await sleep(150), dock().length === 3));
-    await dock()[2].find('.rp-close').trigger('click');
-    await dock()[1].find('.rp-pin').trigger('click');
-    check('unpinned, a card is the preview again — it does not vanish', await until(() => dock().length === 2 && dock()[1].find('.rp-pin').text() === 'pin'));
-    await dock()[1].find('.rp-close').trigger('click');
+    check('a row opened there is LIFTED too', await until(() => ex().exists() && lifted().length === 1 && card().find('.rp-strip .rp-table').text() === 'Works'));
+    check('…with nowhere to place it: no "place" chip off a canvas', !card().find('.rp-place').exists());
+    await card().find('.rp-close').trigger('click');
+    check('…and put down it is gone: not in the hand, nothing open', await until(() => !ex().exists(), 3000) && stubs().length === 2 && !w.find('.gridview tr.row.opened').exists());
+    await w.findAll('.gridview tr.row')[0].trigger('contextmenu', { clientX: 300, clientY: 200 });
+    await until(() => w.find('.row-menu .to-hand').exists());
+    await w.find('.row-menu .to-hand').trigger('click');
+    check('a row\'s menu has "To hand" as well', await until(() => stubs().length === 3) && stubs()[2].find('.stub-table').text() === 'Works');
+    await stubs()[2].find('.stub-x').trigger('click');
+    await pinsEl()[0].find('.rp-pin').trigger('click');
+    check('unpinned, the card is back in the hand: gone from the right, its stub where it was', await until(() => !w.find('.pins').exists()) && stubs().length === 2 && stubs()[0].find('.stub-name').text() === 'b.mov' && !stubs()[0].classes('pinned'));
+    check('…and the grid\'s scroll room goes with it', !/border-right/.test(w.find('.gridview table.grid').attributes('style') ?? ''));
+    await stub('b.mov')!.find('.stub-pin').trigger('click');
+    check('a stub\'s own "pin" floats its card without lifting it first', await until(() => pinsEl().length === 1) && !ex().exists());
+    await pinsEl()[0].find('.rp-close').trigger('click');
+    check('a pinned card\'s × sends it back to the hand, not away', await until(() => !w.find('.pins').exists()) && stubs().length === 2);
+    await stub('a.mov')!.find('.stub-x').trigger('click');
+    await stub('b.mov')!.find('.stub-x').trigger('click');
+    await until(() => !w.find('.hand').exists());
     await nav.openCanvas(board);
-    await until(() => !!cardOf('a.mov') && dock().length === 1, 6000);
-    await dock()[0].find('.rp-close').trigger('click');
-    check('a pinned card\'s × unpins and closes it: the dock is gone', await until(() => !w.find('.dock').exists()));
+    await until(() => !!cardOf('a.mov'), 6000);
 
-    console.log('\nE7. The palette brings a card up');
+    console.log('\nE8. The palette brings a card up');
     const pal = () => w.find('.palette');
     win.dispatchEvent(new (win as any).KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));
     await until(() => pal().exists());
