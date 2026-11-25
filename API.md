@@ -773,8 +773,9 @@ comparing links (Deliverable → Spec) and comparing junction columns (File → 
 deliverables) side by side, and the ✓/⚠ beside a field merges every verdict.
 
 Results are DERIVED, never stored (`compareRecords`): per pair `match` / `differ` /
-`missing` (owner empty, target not) / `unspecified` (target empty — skipped, not
-failed). `same` is true when nothing is `differ` or `missing`.
+`missing` (owner empty, target not) / `unspecified` (target empty, owner not — skipped,
+not failed) / `blank` (both empty — nothing to check; a pass, drawn neutral). `same` is
+true when nothing is `differ` or `missing`.
 **`POST /api/compare`** `{ linkFieldId, ownerId, targetId }` → the same result;
 `linkFieldId` may be a comparing link or a comparing junction column; 400 if the
 field is not comparing or a record is from the wrong table.

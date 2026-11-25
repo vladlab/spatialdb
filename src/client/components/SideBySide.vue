@@ -21,7 +21,7 @@
           <tr class="sbs-row" :class="r.status">
             <td class="sbs-name">{{ nameOf(r.pair.from) }}</td>
             <td class="sbs-val">{{ r.found }}</td>
-            <td class="sbs-rule" :title="r.detail"><VerdictMark v-if="r.status === 'match' || r.status === 'differ'" :kind="r.status === 'match' ? 'ok' : 'bad'" :size="14" /><template v-else>{{ mark(r.status) }}</template> <span class="sbs-rulename">{{ RULE_LABELS[r.pair.rule] }}</span></td>
+            <td class="sbs-rule" :title="r.detail"><VerdictMark v-if="r.status === 'match' || r.status === 'differ'" :kind="r.status === 'match' ? 'ok' : 'bad'" :size="14" /><VerdictMark v-else-if="r.status === 'blank'" kind="none" :size="14" /><template v-else>{{ mark(r.status) }}</template> <span class="sbs-rulename">{{ RULE_LABELS[r.pair.rule] }}</span></td>
             <td class="sbs-val">{{ r.expected }}</td>
             <td class="sbs-name">{{ nameOf(r.pair.to) }}</td>
           </tr>
@@ -63,8 +63,8 @@ const result = computed(() => derived.compare(props.linkId, props.ownerId, props
 const ownerLabel = computed(() => derived.labelOfId(props.ownerId));
 const targetLabel = computed(() => derived.labelOfId(props.targetId));
 const nameOf = (id: string) => props.store.state.fields.get(id)?.name ?? '?';
-/** The two statuses without an icon (VerdictMark draws match and differ). */
-const mark = (s: Status) => ({ match: '', differ: '', missing: '∅', unspecified: '·' }[s]);
+/** The two statuses without an icon (VerdictMark draws match, differ and blank). */
+const mark = (s: Status) => ({ match: '', differ: '', blank: '', missing: '∅', unspecified: '·' }[s]);
 // trackText and trackOff live in contract/compare.ts now: the canvas's compare examine lines tracks up the same way.
 </script>
 
@@ -95,4 +95,5 @@ const mark = (s: Status) => ({ match: '', differ: '', missing: '∅', unspecifie
 .sbs-row.differ .sbs-rule, .sbs-row.missing .sbs-rule { color: var(--danger); font-weight: 700; }
 .sbs-row.match .sbs-rule { color: var(--success); }
 .sbs-row.unspecified td { color: var(--text-faint); }
+.sbs-row.blank td { color: var(--text-muted); }
 </style>

@@ -59,6 +59,13 @@ async function main() {
     const same = compareRecords([{ from: 'a', to: 'b', rule: 'sameRecord' }], byId as never, { id: 'file', data: {} }, { id: 'spec', data: {} }, (r, f) => (f === 'a' || f === 'b' ? ['qt'] : []));
     check('the same row on both sides matches; an empty spec side is "unspecified"', same.results[0].status === 'match' && compareRecords([{ from: 'a', to: 'b', rule: 'sameRecord' }], byId as never, { id: 'file', data: {} }, { id: 'spec', data: {} }, (r, f) => (f === 'a' ? ['qt'] : [])).results[0].status === 'unspecified');
 
+    const nf = (id: string, table_id: string) => ({ id, key: id, name: id, type: 'number', table_id, options: {} });
+    const nums = new Map([['d', nf('d', 'files')], ['e', nf('e', 'specs')]]);
+    const depth = (file: Record<string, unknown>, spec: Record<string, unknown>) => compareRecords([{ from: 'd', to: 'e', rule: 'equals' }], nums as never, { id: 'file', data: file }, { id: 'spec', data: spec }, () => []);
+    check('BLANK on both sides (an AAC file\'s bit depth against a spec that states none) is "blank": the comparison is the same', depth({}, {}).results[0].status === 'blank' && depth({}, {}).same === true);
+    check('…a blank spec against a file that HAS a value is still "unspecified", and a stated spec against a blank file still "missing"', depth({ d: 24 }, {}).results[0].status === 'unspecified' && depth({}, { e: 24 }).results[0].status === 'missing' && depth({}, { e: 24 }).same === false);
+    check('…for links too: neither side linked is "blank"', compareRecords([{ from: 'a', to: 'b', rule: 'sameRecord' }], byId as never, { id: 'file', data: {} }, { id: 'spec', data: {} }, () => []).results[0].status === 'blank');
+
     console.log('\nC1. Ticking "compare" on a link');
     await go(tFiles);
     await th('Spec').find('.th-menu').trigger('click');

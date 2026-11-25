@@ -93,8 +93,9 @@ const fit = ref(1);
 const sides = computed(() => [{ key: 'owner' as const, card: props.owner }, { key: 'target' as const, card: props.target }]);
 const differ = computed(() => props.rows.filter((r) => r.kind === 'pair' && (r.status === 'differ' || r.status === 'missing')).length);
 const same = computed(() => !props.rows.some((r) => r.status === 'differ' || r.status === 'missing'));
-const tintOf = (s: Status) => (s === 'match' ? 'green' : s === 'unspecified' ? 'amber' : 'red');
-const markOf = (s: Status): 'ok' | 'warn' | 'bad' => (s === 'match' ? 'ok' : s === 'unspecified' ? 'warn' : 'bad');
+// `blank` (both sides empty) is a pass, but never green: a grey row with a grey dash still shows that the field is empty.
+const tintOf = (s: Status) => (s === 'match' ? 'green' : s === 'blank' ? 'grey' : s === 'unspecified' ? 'amber' : 'red');
+const markOf = (s: Status): 'ok' | 'warn' | 'bad' | 'none' => (s === 'match' ? 'ok' : s === 'blank' ? 'none' : s === 'unspecified' ? 'warn' : 'bad');
 
 const motion = () => cardAnimations.value && !(typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 const EASE = 'cubic-bezier(0.2, 0.7, 0.2, 1)';

@@ -62,7 +62,19 @@ by the (owner type, target type) pair — a small, closed set:
 
 **Empties mean something.** Target empty → `unspecified` (the spec does not say;
 the pair is skipped, not failed). Owner empty while the target has a value →
-`missing` (a difference). Both empty → `unspecified`.
+`missing` (a difference).
+
+**Both empty → `blank`** (Nov 25, 2026; was `unspecified`). The file importer leaves
+a field blank when it does not apply — an AAC stream has no bit depth — and a spec
+that FORGOT a field is blank against a file that has it, which stays `unspecified`.
+So blank against blank is nothing to check: it counts as a pass (it no longer turns
+the card's verdict to "unsure"), gets no ✓ beside the field, and is drawn neutral —
+a grey row with a grey dash — in side by side and the compare examine, so a field
+that is blank and maybe should not be is still seen. Known cost: where blank on the
+file means "the file does not say" (untagged colour, unknown scan, no stream
+bitrate), a spec that also leaves it blank passes silently. A conditional pair
+("only when Audio codec is not AAC") was considered and set aside as more machinery
+than the case needs.
 
 **Name-matching is a default, not the rule.** Ticking "compare" on a link
 pre-populates every same-name, same-type pair with the obvious rule; the admin edits
@@ -80,7 +92,7 @@ One pure function in the shared contract (`src/contract/compare.ts`, the elevent
 
 ```ts
 compareRecords(link: FieldRow, owner: RecordRow, target: RecordRow, ctx) →
-  { same: boolean; results: { pair; status: 'match' | 'differ' | 'missing' | 'unspecified'; detail: string }[] }
+  { same: boolean; results: { pair; status: 'match' | 'differ' | 'missing' | 'unspecified' | 'blank'; detail: string }[] }
 ```
 
 Computed live on the client, like lookups (`client/derived.ts`). Nothing is written,

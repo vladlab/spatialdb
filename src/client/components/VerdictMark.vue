@@ -5,7 +5,8 @@
   warning triangle or circle-x, drawn at a real size and full colour, so a pass and
   a fail are both legible without the weight of a filled badge.
 
-  kind: ok (green, circle-check) · warn (orange, triangle) · bad (red, circle-x).
+  kind: ok (green, circle-check) · warn (orange, triangle) · bad (red, circle-x) ·
+  none (grey, circle-minus: nothing to check — both sides blank).
   size: px, default 16 — sized to sit inside a 30px grid row.
   The `title` (the why) is the wrapper's hover text. The wrapper also carries the
   old glyph (✓ / ⚠ / ✗) as visually hidden text: screen readers and the UI suites
@@ -23,6 +24,10 @@
       <path d="M12 9v4" />
       <path d="M12 16h.01" />
     </template>
+    <template v-else-if="kind === 'none'">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9 12h6" />
+    </template>
     <template v-else>
       <circle cx="12" cy="12" r="9" />
       <path d="M10 10l4 4m0 -4l-4 4" />
@@ -33,8 +38,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-const props = withDefaults(defineProps<{ kind: 'ok' | 'warn' | 'bad'; size?: number; title?: string }>(), { size: 16 });
-const glyph = computed(() => ({ ok: '✓', warn: '⚠', bad: '✗' }[props.kind]));
+const props = withDefaults(defineProps<{ kind: 'ok' | 'warn' | 'bad' | 'none'; size?: number; title?: string }>(), { size: 16 });
+const glyph = computed(() => ({ ok: '✓', warn: '⚠', bad: '✗', none: '–' }[props.kind]));
 </script>
 
 <style scoped>
@@ -44,4 +49,5 @@ const glyph = computed(() => ({ ok: '✓', warn: '⚠', bad: '✗' }[props.kind]
 .verdict-mark.ok { color: var(--success); }
 .verdict-mark.warn { color: var(--warning); }
 .verdict-mark.bad { color: var(--danger); }
+.verdict-mark.none { color: var(--text-muted); }
 </style>

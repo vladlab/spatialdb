@@ -66,7 +66,7 @@ check('fit-to-content (double-click an edge) may still go to 720', fitCardWidth(
 
 console.log('\nT4. cardVerdict');
 const pr = (status: PairResult['status']): PairResult => ({ pair: { from: 'a', to: 'b', rule: 'equals' } as never, status, detail: '', expected: '', found: '' });
-const res = (...s: PairResult['status'][]): CompareResult => ({ same: s.every((x) => x === 'match'), results: s.map(pr) });
+const res = (...s: PairResult['status'][]): CompareResult => ({ same: s.every((x) => x === 'match' || x === 'blank'), results: s.map(pr) });
 const one = (result: CompareResult | null) => [{ linkId: 'L', linkName: 'Deliverable', targets: [{ id: 'T', label: 'Texted ProRes', result }] }];
 check('no comparing link → no button (null)', cardVerdict([]) === null);
 const none = cardVerdict([{ linkId: 'L', linkName: 'Deliverable', targets: [] }]);
@@ -75,6 +75,9 @@ check('every pair matching → pass', cardVerdict(one(res('match', 'match')))?.s
 const f = cardVerdict(one(res('match', 'differ', 'missing', 'unspecified')));
 check('a difference → fail, counting differ AND missing', f?.state === 'fail' && f.differ === 2 && f.linkId === 'L' && f.targetId === 'T' && /2 differences/.test(f.title));
 check('nothing differs, something unspecified → unknown', cardVerdict(one(res('match', 'unspecified')))?.state === 'unknown');
+const bl = cardVerdict(one(res('match', 'blank')));
+check('blank on both sides is nothing to check → pass, and the tooltip counts them', bl?.state === 'pass' && /1 blank on both sides/.test(bl.title));
+check('…but a spec that is blank against a file that is not is still unknown', cardVerdict(one(res('match', 'blank', 'unspecified')))?.state === 'unknown');
 check('the target not loaded → unknown, "not loaded yet"', cardVerdict(one(null))?.state === 'unknown' && /not loaded/.test(cardVerdict(one(null))!.title));
 const worst = cardVerdict([
   { linkId: 'L1', linkName: 'Deliverable', targets: [{ id: 'T1', label: 'A', result: res('match') }] },

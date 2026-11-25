@@ -345,7 +345,8 @@ export function useDerived(store: Store) {
    * For the ICON beside a field, wherever a record is drawn (tray, card, grid cell,
    * board card — the same cue everywhere): `ok` when every comparison of that field
    * matches, not ok when any differs or is missing; absent when nothing compares it
-   * (or every comparison is "unspecified"). `title` says why, and through which link.
+   * (or every comparison is "unspecified" or "blank" — an empty field gets no tick).
+   * `title` says why, and through which link.
    */
   function fieldVerdicts(recordId: string): Map<string, { ok: boolean; title: string }> {
     const out = new Map<string, { ok: boolean; title: string }>();
@@ -358,7 +359,7 @@ export function useDerived(store: Store) {
         const r = compare(c.link.id, recordId, t);
         if (!r) continue;
         for (const pr of r.results) {
-          if (pr.status === 'unspecified') continue;
+          if (pr.status === 'unspecified' || pr.status === 'blank') continue;
           const bad = pr.status === 'differ' || pr.status === 'missing';
           const line = `${c.link.name} → ${labelOfId(t)}: ${pr.detail}`;
           const cur = out.get(pr.pair.from);

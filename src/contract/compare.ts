@@ -172,7 +172,15 @@ export function suggestPairs(ownerFields: FieldLike[], targetFields: FieldLike[]
 
 /* ── evaluation ───────────────────────────────────────────────────────────── */
 
-export type Status = 'match' | 'differ' | 'missing' | 'unspecified';
+/**
+ * `blank` (Nov 25, 2026): NEITHER side has a value. The file importer leaves a field
+ * blank when it does not apply (an AAC stream has no bit depth), and a spec that
+ * forgot a field would be blank against a file that HAS it — which stays
+ * `unspecified`. So blank against blank is nothing to check: it counts as a pass,
+ * and is drawn neutral (never a green tick beside an empty field), so the eye still
+ * finds a field that is blank and maybe should not be.
+ */
+export type Status = 'match' | 'differ' | 'missing' | 'unspecified' | 'blank';
 export interface PairResult {
   pair: ComparePair; status: Status; detail: string; expected: string; found: string;
   /** For a `layout` pair: both layouts as parsed, and what differs — so a UI can show tracks, not JSON. */
@@ -212,7 +220,11 @@ export function compareRecords(
     let layouts: PairResult['layouts'];
     const push = (status: Status, detail: string) => results.push({ pair, status, detail, expected, found, ...(layouts ? { layouts } : {}) });
 
-    if (isEmpty(tv)) { push('unspecified', `${to.name}: not specified`); continue; }
+    if (isEmpty(tv)) {
+      if (isEmpty(fv)) push('blank', 'blank on both sides — nothing to check');
+      else push('unspecified', `${to.name}: not specified`);
+      continue;
+    }
     // The layout rules read ONE value out of the layout; the expected column shows
     // that value ("00:59:50:00 (29.97 DF)"), not the whole layout's summary.
     if (pair.rule === 'startsAt' || pair.rule === 'rate') {
@@ -250,7 +262,7 @@ export function compareRecords(
     }
     push(ok ? 'match' : 'differ', why);
   }
-  return { same: results.every((r) => r.status === 'match' || r.status === 'unspecified'), results };
+  return { same: results.every((r) => r.status === 'match' || r.status === 'unspecified' || r.status === 'blank'), results };
 }
 
 /**
@@ -294,7 +306,8 @@ export function seedValues(
  * One verdict for a whole record, for the compare button on its canvas card — which
  * is also its pass/fail light. Worst wins: a difference anywhere is a FAIL; nothing
  * differs but something cannot be told (a value missing on the expected side, or the
- * target not loaded) is UNKNOWN; every pair matching is a PASS; a comparing link with
+ * target not loaded) is UNKNOWN; every pair matching — or BLANK on both sides, which
+ * is nothing to check — is a PASS; a comparing link with
  * nothing linked through it is NONE. A record with no comparing link has no button at
  * all (null). The owner's rule is one target per file; with several, the button opens
  * the first that is not a pass.
@@ -323,7 +336,8 @@ export function cardVerdict(
   const where = `${worst.c.linkName} → ${worst.t.label}`;
   if (k === 2) return { state: 'fail', differ, linkId: worst.c.linkId, targetId: worst.t.id, title: `${where}: ${differ} difference${differ === 1 ? '' : 's'} — click to compare` };
   if (k === 1) return { state: 'unknown', differ: 0, linkId: worst.c.linkId, targetId: worst.t.id, title: r ? `${where}: some values cannot be checked (empty on one side) — click to compare` : `${where}: not loaded yet` };
-  return { state: 'pass', differ: 0, linkId: worst.c.linkId, targetId: worst.t.id, title: `${where}: everything matches — click to compare` };
+  const blank = r ? r.results.filter((p) => p.status === 'blank').length : 0;
+  return { state: 'pass', differ: 0, linkId: worst.c.linkId, targetId: worst.t.id, title: `${where}: everything matches${blank ? ` (${blank} blank on both sides)` : ''} — click to compare` };
 }
 
 /* ── the comparison as ROWS (CANVAS-BRIEF.md C4) ─────────────────────────────
