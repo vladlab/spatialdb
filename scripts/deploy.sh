@@ -141,6 +141,12 @@ note "$BEFORE → $AFTER"
 
 say "Installing dependencies (npm ci)"
 as_app npm ci --no-audit --no-fund --loglevel=error || die "npm ci failed. The service is STILL RUNNING the old version, but the checkout is at $AFTER. To go back:  git checkout $BEFORE && npm ci"
+# Informational only — never a reason to stop: how many known advisories the RUNTIME
+# dependencies that are about to go live have (SECURITY-BRIEF S3). Fix with
+# `npm audit fix` on a workstation, test, push. '?' = the registry could not be asked.
+ADVISORIES="$(as_app timeout 60 npm audit --omit=dev --json 2>/dev/null \
+  | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).metadata.vulnerabilities.total)}catch{console.log("?")}})' 2>/dev/null || echo '?')"
+note "npm audit, runtime dependencies: ${ADVISORIES:-?} known advisories"
 
 say "Building the frontend"
 as_app npm run --silent build || die "the build failed. The service is STILL RUNNING the old version ($BEFORE) and its old frontend may be partly replaced — fix the build, or:  git checkout $BEFORE && npm ci && npm run build"
