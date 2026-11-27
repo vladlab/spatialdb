@@ -118,6 +118,13 @@ export async function storeAsset(
   await mkdir(tmpDir, { recursive: true });
   const tmp = join(tmpDir, randomUUID());
   const out = createWriteStream(tmp);
+  // A write stream with no 'error' listener turns any error into an uncaught
+  // exception — the whole server goes down. Destroying it below (too large) while
+  // a write is still in flight raises exactly such an error (ERR_STREAM_DESTROYED),
+  // so an upload one byte over the cap could crash the process for everyone. Keep
+  // the error; it is acted on below.
+  let writeError: Error | null = null;
+  out.on('error', (e) => { writeError ??= e; });
   const hash = createHash('sha256');
   const headParts: Buffer[] = [];
   let headLen = 0, bytes = 0, over = false;
@@ -140,12 +147,21 @@ export async function storeAsset(
       const chunk = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
       hash.update(chunk);
       if (headLen < HEAD_BYTES) { headParts.push(chunk.subarray(0, HEAD_BYTES - headLen)); headLen += chunk.length; }
+      if (writeError) throw writeError;            // the disk refused: stop reading
       // Respect backpressure: a fast client must not outrun a slow disk into RAM.
-      if (!out.write(chunk)) await new Promise<void>((r) => out.once('drain', () => r()));
+      // Wait for 'drain' OR an error — a failed write never drains, and waiting for
+      // it alone would hang this upload forever.
+      if (!out.write(chunk)) {
+        await new Promise<void>((r) => {
+          const done = () => { out.off('drain', done); out.off('error', done); r(); };
+          out.once('drain', done); out.once('error', done);
+        });
+      }
     }
     if (over) {
       throw new AssetError(`file is larger than the ${MAX_BYTES / 1024 / 1024} MB limit (ASSET_MAX_MB)`, 413);
     }
+    if (writeError) throw writeError;
     await new Promise<void>((res, rej) => out.end((e?: Error | null) => (e ? rej(e) : res())));
     if (bytes === 0) throw new AssetError('empty upload', 400);
 

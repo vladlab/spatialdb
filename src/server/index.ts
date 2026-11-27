@@ -13,6 +13,7 @@ import { serve } from '@hono/node-server';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { bodyLimit } from 'hono/body-limit';
 import pg from 'pg';
 import { DESTRUCTIVE_MUTATIONS, Mutation, MutationRequest } from '../contract/mutations.js';
 import { captureFor, MAX_CAPTURE_ROWS } from './capture.js';
@@ -102,6 +103,49 @@ app.use('/api/*', async (c, next) => {
   }
   (c as unknown as Context<Vars>).set('user', user);
   return next();
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+ *  Request size — every route that reads a body has a ceiling (SECURITY-BRIEF S1).
+ *
+ *  Without one, `c.req.json()` reads whatever it is sent: the 2026-11 audit POSTed
+ *  200 MB to the login route, with no session, and the process went past 1 GB.
+ *
+ *  Mounted AFTER the identity check on purpose. The open routes (login, logout, me)
+ *  are let through that check before any database work and meet the 64 KB limit
+ *  here; every other route has already answered 401 to an anonymous caller, without
+ *  reading a byte. Mounted before it, an anonymous chunked body to /api/mutate would
+ *  be buffered up to the mutate limit before anyone asked who was sending it.
+ *
+ *  Hono's own `bodyLimit`: it refuses on Content-Length up front, and counts a
+ *  chunked body as it arrives.
+ * ──────────────────────────────────────────────────────────────────────────*/
+const KB = 1024, MB = 1024 * KB;
+/** Signing in and managing users: an email, a name, a password. */
+const AUTH_BODY_MAX = 64 * KB;
+/**
+ * A batch of mutations. Generous because a `restore` carries every row its delete
+ * captured (up to MAX_CAPTURE_ROWS), and one record may hold a 1 MB note.
+ */
+const MUTATE_BODY_MAX = Math.max(1, Number(process.env.MUTATE_MAX_MB) || 64) * MB;
+/** Anything else that reads a body: the QC diff, the compare endpoint. */
+const OTHER_BODY_MAX = 1 * MB;
+
+const tooLarge = (limit: number) => (c: Context) =>
+  c.json({ error: `that request is larger than the ${limit >= MB ? `${limit / MB} MB` : `${limit / KB} KB`} limit` }, 413);
+const limitAuth = bodyLimit({ maxSize: AUTH_BODY_MAX, onError: tooLarge(AUTH_BODY_MAX) });
+const limitMutate = bodyLimit({ maxSize: MUTATE_BODY_MAX, onError: tooLarge(MUTATE_BODY_MAX) });
+const limitOther = bodyLimit({ maxSize: OTHER_BODY_MAX, onError: tooLarge(OTHER_BODY_MAX) });
+
+app.use('/api/*', async (c, next) => {
+  const p = c.req.path;
+  // Uploads stream to disk and enforce ASSET_MAX_MB themselves (assets.ts). A
+  // bodyLimit here would buffer a chunked upload in memory — the one thing
+  // storeAsset exists not to do.
+  if (p === '/api/assets') return next();
+  if (p.startsWith('/api/auth/') || p === '/api/users' || p.startsWith('/api/users/')) return limitAuth(c, next);
+  if (p === '/api/mutate' || p === '/api/capture-preview') return limitMutate(c, next);
+  return limitOther(c, next);
 });
 
 const userOf = (c: Context): AuthUser => (c as unknown as Context<Vars>).get('user');

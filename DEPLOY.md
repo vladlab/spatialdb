@@ -278,6 +278,22 @@ services.caddy.virtualHosts."spatialdb.example.com" = {
     @compressible not path /api/stream
     encode @compressible zstd gzip
 
+    # A size ceiling at the door, as well as the app's own (index.ts, "Request
+    # size"). Uploads go up to ASSET_MAX_MB (500 by default), everything else up to
+    # MUTATE_MAX_MB (64). Keep these a little ABOVE the app's numbers, so the app's
+    # own 413 — which says what the limit is — is the one people see. The two
+    # matchers are disjoint on purpose: request_body is not terminal, and two
+    # overlapping blocks would both apply, the smaller limit winning for uploads.
+    # `max_size` needs Caddy 2.10 or later.
+    @uploads path /api/assets
+    request_body @uploads {
+      max_size 600MB
+    }
+    @notUploads not path /api/assets
+    request_body @notUploads {
+      max_size 70MB
+    }
+
     reverse_proxy 127.0.0.1:8787
   '';
 };
@@ -286,8 +302,10 @@ services.caddy.virtualHosts."spatialdb.example.com" = {
 What Caddy does by default, and the app relies on: it passes the original `Host`
 (the CSRF check compares it with the browser's `Origin`), sets `X-Forwarded-Proto`
 (so the session cookie is marked `Secure`) and `X-Forwarded-For`, and flushes
-`text/event-stream` responses immediately. It has no request-size limit by default;
-uploads go up to 500 MB (`ASSET_MAX_MB`).
+`text/event-stream` responses immediately. Caddy has no request-size limit of its own
+by default, hence the `request_body` blocks above. The app limits every body itself
+regardless: 64 KB for signing in and user management, `MUTATE_MAX_MB` (64) for a
+batch of changes, 1 MB for anything else, and `ASSET_MAX_MB` (500) for uploads.
 
 The firewall already allows 443 if Caddy is serving other sites.
 
