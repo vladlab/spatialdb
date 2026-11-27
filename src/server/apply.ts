@@ -24,7 +24,7 @@
 
 import type { Pool, PoolClient } from 'pg';
 import {
-  DESTRUCTIVE_MUTATIONS, Mutation, MutationRequest, SCHEMA_MUTATIONS,
+  CAPTURED_TABLES, DESTRUCTIVE_MUTATIONS, Mutation, MutationRequest, SCHEMA_MUTATIONS,
   type CapturedRows,
 } from '../contract/mutations.js';
 import { toMutationEvent, type MutationEvent } from '../contract/events.js';
@@ -421,10 +421,12 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
   // `restore` cannot be gated statically: recreating a record needs 'editor',
   // recreating a table or field needs 'admin'. Gate on what it actually carries,
   // or undoing a table.delete would be an editor's back door into the schema.
+  // Sections too: making and removing them is an admin's call (SCHEMA_MUTATIONS),
+  // so bringing one back is as well.
   if (m.type === 'restore' && actor.role !== 'admin') {
-    if (m.rows.tables.length || m.rows.fields.length) {
+    if (m.rows.tables.length || m.rows.fields.length || m.rows.sections.length) {
       throw new MutationError(
-        `role '${actor.role}' may not restore tables or fields`, 403);
+        `role '${actor.role}' may not restore tables, fields or sections`, 403);
     }
   }
   if (actor.role === 'viewer') {
@@ -844,6 +846,7 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
 
     /* ── undo ── */
     case 'restore':
+      await assertCaptured(db, m);
       await restoreRows(db, m.rows);
       return;
   }
@@ -852,6 +855,51 @@ async function applyOne(db: PoolClient, m: Mutation, actor: Actor): Promise<void
 /* ────────────────────────────────────────────────────────────────────────────
  *  Restore
  * ──────────────────────────────────────────────────────────────────────────*/
+
+/**
+ * A restore may bring back ONLY what its delete captured (SECURITY-BRIEF S4).
+ *
+ * The rows travel in the payload (contract/mutations.ts says why: peers and the
+ * offline path apply a restore from the payload alone). They used to be inserted
+ * as sent, which made `restore` a way round every other rule: a record no value
+ * check had seen, a forged created_by / created_at, links that skipped junction and
+ * single-target rules, a section an editor may not make. So the server compares
+ * them with the capture it stored when the delete ran, in the same transaction:
+ *
+ *   - `undoOf` must name a mutation that captured something, and not too much;
+ *   - every row sent, in every collection (record_values included), must be one of
+ *     that capture's rows, exactly. A SUBSET is fine — a client may leave rows out.
+ *
+ * Compared as canonical JSON (object keys sorted at every level), because neither
+ * jsonb nor a round trip through a client keeps key order. Not cached: a restore is
+ * rare and human-initiated, and this is one indexed read.
+ */
+async function assertCaptured(db: PoolClient, m: Extract<Mutation, { type: 'restore' }>): Promise<void> {
+  const { rows } = await db.query(`select undo from mutations where id = $1`, [m.undoOf]);
+  const undo = rows[0]?.undo as { rows?: Record<string, unknown[]>; truncated?: boolean } | null | undefined;
+  if (!undo?.rows || undo.truncated) {
+    throw new MutationError('nothing to restore: that change kept no undo data', 400);
+  }
+  for (const collection of [...CAPTURED_TABLES, 'record_values'] as const) {
+    const sent = m.rows[collection] as unknown[];
+    if (!sent.length) continue;
+    const kept = new Set((undo.rows[collection] ?? []).map(canonicalJson));
+    if (sent.some((row) => !kept.has(canonicalJson(row)))) {
+      throw new MutationError('restore refused: it carries rows that change did not capture', 403);
+    }
+  }
+}
+
+/** JSON with every object's keys sorted, recursively — equal data, equal string. */
+function canonicalJson(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(',')}]`;
+  if (v !== null && typeof v === 'object') {
+    const o = v as Record<string, unknown>;
+    return `{${Object.keys(o).filter((k) => o[k] !== undefined).sort()
+      .map((k) => `${JSON.stringify(k)}:${canonicalJson(o[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(v) ?? 'null';
+}
 
 /**
  * Insert order is a foreign-key dependency order, not the key order of the

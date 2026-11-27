@@ -424,6 +424,69 @@ async function main() {
     await count(`select count(*)::int n from records where table_id=$1 and data ? 'temp'`, [tStrip]) === 0);
   check('restoring only record_values needs no admin (it is record data)', true);
 
+  console.log('\n10c. A restore must match what was captured (SECURITY-BRIEF S4)');
+  // `restore` used to insert whatever rows it was sent. An editor could write a
+  // record no validation had seen, forge its author and date, or create a section
+  // (an admin's call everywhere else) — all by sending a "restore".
+  const tForge = randomUUID(), fForge = randomUUID(), rForge = randomUUID(), mkForge = randomUUID();
+  await one({ type: 'table.create', id: tForge, name: 'Forge', singularName: 'F', color: '', icon: '' }, admin);
+  await one({ type: 'field.create', id: fForge, tableId: tForge, name: 'Name', key: 'name', fieldType: 'text', options: {}, required: false }, admin);
+  await send([{ id: mkForge, mutation: { type: 'record.create', id: rForge, tableId: tForge, data: { name: 'real' } } }], editor);
+  const delForge = randomUUID();
+  await send([{ id: delForge, mutation: { type: 'record.delete', id: rForge } }], editor);
+  const capForge = (await loadUndo(db, delForge))!.rows as any;
+  const statusOf = (p: Promise<unknown>) => p.then(() => 200, (e) => (e instanceof MutationError ? e.status : 500));
+
+  const forged = { ...capForge, records: [...capForge.records, { ...capForge.records[0], id: randomUUID(), data: { name: 'never validated' } }] };
+  check('an extra, fabricated row is refused (403) — and nothing is inserted',
+    await statusOf(one({ type: 'restore', id: randomUUID(), undoOf: delForge, rows: forged }, editor)) === 403
+      && await count(`select count(*)::int n from records where table_id=$1`, [tForge]) === 0);
+  const altered = { ...capForge, records: [{ ...capForge.records[0], data: { name: 'changed on the way' } }] };
+  check('a captured row with one value altered is refused (403)',
+    await statusOf(one({ type: 'restore', id: randomUUID(), undoOf: delForge, rows: altered }, editor)) === 403);
+  const authored = { ...capForge, records: [{ ...capForge.records[0], created_at: '2001-01-01T00:00:00.000Z' }] };
+  check('…including its author or date',
+    await statusOf(one({ type: 'restore', id: randomUUID(), undoOf: delForge, rows: authored }, editor)) === 403);
+  check('undoOf naming a change that captured nothing (a create) is refused (400)',
+    await statusOf(one({ type: 'restore', id: randomUUID(), undoOf: mkForge, rows: capForge }, editor)) === 400);
+  check('undoOf naming no change at all is refused (400)',
+    await statusOf(one({ type: 'restore', id: randomUUID(), undoOf: randomUUID(), rows: capForge }, editor)) === 400);
+  const reordered = { ...capForge, records: capForge.records.map((r: Record<string, unknown>) => Object.fromEntries(Object.entries(r).reverse())) };
+  check('the real capture, with its keys in another order (as a round trip may leave them), is accepted',
+    await statusOf(one({ type: 'restore', id: randomUUID(), undoOf: delForge, rows: reordered }, editor)) === 200
+      && await count(`select count(*)::int n from records where id=$1`, [rForge]) === 1);
+
+  // A subset is fine: the client may restore only part of what was captured.
+  const rPart = randomUUID(), delPart = randomUUID();
+  await one({ type: 'record.create', id: rPart, tableId: tForge, data: { name: 'part' } }, editor);
+  const tBoardsForge = randomUUID(), boardForge = randomUUID();
+  await one({ type: 'table.create', id: tBoardsForge, name: 'Forge boards', singularName: 'B', color: '', icon: '', kind: 'canvas' } as any, admin);
+  await one({ type: 'record.create', id: boardForge, tableId: tBoardsForge, data: {} }, admin);
+  await one({ type: 'placement.add', id: randomUUID(), canvasId: boardForge, recordId: rPart, x: 1, y: 2 } as any, editor);
+  check('(control) the subset fixture has a placement to leave out', await count(`select count(*)::int n from placements where record_id=$1`, [rPart]) === 1);
+  await send([{ id: delPart, mutation: { type: 'record.delete', id: rPart } }], editor);
+  const capPart = (await loadUndo(db, delPart))!.rows as any;
+  check('a SUBSET of the captured rows applies', await statusOf(one({ type: 'restore', id: randomUUID(), undoOf: delPart,
+    rows: { ...capPart, placements: [], links: [] } }, editor)) === 200 && await count(`select count(*)::int n from records where id=$1`, [rPart]) === 1);
+
+  // Sections are an admin's to make, so they are an admin's to restore.
+  const sForge = randomUUID(), delSection = randomUUID();
+  await one({ type: 'section.create', id: sForge, name: 'Forged nav', description: '', icon: '', color: '' }, admin);
+  await send([{ id: delSection, mutation: { type: 'section.delete', id: sForge } }], admin);
+  const capSection = (await loadUndo(db, delSection))!.rows as any;
+  check('the section capture is real (control)', capSection.sections?.length === 1, JSON.stringify(capSection.sections));
+  check('an editor may not restore a section (403)',
+    await statusOf(one({ type: 'restore', id: randomUUID(), undoOf: delSection, rows: capSection }, editor)) === 403
+      && await count(`select count(*)::int n from sections where id=$1`, [sForge]) === 0);
+  check('an admin may', await statusOf(one({ type: 'restore', id: randomUUID(), undoOf: delSection, rows: capSection }, admin)) === 200
+    && await count(`select count(*)::int n from sections where id=$1`, [sForge]) === 1);
+  check('an editor may still undo SOMEONE ELSE\'s record delete (the owner\'s call)', await (async () => {
+    const r = randomUUID(), d = randomUUID();
+    await one({ type: 'record.create', id: r, tableId: tForge, data: { name: 'admin made' } }, admin);
+    await send([{ id: d, mutation: { type: 'record.delete', id: r } }], admin);
+    return await statusOf(one({ type: 'restore', id: randomUUID(), undoOf: d, rows: (await loadUndo(db, d))!.rows as any }, editor)) === 200;
+  })());
+
   console.log('\n11. An oversized cascade refuses undo honestly');
   // Above MAX_CAPTURE_ROWS we store counts instead of contents. Without a cap,
   // deleting a 200,000-record table would write the whole table into one log row.

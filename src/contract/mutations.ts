@@ -477,6 +477,11 @@ const ViewDelete = z.strictObject({
  *     capture, once in the restore's payload. That is real storage, and it buys a
  *     restore that is itself auditable and undoable.
  *
+ *     The server does NOT trust them, though: it compares every row sent with the
+ *     capture stored for `undoOf` and refuses any row that capture does not hold
+ *     (apply.ts, assertCaptured). Otherwise a restore could insert anything at all
+ *     — unvalidated values, a forged author, a section an editor may not make.
+ *
  *  2. ONE `restore` MUTATION, NOT N ORDINARY ONES.
  *
  *     Expressing undo as `record.create` + `link.add` + `placement.add` … was the

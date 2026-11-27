@@ -1549,9 +1549,20 @@ parents are gone, because history is not a stack: delete a record, delete a canv
 it sat on, then undo the record, and the captured placement points at nothing. The
 record comes back without that one placement rather than the undo failing.
 
-Role gating is dynamic — `restore` needs `admin` only when it carries tables or
-fields, otherwise `editor`. Static gating would have made undoing a `table.delete`
-an editor's back door into the schema.
+Role gating is dynamic — `restore` needs `admin` only when it carries tables,
+fields or sections, otherwise `editor`. Static gating would have made undoing a
+`table.delete` an editor's back door into the schema.
+
+**The rows are checked against the capture.** The server reads the capture stored
+with `undoOf` and refuses a restore that carries any row that capture does not
+hold, exactly (compared with object keys sorted, so key order does not matter):
+**403** "restore refused: it carries rows that change did not capture". A subset is
+fine. `undoOf` naming a mutation with no capture, or a truncated one, is **400**
+"nothing to restore: that change kept no undo data". Without this, `restore` was a
+way round every other rule — values no check had seen, a forged `created_by` /
+`created_at`, links past the junction rules, a section an editor may not make. A
+client that sends `GET /api/mutations/:id/undo`'s `rows` back unchanged, as the
+app does, is unaffected.
 
 **A delete too large to undo has to say it is permanent.** A capture holds at most
 10,000 rows — records, links, placements, pairs and stripped values all count
