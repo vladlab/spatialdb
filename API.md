@@ -301,7 +301,7 @@ not signed in (`{ setup: true }` when nobody CAN sign in yet).
 
 | | |
 |---|---|
-| `POST /api/auth/login` `{ email, password }` | sets the session cookie; returns `{ user, token }`. 401 never says whether the email exists. 429 after 5 failures per address+email, doubling back-off to 15 min. |
+| `POST /api/auth/login` `{ email, password }` | sets the session cookie; returns `{ user, token }`. 401 never says whether the email exists. 429, always with `Retry-After`, when: an address has made 10 attempts in a minute (any emails); 5 failures per address+email (doubling back-off to 15 min); 20 failures for one email within 15 min from any addresses (that account paused 1 min, doubling to 15); or sign-in is saturated (at most 2 password checks run at once, 16 wait, the rest are told to come back). Bodies over 64 KB are 413. |
 | `POST /api/auth/logout` | deletes the session on the server |
 | `GET /api/auth/me` | `{ user }`, or 401 |
 | `POST /api/auth/password` `{ current, next }` | your own; ends your other sessions |

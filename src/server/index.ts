@@ -21,7 +21,8 @@ import { StreamEvent, toMutationEvent } from '../contract/events.js';
 import { applyBatch, compareTargetOfBacklink, MutationError, type Actor } from './apply.js';
 import type { Context } from 'hono';
 import {
-  AUTH_DISABLED, authenticate, createSession, crossOrigin, destroySession, hashPassword, loginBlockedFor,
+  AUTH_DISABLED, accountBlockedFor, addressAttempt, authenticate, clientAddr, createSession, crossOrigin,
+  destroySession, hashPassword, LoginBusy, loginBlockedFor, noteAccountFailure, noteAccountSuccess,
   noteLoginFailure, noteLoginSuccess, passwordProblem, verifyPassword, type AuthUser,
 } from './auth.js';
 import { migrationGate } from './migrations.js';
@@ -597,25 +598,42 @@ app.post('/api/compare', async (c) => {
  *  live: a role change takes effect on that person's next request, and the user
  *  list is fetched when Settings opens.
  * ──────────────────────────────────────────────────────────────────────────*/
-const clientAddr = (c: Context) => (c.req.header('x-forwarded-for') ?? '').split(',')[0].trim() || 'local';
+/** Every refusal to try a sign-in says when to come back, in the header as well as the sentence. */
+const tooMany = (c: Context, seconds: number, error: string) => {
+  c.header('Retry-After', String(seconds));
+  return c.json({ error }, 429);
+};
 
 app.post('/api/auth/login', async (c) => {
   const body = await c.req.json().catch(() => ({})) as { email?: unknown; password?: unknown };
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
   const password = typeof body.password === 'string' ? body.password : '';
-  const key = `${clientAddr(c)}|${email}`;
+  const addr = clientAddr(c);
+  const key = `${addr}|${email}`;
+  // Cheapest checks first, and all of them before the database or scrypt (auth.ts,
+  // "guessing"): this address's budget, this address+email's back-off, this
+  // account's pause.
+  const fromHere = addressAttempt(addr);
+  if (fromHere) return tooMany(c, fromHere, `too many sign-in attempts from here — try again in ${fromHere}s`);
   const wait = loginBlockedFor(key);
-  if (wait) return c.json({ error: `too many attempts — try again in ${wait}s` }, 429);
+  if (wait) return tooMany(c, wait, `too many attempts — try again in ${wait}s`);
+  const paused = accountBlockedFor(email);
+  if (paused) return tooMany(c, paused, `too many failed sign-ins for this account — try again in ${paused}s`);
 
   const { rows } = await pool.query(
     `select id, email, name, role, password_hash from users where lower(email) = $1 and not disabled`, [email]);
   const u = rows[0];
+  let ok: boolean;
   // verifyPassword runs the full computation even when `u` is undefined.
-  if (!(await verifyPassword(password, u?.password_hash ?? null)) || !u) {
+  try { ok = await verifyPassword(password, u?.password_hash ?? null); }
+  catch (e) { if (e instanceof LoginBusy) return tooMany(c, 2, e.message); throw e; }
+  if (!ok || !u) {
     noteLoginFailure(key);
+    noteAccountFailure(email);
     return c.json({ error: 'wrong email or password' }, 401);       // never says WHICH
   }
   noteLoginSuccess(key);
+  noteAccountSuccess(email);
   const token = await createSession(pool, c, u.id);
   // The token is also returned, for clients that cannot hold a cookie (Tauri): they
   // send it back as `Authorization: Bearer`. Browsers ignore it; theirs is HttpOnly.
@@ -637,7 +655,10 @@ app.post('/api/auth/password', async (c) => {
   const problem = passwordProblem(body.next);
   if (problem) return c.json({ error: problem }, 400);
   const { rows } = await pool.query(`select password_hash from users where id = $1`, [me.id]);
-  if (!(await verifyPassword(String(body.current ?? ''), rows[0]?.password_hash ?? null))) {
+  let right: boolean;
+  try { right = await verifyPassword(String(body.current ?? ''), rows[0]?.password_hash ?? null); }
+  catch (e) { if (e instanceof LoginBusy) return tooMany(c, 2, e.message); throw e; }
+  if (!right) {
     return c.json({ error: 'your current password is not right' }, 403);
   }
   await pool.query(`update users set password_hash = $2 where id = $1`, [me.id, await hashPassword(body.next as string)]);

@@ -95,7 +95,7 @@ async function main() {
     await pool.query(`insert into users (email, name, role, password_hash) values ($1,$2,$3,$4)`, [`${role}@test.local`, role, role, await hashPassword(PW[role])]);
   }
   // MUTATE_MAX_MB is lowered so the mutate limit can be crossed without a 64 MB test.
-  const server = await bootServer(PORT, { AUTH_DISABLED: '0', MUTATE_MAX_MB: '2', ASSET_MAX_MB: '2', AUTH_TEST_HOOKS: '1' });
+  const server = await bootServer(PORT, { AUTH_DISABLED: '0', MUTATE_MAX_MB: '2', ASSET_MAX_MB: '2', AUTH_TABLE_MAX: '20' });
   const pid = server.child.pid!;
   try {
     console.log('\nL1. Request size');
@@ -168,6 +168,61 @@ async function main() {
     check('a batch over MUTATE_MAX_MB is refused with 413, naming the limit', over.status === 413 && /2 MB limit/.test(over.body.error ?? ''), `${over.status} ${JSON.stringify(over.body)}`);
     const otherOver = await send('POST', '/api/compare', { headers: auth, size: 2 * MB });
     check('every other body-reading route has a 1 MB ceiling', otherOver.status === 413 && /1 MB limit/.test(otherOver.body.error ?? ''), `${otherOver.status}`);
+
+    console.log('\nL2. Sign-in under load');
+    // One address, a different email every time: the old back-off (address+email)
+    // never saw a repeat, so this was unlimited.
+    const sprayed: Sent[] = [];
+    for (let i = 0; i < 11; i++) sprayed.push(await login(`spray${i}@test.local`, 'wrong-password', '10.2.0.1'));
+    const t0 = Date.now(); const twelfth = await login('spray-last@test.local', 'wrong-password', '10.2.0.1'); const fast = Date.now() - t0;
+    check('one address gets 10 attempts a minute whatever the email; the 11th is 429',
+      sprayed.slice(0, 10).every((r) => r.status === 401) && sprayed[10].status === 429 && /from here/.test(sprayed[10].body.error ?? ''),
+      sprayed.map((r) => r.status).join(','));
+    check('…answered at once, without running scrypt, and with Retry-After', twelfth.status === 429 && fast < 150 && Number(twelfth.headers['retry-after']) > 0,
+      `${twelfth.status} ${fast}ms retry-after=${twelfth.headers['retry-after']}`);
+
+    // One account, a different address every time.
+    const spread: number[] = [];
+    for (let i = 0; i < 20; i++) spread.push((await login('editor@test.local', `guess-${i}`, `10.3.0.${i + 1}`)).status);
+    const twentyFirst = await login('editor@test.local', 'guess-21', '10.3.1.1');
+    const rightOne = await login('editor@test.local', PW.editor, '10.3.1.2');
+    check('20 failures for one email from 20 addresses pause that account — the 21st, from a new address, is 429',
+      spread.every((s) => s === 401) && twentyFirst.status === 429 && /this account/.test(twentyFirst.body.error ?? ''), `${spread.join(',')} → ${twentyFirst.status}`);
+    check('…and so is the RIGHT password while the pause lasts', rightOne.status === 429 && Number(rightOne.headers['retry-after']) > 0, String(rightOne.status));
+    const unknown: number[] = [];
+    for (let i = 0; i < 21; i++) unknown.push((await login('nobody-at-all@test.local', `guess-${i}`, `10.4.0.${i + 1}`)).status);
+    check('an email that does not exist is paused the same way (the pause says nothing about who exists)', unknown[19] === 401 && unknown[20] === 429, unknown.join(','));
+    check('other accounts are unaffected', (await login('admin@test.local', PW.admin, '10.3.2.1')).status === 200);
+
+    // A lockout survives a flood of junk entries (AUTH_TABLE_MAX is 20 here). The
+    // back-off doubles from 2 s at the 5th failure, so wait it out to the 8th (16 s)
+    // — long enough to outlast the flood. 10 attempts from this address in all.
+    for (let i = 0; i < 5; i++) await login('admin@test.local', `wrong-${i}`, '10.5.0.1');
+    for (const ms of [2100, 4100, 8100]) { await sleep(ms); await login('admin@test.local', `wrong-again-${ms}`, '10.5.0.1'); }
+    const locked = await login('admin@test.local', PW.admin, '10.5.0.1');
+    const filler: Promise<Sent>[] = [];
+    for (let i = 0; i < 36; i++) {
+      filler.push(login(`junk${i}@test.local`, 'x', `10.6.0.${i + 1}`));
+      if (filler.length % 12 === 0) await Promise.all(filler.slice(-12));     // stay under the gate's waiting line
+    }
+    await Promise.all(filler);
+    const stillLocked = await login('admin@test.local', PW.admin, '10.5.0.1');
+    const isBackoff = (r: Sent) => r.status === 429 && /too many attempts/.test(r.body.error ?? '');
+    check('a flood of junk sign-ins past the table\'s bound does NOT lift an existing lockout', isBackoff(locked) && isBackoff(stillLocked),
+      `${locked.status} ${locked.body.error} → ${stillLocked.status} ${stillLocked.body.error}`);
+
+    // Many at once: at most two verifications run, a few wait, the rest are told to come back.
+    const base = rssOf(pid); let peak = base;
+    const poll = setInterval(() => { peak = Math.max(peak, rssOf(pid)); }, 20);
+    const t1 = Date.now();
+    const flood = await Promise.all(Array.from({ length: 40 }, (_, i) => login(`flood${i}@test.local`, 'wrong-password', `10.7.0.${i + 1}`)));
+    clearInterval(poll);
+    const busy = flood.filter((r) => r.status === 429 && /busy/.test(r.body.error ?? '')).length;
+    const tried = flood.filter((r) => r.status === 401).length;
+    check('40 attempts at once: no more than 2 run with 16 waiting (18 answered), the other 22 are 429 "busy" with Retry-After',
+      tried === 18 && busy === 22 && flood.filter((r) => r.status === 429).every((r) => Number(r.headers['retry-after']) > 0), `401×${tried} busy×${busy} in ${Date.now() - t1}ms`);
+    check('…and memory stays bounded (the audit measured +530 MB for this)', peak - base < 330, `rss ${base.toFixed(0)} → peak ${peak.toFixed(0)} MB`);
+    check('sign-in works again once the flood has passed', (await login('viewer-less@test.local', 'whatever-it-is', '10.7.1.1')).status === 401);
   } finally {
     await server.stop();
     await pool.end();

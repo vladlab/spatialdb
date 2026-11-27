@@ -66,7 +66,39 @@ export async function hashPassword(password: string): Promise<string> {
   return ['scrypt', SCRYPT.N, SCRYPT.r, SCRYPT.p, salt.toString('base64'), key.toString('base64')].join('$');
 }
 
-export async function verifyPassword(password: string, stored: string | null): Promise<boolean> {
+/* ── the gate on verification (SECURITY-BRIEF S2) ──────────────────────────
+   One verification costs ~380 ms of CPU and ~128 MB of memory, on purpose: that is
+   what makes a stolen hash slow to crack. It also made the login form a lever: the
+   audit's 40 concurrent attempts peaked at 613 MB. So at most VERIFY_MAX run at
+   once, process-wide, a few wait their turn, and the rest are told to come back —
+   WITHOUT running scrypt. Memory stays bounded (~VERIFY_MAX × 128 MB) and libuv's
+   thread pool, which file reads share, is never filled by sign-ins.
+   Only verification is gated: hashing is done by admins and the CLI. */
+const VERIFY_MAX = 2;
+const VERIFY_QUEUE_MAX = 16;
+let verifying = 0;
+const verifyQueue: Array<() => void> = [];
+
+/** Sign-in is saturated right now; the caller answers 429 and runs nothing. */
+export class LoginBusy extends Error { constructor() { super('sign-in is busy — try again in a moment'); } }
+
+async function gated<T>(work: () => Promise<T>): Promise<T> {
+  if (verifying >= VERIFY_MAX) {
+    if (verifyQueue.length >= VERIFY_QUEUE_MAX) throw new LoginBusy();
+    await new Promise<void>((r) => verifyQueue.push(r));   // the slot is handed over, not re-counted
+  } else verifying++;
+  try { return await work(); }
+  finally {
+    const next = verifyQueue.shift();
+    if (next) next(); else verifying--;
+  }
+}
+
+export function verifyPassword(password: string, stored: string | null): Promise<boolean> {
+  return gated(() => verifyUngated(password, stored));
+}
+
+async function verifyUngated(password: string, stored: string | null): Promise<boolean> {
   const parts = (stored ?? DUMMY_HASH).split('$');
   if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
   const [, N, r, p, salt, hash] = parts;
@@ -157,22 +189,100 @@ export async function authenticate(pool: pg.Pool, c: Context): Promise<AuthUser 
 
 /**
  * In memory, per process: a restart forgets it, which is fine for a small internal
- * tool (and the scrypt cost alone limits guessing to a few per second per core).
- * 5 free attempts per address+email, then each failure doubles the wait, to 15 min.
+ * tool. Three independent limits, checked in this order by the login route:
+ *
+ *   per ADDRESS     10 attempts a minute, whatever the email — so one source
+ *                   cannot try one password against every account, and cannot fill
+ *                   the verification gate's waiting line on its own.
+ *   per ADDRESS +   5 free failures, then each one doubles the wait, to 15 min. The
+ *   EMAIL           original rule, unchanged.
+ *   per EMAIL       20 failures within 15 minutes from ANY addresses pause that
+ *                   account's sign-in for 1 minute, doubling to 15. Counted for
+ *                   unknown emails too, so it says nothing about who exists. The
+ *                   trade (the owner's call, Nov 26 2026): someone who knows a
+ *                   colleague's email can keep their sign-in paused; sessions they
+ *                   already have are untouched.
+ *
+ * Each is a BOUNDED table. It used to be cleared outright at 10,000 entries, which
+ * let a flood of junk emails lift every lockout in place; now entries that are not
+ * blocking anyone go first, and only then the oldest.
  */
-const failures = new Map<string, { n: number; until: number }>();
+const TABLE_MAX = Math.max(10, Number(process.env.AUTH_TABLE_MAX) || 10_000);
+
+class Bounded<V> {
+  private m = new Map<string, V>();
+  constructor(private blocking: (v: V, now: number) => boolean) {}
+  get(k: string) { return this.m.get(k); }
+  delete(k: string) { this.m.delete(k); }
+  get size() { return this.m.size; }
+  set(k: string, v: V) {
+    this.m.delete(k);                                  // re-insert: insertion order is age
+    if (this.m.size >= TABLE_MAX) {
+      const now = Date.now();
+      for (const [key, val] of this.m) if (!this.blocking(val, now)) this.m.delete(key);
+      // Everything left is an active lockout: drop the oldest few, never all.
+      for (const key of this.m.keys()) { if (this.m.size < TABLE_MAX) break; this.m.delete(key); }
+    }
+    this.m.set(k, v);
+  }
+}
+
+const secondsUntil = (t: number) => Math.max(1, Math.ceil((t - Date.now()) / 1000));
+
+/* per address+email — the original back-off */
+const failures = new Bounded<{ n: number; until: number }>((f, now) => f.until > now);
 export function loginBlockedFor(key: string): number {
   const f = failures.get(key);
-  return f && f.until > Date.now() ? Math.ceil((f.until - Date.now()) / 1000) : 0;
+  return f && f.until > Date.now() ? secondsUntil(f.until) : 0;
 }
 export function noteLoginFailure(key: string) {
   const f = failures.get(key) ?? { n: 0, until: 0 };
   f.n++;
   if (f.n >= 5) f.until = Date.now() + Math.min(15 * 60_000, 2_000 * 2 ** (f.n - 5));
   failures.set(key, f);
-  if (failures.size > 10_000) failures.clear();      // a flood must not become a memory leak
 }
 export const noteLoginSuccess = (key: string) => { failures.delete(key); };
+
+/* per address — every attempt counts, right or wrong */
+const ADDRESS_PER_MINUTE = 10;
+const attempts = new Bounded<{ n: number; start: number }>((a, now) => now - a.start < 60_000 && a.n >= ADDRESS_PER_MINUTE);
+/** Count one attempt from `addr`; seconds to wait when it is over budget, else 0. */
+export function addressAttempt(addr: string): number {
+  const now = Date.now();
+  let a = attempts.get(addr);
+  if (!a || now - a.start >= 60_000) a = { n: 0, start: now };
+  a.n++;
+  attempts.set(addr, a);
+  return a.n > ADDRESS_PER_MINUTE ? secondsUntil(a.start + 60_000) : 0;
+}
+
+/* per email, from any address */
+const ACCOUNT_FAILURES = 20;
+const ACCOUNT_WINDOW = 15 * 60_000;
+const accounts = new Bounded<{ n: number; first: number; until: number }>((a, now) => a.until > now);
+export function accountBlockedFor(email: string): number {
+  const a = accounts.get(email);
+  return a && a.until > Date.now() ? secondsUntil(a.until) : 0;
+}
+export function noteAccountFailure(email: string) {
+  const now = Date.now();
+  let a = accounts.get(email);
+  if (!a || (now - a.first > ACCOUNT_WINDOW && a.until <= now)) a = { n: 0, first: now, until: 0 };
+  a.n++;
+  if (a.n >= ACCOUNT_FAILURES) a.until = now + Math.min(15 * 60_000, 60_000 * 2 ** (a.n - ACCOUNT_FAILURES));
+  accounts.set(email, a);
+}
+export const noteAccountSuccess = (email: string) => { accounts.delete(email); };
+
+/**
+ * Whose attempt is this? The first entry of CLIENT_IP_HEADER (default
+ * X-Forwarded-For), as the proxy in front set it. Behind a Cloudflare tunnel, set
+ * CLIENT_IP_HEADER=cf-connecting-ip — otherwise every user arrives from cloudflared's
+ * own address and shares one budget. Like every header trusted here, only sound
+ * when that proxy is the only way in (the server listens on loopback for this).
+ */
+const CLIENT_IP_HEADER = (process.env.CLIENT_IP_HEADER || 'x-forwarded-for').toLowerCase();
+export const clientAddr = (c: Context) => (c.req.header(CLIENT_IP_HEADER) ?? '').split(',')[0].trim() || 'local';
 
 /* ── CSRF ──────────────────────────────────────────────────────────────── */
 

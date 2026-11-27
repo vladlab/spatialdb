@@ -31,6 +31,11 @@ Two rules the rest depends on:
   what a proxy tells it — `X-Forwarded-Proto` (is the cookie `Secure`?),
   `X-Forwarded-For` (login back-off), optionally an SSO header. That is only sound if
   the proxy is the only way in. Do not set `HOST=0.0.0.0` to "make it work".
+  Sign-in attempts are budgeted per address (10 a minute), read from the first
+  `X-Forwarded-For` entry. Behind a proxy that names the client differently — a
+  Cloudflare tunnel, where every request arrives from `cloudflared` itself — set
+  `CLIENT_IP_HEADER=cf-connecting-ip`, or everyone shares one budget. Same rule:
+  only when that proxy is the only way in.
 - **Migrating is an explicit step**, never a side effect of starting. The server
   answers 503 and names the pending files until you run `npm run migrate`.
 

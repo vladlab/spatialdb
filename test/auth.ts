@@ -29,8 +29,15 @@ const API = `http://localhost:${PORT}`;
 const PW = { admin: 'admin-password-1', editor: 'editor-password-1', viewer: 'viewer-password-1' };
 
 /** A tiny cookie jar: what a browser does, by hand, so the flags can be inspected. */
+let nextIp = 1;
 class Client {
   cookie = ''; lastSetCookie = '';
+  /**
+   * Each client signs in from its OWN address, as separate machines would: the
+   * server budgets sign-in attempts per address (auth.ts, "guessing"), and this
+   * suite makes far more attempts in a minute than one machine would.
+   */
+  constructor(readonly ip = `10.8.${Math.floor(nextIp / 250)}.${(nextIp++ % 250) + 1}`) {}
   async req(method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
     const res = await fetch(API + path, { method, body: body === undefined ? undefined : JSON.stringify(body),
       headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(this.cookie ? { Cookie: this.cookie } : {}), ...headers } });
@@ -38,7 +45,7 @@ class Client {
     if (set) { this.lastSetCookie = set; const [pair] = set.split(';'); this.cookie = pair.endsWith('=') ? '' : pair; }
     return { status: res.status, body: await res.json().catch(() => ({})) as any };
   }
-  login(email: string, password: string, headers?: Record<string, string>) { return this.req('POST', '/api/auth/login', { email, password }, headers); }
+  login(email: string, password: string, headers?: Record<string, string>) { return this.req('POST', '/api/auth/login', { email, password }, { 'X-Forwarded-For': this.ip, ...headers }); }
 }
 const mutation = (m: unknown) => ({ clientId: randomUUID(), mutations: [{ id: randomUUID(), mutation: m }] });
 
@@ -105,7 +112,7 @@ async function main() {
     for (let i = 0; i < 7; i++) tries.push((await guesser.login('editor@test.local', `guess-number-${i}`)).status);
     check('after five wrong passwords, further attempts are refused outright for a while', tries.slice(0, 5).every((s) => s === 401) && tries.slice(5).every((s) => s === 429), tries.join());
     check('…even with the RIGHT password (or it would just be a slower oracle)', (await guesser.login('editor@test.local', PW.editor)).status === 429);
-    check('it is per address+email: someone else is not locked out by it', (await new Client().login('viewer@test.local', PW.viewer)).status === 200);
+    check('it is per address+email: someone else is not locked out by it — not even from the same address', (await new Client(guesser.ip).login('viewer@test.local', PW.viewer)).status === 200);
 
     await admin.login('admin@test.local', PW.admin);
     const evil = await admin.req('POST', '/api/mutate', mutation({ type: 'table.create', id: randomUUID(), name: 'planted' }), { Origin: 'https://evil.example' });
